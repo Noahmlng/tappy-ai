@@ -6,6 +6,7 @@ import http from 'node:http'
 import defaultPlacements from '../../config/default-placements.json' with { type: 'json' }
 import { runAdsRetrievalPipeline } from '../runtime/index.js'
 import { getAllNetworkHealth } from '../runtime/network-health-state.js'
+import { inferIntentWithLlm } from '../intent/index.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -252,8 +253,8 @@ function normalizeNextStepPreferenceFacets(value) {
   return value
     .map((item) => {
       if (!item || typeof item !== 'object') return null
-      const facetKey = String(item.facet_key || '').trim()
-      const facetValue = String(item.facet_value || '').trim()
+      const facetKey = String(item.facet_key || item.facetKey || '').trim()
+      const facetValue = String(item.facet_value || item.facetValue || '').trim()
       if (!facetKey || !facetValue) return null
 
       const confidence = clampNumber(item.confidence, 0, 1, NaN)
@@ -271,11 +272,11 @@ function normalizeNextStepPreferenceFacets(value) {
 
 function normalizeNextStepConstraints(value) {
   if (!value || typeof value !== 'object') return null
-  const mustInclude = Array.isArray(value.must_include)
-    ? value.must_include.map((item) => String(item || '').trim()).filter(Boolean)
+  const mustInclude = Array.isArray(value.must_include || value.mustInclude)
+    ? (value.must_include || value.mustInclude).map((item) => String(item || '').trim()).filter(Boolean)
     : []
-  const mustExclude = Array.isArray(value.must_exclude)
-    ? value.must_exclude.map((item) => String(item || '').trim()).filter(Boolean)
+  const mustExclude = Array.isArray(value.must_exclude || value.mustExclude)
+    ? (value.must_exclude || value.mustExclude).map((item) => String(item || '').trim()).filter(Boolean)
     : []
 
   if (mustInclude.length === 0 && mustExclude.length === 0) return null
@@ -313,16 +314,11 @@ function normalizeNextStepIntentCardPayload(payload, routeName) {
 
   const query = requiredNonEmptyString(rawContext.query, 'context.query')
   const locale = requiredNonEmptyString(rawContext.locale, 'context.locale')
-  const intentClass = requiredNonEmptyString(rawContext.intent_class, 'context.intent_class')
-  const intentScore = clampNumber(rawContext.intent_score, 0, 1, NaN)
-  if (!Number.isFinite(intentScore)) {
-    throw new Error('context.intent_score is required and must be a number between 0 and 1.')
-  }
-
-  if (!Array.isArray(rawContext.preference_facets)) {
-    throw new Error('context.preference_facets is required and must be an array.')
-  }
-  const preferenceFacets = normalizeNextStepPreferenceFacets(rawContext.preference_facets)
+  const rawIntentClass = String(rawContext.intent_class || rawContext.intentClass || '').trim().toLowerCase()
+  const rawIntentScore = clampNumber(rawContext.intent_score ?? rawContext.intentScore, 0, 1, NaN)
+  const rawPreferenceFacets = normalizeNextStepPreferenceFacets(
+    rawContext.preference_facets ?? rawContext.preferenceFacets,
+  )
 
   const expectedRevenue = clampNumber(rawContext.expected_revenue, 0, Number.MAX_SAFE_INTEGER, NaN)
 
@@ -339,12 +335,100 @@ function normalizeNextStepIntentCardPayload(payload, routeName) {
       answerText: String(rawContext.answerText || '').trim(),
       recentTurns: normalizeNextStepRecentTurns(rawContext.recent_turns),
       locale,
-      intentClass,
-      intentScore,
-      preferenceFacets,
+      intentClass: '',
+      intentScore: 0,
+      preferenceFacets: [],
+      intentHints: {
+        ...(rawIntentClass ? { intent_class: rawIntentClass } : {}),
+        ...(Number.isFinite(rawIntentScore) ? { intent_score: rawIntentScore } : {}),
+        ...(rawPreferenceFacets.length > 0 ? { preference_facets: rawPreferenceFacets.map((facet) => ({
+          facet_key: facet.facetKey,
+          facet_value: facet.facetValue,
+          ...(Number.isFinite(facet.confidence) ? { confidence: facet.confidence } : {}),
+          ...(facet.source ? { source: facet.source } : {}),
+        })) } : {}),
+      },
       constraints: normalizeNextStepConstraints(rawContext.constraints),
       blockedTopics: normalizeStringList(rawContext.blocked_topics),
       expectedRevenue: Number.isFinite(expectedRevenue) ? expectedRevenue : undefined,
+    },
+  }
+}
+
+function mapInferenceFacetsToInternal(value) {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((facet) => {
+      if (!facet || typeof facet !== 'object') return null
+      const facetKey = String(facet.facet_key || '').trim()
+      const facetValue = String(facet.facet_value || '').trim()
+      if (!facetKey || !facetValue) return null
+      const confidence = clampNumber(facet.confidence, 0, 1, NaN)
+      const source = String(facet.source || '').trim()
+
+      return {
+        facetKey,
+        facetValue,
+        confidence: Number.isFinite(confidence) ? confidence : null,
+        source: source || '',
+      }
+    })
+    .filter(Boolean)
+}
+
+function mergeUniqueStrings(...values) {
+  const set = new Set()
+  for (const value of values) {
+    if (!Array.isArray(value)) continue
+    for (const item of value) {
+      const normalized = String(item || '').trim()
+      if (!normalized) continue
+      set.add(normalized)
+    }
+  }
+  return Array.from(set)
+}
+
+function mergeConstraints(primary, secondary) {
+  const normalizedPrimary = normalizeNextStepConstraints(primary)
+  const normalizedSecondary = normalizeNextStepConstraints(secondary)
+
+  if (!normalizedPrimary && !normalizedSecondary) return null
+  return {
+    mustInclude: mergeUniqueStrings(normalizedPrimary?.mustInclude, normalizedSecondary?.mustInclude),
+    mustExclude: mergeUniqueStrings(normalizedPrimary?.mustExclude, normalizedSecondary?.mustExclude),
+  }
+}
+
+async function resolveIntentInferenceForNextStep(request) {
+  const context = request?.context && typeof request.context === 'object' ? request.context : {}
+  const hints = context.intentHints && typeof context.intentHints === 'object'
+    ? context.intentHints
+    : {}
+
+  const inference = await inferIntentWithLlm({
+    query: context.query || '',
+    answerText: context.answerText || '',
+    locale: context.locale || 'en-US',
+    recentTurns: Array.isArray(context.recentTurns) ? context.recentTurns : [],
+    hints,
+  })
+
+  const resolvedIntentClass = String(inference?.intent_class || 'non_commercial').trim().toLowerCase()
+  const resolvedIntentScore = Number.isFinite(inference?.intent_score)
+    ? clampNumber(inference.intent_score, 0, 1, 0)
+    : 0
+  const resolvedPreferenceFacets = mapInferenceFacetsToInternal(inference?.preference_facets)
+  const resolvedConstraints = mergeConstraints(context.constraints, inference?.constraints)
+
+  return {
+    inference,
+    resolvedContext: {
+      ...context,
+      intentClass: resolvedIntentClass || 'non_commercial',
+      intentScore: resolvedIntentScore,
+      preferenceFacets: resolvedPreferenceFacets,
+      constraints: resolvedConstraints,
     },
   }
 }
@@ -396,24 +480,17 @@ function mapRuntimeAdToNextStepCardItem(ad, index) {
   return cardItem
 }
 
-function buildNextStepIntentCardResponse(result, request) {
+function buildNextStepIntentCardResponse(result, request, inference) {
   const ads = Array.isArray(result?.ads)
     ? result.ads.map((item, index) => mapRuntimeAdToNextStepCardItem(item, index)).filter(Boolean)
     : []
-  const intentScore = Number.isFinite(request?.context?.intentScore) ? request.context.intentScore : 0
+  const intentScore = Number.isFinite(inference?.intent_score)
+    ? inference.intent_score
+    : Number.isFinite(request?.context?.intentScore)
+      ? request.context.intentScore
+      : 0
   const decision = result?.decision && typeof result.decision === 'object' ? result.decision : {}
-  const constraints = request?.context?.constraints
-  const trace = []
-
-  if (request?.context?.intentClass) {
-    trace.push(`intent:${request.context.intentClass}`)
-  }
-  if (Array.isArray(request?.context?.preferenceFacets)) {
-    for (const facet of request.context.preferenceFacets) {
-      if (!facet?.facetKey || !facet?.facetValue) continue
-      trace.push(`facet:${facet.facetKey}=${facet.facetValue}`)
-    }
-  }
+  const constraints = inference?.constraints || request?.context?.constraints
 
   const response = {
     requestId: result?.requestId || createId('adreq'),
@@ -426,20 +503,16 @@ function buildNextStepIntentCardResponse(result, request) {
       intent_score: Number.isFinite(decision.intentScore) ? decision.intentScore : intentScore,
     },
     intent_inference: {
-      intent_class: String(request?.context?.intentClass || 'non_commercial'),
+      intent_class: String(inference?.intent_class || request?.context?.intentClass || 'non_commercial'),
       intent_score: intentScore,
-      preference_facets: Array.isArray(request?.context?.preferenceFacets)
-        ? request.context.preferenceFacets.map((facet) => ({
-            facet_key: facet.facetKey,
-            facet_value: facet.facetValue,
-            ...(Number.isFinite(facet.confidence) ? { confidence: facet.confidence } : {}),
-            ...(facet.source ? { source: facet.source } : {}),
-          }))
-        : [],
+      preference_facets: Array.isArray(inference?.preference_facets) ? inference.preference_facets : [],
     },
     ads,
     meta: {
       selected_count: ads.length,
+      model_version: String(inference?.model || ''),
+      inference_fallback: Boolean(inference?.fallbackUsed),
+      inference_fallback_reason: String(inference?.fallbackReason || ''),
     },
   }
 
@@ -447,11 +520,13 @@ function buildNextStepIntentCardResponse(result, request) {
     response.intent_inference.constraints = {
       ...(constraints.mustInclude?.length ? { must_include: constraints.mustInclude } : {}),
       ...(constraints.mustExclude?.length ? { must_exclude: constraints.mustExclude } : {}),
+      ...(constraints.must_include?.length ? { must_include: constraints.must_include } : {}),
+      ...(constraints.must_exclude?.length ? { must_exclude: constraints.must_exclude } : {}),
     }
   }
 
-  if (trace.length > 0) {
-    response.intent_inference.inference_trace = trace.slice(0, 8)
+  if (Array.isArray(inference?.inference_trace) && inference.inference_trace.length > 0) {
+    response.intent_inference.inference_trace = inference.inference_trace.slice(0, 8)
   }
 
   return response
@@ -935,6 +1010,7 @@ function buildRuntimeAdRequest(request, placement, intentScore) {
       answerText: String(context.answerText || '').trim(),
       locale: String(context.locale || '').trim() || 'en-US',
       intentScore,
+      intentClass: String(context.intentClass || '').trim(),
     },
   }
 }
@@ -1008,6 +1084,7 @@ function buildDecisionInputSnapshot(request, placement, intentScore) {
     query: clipText(context.query, 280),
     answerText: clipText(context.answerText, 800),
     locale: String(context.locale || '').trim(),
+    intentClass: String(context.intentClass || '').trim(),
     intentScore: Number.isFinite(intentScore) ? intentScore : 0,
   }
 }
@@ -1061,6 +1138,7 @@ async function evaluateRequest(payload) {
   const request = payload && typeof payload === 'object' ? payload : {}
   const context = request.context && typeof request.context === 'object' ? request.context : {}
   const intentScore = clampNumber(context.intentScore, 0, 1, 0)
+  const intentClass = String(context.intentClass || '').trim().toLowerCase()
 
   const placement = pickPlacementForRequest(request)
   const requestId = createId('adreq')
@@ -1116,6 +1194,25 @@ async function evaluateRequest(payload) {
 
   if (intentScore < placement.trigger.intentThreshold) {
     const decision = createDecision('blocked', 'intent_below_threshold', intentScore)
+    recordBlockedOrNoFill(placement)
+    recordDecisionForRequest({
+      request,
+      placement,
+      requestId,
+      decision,
+      ads: [],
+    })
+    persistState(state)
+    return {
+      requestId,
+      placementId: placement.placementId,
+      decision,
+      ads: [],
+    }
+  }
+
+  if (placement.placementKey === NEXT_STEP_INTENT_CARD_PLACEMENT_KEY && intentClass === 'non_commercial') {
+    const decision = createDecision('blocked', 'intent_non_commercial', intentScore)
     recordBlockedOrNoFill(placement)
     recordDecisionForRequest({
       request,
@@ -1523,6 +1620,7 @@ async function requestHandler(req, res) {
       const payload = await readJsonBody(req)
       if (isNextStepIntentCardPayload(payload)) {
         const request = normalizeNextStepIntentCardPayload(payload, 'sdk/evaluate')
+        const { inference, resolvedContext } = await resolveIntentInferenceForNextStep(request)
         const result = await evaluateRequest({
           appId: request.appId,
           sessionId: request.sessionId,
@@ -1532,14 +1630,28 @@ async function requestHandler(req, res) {
           placementId: request.placementId,
           placementKey: request.placementKey,
           context: {
-            query: request.context.query,
-            answerText: request.context.answerText,
-            intentScore: request.context.intentScore,
-            expectedRevenue: request.context.expectedRevenue,
-            locale: request.context.locale,
+            query: resolvedContext.query,
+            answerText: resolvedContext.answerText,
+            intentClass: resolvedContext.intentClass,
+            intentScore: resolvedContext.intentScore,
+            preferenceFacets: resolvedContext.preferenceFacets,
+            constraints: resolvedContext.constraints,
+            expectedRevenue: resolvedContext.expectedRevenue,
+            locale: resolvedContext.locale,
           },
         })
-        sendJson(res, 200, buildNextStepIntentCardResponse(result, request))
+        sendJson(
+          res,
+          200,
+          buildNextStepIntentCardResponse(
+            result,
+            {
+              ...request,
+              context: resolvedContext,
+            },
+            inference,
+          ),
+        )
         return
       }
 
@@ -1575,6 +1687,11 @@ async function requestHandler(req, res) {
       const payload = await readJsonBody(req)
       if (isNextStepIntentCardPayload(payload)) {
         const request = normalizeNextStepIntentCardPayload(payload, 'sdk/events')
+        const inferredIntentClass = String(request.context.intentHints?.intent_class || '').trim().toLowerCase()
+        const inferredIntentScore = clampNumber(request.context.intentHints?.intent_score, 0, 1, NaN)
+        const inferredPreferenceFacets = normalizeNextStepPreferenceFacets(
+          request.context.intentHints?.preference_facets,
+        )
 
         state.eventLogs = [
           {
@@ -1586,9 +1703,9 @@ async function requestHandler(req, res) {
             userId: request.userId,
             query: request.context.query,
             answerText: request.context.answerText,
-            intentClass: request.context.intentClass,
-            intentScore: request.context.intentScore,
-            preferenceFacets: request.context.preferenceFacets,
+            intentClass: inferredIntentClass || '',
+            intentScore: Number.isFinite(inferredIntentScore) ? inferredIntentScore : 0,
+            preferenceFacets: inferredPreferenceFacets,
             locale: request.context.locale,
             event: request.event,
             placementId: request.placementId,

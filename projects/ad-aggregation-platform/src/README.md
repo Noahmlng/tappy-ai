@@ -41,3 +41,9 @@
 - 查询缓存（query cache）：缓存整条 pipeline 输出，降低重复查询抖动。
 - Offer 快照缓存（offer snapshot cache）：网络报错或空返回时回退到最近快照。
 - Runtime 可通过 `options.disableQueryCache`、`options.disableOfferSnapshotCache` 控制开关。
+
+8. `intent/`
+- Next-Step 意图推理模块（LLM + JSON Schema 校验）。
+- 入口：`intent/index.js` -> `inferIntentWithLlm(input, options)`。
+- 输出字段：`intent_class`、`intent_score`、`preference_facets`、`constraints`、`inference_trace`。
+- 失败策略：统一回退到 `non_commercial`（score=0, facets=[]）。
