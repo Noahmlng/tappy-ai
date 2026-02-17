@@ -367,7 +367,7 @@
                         class="rounded-lg border border-[#dfe5ff] bg-white p-2"
                       >
                         <a
-                          :href="ad.targetUrl"
+                          :href="resolveAdHref(ad)"
                           target="_blank"
                           rel="noopener noreferrer"
                           class="text-sm font-medium text-[#2f5bd3] hover:underline"
@@ -402,7 +402,7 @@
                         class="rounded-lg border border-[#d9eadf] bg-white p-2"
                       >
                         <a
-                          :href="ad.targetUrl"
+                          :href="resolveAdHref(ad)"
                           target="_blank"
                           rel="noopener noreferrer"
                           class="text-sm font-medium text-[#2463d6] hover:underline"
@@ -591,17 +591,44 @@ function normalizeToolResultItem(raw, index) {
   }
 }
 
+function pickFirstNonEmptyString(...values) {
+  for (const value of values) {
+    if (typeof value !== 'string') continue
+    const text = value.trim()
+    if (text) return text
+  }
+  return ''
+}
+
+function resolveAdHref(ad) {
+  if (!ad || typeof ad !== 'object') return ''
+  return pickFirstNonEmptyString(
+    ad.clickUrl,
+    ad.click_url,
+    ad.targetUrl,
+    ad.target_url,
+  )
+}
+
 function normalizeAdItem(raw, index) {
   if (!raw || typeof raw !== 'object') return null
   const adId = typeof raw.adId === 'string' ? raw.adId : `ad_${index}`
   const title = typeof raw.title === 'string' ? raw.title.trim() : ''
-  const targetUrl = typeof raw.targetUrl === 'string' ? raw.targetUrl.trim() : ''
-  if (!title || !targetUrl) return null
+  const tracking = raw.tracking && typeof raw.tracking === 'object' ? raw.tracking : {}
+  const clickUrl = pickFirstNonEmptyString(
+    tracking.clickUrl,
+    tracking.click_url,
+    raw.clickUrl,
+    raw.click_url,
+  )
+  const targetUrl = pickFirstNonEmptyString(raw.targetUrl, raw.target_url)
+  if (!title || !resolveAdHref({ clickUrl, targetUrl })) return null
 
   return {
     adId,
     title,
     description: typeof raw.description === 'string' ? raw.description : '',
+    clickUrl,
     targetUrl,
     disclosure: raw.disclosure === 'Ad' ? 'Ad' : 'Sponsored',
     reason: typeof raw.reason === 'string' ? raw.reason : '',
@@ -660,13 +687,16 @@ function normalizeNextStepAdItem(raw, index) {
         ? raw.adId
         : `next_step_${index}`
   const title = typeof raw.title === 'string' ? raw.title.trim() : ''
-  const targetUrl = typeof raw.target_url === 'string'
-    ? raw.target_url.trim()
-    : typeof raw.targetUrl === 'string'
-      ? raw.targetUrl.trim()
-      : ''
+  const tracking = raw.tracking && typeof raw.tracking === 'object' ? raw.tracking : {}
+  const clickUrl = pickFirstNonEmptyString(
+    tracking.click_url,
+    tracking.clickUrl,
+    raw.click_url,
+    raw.clickUrl,
+  )
+  const targetUrl = pickFirstNonEmptyString(raw.target_url, raw.targetUrl)
 
-  if (!title || !targetUrl) return null
+  if (!title || !resolveAdHref({ clickUrl, targetUrl })) return null
 
   const matchReasons = Array.isArray(raw.match_reasons)
     ? raw.match_reasons.map((item) => String(item || '').trim()).filter(Boolean)
@@ -682,6 +712,7 @@ function normalizeNextStepAdItem(raw, index) {
       : typeof raw.description === 'string'
         ? raw.description
         : '',
+    clickUrl,
     targetUrl,
     merchantOrNetwork: typeof raw.merchant_or_network === 'string'
       ? raw.merchant_or_network

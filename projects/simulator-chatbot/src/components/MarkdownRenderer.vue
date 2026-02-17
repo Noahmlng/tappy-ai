@@ -20,7 +20,7 @@
     >
       <span class="inline-offer-popover-title">{{ activeOffer.title || activeOffer.entityText || 'Sponsored link' }}</span>
       <a
-        :href="activeOffer.targetUrl"
+        :href="resolveOfferHref(activeOffer)"
         target="_blank"
         rel="noopener noreferrer"
         class="inline-offer-popover-link"
@@ -82,15 +82,15 @@ const inlineOfferEntries = computed(() => {
     const offer = raw && typeof raw === 'object' ? raw : null
     if (!offer) continue
 
-    const targetUrl = typeof offer.targetUrl === 'string' ? offer.targetUrl.trim() : ''
-    if (!targetUrl) continue
+    const href = resolveOfferHref(offer)
+    if (!href) continue
 
     const labels = resolveInlineOfferLabels(offer)
     if (labels.length === 0) continue
 
     const id = typeof offer.adId === 'string' && offer.adId.trim()
       ? offer.adId.trim()
-      : `${labels[0].toLowerCase()}::${targetUrl}`
+      : `${labels[0].toLowerCase()}::${href}`
 
     if (seen.has(id)) continue
     seen.add(id)
@@ -194,6 +194,25 @@ function resolveInlineOfferLabels(offer) {
   }
 
   return labels
+}
+
+function resolveOfferHref(offer) {
+  if (!offer || typeof offer !== 'object') return ''
+  const tracking = offer.tracking && typeof offer.tracking === 'object' ? offer.tracking : {}
+  const candidates = [
+    tracking.clickUrl,
+    tracking.click_url,
+    offer.clickUrl,
+    offer.click_url,
+    offer.targetUrl,
+    offer.target_url,
+  ]
+  for (const value of candidates) {
+    if (typeof value !== 'string') continue
+    const text = value.trim()
+    if (text) return text
+  }
+  return ''
 }
 
 function renderMarkdown(text) {
