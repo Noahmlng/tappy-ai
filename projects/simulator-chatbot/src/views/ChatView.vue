@@ -71,30 +71,84 @@
 
       <div class="border-t border-gray-200 p-3 space-y-2">
         <div class="rounded-lg border border-gray-200 bg-white p-2">
+          <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Experiment (A/B)</div>
+          <div class="mt-2 space-y-2 text-[11px]">
+            <label class="flex items-center justify-between gap-2">
+              <span class="text-gray-600">Enable experiment routing</span>
+              <input
+                v-model="experimentConfig.enabled"
+                type="checkbox"
+                class="h-4 w-4 rounded border-gray-300"
+              />
+            </label>
+
+            <label class="flex items-center justify-between gap-2">
+              <span class="text-gray-600">Current session group</span>
+              <select
+                v-model="activeSessionExperimentVariant"
+                :disabled="!activeSession"
+                class="rounded border border-gray-300 bg-white px-1.5 py-1 text-[11px] text-gray-700 disabled:opacity-60"
+              >
+                <option v-for="variant in EXPERIMENT_VARIANTS" :key="variant.id" :value="variant.id">
+                  {{ variant.label }}
+                </option>
+              </select>
+            </label>
+
+            <div class="rounded bg-gray-50 px-2 py-1.5 text-[10px] text-gray-600">
+              {{ activeExperimentVariantMeta.description }}
+            </div>
+          </div>
+        </div>
+
+        <div class="rounded-lg border border-gray-200 bg-white p-2">
           <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Ad Strategy</div>
           <div class="mt-2 space-y-2 text-[11px]">
             <label class="flex items-center justify-between gap-2">
-              <span class="text-gray-600">Enable ads</span>
-              <input v-model="strategy.adsEnabled" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
+              <span :class="experimentConfig.enabled ? 'text-gray-400' : 'text-gray-600'">Enable ads</span>
+              <input
+                v-model="strategy.adsEnabled"
+                :disabled="experimentConfig.enabled"
+                type="checkbox"
+                class="h-4 w-4 rounded border-gray-300 disabled:opacity-50"
+              />
             </label>
             <label class="flex items-center justify-between gap-2">
-              <span :class="strategy.adsEnabled ? 'text-gray-600' : 'text-gray-400'">Blend sponsored into search</span>
+              <span
+                :class="!experimentConfig.enabled && strategy.adsEnabled ? 'text-gray-600' : 'text-gray-400'"
+              >Enable sponsored search</span>
+              <input
+                v-model="strategy.searchAdsEnabled"
+                :disabled="experimentConfig.enabled || !strategy.adsEnabled"
+                type="checkbox"
+                class="h-4 w-4 rounded border-gray-300 disabled:opacity-50"
+              />
+            </label>
+            <label class="flex items-center justify-between gap-2">
+              <span
+                :class="!experimentConfig.enabled && strategy.adsEnabled && strategy.searchAdsEnabled ? 'text-gray-600' : 'text-gray-400'"
+              >Blend sponsored into search</span>
               <input
                 v-model="strategy.searchBlendEnabled"
-                :disabled="!strategy.adsEnabled"
+                :disabled="experimentConfig.enabled || !strategy.adsEnabled || !strategy.searchAdsEnabled"
                 type="checkbox"
                 class="h-4 w-4 rounded border-gray-300 disabled:opacity-50"
               />
             </label>
             <label class="flex items-center justify-between gap-2">
-              <span :class="strategy.adsEnabled ? 'text-gray-600' : 'text-gray-400'">Enable sponsored follow-ups</span>
+              <span
+                :class="!experimentConfig.enabled && strategy.adsEnabled ? 'text-gray-600' : 'text-gray-400'"
+              >Enable sponsored follow-ups</span>
               <input
                 v-model="strategy.followUpAdsEnabled"
-                :disabled="!strategy.adsEnabled"
+                :disabled="experimentConfig.enabled || !strategy.adsEnabled"
                 type="checkbox"
                 class="h-4 w-4 rounded border-gray-300 disabled:opacity-50"
               />
             </label>
+            <div v-if="experimentConfig.enabled" class="rounded bg-amber-50 px-2 py-1 text-[10px] text-amber-700">
+              Experiment is active. Manual strategy is paused and experiment group policy is applied.
+            </div>
           </div>
         </div>
 
@@ -128,9 +182,14 @@
 
               <div class="mt-2 border-t border-gray-200 pt-2 text-[11px] text-gray-600">
                 <div class="mb-1 text-[10px] text-gray-500">
-                  Strategy: ads {{ log.strategySnapshot?.adsEnabled ? 'on' : 'off' }}, merge {{
-                    log.strategySnapshot?.searchBlendEnabled ? 'blended' : 'separate'
-                  }}, follow-up ads {{ log.strategySnapshot?.followUpAdsEnabled ? 'on' : 'off' }}
+                  Experiment: {{ log.experimentVariant || 'search_ads' }}
+                </div>
+                <div class="mb-1 text-[10px] text-gray-500">
+                  Strategy: ads {{ log.strategySnapshot?.adsEnabled ? 'on' : 'off' }}, search ads {{
+                    log.strategySnapshot?.searchAdsEnabled ? 'on' : 'off'
+                  }}, merge {{ log.strategySnapshot?.searchBlendEnabled ? 'blended' : 'separate' }}, follow-up ads {{
+                    log.strategySnapshot?.followUpAdsEnabled ? 'on' : 'off'
+                  }}
                 </div>
                 <div v-if="log.adOpportunitySources?.length" class="mb-1">
                   Sources: {{ log.adOpportunitySources.join(', ') }}
@@ -410,10 +469,20 @@ const TOOL_STATES = ['planning', 'running', 'done', 'error']
 const TURN_LOG_STORAGE_KEY = 'chat_bot_turn_logs_v1'
 const MAX_TURN_LOGS = 400
 const STRATEGY_STORAGE_KEY = 'chat_bot_strategy_v1'
+const EXPERIMENT_CONFIG_STORAGE_KEY = 'chat_bot_experiment_config_v1'
 const DEFAULT_STRATEGY = {
   adsEnabled: true,
+  searchAdsEnabled: true,
   searchBlendEnabled: false,
   followUpAdsEnabled: true,
+}
+const EXPERIMENT_VARIANTS = [
+  { id: 'no_ads', label: 'A · No Ads', description: 'No sponsored search and no sponsored follow-up.' },
+  { id: 'search_ads', label: 'B · Search Ads', description: 'Only sponsored search is enabled.' },
+  { id: 'follow_up_ads', label: 'C · Follow-up Ads', description: 'Only sponsored follow-up is enabled.' },
+]
+const DEFAULT_EXPERIMENT_CONFIG = {
+  enabled: true,
 }
 const FOLLOW_UP_SPONSORED_OPTIONS = [
   {
@@ -450,6 +519,7 @@ const sessions = ref([])
 const activeSessionId = ref('')
 const turnLogs = ref([])
 const strategy = ref({ ...DEFAULT_STRATEGY })
+const experimentConfig = ref({ ...DEFAULT_EXPERIMENT_CONFIG })
 
 let persistTimer = null
 
@@ -462,6 +532,7 @@ function createSession(initialTitle = 'New Chat') {
   return {
     id: createId('session'),
     title: initialTitle,
+    experimentVariant: pickRandomExperimentVariant(),
     createdAt: now,
     updatedAt: now,
     messages: [],
@@ -498,6 +569,27 @@ function normalizeTurnEvent(raw, index) {
   }
 }
 
+function normalizeExperimentVariant(raw) {
+  const value = typeof raw === 'string' ? raw : ''
+  const matched = EXPERIMENT_VARIANTS.find((variant) => variant.id === value)
+  return matched ? matched.id : 'search_ads'
+}
+
+function pickRandomExperimentVariant() {
+  const index = Math.floor(Math.random() * EXPERIMENT_VARIANTS.length)
+  return EXPERIMENT_VARIANTS[index]?.id || 'search_ads'
+}
+
+function normalizeExperimentConfig(raw) {
+  if (!raw || typeof raw !== 'object') {
+    return { ...DEFAULT_EXPERIMENT_CONFIG }
+  }
+
+  return {
+    enabled: typeof raw.enabled === 'boolean' ? raw.enabled : DEFAULT_EXPERIMENT_CONFIG.enabled,
+  }
+}
+
 function normalizeTurnLog(raw) {
   if (!raw || typeof raw !== 'object') return null
   if (typeof raw.turnId !== 'string' || !raw.turnId) return null
@@ -510,6 +602,7 @@ function normalizeTurnLog(raw) {
     userQuery: typeof raw.userQuery === 'string' ? raw.userQuery : '',
     startedAt: Number.isFinite(raw.startedAt) ? raw.startedAt : Date.now(),
     endedAt: Number.isFinite(raw.endedAt) ? raw.endedAt : null,
+    experimentVariant: normalizeExperimentVariant(raw.experimentVariant),
     adOpportunityTriggered: Boolean(raw.adOpportunityTriggered),
     adOpportunitySources: Array.isArray(raw.adOpportunitySources)
       ? raw.adOpportunitySources.filter((item) => typeof item === 'string')
@@ -530,6 +623,9 @@ function normalizeStrategy(raw) {
 
   return {
     adsEnabled: typeof raw.adsEnabled === 'boolean' ? raw.adsEnabled : DEFAULT_STRATEGY.adsEnabled,
+    searchAdsEnabled: typeof raw.searchAdsEnabled === 'boolean'
+      ? raw.searchAdsEnabled
+      : DEFAULT_STRATEGY.searchAdsEnabled,
     searchBlendEnabled: typeof raw.searchBlendEnabled === 'boolean'
       ? raw.searchBlendEnabled
       : DEFAULT_STRATEGY.searchBlendEnabled,
@@ -609,6 +705,9 @@ function normalizeSession(raw) {
   return {
     id: typeof raw.id === 'string' && raw.id ? raw.id : createId('session'),
     title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim() : 'New Chat',
+    experimentVariant: raw.experimentVariant
+      ? normalizeExperimentVariant(raw.experimentVariant)
+      : pickRandomExperimentVariant(),
     createdAt,
     updatedAt,
     messages,
@@ -625,6 +724,10 @@ function persistTurnLogsNow() {
 
 function persistStrategyNow() {
   localStorage.setItem(STRATEGY_STORAGE_KEY, JSON.stringify(strategy.value))
+}
+
+function persistExperimentConfigNow() {
+  localStorage.setItem(EXPERIMENT_CONFIG_STORAGE_KEY, JSON.stringify(experimentConfig.value))
 }
 
 function scheduleSaveSessions() {
@@ -725,6 +828,25 @@ function loadStrategy() {
 
 loadStrategy()
 
+function loadExperimentConfig() {
+  try {
+    const raw = localStorage.getItem(EXPERIMENT_CONFIG_STORAGE_KEY)
+    if (!raw) {
+      experimentConfig.value = { ...DEFAULT_EXPERIMENT_CONFIG }
+      persistExperimentConfigNow()
+      return
+    }
+
+    experimentConfig.value = normalizeExperimentConfig(JSON.parse(raw))
+    persistExperimentConfigNow()
+  } catch (error) {
+    console.error('Failed to load experiment config:', error)
+    experimentConfig.value = { ...DEFAULT_EXPERIMENT_CONFIG }
+  }
+}
+
+loadExperimentConfig()
+
 const sortedSessions = computed(() => {
   return [...sessions.value].sort((a, b) => b.updatedAt - a.updatedAt)
 })
@@ -752,11 +874,68 @@ const activeSessionTurnLogs = computed(() => {
     .sort((a, b) => b.startedAt - a.startedAt)
     .slice(0, 20)
 })
+const activeSessionExperimentVariant = computed({
+  get() {
+    return activeSession.value?.experimentVariant || 'search_ads'
+  },
+  set(nextVariant) {
+    if (!activeSession.value) return
+    activeSession.value.experimentVariant = normalizeExperimentVariant(nextVariant)
+    touchActiveSession()
+    persistSessionsNow()
+  },
+})
+const activeExperimentVariantMeta = computed(() => {
+  const variantId = activeSessionExperimentVariant.value
+  return EXPERIMENT_VARIANTS.find((variant) => variant.id === variantId) || EXPERIMENT_VARIANTS[1]
+})
+const effectiveStrategy = computed(() => {
+  const base = normalizeStrategy(strategy.value)
+  const variant = normalizeExperimentVariant(activeSession.value?.experimentVariant)
+
+  if (!experimentConfig.value.enabled) {
+    return base
+  }
+
+  if (variant === 'no_ads') {
+    return {
+      ...base,
+      adsEnabled: false,
+      searchAdsEnabled: false,
+      searchBlendEnabled: false,
+      followUpAdsEnabled: false,
+    }
+  }
+
+  if (variant === 'search_ads') {
+    return {
+      ...base,
+      adsEnabled: true,
+      searchAdsEnabled: true,
+      followUpAdsEnabled: false,
+    }
+  }
+
+  if (variant === 'follow_up_ads') {
+    return {
+      ...base,
+      adsEnabled: true,
+      searchAdsEnabled: false,
+      searchBlendEnabled: false,
+      followUpAdsEnabled: true,
+    }
+  }
+
+  return base
+})
+const effectiveSearchAdsEnabled = computed(() => {
+  return effectiveStrategy.value.adsEnabled && effectiveStrategy.value.searchAdsEnabled
+})
 const effectiveSearchMergeMode = computed(() => {
-  return strategy.value.adsEnabled && strategy.value.searchBlendEnabled ? 'blended' : 'separate'
+  return effectiveSearchAdsEnabled.value && effectiveStrategy.value.searchBlendEnabled ? 'blended' : 'separate'
 })
 const followUpSponsoredEnabled = computed(() => {
-  return strategy.value.adsEnabled && strategy.value.followUpAdsEnabled
+  return effectiveStrategy.value.adsEnabled && effectiveStrategy.value.followUpAdsEnabled
 })
 const hasStarted = computed(() => currentMessages.value.length > 0)
 
@@ -788,6 +967,14 @@ watch(
   { deep: true },
 )
 
+watch(
+  experimentConfig,
+  () => {
+    persistExperimentConfigNow()
+  },
+  { deep: true },
+)
+
 onBeforeUnmount(() => {
   if (persistTimer) {
     clearTimeout(persistTimer)
@@ -811,7 +998,7 @@ function formatTraceEventType(eventType) {
     .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
-function createTurnTrace(sessionId, userQuery) {
+function createTurnTrace(sessionId, userQuery, experimentVariant, strategySnapshot) {
   const now = Date.now()
   return {
     turnId: createId('turn'),
@@ -820,9 +1007,10 @@ function createTurnTrace(sessionId, userQuery) {
     userQuery,
     startedAt: now,
     endedAt: null,
+    experimentVariant: normalizeExperimentVariant(experimentVariant),
     adOpportunityTriggered: false,
     adOpportunitySources: [],
-    strategySnapshot: normalizeStrategy(strategy.value),
+    strategySnapshot: normalizeStrategy(strategySnapshot),
     events: [],
   }
 }
@@ -1065,16 +1253,28 @@ async function handleSend() {
   const userContent = input.value.trim()
   input.value = ''
   isLoading.value = true
-  const turnTrace = createTurnTrace(session.id, userContent)
-  const adsEnabled = strategy.value.adsEnabled
-  const searchMergeMode = effectiveSearchMergeMode.value
-  const sponsoredFollowUpsEnabled = followUpSponsoredEnabled.value
+  const effectiveStrategySnapshot = normalizeStrategy(effectiveStrategy.value)
+  const experimentVariant = normalizeExperimentVariant(session.experimentVariant)
+  const adsEnabled = effectiveStrategySnapshot.adsEnabled
+  const searchAdsEnabled = effectiveStrategySnapshot.adsEnabled && effectiveStrategySnapshot.searchAdsEnabled
+  const searchMergeMode = searchAdsEnabled && effectiveStrategySnapshot.searchBlendEnabled ? 'blended' : 'separate'
+  const sponsoredFollowUpsEnabled =
+    effectiveStrategySnapshot.adsEnabled && effectiveStrategySnapshot.followUpAdsEnabled
+  const turnTrace = createTurnTrace(
+    session.id,
+    userContent,
+    experimentVariant,
+    effectiveStrategySnapshot,
+  )
 
   appendTurnTraceEvent(turnTrace, 'turn_started', { query: userContent })
   appendTurnTraceEvent(turnTrace, 'strategy_snapshot', {
     adsEnabled,
+    searchAdsEnabled,
     searchMergeMode,
     sponsoredFollowUpsEnabled,
+    experimentVariant,
+    experimentEnabled: experimentConfig.value.enabled,
   })
   upsertTurnTrace(turnTrace)
 
@@ -1136,7 +1336,7 @@ async function handleSend() {
       upsertTurnTrace(turnTrace)
 
       const webSearchOutput = await runWebSearchTool(userContent, {
-        sponsoredEnabled: adsEnabled,
+        sponsoredEnabled: searchAdsEnabled,
       })
       toolMessage.toolState = 'done'
       toolMessage.toolQuery = webSearchOutput.query
