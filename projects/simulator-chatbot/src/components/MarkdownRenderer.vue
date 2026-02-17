@@ -52,7 +52,7 @@ const emit = defineEmits(['ad-click', 'inline-marker-count'])
 const markdownParser = new MarkdownIt({
   html: false,
   breaks: true,
-  linkify: true,
+  linkify: false,
   typographer: true,
 })
 
@@ -242,6 +242,8 @@ function injectInlineOffers(html, offers) {
     replaceTextNodeWithInlineOffers(doc, node, offers)
   }
 
+  rewriteExistingAnchorLinks(root, offers)
+
   return root.innerHTML
 }
 
@@ -253,6 +255,54 @@ function shouldSkipNode(el) {
     current = current.parentElement
   }
   return false
+}
+
+function rewriteExistingAnchorLinks(root, offers) {
+  const anchors = root.querySelectorAll('a[href]')
+  if (!anchors || anchors.length === 0) return
+
+  for (const anchor of anchors) {
+    const text = typeof anchor.textContent === 'string' ? anchor.textContent.trim() : ''
+    if (!text) continue
+
+    const lower = text.toLowerCase()
+    const matched = findBestAnchorOfferMatch(text, lower, offers)
+    if (!matched) continue
+
+    const href = resolveOfferHref(matched.entry.offer)
+    if (!href) continue
+
+    anchor.setAttribute('href', href)
+    anchor.setAttribute('data-offer-id', matched.entry.id)
+    anchor.classList.add('inline-offer-marker')
+  }
+}
+
+function findBestAnchorOfferMatch(original, lower, offers) {
+  let best = null
+
+  for (const entry of offers) {
+    for (const label of Array.isArray(entry.labels) ? entry.labels : []) {
+      const index = findMatchIndexWithBoundary(original, lower, label.lower, 0)
+      if (index === -1) continue
+
+      const candidate = {
+        index,
+        length: label.text.length,
+        entry,
+      }
+
+      if (
+        !best ||
+        candidate.index < best.index ||
+        (candidate.index === best.index && candidate.length > best.length)
+      ) {
+        best = candidate
+      }
+    }
+  }
+
+  return best
 }
 
 function replaceTextNodeWithInlineOffers(doc, textNode, offers) {
