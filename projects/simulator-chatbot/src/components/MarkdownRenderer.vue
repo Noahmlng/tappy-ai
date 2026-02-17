@@ -450,13 +450,20 @@ onBeforeUnmount(() => {
 
 .markdown-content :deep(.inline-offer-marker) {
   position: relative;
-  border-bottom: 1px solid #9ca3af;
+  border-bottom: none;
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: #9ca3af;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+  background: linear-gradient(180deg, transparent 72%, rgba(156, 163, 175, 0.2) 72%);
   cursor: pointer;
-  transition: border-color 0.12s ease;
+  transition: text-decoration-color 0.12s ease, background-color 0.12s ease;
 }
 
 .markdown-content :deep(.inline-offer-marker:hover) {
-  border-bottom-color: #6b7280;
+  text-decoration-color: #4b5563;
+  background: linear-gradient(180deg, transparent 68%, rgba(107, 114, 128, 0.24) 68%);
 }
 
 .markdown-content :deep(h1) {
