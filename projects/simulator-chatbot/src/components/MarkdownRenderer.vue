@@ -100,6 +100,7 @@ const inlineOfferEntries = computed(() => {
       labels: labels.map((item) => ({
         text: item,
         lower: item.toLowerCase(),
+        compact: compactAlnum(item),
       })),
       offer,
     })
@@ -215,6 +216,11 @@ function resolveOfferHref(offer) {
   return ''
 }
 
+function compactAlnum(value) {
+  if (typeof value !== 'string') return ''
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '')
+}
+
 function renderMarkdown(text) {
   return markdownParser.render(String(text || ''))
 }
@@ -280,24 +286,27 @@ function rewriteExistingAnchorLinks(root, offers) {
 
 function findBestAnchorOfferMatch(original, lower, offers) {
   let best = null
+  const compactIndex = buildCompactIndex(original)
 
   for (const entry of offers) {
     for (const label of Array.isArray(entry.labels) ? entry.labels : []) {
-      const index = findMatchIndexWithBoundary(original, lower, label.lower, 0)
-      if (index === -1) continue
+      const rawMatch = findRawMatch(original, lower, label.lower, 0)
+      const compactMatch = findCompactMatch(original, compactIndex, label.compact, 0)
+      const candidate = pickBetterMatch(rawMatch, compactMatch)
+      if (!candidate) continue
 
-      const candidate = {
-        index,
-        length: label.text.length,
+      const enriched = {
+        index: candidate.index,
+        length: candidate.length,
         entry,
       }
 
       if (
         !best ||
-        candidate.index < best.index ||
-        (candidate.index === best.index && candidate.length > best.length)
+        enriched.index < best.index ||
+        (enriched.index === best.index && enriched.length > best.length)
       ) {
-        best = candidate
+        best = enriched
       }
     }
   }
@@ -312,9 +321,10 @@ function replaceTextNodeWithInlineOffers(doc, textNode, offers) {
   const fragment = doc.createDocumentFragment()
   let cursor = 0
   const lower = original.toLowerCase()
+  const compactIndex = buildCompactIndex(original)
 
   while (cursor < original.length) {
-    const match = findNextOfferMatch(original, lower, cursor, offers)
+    const match = findNextOfferMatch(original, lower, compactIndex, cursor, offers)
     if (!match) {
       fragment.appendChild(doc.createTextNode(original.slice(cursor)))
       break
@@ -336,31 +346,107 @@ function replaceTextNodeWithInlineOffers(doc, textNode, offers) {
   textNode.parentNode?.replaceChild(fragment, textNode)
 }
 
-function findNextOfferMatch(original, lower, cursor, offers) {
+function findNextOfferMatch(original, lower, compactIndex, cursor, offers) {
   let best = null
 
   for (const entry of offers) {
     for (const label of Array.isArray(entry.labels) ? entry.labels : []) {
-      const index = findMatchIndexWithBoundary(original, lower, label.lower, cursor)
-      if (index === -1) continue
+      const rawMatch = findRawMatch(original, lower, label.lower, cursor)
+      const compactMatch = findCompactMatch(original, compactIndex, label.compact, cursor)
+      const candidate = pickBetterMatch(rawMatch, compactMatch)
+      if (!candidate) continue
 
-      const candidate = {
-        index,
-        length: label.text.length,
+      const enriched = {
+        index: candidate.index,
+        length: candidate.length,
         entry,
       }
 
       if (
         !best ||
-        candidate.index < best.index ||
-        (candidate.index === best.index && candidate.length > best.length)
+        enriched.index < best.index ||
+        (enriched.index === best.index && enriched.length > best.length)
       ) {
-        best = candidate
+        best = enriched
       }
     }
   }
 
   return best
+}
+
+function findRawMatch(original, lower, needle, start) {
+  if (!needle) return null
+  const index = findMatchIndexWithBoundary(original, lower, needle, start)
+  if (index === -1) return null
+  return {
+    index,
+    length: needle.length,
+  }
+}
+
+function buildCompactIndex(original) {
+  const chars = []
+  const mapToOriginal = []
+
+  for (let i = 0; i < original.length; i += 1) {
+    const char = original[i]
+    if (!/[A-Za-z0-9]/.test(char)) continue
+    chars.push(char.toLowerCase())
+    mapToOriginal.push(i)
+  }
+
+  return {
+    compact: chars.join(''),
+    mapToOriginal,
+  }
+}
+
+function findCompactStartPosition(mapToOriginal, originalCursor) {
+  for (let i = 0; i < mapToOriginal.length; i += 1) {
+    if (mapToOriginal[i] >= originalCursor) return i
+  }
+  return mapToOriginal.length
+}
+
+function findCompactMatch(original, compactIndex, compactNeedle, start) {
+  if (!compactNeedle) return null
+
+  const compactText = compactIndex?.compact || ''
+  const mapToOriginal = Array.isArray(compactIndex?.mapToOriginal)
+    ? compactIndex.mapToOriginal
+    : []
+  if (!compactText || mapToOriginal.length === 0) return null
+
+  let compactStart = findCompactStartPosition(mapToOriginal, start)
+  while (compactStart <= compactText.length) {
+    const matchPos = compactText.indexOf(compactNeedle, compactStart)
+    if (matchPos === -1) return null
+
+    const firstOriginalIndex = mapToOriginal[matchPos]
+    const lastOriginalIndex = mapToOriginal[matchPos + compactNeedle.length - 1]
+    if (!Number.isFinite(firstOriginalIndex) || !Number.isFinite(lastOriginalIndex)) return null
+
+    const length = lastOriginalIndex - firstOriginalIndex + 1
+    if (isBoundaryMatch(original, firstOriginalIndex, length)) {
+      return {
+        index: firstOriginalIndex,
+        length,
+      }
+    }
+
+    compactStart = matchPos + compactNeedle.length
+  }
+
+  return null
+}
+
+function pickBetterMatch(left, right) {
+  if (!left) return right
+  if (!right) return left
+  if (left.index !== right.index) return left.index < right.index ? left : right
+  if (left.length !== right.length) return left.length > right.length ? left : right
+  return left
 }
 
 function findMatchIndexWithBoundary(original, lower, needle, start) {
