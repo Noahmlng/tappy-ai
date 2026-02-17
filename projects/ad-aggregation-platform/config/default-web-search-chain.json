@@ -1,0 +1,31 @@
+{
+  "enabled": true,
+  "triggerPolicy": "auto",
+  "tools": {
+    "webSearch": {
+      "enabled": true,
+      "timeoutMs": 4000,
+      "maxResults": 8,
+      "retryCount": 1
+    }
+  },
+  "sponsored": {
+    "enabled": true,
+    "mergeMode": "separate_block",
+    "maxSlots": 1,
+    "label": "Sponsored",
+    "minRelevanceScore": 0.6
+  },
+  "safety": {
+    "blockedCategories": ["MEDICAL", "LEGAL", "CRISIS"],
+    "blockedKeywords": []
+  },
+  "frequencyCap": {
+    "maxSponsoredPerSession": 3,
+    "maxSponsoredPerUserPerDay": 10
+  },
+  "observability": {
+    "emitChainEvents": true,
+    "sampleRate": 1
+  }
+}

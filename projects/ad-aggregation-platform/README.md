@@ -13,7 +13,13 @@
 - `schemas/placement.schema.json`：广告位定义
 - `schemas/ad-request.schema.json`：应用发起广告请求协议
 - `schemas/ad-response.schema.json`：平台返回广告协议
+- `schemas/web-search-events.schema.json`：Web Search 链路事件协议
+- `schemas/web-search-config.schema.json`：Web Search 链路配置协议
+- `schemas/follow-up-events.schema.json`：Follow-up 链路事件协议
+- `schemas/follow-up-config.schema.json`：Follow-up 链路配置协议
 - `config/default-placements.json`：默认广告位配置
+- `config/default-web-search-chain.json`：Web Search 默认配置
+- `config/default-follow-up-chain.json`：Follow-up 默认配置
 - `docs/phase-1-scope.md`：阶段范围与后续实现清单
 
 ## 下步实现建议

@@ -1,0 +1,27 @@
+{
+  "enabled": true,
+  "generatorPolicy": "hybrid",
+  "suggestionCount": 4,
+  "minSuggestionLength": 6,
+  "maxSuggestionLength": 80,
+  "dedupeBySemantic": true,
+  "sponsored": {
+    "enabled": true,
+    "maxSlots": 1,
+    "label": "Sponsored",
+    "placement": "bottom",
+    "minRelevanceScore": 0.55
+  },
+  "safety": {
+    "blockedCategories": ["MEDICAL", "LEGAL", "CRISIS"],
+    "blockedKeywords": []
+  },
+  "frequencyCap": {
+    "maxSponsoredFollowUpPerSession": 2,
+    "maxSponsoredFollowUpPerUserPerDay": 6
+  },
+  "observability": {
+    "emitChainEvents": true,
+    "sampleRate": 1
+  }
+}

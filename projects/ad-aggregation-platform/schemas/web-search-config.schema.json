@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-network.local/schemas/web-search-config.schema.json",
+  "title": "WebSearchChainConfig",
+  "type": "object",
+  "required": ["enabled", "triggerPolicy", "tools", "sponsored", "safety"],
+  "properties": {
+    "enabled": { "type": "boolean" },
+    "triggerPolicy": {
+      "type": "string",
+      "enum": ["auto", "always", "manual"]
+    },
+    "tools": {
+      "type": "object",
+      "required": ["webSearch"],
+      "properties": {
+        "webSearch": {
+          "type": "object",
+          "required": ["enabled", "timeoutMs", "maxResults"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "timeoutMs": { "type": "integer", "minimum": 1 },
+            "maxResults": { "type": "integer", "minimum": 1, "maximum": 20 },
+            "retryCount": { "type": "integer", "minimum": 0, "maximum": 5 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "sponsored": {
+      "type": "object",
+      "required": ["enabled", "mergeMode", "maxSlots", "label"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "mergeMode": {
+          "type": "string",
+          "enum": ["separate_block", "blended"]
+        },
+        "maxSlots": { "type": "integer", "minimum": 0, "maximum": 10 },
+        "label": { "type": "string", "minLength": 1 },
+        "minRelevanceScore": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "safety": {
+      "type": "object",
+      "required": ["blockedCategories", "blockedKeywords"],
+      "properties": {
+        "blockedCategories": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "blockedKeywords": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "frequencyCap": {
+      "type": "object",
+      "properties": {
+        "maxSponsoredPerSession": { "type": "integer", "minimum": 0 },
+        "maxSponsoredPerUserPerDay": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "observability": {
+      "type": "object",
+      "properties": {
+        "emitChainEvents": { "type": "boolean" },
+        "sampleRate": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
