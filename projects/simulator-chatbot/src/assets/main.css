@@ -1,8 +1,25 @@
 @import "tailwindcss";
 
+:root {
+  --chat-sidebar-bg: #171717;
+  --chat-sidebar-surface: #212121;
+  --chat-sidebar-border: #2f2f2f;
+  --chat-sidebar-text: #e8e8e8;
+  --chat-sidebar-muted: #a6a6a6;
+  --chat-main-bg: #ffffff;
+  --chat-main-text: #1f1f1f;
+}
+
+body {
+  margin: 0;
+  background: var(--chat-main-bg);
+  color: var(--chat-main-text);
+  font-family: "Soehne", "Helvetica Neue", Helvetica, "Segoe UI", sans-serif;
+}
+
 /* 消息出现动效 */
 .animate-in {
-  animation: fade-in 0.5s both, slide-in-from-bottom 0.5s both;
+  animation: fade-in 0.28s both, slide-in-from-bottom 0.28s both;
 }
 
 @keyframes fade-in {
@@ -11,7 +28,7 @@
 }
 
 @keyframes slide-in-from-bottom {
-  from { transform: translateY(1rem); }
+  from { transform: translateY(0.45rem); }
   to { transform: translateY(0); }
 }
 
@@ -26,7 +43,7 @@
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: #cfd3d8;
   border-radius: 10px;
   transition: background 0.2s ease;
 }
@@ -38,7 +55,7 @@
 /* Firefox 滚动条样式 */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #d1d5db transparent;
+  scrollbar-color: #cfd3d8 transparent;
 }
 
 /* 滚动条美化（保留原有类） */
@@ -46,11 +63,11 @@
   width: 4px;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #e5e5e5;
+  background: #d4d7dc;
   border-radius: 10px;
 }
 .scrollbar-thin:hover::-webkit-scrollbar-thumb {
-  background: #d1d1d1;
+  background: #bfc5cc;
 }
 
 /* 自定义缓动曲线 */
