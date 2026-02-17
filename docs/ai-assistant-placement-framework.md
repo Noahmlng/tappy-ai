@@ -1,6 +1,6 @@
 # AI Assistant Placement Product Spec
 
-- Document Version: v1.1
+- Document Version: v1.2
 - Last Updated: 2026-02-17
 - Scope: Chat/Assistant placement product definition, governance, and execution alignment
 
@@ -284,10 +284,30 @@ Must:
 4. `intent_score >= next_step_intent_threshold`
 5. `semantic_match_score >= semantic_retrieval_threshold`
 6. `safety_pass = true` and `frequency_cap_pass = true`
+- Inventory Source (MVP):
+1. Use affiliate `list all links` result as full product corpus for Intent Card.
+2. Connector mapping:
+- `PartnerStack`: `listLinksByPartnership` output.
+- `CJ`: `listLinks` output (merged with products/offers fallback if needed).
+3. Normalize all links into one `IntentCardCatalog` with a stable `item_id`.
+4. If feed metadata is sparse, enrich using title/url path/network metadata and lightweight LLM extraction.
 - Semantic Retrieval Contract:
 1. Query input: current turn + recent turns + extracted preference facets.
-2. Retrieval method: vector/semantic search over ad inventory index.
+2. Retrieval method: vector/semantic search over `IntentCardCatalog` (affiliate links index).
 3. Match evidence: each candidate must include at least one relevance reason tied to user intent or preference.
+4. Top-k candidate retrieval should be deterministic under same input + same index snapshot.
+- Ranking Strategy:
+1. v1 (current): rules-weighted score = relevance + policy pass + quality + monetization signal.
+2. Relevance remains primary objective; monetization cannot override policy/safety constraints.
+- Item Contract (for UI render):
+1. `item_id`
+2. `title`
+3. `snippet` (optional)
+4. `target_url`
+5. `merchant_or_network`
+6. `price_hint` (optional)
+7. `match_reasons[]`
+8. `disclosure`
 - Interaction Contract:
 1. Max one card module per turn; max three items per module.
 2. Each item supports `view_detail` and/or `open_destination`.
@@ -317,7 +337,96 @@ Must:
 1. User says "我现在想买点东西": classify purchase intent and recommend relevant product cards.
 2. User says "我女朋友喜欢材质鲜艳的": extract preference facets and run semantic retrieval for matching products (for example, style-aligned items such as "采气花" in inventory).
 
-## 9) Placement Spec Template (for Future Expansion)
+## 8.2 `next_step.intent_inference` Module Spec
+
+- Positioning: Dedicated module for intent understanding and preference extraction used by `next_step.intent_card`.
+- Why a separate module:
+1. Trigger accuracy and recommendation quality depend on stable intent signals.
+2. Decoupling allows independent tuning of inference quality without changing SDK rendering logic.
+- Module Inputs:
+1. `query` (current user turn)
+2. `recent_turns` (session window)
+3. `locale`
+4. Optional profile/context hints (if available and policy-allowed)
+- Module Outputs:
+1. `intent_class` (`shopping|gifting|exploration|non_commercial|...`)
+2. `intent_score` (`0-1`)
+3. `preference_facets` (color/material/style/brand/price/use_case/recipient)
+4. `constraints` (must-have / must-not)
+5. `inference_trace` (short reason code set for observability)
+
+### 8.2.1 Data Collection (MVP -> Growth)
+
+1. Log every evaluate request with:
+- `query`, `intent_class`, `intent_score`, `preference_facets`, `decision.result`, `decision.reason`.
+2. Log user feedback signals:
+- `impression`, `click`, `dismiss`, `hide_similar` (if supported), `post-card continuation`.
+3. Build weekly labeled sample set:
+- false trigger, missed trigger, bad relevance, good relevance.
+4. Use human review + offline replay to calibrate thresholds before major rollout.
+
+### 8.2.2 Inference Strategy
+
+1. Current phase (required now):
+- Use simple LLM inference with structured JSON output for `intent_class`, `intent_score`, and `preference_facets`.
+- Add deterministic post-rules (threshold, blocked topics, confidence floor).
+2. Mid phase:
+- Add lightweight classifier/reranker trained on collected logs to stabilize latency and cost.
+3. Long phase:
+- Evolve toward larger recommendation model for joint intent understanding + retrieval/ranking optimization.
+
+### 8.2.3 Reliability Targets for Intent Module
+
+1. P95 inference latency within Next-Step budget.
+2. Parsing failure rate below agreed threshold (fallback to `non_commercial`).
+3. Low-confidence outputs must degrade safely to no-render.
+
+## 9) Intent Card Implementation To-Do (P0-P2)
+
+### 9.1 P0 (Must Ship)
+
+1. SDK: add `next_step.intent_card` evaluate/render/report pipeline.
+- Why: this is the minimum runnable path from trigger to visible card.
+2. SDK: extend request context with `intent_class`, `intent_score`, `preference_facets`.
+- Why: retrieval and gating cannot work with only raw query text.
+3. Intent module: implement LLM-based structured inference (`intent + facets + score`) with strict JSON schema validation.
+- Why: immediate accuracy boost with low engineering cost.
+4. Intent module: add hard post-rules (blocked topic, confidence floor, frequency cap, cooldown).
+- Why: prevent unsafe or noisy triggers in early traffic.
+5. Catalog: use affiliate `list all links` as single source and build `IntentCardCatalog` normalization job.
+- Why: no standalone product DB yet, but links inventory is already available.
+6. Catalog: create semantic index from normalized link corpus and support top-k retrieval.
+- Why: Intent Card requires semantic matching (not keyword-only).
+7. Observability: add event/decision logs for `served/no_fill/blocked/error` with `requestId`.
+- Why: required for debug, threshold tuning, and dashboard operations.
+8. E2E validation: run scenario suite for shopping intent, gifting preference, non-commercial intent, and sensitive-topic blocking.
+- Why: ensure trigger precision and fail-open behavior before release.
+
+### 9.2 P1 (Should Do)
+
+1. SDK: expose dashboard-tunable parameters (`intent_threshold`, `semantic_threshold`, `max_items`, cooldown).
+- Why: operations need runtime tuning without code deploy.
+2. Intent module: add offline evaluation dataset and weekly calibration workflow.
+- Why: stabilize quality and reduce drift from prompt-only inference.
+3. Ranking: introduce reranker layer for top-k refinement.
+- Why: improve relevance quality for similar affiliate links.
+4. Catalog: improve metadata enrichment and dedup (same merchant/same destination variants).
+- Why: avoid repetitive cards and improve perceived diversity.
+5. Experimentation: run A/B on threshold and card layout.
+- Why: validate CTR and continuation-rate trade-offs with data.
+
+### 9.3 P2 (Scale)
+
+1. Model: migrate from prompt-only inference to hybrid learned intent model.
+- Why: reduce cost/latency variance and improve consistency.
+2. Ranking: move to multi-objective optimization (relevance + conversion + user satisfaction).
+- Why: avoid over-optimizing short-term clicks.
+3. Catalog: support near-real-time inventory freshness and policy revalidation.
+- Why: reduce stale links and compliance risk at scale.
+4. Platform: cross-session pacing/frequency strategy for Intent Card.
+- Why: protect user experience as traffic grows.
+
+## 10) Placement Spec Template (for Future Expansion)
 
 Use this template when expanding any single placement product:
 
@@ -337,13 +446,13 @@ Use this template when expanding any single placement product:
 14. `Fallback`
 15. `Open Questions`
 
-## 10) Candidate Extensions (Not in MVP Commit)
+## 11) Candidate Extensions (Not in MVP Commit)
 
 1. `next_step.post_completion_reengagement`
 2. `intervention.tool_selection_router`
 3. `takeover.cross_session_program`
 
-## 11) Implementation Specs Index
+## 12) Implementation Specs Index
 
 1. Attach Layer affiliate-link aggregator:
 `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/docs/attach-affiliate-aggregator-design.md`
