@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "validate:schemas": "echo 'Schema validation hooks will be added in phase 1 implementation.'",
-    "check:env": "node ./src/config/check-env.js",
+    "check:env": "node --env-file-if-exists=.env ./src/config/check-env.js",
     "smoke:ads": "node ./scripts/smoke-ads-runtime.js --mode=mock",
-    "smoke:ads:live": "node ./scripts/smoke-ads-runtime.js --mode=live"
+    "smoke:ads:live": "node --env-file-if-exists=.env ./scripts/smoke-ads-runtime.js --mode=live",
+    "dev:gateway": "node --env-file-if-exists=.env ./src/server/simulator-gateway.js",
+    "dev:gateway:watch": "node --env-file-if-exists=.env --watch ./src/server/simulator-gateway.js"
   }
 }
