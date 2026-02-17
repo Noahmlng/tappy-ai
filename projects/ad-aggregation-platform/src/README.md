@@ -32,6 +32,7 @@
 - `testAllOffers=true` 时走旁路：跳过匹配过滤与排序截断，仅保留 URL/ID/状态合法性校验。
 - 当前 `adResponse.placementId` 固定返回 `attach.post_answer_render`。
 - 当前 `ads[]` 输出顺序按网络分组：默认 `partnerstack -> cj -> 其他`。
+- 非 `testAllOffers` 模式下基础排序：相关性优先，其次可用性，再次新鲜度。
 - 最小可观测日志事件：`ads_pipeline_result`（字段：`requestId`、`entities`、`networkHits`、`adCount`、`errorCodes`）。
 
 7. `cache/`

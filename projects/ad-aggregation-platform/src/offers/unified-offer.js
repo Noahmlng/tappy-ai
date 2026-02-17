@@ -110,6 +110,24 @@ function normalizeNumber(value) {
   return null
 }
 
+function normalizeTimestamp(value) {
+  if (value === undefined || value === null) return ''
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const timestamp = value > 1e12 ? value : value * 1000
+    const date = new Date(timestamp)
+    if (!Number.isNaN(date.getTime())) return date.toISOString()
+    return ''
+  }
+
+  const text = cleanText(String(value))
+  if (!text) return ''
+  const timestamp = Date.parse(text)
+  if (!Number.isNaN(timestamp)) {
+    return new Date(timestamp).toISOString()
+  }
+  return ''
+}
+
 function defaultOfferId(network, sourceType, sourceId) {
   const safeNetwork = cleanText(network || 'unknown') || 'unknown'
   const safeSourceType = cleanText(sourceType || 'offer') || 'offer'
@@ -200,6 +218,9 @@ export function normalizeUnifiedOffer(input = {}) {
   const availability = cleanText(input.availability || input.status || 'active') || 'active'
   const qualityScore = normalizeNumber(input.qualityScore)
   const bidValue = normalizeNumber(input.bidValue)
+  const updatedAt = normalizeTimestamp(
+    input.updatedAt || input.updated_at || input.lastUpdated || input.last_updated || input.modifiedAt
+  )
 
   return {
     offerId,
@@ -223,6 +244,7 @@ export function normalizeUnifiedOffer(input = {}) {
     market,
     currency,
     availability,
+    updatedAt,
     qualityScore,
     bidValue,
     metadata: normalizeMetadata(input.metadata),

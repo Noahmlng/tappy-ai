@@ -205,6 +205,24 @@ function isOfferValidForTestAll(offer) {
   return true
 }
 
+function availabilityRank(availability) {
+  const value = cleanText(availability).toLowerCase()
+  if (!value) return 1
+  if (value === 'active') return 3
+  if (value === 'available') return 2
+  if (value === 'limited') return 1
+  if (INACTIVE_OFFER_STATUSES.has(value)) return 0
+  return 1
+}
+
+function freshnessRank(updatedAt) {
+  const text = cleanText(updatedAt)
+  if (!text) return 0
+  const timestamp = Date.parse(text)
+  if (Number.isNaN(timestamp)) return 0
+  return timestamp
+}
+
 function rankAndSelectOffers(offers, entities, requestContext, maxAds) {
   if (requestContext.testAllOffers) {
     const selected = []
@@ -224,15 +242,24 @@ function rankAndSelectOffers(offers, entities, requestContext, maxAds) {
   const scoreOffer = buildEntityMatcher(entities)
   const withScore = offers.map((offer) => {
     const { score, matchedEntityText } = scoreOffer(offer)
-    return { offer, score, matchedEntityText }
+    return {
+      offer,
+      score,
+      matchedEntityText,
+      availabilityScore: availabilityRank(offer.availability),
+      freshnessScore: freshnessRank(offer.updatedAt)
+    }
   })
 
-  const matchedOnly = withScore.filter((item) => item.score > 0)
-  const base = matchedOnly.length > 0 ? matchedOnly : withScore
-  base.sort((a, b) => b.score - a.score)
+  withScore.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score
+    if (b.availabilityScore !== a.availabilityScore) return b.availabilityScore - a.availabilityScore
+    if (b.freshnessScore !== a.freshnessScore) return b.freshnessScore - a.freshnessScore
+    return 0
+  })
 
   return {
-    selected: base.slice(0, maxAds),
+    selected: withScore.slice(0, maxAds),
     invalidForTestAll: 0
   }
 }

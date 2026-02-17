@@ -41,6 +41,7 @@ export function mapPartnerStackToUnifiedOffer(record, options = {}) {
     market: pickFirst(record?.market, record?.country),
     currency: pickFirst(record?.currency, record?.currency_code),
     availability: pickFirst(record?.status, 'active'),
+    updatedAt: pickFirst(record?.updated_at, record?.updatedAt, record?.modified_at, record?.created_at),
     bidValue: record?.bid_value,
     qualityScore: record?.quality_score,
     metadata: {
@@ -91,6 +92,13 @@ export function mapCjToUnifiedOffer(record, options = {}) {
     market: pickFirst(record?.market, record?.country, record?.['serviceable-area']),
     currency: pickFirst(record?.currency, record?.currencyCode, record?.['currency-code']),
     availability: pickFirst(record?.availability, record?.status, 'active'),
+    updatedAt: pickFirst(
+      record?.['last-updated'],
+      record?.updatedAt,
+      record?.updated_at,
+      record?.['effective-date'],
+      record?.['creation-date']
+    ),
     bidValue: record?.commission,
     qualityScore: record?.quality_score,
     metadata: {
