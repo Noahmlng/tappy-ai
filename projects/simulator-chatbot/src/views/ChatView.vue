@@ -69,6 +69,29 @@
 
       <div class="space-y-2 border-t border-gray-200 p-3">
         <div class="rounded-lg border border-gray-200 bg-white p-2">
+          <div class="flex items-center justify-between">
+            <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">System Prompt</div>
+            <button
+              class="rounded border border-gray-300 px-1.5 py-0.5 text-[10px] text-gray-600 hover:bg-gray-100 disabled:opacity-60"
+              :disabled="!activeSession"
+              @click="resetActiveSystemPrompt"
+            >
+              Reset
+            </button>
+          </div>
+          <textarea
+            v-model="activeSystemPrompt"
+            :disabled="!activeSession"
+            rows="5"
+            class="mt-2 w-full resize-y rounded border border-gray-300 bg-white px-2 py-1.5 text-[12px] text-gray-700 outline-none focus:border-gray-400 disabled:opacity-60"
+            placeholder="Set a per-chat system prompt..."
+          ></textarea>
+          <div class="mt-1 text-[10px] text-gray-500">
+            Applied to every request in the current chat. New Chat resets to default.
+          </div>
+        </div>
+
+        <div class="rounded-lg border border-gray-200 bg-white p-2">
           <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Turn Trace</div>
           <div v-if="activeSessionTurnLogs.length === 0" class="mt-2 text-[11px] text-gray-500">
             No turn logs yet.
@@ -395,6 +418,7 @@ const LEGACY_TURN_LOG_STORAGE_KEYS = ['chat_bot_turn_logs_v1']
 const MAX_SESSIONS = 50
 const MAX_TURN_LOGS = 400
 const TOOL_STATES = ['planning', 'running', 'done', 'error']
+const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant. Be accurate, concise, and explicit about uncertainty.'
 
 const input = ref('')
 const historyQuery = ref('')
@@ -420,6 +444,7 @@ function createSession(initialTitle = 'New Chat') {
   return {
     id: createId('session'),
     title: initialTitle,
+    systemPrompt: DEFAULT_SYSTEM_PROMPT,
     createdAt: now,
     updatedAt: now,
     messages: [],
@@ -534,6 +559,7 @@ function normalizeSession(raw) {
   return {
     id: typeof raw.id === 'string' && raw.id ? raw.id : createId('session'),
     title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim() : 'New Chat',
+    systemPrompt: typeof raw.systemPrompt === 'string' ? raw.systemPrompt : DEFAULT_SYSTEM_PROMPT,
     createdAt,
     updatedAt,
     messages,
@@ -682,6 +708,22 @@ const filteredSessions = computed(() => {
 const activeSession = computed(() => {
   return sessions.value.find((session) => session.id === activeSessionId.value) || null
 })
+const activeSystemPrompt = computed({
+  get() {
+    if (!activeSession.value) return DEFAULT_SYSTEM_PROMPT
+    return typeof activeSession.value.systemPrompt === 'string'
+      ? activeSession.value.systemPrompt
+      : DEFAULT_SYSTEM_PROMPT
+  },
+  set(nextValue) {
+    if (!activeSession.value) return
+    activeSession.value.systemPrompt = typeof nextValue === 'string'
+      ? nextValue
+      : DEFAULT_SYSTEM_PROMPT
+    touchActiveSession()
+    scheduleSaveSessions()
+  },
+})
 
 const currentMessages = computed(() => activeSession.value?.messages || [])
 
@@ -816,8 +858,20 @@ function getLatestRetryCountForPrompt(session, prompt) {
   return 0
 }
 
-function buildModelMessages(messages, webSearchContext) {
-  const modelMessages = messages
+function buildModelMessages(messages, webSearchContext, systemPrompt = '') {
+  const modelMessages = []
+
+  const normalizedSystemPrompt = typeof systemPrompt === 'string'
+    ? systemPrompt.trim()
+    : ''
+  if (normalizedSystemPrompt) {
+    modelMessages.push({
+      role: 'system',
+      content: normalizedSystemPrompt,
+    })
+  }
+
+  const chatMessages = messages
     .filter((msg) => {
       if (!msg || (msg.role !== 'user' && msg.role !== 'assistant')) return false
       if (msg.kind === 'tool') return false
@@ -827,6 +881,7 @@ function buildModelMessages(messages, webSearchContext) {
       role: msg.role,
       content: msg.content,
     }))
+  modelMessages.push(...chatMessages)
 
   if (webSearchContext) {
     modelMessages.push({
@@ -893,6 +948,13 @@ function formatSessionTime(timestamp) {
   }
 
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
+function resetActiveSystemPrompt() {
+  if (!activeSession.value) return
+  activeSession.value.systemPrompt = DEFAULT_SYSTEM_PROMPT
+  touchActiveSession()
+  scheduleSaveSessions()
 }
 
 function openSession(sessionId) {
@@ -1103,6 +1165,9 @@ async function handleSend(options = {}) {
 
   input.value = ''
   isLoading.value = true
+  const sessionSystemPrompt = typeof session.systemPrompt === 'string'
+    ? session.systemPrompt
+    : DEFAULT_SYSTEM_PROMPT
 
   const latestRetryCount = getLatestRetryCountForPrompt(session, userContent)
   const retryCount = Number.isFinite(options.forcedRetryCount)
@@ -1113,6 +1178,10 @@ async function handleSend(options = {}) {
 
   const turnTrace = createTurnTrace(session.id, userContent, retryCount)
   appendTurnTraceEvent(turnTrace, 'turn_started', { query: userContent })
+  appendTurnTraceEvent(turnTrace, 'system_prompt_applied', {
+    isSet: Boolean(sessionSystemPrompt.trim()),
+    length: sessionSystemPrompt.trim().length,
+  })
   if (options.retrySource === 'query_rewrite') {
     appendTurnTraceEvent(turnTrace, 'query_rewrite_applied', {
       sourceMessageId: typeof options.sourceMessageId === 'string' ? options.sourceMessageId : '',
@@ -1258,7 +1327,7 @@ async function handleSend(options = {}) {
   appendTurnTraceEvent(turnTrace, 'assistant_generation_started')
   upsertTurnTrace(turnTrace)
 
-  const modelMessages = buildModelMessages(session.messages, webSearchContext)
+  const modelMessages = buildModelMessages(session.messages, webSearchContext, sessionSystemPrompt)
 
   await sendMessageStream(
     modelMessages,

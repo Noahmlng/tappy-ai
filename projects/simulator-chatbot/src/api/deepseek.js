@@ -4,7 +4,13 @@ const DEEPSEEK_API_KEY = import.meta.env.VITE_DEEPSEEK_API_KEY || ''
 
 function toDeepSeekMessages(messages = []) {
   return messages
-    .filter((msg) => msg && (msg.role === 'user' || msg.role === 'assistant') && msg.content)
+    .filter((msg) => {
+      return (
+        msg &&
+        (msg.role === 'system' || msg.role === 'user' || msg.role === 'assistant') &&
+        msg.content
+      )
+    })
     .map((msg) => ({ role: msg.role, content: msg.content }))
 }
 

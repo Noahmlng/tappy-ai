@@ -13,6 +13,7 @@
 - Regenerate / Retry（可对同一问题重试）
 - Query Rewrite（编辑历史用户消息后，从该节点重写 query 并重跑链路）
 - Turn Trace（可回看每轮的工具调用与关键事件）
+- 前端可编辑 System Prompt（按会话生效，新建 Chat 自动重置默认值）
 
 ## 运行
 
@@ -34,3 +35,4 @@ npm run dev
 - Assistant 回复下方会显示 Sources 区块（自然来源）。
 - Assistant 回复完成后会展示可点击追问项。
 - Sidebar 内置 Turn Trace 面板，可按轮查看链路事件。
+- Sidebar 内置 System Prompt 面板，可实时编辑当前会话提示词。
