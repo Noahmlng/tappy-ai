@@ -38,6 +38,41 @@ const ATTACH_MVP_PLACEMENT_KEY = 'attach.post_answer_render'
 const ATTACH_MVP_EVENT = 'answer_completed'
 const NEXT_STEP_INTENT_CARD_PLACEMENT_KEY = 'next_step.intent_card'
 const NEXT_STEP_INTENT_CARD_EVENTS = new Set(['followup_generation', 'follow_up_generation'])
+const NEXT_STEP_INTENT_POST_RULES = Object.freeze({
+  intentThresholdFloor: 0.35,
+  cooldownSeconds: 20,
+  maxPerSession: 2,
+  maxPerUserPerDay: 5,
+})
+const NEXT_STEP_SENSITIVE_TOPICS = [
+  'medical',
+  'medicine',
+  'health diagnosis',
+  'finance',
+  'financial advice',
+  'investment',
+  'legal',
+  'lawsuit',
+  'self-harm',
+  'suicide',
+  'minor',
+  'underage',
+  'adult',
+  'gambling',
+  'drug',
+  'diagnosis',
+  '处方',
+  '医疗',
+  '投资',
+  '理财',
+  '法律',
+  '未成年',
+  '自残',
+  '自杀',
+  '赌博',
+  '毒品',
+  '成人',
+]
 const ATTACH_MVP_ALLOWED_FIELDS = new Set([
   'appId',
   'sessionId',
@@ -105,6 +140,15 @@ function normalizeStringList(value) {
         .filter(Boolean),
     ),
   )
+}
+
+function mergeNormalizedStringLists(...values) {
+  const merged = []
+  for (const value of values) {
+    if (!Array.isArray(value)) continue
+    merged.push(...value)
+  }
+  return normalizeStringList(merged)
 }
 
 function normalizeDisclosure(value) {
@@ -998,6 +1042,42 @@ function matchBlockedTopic(context, blockedTopics) {
   return ''
 }
 
+function resolveIntentPostRulePolicy(request, placement) {
+  const context = request?.context && typeof request.context === 'object' ? request.context : {}
+  const placementBlockedTopics = normalizeStringList(placement?.trigger?.blockedTopics)
+  const requestBlockedTopics = normalizeStringList(context?.blockedTopics)
+
+  const isNextStepIntentCard = String(placement?.placementKey || '').trim() === NEXT_STEP_INTENT_CARD_PLACEMENT_KEY
+  if (!isNextStepIntentCard) {
+    return {
+      intentThreshold: clampNumber(placement?.trigger?.intentThreshold, 0, 1, 0.6),
+      cooldownSeconds: toPositiveInteger(placement?.trigger?.cooldownSeconds, 0),
+      maxPerSession: toPositiveInteger(placement?.frequencyCap?.maxPerSession, 0),
+      maxPerUserPerDay: toPositiveInteger(placement?.frequencyCap?.maxPerUserPerDay, 0),
+      blockedTopics: mergeNormalizedStringLists(placementBlockedTopics, requestBlockedTopics),
+    }
+  }
+
+  const placementIntentThreshold = clampNumber(placement?.trigger?.intentThreshold, 0, 1, 0)
+  const placementCooldownSeconds = toPositiveInteger(placement?.trigger?.cooldownSeconds, 0)
+  const placementMaxPerSession = toPositiveInteger(placement?.frequencyCap?.maxPerSession, 0)
+  const placementMaxPerUserPerDay = toPositiveInteger(placement?.frequencyCap?.maxPerUserPerDay, 0)
+
+  return {
+    intentThreshold: Math.max(placementIntentThreshold, NEXT_STEP_INTENT_POST_RULES.intentThresholdFloor),
+    cooldownSeconds: Math.max(placementCooldownSeconds, NEXT_STEP_INTENT_POST_RULES.cooldownSeconds),
+    maxPerSession: placementMaxPerSession > 0 ? placementMaxPerSession : NEXT_STEP_INTENT_POST_RULES.maxPerSession,
+    maxPerUserPerDay: placementMaxPerUserPerDay > 0
+      ? placementMaxPerUserPerDay
+      : NEXT_STEP_INTENT_POST_RULES.maxPerUserPerDay,
+    blockedTopics: mergeNormalizedStringLists(
+      placementBlockedTopics,
+      requestBlockedTopics,
+      NEXT_STEP_SENSITIVE_TOPICS,
+    ),
+  }
+}
+
 function buildRuntimeAdRequest(request, placement, intentScore) {
   const context = request?.context && typeof request.context === 'object' ? request.context : {}
   return {
@@ -1074,6 +1154,9 @@ function clipText(value, maxLength = 800) {
 
 function buildDecisionInputSnapshot(request, placement, intentScore) {
   const context = request?.context && typeof request.context === 'object' ? request.context : {}
+  const postRulePolicy = context?.postRulePolicy && typeof context.postRulePolicy === 'object'
+    ? context.postRulePolicy
+    : null
   return {
     appId: String(request?.appId || '').trim(),
     sessionId: String(request?.sessionId || '').trim(),
@@ -1086,6 +1169,17 @@ function buildDecisionInputSnapshot(request, placement, intentScore) {
     locale: String(context.locale || '').trim(),
     intentClass: String(context.intentClass || '').trim(),
     intentScore: Number.isFinite(intentScore) ? intentScore : 0,
+    ...(postRulePolicy
+      ? {
+          postRules: {
+            intentThreshold: Number(postRulePolicy.intentThreshold) || 0,
+            cooldownSeconds: toPositiveInteger(postRulePolicy.cooldownSeconds, 0),
+            maxPerSession: toPositiveInteger(postRulePolicy.maxPerSession, 0),
+            maxPerUserPerDay: toPositiveInteger(postRulePolicy.maxPerUserPerDay, 0),
+            blockedTopicCount: Array.isArray(postRulePolicy.blockedTopics) ? postRulePolicy.blockedTopics.length : 0,
+          },
+        }
+      : {}),
   }
 }
 
@@ -1172,7 +1266,9 @@ async function evaluateRequest(payload) {
     }
   }
 
-  const blockedTopic = matchBlockedTopic(context, placement.trigger.blockedTopics || [])
+  const postRulePolicy = resolveIntentPostRulePolicy(request, placement)
+  context.postRulePolicy = postRulePolicy
+  const blockedTopic = matchBlockedTopic(context, postRulePolicy.blockedTopics)
   if (blockedTopic) {
     const decision = createDecision('blocked', `blocked_topic:${blockedTopic}`, intentScore)
     recordBlockedOrNoFill(placement)
@@ -1192,7 +1288,7 @@ async function evaluateRequest(payload) {
     }
   }
 
-  if (intentScore < placement.trigger.intentThreshold) {
+  if (intentScore < postRulePolicy.intentThreshold) {
     const decision = createDecision('blocked', 'intent_below_threshold', intentScore)
     recordBlockedOrNoFill(placement)
     recordDecisionForRequest({
@@ -1233,10 +1329,10 @@ async function evaluateRequest(payload) {
   const sessionId = String(request.sessionId || '').trim()
   const userId = String(request.userId || '').trim()
 
-  if (placement.trigger.cooldownSeconds > 0 && sessionId) {
+  if (postRulePolicy.cooldownSeconds > 0 && sessionId) {
     const cooldownKey = getSessionPlacementKey(sessionId, placement.placementId)
     const lastTs = runtimeMemory.cooldownBySessionPlacement.get(cooldownKey) || 0
-    const withinCooldown = Date.now() - lastTs < placement.trigger.cooldownSeconds * 1000
+    const withinCooldown = Date.now() - lastTs < postRulePolicy.cooldownSeconds * 1000
     if (withinCooldown) {
       const decision = createDecision('blocked', 'cooldown', intentScore)
       recordBlockedOrNoFill(placement)
@@ -1257,10 +1353,10 @@ async function evaluateRequest(payload) {
     }
   }
 
-  if (placement.frequencyCap.maxPerSession > 0 && sessionId) {
+  if (postRulePolicy.maxPerSession > 0 && sessionId) {
     const sessionCapKey = getSessionPlacementKey(sessionId, placement.placementId)
     const count = runtimeMemory.perSessionPlacementCount.get(sessionCapKey) || 0
-    if (count >= placement.frequencyCap.maxPerSession) {
+    if (count >= postRulePolicy.maxPerSession) {
       const decision = createDecision('blocked', 'frequency_cap_session', intentScore)
       recordBlockedOrNoFill(placement)
       recordDecisionForRequest({
@@ -1280,10 +1376,10 @@ async function evaluateRequest(payload) {
     }
   }
 
-  if (placement.frequencyCap.maxPerUserPerDay > 0 && userId) {
+  if (postRulePolicy.maxPerUserPerDay > 0 && userId) {
     const userCapKey = getUserPlacementDayKey(userId, placement.placementId)
     const count = runtimeMemory.perUserPlacementDayCount.get(userCapKey) || 0
-    if (count >= placement.frequencyCap.maxPerUserPerDay) {
+    if (count >= postRulePolicy.maxPerUserPerDay) {
       const decision = createDecision('blocked', 'frequency_cap_user_day', intentScore)
       recordBlockedOrNoFill(placement)
       recordDecisionForRequest({
