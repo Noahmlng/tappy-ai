@@ -114,9 +114,10 @@ function normalizeAdRequest(adRequest) {
   }
 }
 
-function buildSearchKeywords(request, entities = []) {
+function buildSearchKeywords(request, entities = [], options = {}) {
+  const includeQuery = options.includeQuery === true
   const terms = [
-    request.context.query,
+    ...(includeQuery ? [request.context.query] : []),
     ...entities.map((entity) => entity.normalizedText),
     ...entities.map((entity) => entity.entityText)
   ]
@@ -275,9 +276,13 @@ function rankAndSelectOffers(offers, entities, requestContext, maxAds) {
     return 0
   })
 
+  const matched = withScore.filter((item) => item.score > 0)
+
   return {
-    selected: withScore.slice(0, maxAds),
-    invalidForTestAll: 0
+    selected: matched.slice(0, maxAds),
+    invalidForTestAll: 0,
+    matchedCandidates: matched.length,
+    unmatchedOffers: Math.max(0, withScore.length - matched.length)
   }
 }
 
@@ -293,7 +298,7 @@ function resolveErrorCode(error) {
   return 'UNKNOWN'
 }
 
-function buildQueryCacheKey(request, maxAds) {
+function buildQueryCacheKey(request, maxAds, entitySignature = '') {
   const debug = request.context.debug || {}
   const payload = {
     v: QUERY_CACHE_VERSION,
@@ -303,6 +308,7 @@ function buildQueryCacheKey(request, maxAds) {
     answerText: request.context.answerText,
     locale: request.context.locale,
     testAllOffers: request.context.testAllOffers,
+    entitySignature,
     maxAds,
     debug: {
       partnerstackLimit: debug.partnerstackLimit,
@@ -484,48 +490,6 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
       10000
     )
   })
-  const queryCacheKey = buildQueryCacheKey(request, maxAds)
-
-  if (queryCacheEnabled) {
-    const cached = queryCache.get(queryCacheKey)
-    if (cached) {
-      const adResponse = {
-        requestId,
-        placementId: DEFAULT_PLACEMENT_ID,
-        ads: deepClone(cached.ads)
-      }
-      const debug = deepClone(cached.debug)
-      debug.cache = {
-        queryCacheHit: true,
-        queryCacheTtlMs,
-        snapshotCacheEnabled,
-        degradationEnabled,
-        healthPolicy
-      }
-      debug.networkHealth = getAllNetworkHealth()
-
-      const entitySummaries = Array.isArray(debug.entities)
-        ? debug.entities.map((entity) => ({
-            entityText: entity.entityText,
-            entityType: entity.entityType,
-            confidence: entity.confidence
-          }))
-        : []
-      safeLog(logger, 'info', {
-        event: 'ads_pipeline_result',
-        requestId,
-        placementId: DEFAULT_PLACEMENT_ID,
-        entities: entitySummaries,
-        networkHits: debug.networkHits || { partnerstack: 0, cj: 0 },
-        adCount: adResponse.ads.length,
-        errorCodes: (debug.networkErrors || []).map((item) => item.errorCode),
-        queryCacheHit: true
-      })
-
-      return { adResponse, debug }
-    }
-  }
-
   const partnerstackConnector =
     options.partnerstackConnector || createPartnerStackConnector({ runtimeConfig })
   const cjConnector = options.cjConnector || createCjConnector({ runtimeConfig })
@@ -574,7 +538,109 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     }
   }
 
-  const keywords = buildSearchKeywords(request, entities)
+  const strictEntityMode = !request.context.testAllOffers
+  const keywords = buildSearchKeywords(request, entities, {
+    includeQuery: !strictEntityMode
+  })
+  const entitySignature = entities
+    .map((entity) => `${cleanText(entity.entityType).toLowerCase()}:${cleanText(entity.normalizedText).toLowerCase()}`)
+    .filter(Boolean)
+    .sort()
+    .join('|')
+
+  if (strictEntityMode && entities.length === 0) {
+    const debug = {
+      entities,
+      ner: nerInfo,
+      keywords,
+      noFillReason: 'ner_no_entities',
+      totalOffers: 0,
+      selectedOffers: 0,
+      invalidOffersDroppedByTestAllValidation: 0,
+      networkOrder: DEFAULT_NETWORK_ORDER,
+      networkHits: { partnerstack: 0, cj: 0 },
+      networkErrors: [],
+      snapshotUsage: {},
+      snapshotCacheStatus: {
+        partnerstack: 'skipped',
+        cj: 'skipped'
+      },
+      networkHealth: getAllNetworkHealth(),
+      cache: {
+        queryCacheHit: false,
+        queryCacheEnabled,
+        queryCacheTtlMs,
+        snapshotCacheEnabled,
+        snapshotCacheTtlMs,
+        degradationEnabled,
+        healthPolicy
+      },
+      testAllOffers: request.context.testAllOffers
+    }
+
+    safeLog(logger, 'info', {
+      event: 'ads_pipeline_result',
+      requestId,
+      placementId: DEFAULT_PLACEMENT_ID,
+      entities: [],
+      networkHits: { partnerstack: 0, cj: 0 },
+      adCount: 0,
+      errorCodes: [],
+      queryCacheHit: false
+    })
+
+    return {
+      adResponse: {
+        requestId,
+        placementId: DEFAULT_PLACEMENT_ID,
+        ads: []
+      },
+      debug
+    }
+  }
+
+  const queryCacheKey = buildQueryCacheKey(request, maxAds, entitySignature)
+
+  if (queryCacheEnabled) {
+    const cached = queryCache.get(queryCacheKey)
+    if (cached) {
+      const adResponse = {
+        requestId,
+        placementId: DEFAULT_PLACEMENT_ID,
+        ads: deepClone(cached.ads)
+      }
+      const debug = deepClone(cached.debug)
+      debug.cache = {
+        queryCacheHit: true,
+        queryCacheTtlMs,
+        snapshotCacheEnabled,
+        degradationEnabled,
+        healthPolicy
+      }
+      debug.networkHealth = getAllNetworkHealth()
+
+      const entitySummaries = Array.isArray(debug.entities)
+        ? debug.entities.map((entity) => ({
+            entityText: entity.entityText,
+            entityType: entity.entityType,
+            confidence: entity.confidence
+          }))
+        : []
+      safeLog(logger, 'info', {
+        event: 'ads_pipeline_result',
+        requestId,
+        placementId: DEFAULT_PLACEMENT_ID,
+        entities: entitySummaries,
+        networkHits: debug.networkHits || { partnerstack: 0, cj: 0 },
+        adCount: adResponse.ads.length,
+        errorCodes: (debug.networkErrors || []).map((item) => item.errorCode),
+        queryCacheHit: true
+      })
+
+      return { adResponse, debug }
+    }
+  }
+
   const partnerstackQueryParams = {
     search: keywords,
     limit: request.context.debug.partnerstackLimit,
@@ -643,14 +709,17 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
   }
 
   const offers = normalizeUnifiedOffers(rawOffers)
-  const { selected, invalidForTestAll } = rankAndSelectOffers(offers, entities, request.context, maxAds)
+  const {
+    selected,
+    invalidForTestAll,
+    matchedCandidates = 0,
+    unmatchedOffers = 0
+  } = rankAndSelectOffers(offers, entities, request.context, maxAds)
   const ads = selected.map((item) =>
     toAdRecord(item.offer, {
       reason: request.context.testAllOffers
         ? 'test_all_offers'
-        : item.score > 0
-          ? 'entity_match'
-          : 'network_offer',
+        : 'entity_match',
       entityText: item.matchedEntityText
     })
   )
@@ -678,8 +747,11 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     entities,
     ner: nerInfo,
     keywords,
+    entitySignature,
     totalOffers: offers.length,
     selectedOffers: orderedAds.length,
+    matchedCandidates,
+    unmatchedOffers,
     invalidOffersDroppedByTestAllValidation: invalidForTestAll,
     networkOrder: DEFAULT_NETWORK_ORDER,
     networkHits,
