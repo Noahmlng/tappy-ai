@@ -24,3 +24,7 @@
 - UnifiedOffer 归一化层（跨网络统一内部结构）。
 - 能力：`normalizeUnifiedOffer`、`normalizeUnifiedOffers`、`mapPartnerStackToUnifiedOffer`、`mapCjToUnifiedOffer`。
 - 两个 connector 的 `fetchOffers` 已统一走该层输出。
+
+6. `runtime/`
+- Runtime 检索链路（`query/answerText -> LLM-NER -> 多网络检索 -> 合并 -> ads[]`）。
+- 入口：`runtime/index.js` -> `runAdsRetrievalPipeline(adRequest, options)`。
