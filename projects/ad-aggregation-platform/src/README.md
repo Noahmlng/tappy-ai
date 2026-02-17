@@ -19,3 +19,8 @@
 - CJ API connector（Bearer 认证）。
 - 能力：`listOffers`、`listProducts`、`listLinks`、`fetchOffers`。
 - 内置：多 endpoint fallback、基础超时控制、429/5xx 重试、products/links/offers 合并去重。
+
+5. `offers/`
+- UnifiedOffer 归一化层（跨网络统一内部结构）。
+- 能力：`normalizeUnifiedOffer`、`normalizeUnifiedOffers`、`mapPartnerStackToUnifiedOffer`、`mapCjToUnifiedOffer`。
+- 两个 connector 的 `fetchOffers` 已统一走该层输出。

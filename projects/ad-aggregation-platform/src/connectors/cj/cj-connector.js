@@ -1,4 +1,5 @@
 import { loadRuntimeConfig } from '../../config/runtime-config.js'
+import { mapCjToUnifiedOffer, normalizeUnifiedOffers } from '../../offers/index.js'
 
 const DEFAULT_PRODUCT_BASE_URL = 'https://product-search.api.cj.com/v2'
 const DEFAULT_LINK_BASE_URL = 'https://link-search.api.cj.com/v2'
@@ -157,89 +158,6 @@ class CjApiError extends Error {
     this.payload = options.payload
     this.path = options.path
     this.baseUrl = options.baseUrl
-  }
-}
-
-function createId(prefix, id) {
-  if (id) return `${prefix}:${id}`
-  return `${prefix}:${Date.now()}_${Math.random().toString(16).slice(2)}`
-}
-
-function mapProductToOffer(product) {
-  const id = pickFirst(
-    product?.id,
-    product?.['product-id'],
-    product?.productId,
-    product?.sku,
-    product?.upc
-  )
-  const title = pickFirst(product?.name, product?.title, product?.['product-name'], 'CJ Product')
-  const description = pickFirst(product?.description, product?.['description-short'], '')
-  const targetUrl = pickFirst(
-    product?.url,
-    product?.['buy-url'],
-    product?.buyUrl,
-    product?.['product-url'],
-    product?.link
-  )
-  const trackingUrl = pickFirst(product?.['tracking-url'], product?.trackingUrl, product?.link, targetUrl)
-  const entityText = pickFirst(product?.brand, product?.['advertiser-name'], product?.advertiserName, title)
-
-  return {
-    offerId: createId('cj_product', id),
-    sourceNetwork: 'cj',
-    sourceType: 'product',
-    title,
-    description,
-    targetUrl,
-    trackingUrl,
-    entityText,
-    entityType: 'product',
-    raw: product
-  }
-}
-
-function mapLinkToOffer(link) {
-  const id = pickFirst(link?.id, link?.['link-id'], link?.linkId, link?.pid)
-  const title = pickFirst(link?.name, link?.title, link?.['link-name'], 'CJ Link')
-  const description = pickFirst(link?.description, link?.['link-description'], '')
-  const targetUrl = pickFirst(link?.url, link?.destination, link?.destinationUrl, link?.click, link?.['click-url'])
-  const trackingUrl = pickFirst(link?.['click-url'], link?.clickUrl, link?.click, targetUrl)
-  const entityText = pickFirst(link?.advertiser, link?.['advertiser-name'], link?.brand, title)
-
-  return {
-    offerId: createId('cj_link', id),
-    sourceNetwork: 'cj',
-    sourceType: 'link',
-    title,
-    description,
-    targetUrl,
-    trackingUrl,
-    entityText,
-    entityType: 'service',
-    raw: link
-  }
-}
-
-function mapOfferToOffer(offer) {
-  const id = pickFirst(offer?.id, offer?.['offer-id'], offer?.offerId)
-  const title = pickFirst(offer?.name, offer?.title, 'CJ Offer')
-  const description = pickFirst(offer?.description, '')
-  const targetUrl = pickFirst(offer?.url, offer?.destinationUrl, offer?.['destination-url'])
-  const trackingUrl = pickFirst(offer?.trackingUrl, offer?.['tracking-url'], targetUrl)
-  const entityText = pickFirst(offer?.advertiser, offer?.['advertiser-name'], offer?.brand, title)
-
-  return {
-    offerId: createId('cj_offer', id),
-    sourceNetwork: 'cj',
-    sourceType: 'offer',
-    title,
-    description,
-    targetUrl,
-    trackingUrl,
-    entityText,
-    entityType: 'service',
-    raw: offer
   }
 }
 
@@ -470,7 +388,11 @@ export function createCjConnector(options = {}) {
       errors.push({ source: 'offers', message: offersResult.error.message })
     } else {
       for (const offer of offersResult.offers) {
-        all.push(mapOfferToOffer(offer))
+        all.push(
+          mapCjToUnifiedOffer(offer, {
+            sourceType: 'offer'
+          })
+        )
       }
     }
 
@@ -478,7 +400,11 @@ export function createCjConnector(options = {}) {
       errors.push({ source: 'products', message: productsResult.error.message })
     } else {
       for (const product of productsResult.products) {
-        all.push(mapProductToOffer(product))
+        all.push(
+          mapCjToUnifiedOffer(product, {
+            sourceType: 'product'
+          })
+        )
       }
     }
 
@@ -486,18 +412,15 @@ export function createCjConnector(options = {}) {
       errors.push({ source: 'links', message: linksResult.error.message })
     } else {
       for (const link of linksResult.links) {
-        all.push(mapLinkToOffer(link))
+        all.push(
+          mapCjToUnifiedOffer(link, {
+            sourceType: 'link'
+          })
+        )
       }
     }
 
-    const dedupe = new Set()
-    const offers = []
-    for (const item of all) {
-      const key = `${item.sourceType}::${item.targetUrl || item.trackingUrl || item.offerId}`
-      if (dedupe.has(key)) continue
-      dedupe.add(key)
-      offers.push(item)
-    }
+    const offers = normalizeUnifiedOffers(all)
 
     return {
       offers,

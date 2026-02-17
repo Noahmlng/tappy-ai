@@ -1,4 +1,5 @@
 import { loadRuntimeConfig } from '../../config/runtime-config.js'
+import { mapPartnerStackToUnifiedOffer, normalizeUnifiedOffers } from '../../offers/index.js'
 
 const DEFAULT_BASE_URL = 'https://api.partnerstack.com/api/v2'
 const DEFAULT_MAX_RETRIES = 3
@@ -61,49 +62,12 @@ function pickFirst(...values) {
   return ''
 }
 
-function resolveLinkId(link) {
-  return pickFirst(
-    String(link?.id ?? ''),
-    String(link?.key ?? ''),
-    String(link?.identifier ?? ''),
-    String(link?.uuid ?? '')
-  )
-}
-
 function resolvePartnershipIdentifier(partnership) {
   return pickFirst(
     String(partnership?.identifier ?? ''),
     String(partnership?.key ?? ''),
     String(partnership?.id ?? '')
   )
-}
-
-function mapLinkToOffer(link, partnershipIdentifier = '') {
-  const linkId = resolveLinkId(link) || `${Date.now()}_${Math.random().toString(16).slice(2)}`
-  const title = pickFirst(link?.name, link?.title, link?.campaign_name, link?.program_name, 'PartnerStack Offer')
-  const description = pickFirst(link?.description, link?.campaign_description, '')
-  const targetUrl = pickFirst(
-    link?.destination_url,
-    link?.destinationUrl,
-    link?.target_url,
-    link?.targetUrl,
-    link?.url
-  )
-  const trackingUrl = pickFirst(link?.tracking_url, link?.trackingUrl, link?.url, targetUrl)
-  const entityText = pickFirst(link?.merchant_name, link?.program_name, title)
-
-  return {
-    offerId: `partnerstack:${linkId}`,
-    sourceNetwork: 'partnerstack',
-    partnershipIdentifier,
-    title,
-    description,
-    targetUrl,
-    trackingUrl,
-    entityText,
-    entityType: 'service',
-    raw: link
-  }
 }
 
 class PartnerStackApiError extends Error {
@@ -293,27 +257,13 @@ export function createPartnerStackConnector(options = {}) {
   async function fetchOffers(params = {}) {
     const offersResult = await listOffers(params)
     if (offersResult.offers.length > 0) {
-      const mapped = offersResult.offers.map((offer) => {
-        const id = pickFirst(String(offer?.id ?? ''), String(offer?.key ?? ''), String(offer?.uuid ?? ''))
-        const title = pickFirst(offer?.name, offer?.title, 'PartnerStack Offer')
-        const description = pickFirst(offer?.description, '')
-        const targetUrl = pickFirst(offer?.url, offer?.target_url, offer?.targetUrl)
-        const trackingUrl = pickFirst(offer?.tracking_url, offer?.trackingUrl, targetUrl)
-        const entityText = pickFirst(offer?.merchant_name, offer?.program_name, title)
-
-        return {
-          offerId: `partnerstack:${id || `${Date.now()}_${Math.random().toString(16).slice(2)}`}`,
-          sourceNetwork: 'partnerstack',
-          partnershipIdentifier: pickFirst(offer?.partnership_identifier, offer?.partnership_key),
-          title,
-          description,
-          targetUrl,
-          trackingUrl,
-          entityText,
-          entityType: 'service',
-          raw: offer
-        }
-      })
+      const mapped = normalizeUnifiedOffers(
+        offersResult.offers.map((offer) =>
+          mapPartnerStackToUnifiedOffer(offer, {
+            sourceType: 'offer'
+          })
+        )
+      )
 
       return { offers: mapped, debug: { mode: 'offers_endpoint', sourcePath: offersResult.sourcePath } }
     }
@@ -330,7 +280,12 @@ export function createPartnerStackConnector(options = {}) {
       try {
         const linksResult = await listLinksByPartnership(partnershipIdentifier, { limit: params.limitLinksPerPartnership })
         for (const link of linksResult.links) {
-          allOffers.push(mapLinkToOffer(link, partnershipIdentifier))
+          allOffers.push(
+            mapPartnerStackToUnifiedOffer(link, {
+              sourceType: 'link',
+              partnershipIdentifier
+            })
+          )
         }
       } catch (error) {
         linkErrors.push({
@@ -341,7 +296,7 @@ export function createPartnerStackConnector(options = {}) {
     }
 
     return {
-      offers: allOffers,
+      offers: normalizeUnifiedOffers(allOffers),
       debug: {
         mode: 'links_fallback',
         partnerships: partnershipIdentifiers.length,
