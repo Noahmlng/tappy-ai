@@ -1,8 +1,9 @@
 import { loadRuntimeConfig } from '../config/runtime-config.js'
-import { NER_ENTITY_TYPES, NER_RESPONSE_SCHEMA, NER_RESPONSE_SCHEMA_NAME } from './entity-schema.js'
+import { NER_ENTITY_TYPES } from './entity-schema.js'
 import { buildNerUserPrompt, NER_SYSTEM_PROMPT } from './prompt.js'
 
-const DEFAULT_OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
+const DEFAULT_GLM_CHAT_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
+const DEFAULT_TIMEOUT_MS = 20000
 
 function normalizeText(value) {
   return value.trim().replace(/\s+/g, ' ')
@@ -35,14 +36,24 @@ function parseMaybeJson(value) {
 
 function normalizeEntity(rawEntity) {
   if (!rawEntity || typeof rawEntity !== 'object') return null
-  if (typeof rawEntity.entityText !== 'string') return null
-  if (typeof rawEntity.entityType !== 'string') return null
-  if (typeof rawEntity.normalizedText !== 'string') return null
-  if (typeof rawEntity.confidence !== 'number' || !Number.isFinite(rawEntity.confidence)) return null
+  const rawEntityText = typeof rawEntity.entityText === 'string'
+    ? rawEntity.entityText
+    : (typeof rawEntity.text === 'string' ? rawEntity.text : '')
+  const rawEntityType = typeof rawEntity.entityType === 'string'
+    ? rawEntity.entityType
+    : (typeof rawEntity.type === 'string' ? rawEntity.type : '')
+  const rawNormalizedText = typeof rawEntity.normalizedText === 'string'
+    ? rawEntity.normalizedText
+    : (typeof rawEntity.normalized === 'string' ? rawEntity.normalized : rawEntityText)
+  const confidenceValue = typeof rawEntity.confidence === 'number'
+    ? rawEntity.confidence
+    : Number(rawEntity.confidence)
 
-  const entityText = normalizeText(rawEntity.entityText)
-  const normalizedText = normalizeText(rawEntity.normalizedText)
-  const entityType = rawEntity.entityType.trim().toLowerCase()
+  if (!Number.isFinite(confidenceValue)) return null
+
+  const entityText = normalizeText(rawEntityText)
+  const normalizedText = normalizeText(rawNormalizedText)
+  const entityType = rawEntityType.trim().toLowerCase()
 
   if (!entityText || !normalizedText) return null
   if (!NER_ENTITY_TYPES.includes(entityType)) return null
@@ -50,7 +61,7 @@ function normalizeEntity(rawEntity) {
   return {
     entityText,
     entityType,
-    confidence: clamp01(rawEntity.confidence),
+    confidence: clamp01(confidenceValue),
     normalizedText
   }
 }
@@ -80,7 +91,7 @@ async function readResponseJson(response) {
   const text = await response.text()
   const data = parseMaybeJson(text)
   if (!data) {
-    throw new Error(`[ner] Failed to parse OpenRouter response body: ${text.slice(0, 300)}`)
+    throw new Error(`[ner] Failed to parse LLM response body: ${text.slice(0, 300)}`)
   }
   return data
 }
@@ -91,10 +102,10 @@ export async function extractEntitiesWithLlm(input, options = {}) {
     answerText = '',
     locale = 'en-US',
     maxEntities = 8,
-    timeoutMs = 8000
+    timeoutMs = DEFAULT_TIMEOUT_MS
   } = input || {}
   const runtimeConfig = options.runtimeConfig || loadRuntimeConfig()
-  const endpoint = options.endpoint || DEFAULT_OPENROUTER_URL
+  const endpoint = options.endpoint || DEFAULT_GLM_CHAT_URL
   const requestId = options.requestId || `ner_${Date.now()}`
   const apiKey = typeof runtimeConfig?.openrouter?.apiKey === 'string'
     ? runtimeConfig.openrouter.apiKey.trim()
@@ -119,12 +130,12 @@ export async function extractEntitiesWithLlm(input, options = {}) {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'X-Title': 'ad-aggregation-platform-ner'
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         model,
         temperature: 0,
+        thinking: { type: 'disabled' },
         messages: [
           { role: 'system', content: NER_SYSTEM_PROMPT },
           {
@@ -132,26 +143,19 @@ export async function extractEntitiesWithLlm(input, options = {}) {
             content: buildNerUserPrompt({ query, answerText, locale, maxEntities })
           }
         ],
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: NER_RESPONSE_SCHEMA_NAME,
-            strict: true,
-            schema: NER_RESPONSE_SCHEMA
-          }
-        }
+        response_format: { type: 'json_object' }
       }),
       signal: controller.signal
     })
 
     const payload = await readResponseJson(response)
     if (!response.ok) {
-      const message = payload?.error?.message || response.statusText || 'OpenRouter request failed'
-      throw new Error(`[ner] OpenRouter error (${response.status}): ${message}`)
+      const message = payload?.error?.message || payload?.message || response.statusText || 'GLM request failed'
+      throw new Error(`[ner] GLM error (${response.status}): ${message}`)
     }
 
     const content = payload?.choices?.[0]?.message?.content
-    const parsed = typeof content === 'string' ? parseMaybeJson(content) : content
+    const parsed = typeof content === 'string' ? parseMaybeJson(content) : (content && typeof content === 'object' ? content : null)
     const result = normalizeNerResponse(parsed)
 
     return {
