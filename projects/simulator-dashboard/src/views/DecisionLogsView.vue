@@ -38,15 +38,35 @@ function getDisplayReason(row) {
   return getReasonDetail(row) || row?.reason || '-'
 }
 
-function getInlineReason(row) {
-  if (row?.result === 'no_fill' || row?.result === 'blocked' || row?.result === 'error') {
-    return getDisplayReason(row)
-  }
-  return ''
-}
-
 function formatIntentScore(value) {
   return Number.isFinite(value) ? value.toFixed(2) : '-'
+}
+
+function clipText(value, maxLength = 140) {
+  const text = typeof value === 'string' ? value.trim() : ''
+  if (!text) return '-'
+  if (text.length <= maxLength) return text
+  return `${text.slice(0, maxLength)}...`
+}
+
+function getInputQuery(row) {
+  return clipText(row?.input?.query, 120)
+}
+
+function getInputAnswer(row) {
+  return clipText(row?.input?.answerText, 180)
+}
+
+function getEntityItems(row) {
+  return Array.isArray(row?.runtime?.entityItems) ? row.runtime.entityItems : []
+}
+
+function getAds(row) {
+  return Array.isArray(row?.ads) ? row.ads : []
+}
+
+function formatConfidence(value) {
+  return Number.isFinite(value) ? value.toFixed(2) : '0.00'
 }
 </script>
 
@@ -86,9 +106,10 @@ function formatIntentScore(value) {
           <tr>
             <th>Request ID</th>
             <th>Placement</th>
-            <th>Result</th>
-            <th>Reason</th>
-            <th>Intent Score</th>
+            <th>Status</th>
+            <th>Input</th>
+            <th>Entities</th>
+            <th>Ads</th>
             <th>Created At</th>
           </tr>
         </thead>
@@ -98,16 +119,41 @@ function formatIntentScore(value) {
             <td>{{ row.placementId }}</td>
             <td>
               <span class="pill" :data-result="row.result">{{ row.result }}</span>
-              <span
-                v-if="getInlineReason(row)"
-                class="ml-2 text-xs"
-                :class="row.result === 'error' ? 'text-[#b42318]' : 'text-[#667085]'"
-              >
-                {{ getInlineReason(row) }}
-              </span>
+              <div class="mt-1 text-xs" :class="row.result === 'error' ? 'text-[#b42318]' : 'text-[#667085]'">
+                {{ getDisplayReason(row) }}
+              </div>
+              <div class="text-xs text-[#98a2b3]">intent {{ formatIntentScore(row.intentScore) }}</div>
             </td>
-            <td :class="row.result === 'error' ? 'text-[#b42318]' : ''">{{ getDisplayReason(row) }}</td>
-            <td>{{ formatIntentScore(row.intentScore) }}</td>
+            <td>
+              <div class="text-xs font-medium text-[#1f2937]">Q: {{ getInputQuery(row) }}</div>
+              <div class="mt-1 text-xs text-[#6b7280]">A: {{ getInputAnswer(row) }}</div>
+            </td>
+            <td>
+              <div v-if="getEntityItems(row).length === 0" class="text-xs text-[#98a2b3]">none</div>
+              <div v-else class="space-y-1">
+                <div
+                  v-for="(entity, idx) in getEntityItems(row)"
+                  :key="`${row.requestId}_entity_${idx}`"
+                  class="text-xs text-[#374151]"
+                >
+                  <span class="font-medium">{{ entity.entityText || entity.normalizedText || '-' }}</span>
+                  <span class="text-[#6b7280]"> ({{ entity.entityType || 'unknown' }}, {{ formatConfidence(entity.confidence) }})</span>
+                </div>
+              </div>
+            </td>
+            <td>
+              <div v-if="getAds(row).length === 0" class="text-xs text-[#98a2b3]">none</div>
+              <div v-else class="space-y-1">
+                <div
+                  v-for="(ad, idx) in getAds(row)"
+                  :key="`${row.requestId}_ad_${idx}`"
+                  class="text-xs text-[#1f2937]"
+                >
+                  <div class="font-medium">{{ clipText(ad.title || ad.entityText || '-', 64) }}</div>
+                  <div class="text-[#6b7280]">{{ clipText(ad.targetUrl || '-', 72) }}</div>
+                </div>
+              </div>
+            </td>
             <td>{{ row.createdAt }}</td>
           </tr>
         </tbody>

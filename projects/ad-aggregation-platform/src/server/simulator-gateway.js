@@ -672,20 +672,120 @@ function buildRuntimeAdRequest(request, placement, intentScore) {
 
 function summarizeRuntimeDebug(debug) {
   if (!debug || typeof debug !== 'object') return {}
+  const entityItems = Array.isArray(debug.entities)
+    ? debug.entities
+      .map((item) => {
+        const entityText = String(item?.entityText || '').trim()
+        const normalizedText = String(item?.normalizedText || '').trim()
+        const entityType = String(item?.entityType || '').trim()
+        const confidence = Number(item?.confidence)
+        if (!entityText && !normalizedText) return null
+        return {
+          entityText,
+          normalizedText,
+          entityType,
+          confidence: Number.isFinite(confidence) ? confidence : 0,
+        }
+      })
+      .filter(Boolean)
+    : []
   const networkErrors = Array.isArray(debug.networkErrors)
     ? debug.networkErrors.map((item) => ({
         network: item?.network || '',
         errorCode: item?.errorCode || '',
+        message: item?.message || '',
       }))
     : []
 
   return {
-    entities: Array.isArray(debug.entities) ? debug.entities.length : 0,
+    entities: entityItems.length,
+    entityItems,
     totalOffers: Number.isFinite(debug.totalOffers) ? debug.totalOffers : 0,
     selectedOffers: Number.isFinite(debug.selectedOffers) ? debug.selectedOffers : 0,
+    matchedCandidates: Number.isFinite(debug.matchedCandidates) ? debug.matchedCandidates : 0,
+    unmatchedOffers: Number.isFinite(debug.unmatchedOffers) ? debug.unmatchedOffers : 0,
+    noFillReason: String(debug.noFillReason || '').trim(),
+    keywords: String(debug.keywords || '').trim(),
+    ner: debug.ner && typeof debug.ner === 'object'
+      ? {
+          status: String(debug.ner.status || '').trim(),
+          message: String(debug.ner.message || '').trim(),
+          model: String(debug.ner.model || '').trim(),
+        }
+      : {},
     networkHits: debug.networkHits && typeof debug.networkHits === 'object' ? debug.networkHits : {},
     networkErrors,
+    snapshotUsage: debug.snapshotUsage && typeof debug.snapshotUsage === 'object' ? debug.snapshotUsage : {},
+    networkHealth: debug.networkHealth && typeof debug.networkHealth === 'object' ? debug.networkHealth : {},
   }
+}
+
+function clipText(value, maxLength = 800) {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  if (text.length <= maxLength) return text
+  return `${text.slice(0, maxLength)}...`
+}
+
+function buildDecisionInputSnapshot(request, placement, intentScore) {
+  const context = request?.context && typeof request.context === 'object' ? request.context : {}
+  return {
+    appId: String(request?.appId || '').trim(),
+    sessionId: String(request?.sessionId || '').trim(),
+    turnId: String(request?.turnId || '').trim(),
+    event: String(request?.event || '').trim(),
+    placementId: String(placement?.placementId || '').trim(),
+    placementKey: String(placement?.placementKey || request?.placementKey || '').trim(),
+    query: clipText(context.query, 280),
+    answerText: clipText(context.answerText, 800),
+    locale: String(context.locale || '').trim(),
+    intentScore: Number.isFinite(intentScore) ? intentScore : 0,
+  }
+}
+
+function summarizeAdsForDecisionLog(ads) {
+  if (!Array.isArray(ads)) return []
+  return ads
+    .map((item) => {
+      const ad = item && typeof item === 'object' ? item : null
+      if (!ad) return null
+      const adId = String(ad.adId || '').trim()
+      const title = String(ad.title || '').trim()
+      const targetUrl = String(ad.targetUrl || '').trim()
+      if (!adId && !title && !targetUrl) return null
+      return {
+        adId,
+        title,
+        entityText: String(ad.entityText || '').trim(),
+        sourceNetwork: String(ad.sourceNetwork || '').trim(),
+        reason: String(ad.reason || '').trim(),
+        targetUrl: clipText(targetUrl, 240),
+      }
+    })
+    .filter(Boolean)
+}
+
+function recordDecisionForRequest({ request, placement, requestId, decision, runtime, ads }) {
+  const payload = {
+    requestId,
+    appId: request?.appId || '',
+    sessionId: request?.sessionId || '',
+    turnId: request?.turnId || '',
+    event: request?.event || '',
+    placementId: placement?.placementId || '',
+    result: decision?.result || 'error',
+    reason: decision?.reason || 'error',
+    reasonDetail: decision?.reasonDetail || '',
+    intentScore: Number.isFinite(decision?.intentScore) ? decision.intentScore : 0,
+    input: buildDecisionInputSnapshot(request, placement, decision?.intentScore),
+    ads: summarizeAdsForDecisionLog(ads),
+  }
+
+  if (runtime && typeof runtime === 'object') {
+    payload.runtime = runtime
+  }
+
+  recordDecision(payload)
 }
 
 async function evaluateRequest(payload) {
@@ -709,17 +809,12 @@ async function evaluateRequest(payload) {
   if (!placement.enabled) {
     const decision = createDecision('blocked', 'placement_disabled', intentScore)
     recordBlockedOrNoFill(placement)
-    recordDecision({
+    recordDecisionForRequest({
+      request,
+      placement,
       requestId,
-      appId: request.appId || '',
-      sessionId: request.sessionId || '',
-      turnId: request.turnId || '',
-      event: request.event || '',
-      placementId: placement.placementId,
-      result: decision.result,
-      reason: decision.reason,
-      reasonDetail: decision.reasonDetail,
-      intentScore: decision.intentScore,
+      decision,
+      ads: [],
     })
     persistState(state)
     return {
@@ -734,17 +829,12 @@ async function evaluateRequest(payload) {
   if (blockedTopic) {
     const decision = createDecision('blocked', `blocked_topic:${blockedTopic}`, intentScore)
     recordBlockedOrNoFill(placement)
-    recordDecision({
+    recordDecisionForRequest({
+      request,
+      placement,
       requestId,
-      appId: request.appId || '',
-      sessionId: request.sessionId || '',
-      turnId: request.turnId || '',
-      event: request.event || '',
-      placementId: placement.placementId,
-      result: decision.result,
-      reason: decision.reason,
-      reasonDetail: decision.reasonDetail,
-      intentScore: decision.intentScore,
+      decision,
+      ads: [],
     })
     persistState(state)
     return {
@@ -758,17 +848,12 @@ async function evaluateRequest(payload) {
   if (intentScore < placement.trigger.intentThreshold) {
     const decision = createDecision('blocked', 'intent_below_threshold', intentScore)
     recordBlockedOrNoFill(placement)
-    recordDecision({
+    recordDecisionForRequest({
+      request,
+      placement,
       requestId,
-      appId: request.appId || '',
-      sessionId: request.sessionId || '',
-      turnId: request.turnId || '',
-      event: request.event || '',
-      placementId: placement.placementId,
-      result: decision.result,
-      reason: decision.reason,
-      reasonDetail: decision.reasonDetail,
-      intentScore: decision.intentScore,
+      decision,
+      ads: [],
     })
     persistState(state)
     return {
@@ -789,17 +874,12 @@ async function evaluateRequest(payload) {
     if (withinCooldown) {
       const decision = createDecision('blocked', 'cooldown', intentScore)
       recordBlockedOrNoFill(placement)
-      recordDecision({
+      recordDecisionForRequest({
+        request,
+        placement,
         requestId,
-        appId: request.appId || '',
-        sessionId,
-        turnId: request.turnId || '',
-        event: request.event || '',
-        placementId: placement.placementId,
-        result: decision.result,
-        reason: decision.reason,
-        reasonDetail: decision.reasonDetail,
-        intentScore: decision.intentScore,
+        decision,
+        ads: [],
       })
       persistState(state)
       return {
@@ -817,17 +897,12 @@ async function evaluateRequest(payload) {
     if (count >= placement.frequencyCap.maxPerSession) {
       const decision = createDecision('blocked', 'frequency_cap_session', intentScore)
       recordBlockedOrNoFill(placement)
-      recordDecision({
+      recordDecisionForRequest({
+        request,
+        placement,
         requestId,
-        appId: request.appId || '',
-        sessionId,
-        turnId: request.turnId || '',
-        event: request.event || '',
-        placementId: placement.placementId,
-        result: decision.result,
-        reason: decision.reason,
-        reasonDetail: decision.reasonDetail,
-        intentScore: decision.intentScore,
+        decision,
+        ads: [],
       })
       persistState(state)
       return {
@@ -845,17 +920,12 @@ async function evaluateRequest(payload) {
     if (count >= placement.frequencyCap.maxPerUserPerDay) {
       const decision = createDecision('blocked', 'frequency_cap_user_day', intentScore)
       recordBlockedOrNoFill(placement)
-      recordDecision({
+      recordDecisionForRequest({
+        request,
+        placement,
         requestId,
-        appId: request.appId || '',
-        sessionId,
-        turnId: request.turnId || '',
-        event: request.event || '',
-        placementId: placement.placementId,
-        result: decision.result,
-        reason: decision.reason,
-        reasonDetail: decision.reasonDetail,
-        intentScore: decision.intentScore,
+        decision,
+        ads: [],
       })
       persistState(state)
       return {
@@ -877,17 +947,12 @@ async function evaluateRequest(payload) {
   if (expectedRevenue < placement.trigger.minExpectedRevenue) {
     const decision = createDecision('no_fill', 'revenue_below_min', intentScore)
     recordBlockedOrNoFill(placement)
-    recordDecision({
+    recordDecisionForRequest({
+      request,
+      placement,
       requestId,
-      appId: request.appId || '',
-      sessionId,
-      turnId: request.turnId || '',
-      event: request.event || '',
-      placementId: placement.placementId,
-      result: decision.result,
-      reason: decision.reason,
-      reasonDetail: decision.reasonDetail,
-      intentScore: decision.intentScore,
+      decision,
+      ads: [],
     })
     persistState(state)
     return {
@@ -910,20 +975,15 @@ async function evaluateRequest(payload) {
       placementId: placement.placementId,
     })
     recordBlockedOrNoFill(placement)
-    recordDecision({
+    recordDecisionForRequest({
+      request,
+      placement,
       requestId,
-      appId: request.appId || '',
-      sessionId,
-      turnId: request.turnId || '',
-      event: request.event || '',
-      placementId: placement.placementId,
-      result: decision.result,
-      reason: decision.reason,
-      reasonDetail: decision.reasonDetail,
-      intentScore: decision.intentScore,
+      decision,
       runtime: {
         message: error instanceof Error ? error.message : 'Runtime pipeline failed',
       },
+      ads: [],
     })
     persistState(state)
     return {
@@ -945,18 +1005,13 @@ async function evaluateRequest(payload) {
       placementId: placement.placementId,
     })
     recordBlockedOrNoFill(placement)
-    recordDecision({
+    recordDecisionForRequest({
+      request,
+      placement,
       requestId: runtimeRequestId,
-      appId: request.appId || '',
-      sessionId,
-      turnId: request.turnId || '',
-      event: request.event || '',
-      placementId: placement.placementId,
-      result: decision.result,
-      reason: decision.reason,
-      reasonDetail: decision.reasonDetail,
-      intentScore: decision.intentScore,
+      decision,
       runtime: runtimeDebug,
+      ads: [],
     })
     persistState(state)
     return {
@@ -980,18 +1035,13 @@ async function evaluateRequest(payload) {
     requestId: runtimeRequestId,
     placementId: placement.placementId,
   })
-  recordDecision({
+  recordDecisionForRequest({
+    request,
+    placement,
     requestId: runtimeRequestId,
-    appId: request.appId || '',
-    sessionId,
-    turnId: request.turnId || '',
-    event: request.event || '',
-    placementId: placement.placementId,
-    result: decision.result,
-    reason: decision.reason,
-    reasonDetail: decision.reasonDetail,
-    intentScore: decision.intentScore,
+    decision,
     runtime: runtimeDebug,
+    ads,
   })
 
   persistState(state)
