@@ -182,6 +182,10 @@ function pickBestOffer(current, candidate) {
 }
 
 export function normalizeUnifiedOffer(input = {}) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return null
+  }
+
   const network = cleanText(input.sourceNetwork || input.network || '')
   const sourceType = normalizeSourceType(input.sourceType, 'offer')
   const sourceId = pickFirst(input.sourceId, input.id, input.offerId)
