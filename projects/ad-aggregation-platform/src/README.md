@@ -28,3 +28,4 @@
 6. `runtime/`
 - Runtime 检索链路（`query/answerText -> LLM-NER -> 多网络检索 -> 合并 -> ads[]`）。
 - 入口：`runtime/index.js` -> `runAdsRetrievalPipeline(adRequest, options)`。
+- `testAllOffers=true` 时走旁路：跳过匹配过滤与排序截断，仅保留 URL/ID/状态合法性校验。

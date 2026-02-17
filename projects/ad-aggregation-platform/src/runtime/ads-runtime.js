@@ -6,6 +6,16 @@ import { normalizeUnifiedOffers } from '../offers/index.js'
 
 const DEFAULT_MAX_ADS = 20
 const DEFAULT_PLACEMENT_ID = 'attach.post_answer_render'
+const INACTIVE_OFFER_STATUSES = new Set([
+  'inactive',
+  'disabled',
+  'paused',
+  'expired',
+  'deleted',
+  'archived',
+  'rejected',
+  'blocked'
+])
 
 function cleanText(value) {
   if (typeof value !== 'string') return ''
@@ -118,22 +128,59 @@ function toAdRecord(offer, options = {}) {
   }
 }
 
+function isValidUrl(value) {
+  const url = cleanText(value)
+  if (!url) return false
+  try {
+    // Validate URL format only.
+    new URL(url)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function isOfferValidForTestAll(offer) {
+  const offerId = cleanText(offer.offerId)
+  const targetUrl = cleanText(offer.targetUrl)
+  const availability = cleanText(offer.availability).toLowerCase()
+
+  if (!offerId) return false
+  if (!isValidUrl(targetUrl)) return false
+  if (!availability || INACTIVE_OFFER_STATUSES.has(availability)) return false
+  return true
+}
+
 function rankAndSelectOffers(offers, entities, requestContext, maxAds) {
+  if (requestContext.testAllOffers) {
+    const selected = []
+    let invalidForTestAll = 0
+
+    for (const offer of offers) {
+      if (isOfferValidForTestAll(offer)) {
+        selected.push({ offer, score: 0, matchedEntityText: '' })
+      } else {
+        invalidForTestAll += 1
+      }
+    }
+
+    return { selected, invalidForTestAll }
+  }
+
   const scoreOffer = buildEntityMatcher(entities)
   const withScore = offers.map((offer) => {
     const { score, matchedEntityText } = scoreOffer(offer)
     return { offer, score, matchedEntityText }
   })
 
-  if (!requestContext.testAllOffers) {
-    const matchedOnly = withScore.filter((item) => item.score > 0)
-    const base = matchedOnly.length > 0 ? matchedOnly : withScore
-    base.sort((a, b) => b.score - a.score)
-    return base.slice(0, maxAds)
-  }
+  const matchedOnly = withScore.filter((item) => item.score > 0)
+  const base = matchedOnly.length > 0 ? matchedOnly : withScore
+  base.sort((a, b) => b.score - a.score)
 
-  withScore.sort((a, b) => b.score - a.score)
-  return withScore
+  return {
+    selected: base.slice(0, maxAds),
+    invalidForTestAll: 0
+  }
 }
 
 function createRequestId() {
@@ -202,7 +249,7 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
   }
 
   const offers = normalizeUnifiedOffers(rawOffers)
-  const selected = rankAndSelectOffers(offers, entities, request.context, maxAds)
+  const { selected, invalidForTestAll } = rankAndSelectOffers(offers, entities, request.context, maxAds)
   const ads = selected.map((item) =>
     toAdRecord(item.offer, {
       reason: request.context.testAllOffers
@@ -225,6 +272,7 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
       keywords,
       totalOffers: offers.length,
       selectedOffers: ads.length,
+      invalidOffersDroppedByTestAllValidation: invalidForTestAll,
       networkErrors,
       testAllOffers: request.context.testAllOffers
     }
