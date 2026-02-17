@@ -313,8 +313,7 @@
                     <MarkdownRenderer
                       :key="`${msg.id}:${msg.attachAdSlot?.requestId || ''}:${msg.attachAdSlot?.ads?.length || 0}`"
                       :content="msg.content"
-                      :inline-offers="msg.attachAdSlot?.ads || []"
-                      @ad-click="(ad) => handleInlineOfferClick(msg, ad)"
+                      :inline-offers="[]"
                       @inline-marker-count="(count) => handleInlineMarkerCount(msg, count)"
                     />
                     <span
@@ -343,6 +342,9 @@
                     @source-click="(source) => handleSourceClick(msg, source)"
                   />
 
+                  <!--
+                    Temporarily disabled ad link rendering in simulator UI.
+                    Keep runtime data flow/decision logging unchanged.
                   <div
                     v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.attachAdSlot?.ads?.length"
                     class="mt-3 rounded-xl border border-[#dbe3ff] bg-[#f7f9ff] p-3"
@@ -379,6 +381,7 @@
                       </li>
                     </ul>
                   </div>
+                  -->
 
                   <FollowUpSuggestions
                     v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.followUps?.length"
@@ -387,6 +390,7 @@
                     @select="handleFollowUpSelect"
                   />
 
+                  <!--
                   <div
                     v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.nextStepAdSlot?.ads?.length"
                     class="mt-3 rounded-xl border border-[#d9eadf] bg-[#f3fbf6] p-3"
@@ -417,6 +421,7 @@
                       </li>
                     </ul>
                   </div>
+                  -->
                 </div>
               </div>
             </div>
