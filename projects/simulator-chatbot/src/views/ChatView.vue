@@ -383,6 +383,12 @@
                     <span v-if="msg.status === 'streaming'" class="inline-block w-0.5 h-5 bg-gray-800 ml-0.5 cursor-blink align-middle"></span>
                   </template>
 
+                  <CitationSources
+                    v-if="msg.kind !== 'tool' && msg.status === 'done' && (msg.sources?.length || msg.sponsoredSource?.url)"
+                    :sources="msg.sources"
+                    :sponsored-source="msg.sponsoredSource"
+                  />
+
                   <FollowUpSuggestions
                     v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.followUps?.length"
                     :items="msg.followUps"
@@ -459,6 +465,7 @@ import {
 } from 'lucide-vue-next'
 import { sendMessageStream } from '../api/deepseek'
 import { shouldUseWebSearchTool, runWebSearchTool, buildWebSearchContext } from '../api/webSearchTool'
+import CitationSources from '../components/CitationSources.vue'
 import FollowUpSuggestions from '../components/FollowUpSuggestions.vue'
 import MarkdownRenderer from '../components/MarkdownRenderer.vue'
 
@@ -536,6 +543,44 @@ function createSession(initialTitle = 'New Chat') {
     createdAt: now,
     updatedAt: now,
     messages: [],
+  }
+}
+
+function getHostFromUrl(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return ''
+  }
+}
+
+function normalizeSourceItem(raw, index) {
+  if (!raw || typeof raw !== 'object') return null
+  const title = typeof raw.title === 'string' ? raw.title.trim() : ''
+  const url = typeof raw.url === 'string' ? raw.url.trim() : ''
+  if (!title || !url) return null
+
+  return {
+    id: typeof raw.id === 'string' && raw.id ? raw.id : `source_${index}`,
+    title,
+    url,
+    host: typeof raw.host === 'string' && raw.host ? raw.host : getHostFromUrl(url),
+  }
+}
+
+function normalizeSponsoredSource(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const title = typeof raw.title === 'string' ? raw.title.trim() : ''
+  const url = typeof raw.url === 'string' ? raw.url.trim() : ''
+  if (!title || !url) return null
+
+  return {
+    id: typeof raw.id === 'string' ? raw.id : '',
+    label: typeof raw.label === 'string' && raw.label.trim() ? raw.label.trim() : 'Sponsored',
+    title,
+    url,
+    host: typeof raw.host === 'string' && raw.host ? raw.host : getHostFromUrl(url),
+    advertiser: typeof raw.advertiser === 'string' ? raw.advertiser : '',
   }
 }
 
@@ -684,6 +729,12 @@ function normalizeMessage(raw) {
     toolError: typeof raw.toolError === 'string' ? raw.toolError : '',
     searchMergeMode: raw.searchMergeMode === 'blended' ? 'blended' : 'separate',
     sponsoredSlot: normalizeSponsoredSlot(raw.sponsoredSlot),
+    sources: Array.isArray(raw.sources)
+      ? raw.sources
+          .map((item, index) => normalizeSourceItem(item, index))
+          .filter(Boolean)
+      : [],
+    sponsoredSource: normalizeSponsoredSource(raw.sponsoredSource),
     followUps: Array.isArray(raw.followUps)
       ? raw.followUps
           .map((item, index) => normalizeFollowUpItem(item, index))
@@ -1054,12 +1105,7 @@ function formatToolState(toolState) {
 }
 
 function getHostLabel(url) {
-  try {
-    const host = new URL(url).hostname
-    return host.replace(/^www\./, '')
-  } catch {
-    return ''
-  }
+  return getHostFromUrl(url)
 }
 
 function buildModelMessages(messages, webSearchContext) {
@@ -1292,6 +1338,8 @@ async function handleSend() {
     toolError: '',
     searchMergeMode: 'separate',
     sponsoredSlot: null,
+    sources: [],
+    sponsoredSource: null,
     followUps: [],
   }
 
@@ -1303,6 +1351,8 @@ async function handleSend() {
   upsertTurnTrace(turnTrace)
 
   let webSearchContext = ''
+  let assistantSources = []
+  let assistantSponsoredSource = null
 
   if (shouldUseWebSearchTool(userContent)) {
     appendTurnTraceEvent(turnTrace, 'web_search_planned')
@@ -1322,6 +1372,8 @@ async function handleSend() {
       toolError: '',
       searchMergeMode,
       sponsoredSlot: null,
+      sources: [],
+      sponsoredSource: null,
       followUps: [],
     }
 
@@ -1357,6 +1409,21 @@ async function handleSend() {
         toolMessage.toolResults = [sponsoredResult, ...toolMessage.toolResults]
       }
 
+      assistantSources = webSearchOutput.results
+        .map((result, index) => normalizeSourceItem(result, index))
+        .filter(Boolean)
+      assistantSponsoredSource = normalizeSponsoredSource(
+        toolMessage.sponsoredSlot?.ad
+          ? {
+              id: toolMessage.sponsoredSlot.ad.id,
+              label: toolMessage.sponsoredSlot.label || 'Sponsored',
+              title: toolMessage.sponsoredSlot.ad.title,
+              url: toolMessage.sponsoredSlot.ad.url,
+              advertiser: toolMessage.sponsoredSlot.ad.advertiser,
+            }
+          : null,
+      )
+
       const sponsoredCount = toolMessage.sponsoredSlot?.ad ? 1 : 0
       toolMessage.content = `web_search returned ${webSearchOutput.results.length} results (+${sponsoredCount} sponsored slot)`
       appendTurnTraceEvent(turnTrace, 'web_search_succeeded', {
@@ -1377,6 +1444,10 @@ async function handleSend() {
           })
         }
       }
+      appendTurnTraceEvent(turnTrace, 'citation_sources_prepared', {
+        sourceCount: assistantSources.length,
+        sponsoredSource: Boolean(assistantSponsoredSource),
+      })
       upsertTurnTrace(turnTrace)
       webSearchContext = buildWebSearchContext(
         webSearchOutput.query,
@@ -1389,8 +1460,12 @@ async function handleSend() {
       toolMessage.toolError = error instanceof Error ? error.message : 'Tool execution failed'
       toolMessage.content = 'web_search failed'
       toolMessage.sponsoredSlot = null
+      toolMessage.sources = []
+      toolMessage.sponsoredSource = null
       toolMessage.followUps = []
       toolMessage.searchMergeMode = searchMergeMode
+      assistantSources = []
+      assistantSponsoredSource = null
       appendTurnTraceEvent(turnTrace, 'web_search_failed', {
         error: toolMessage.toolError,
       })
@@ -1415,6 +1490,8 @@ async function handleSend() {
     toolError: '',
     searchMergeMode: 'separate',
     sponsoredSlot: null,
+    sources: [],
+    sponsoredSource: null,
     followUps: [],
   }
 
@@ -1443,6 +1520,8 @@ async function handleSend() {
     },
     () => {
       assistantMessage.status = 'done'
+      assistantMessage.sources = assistantSources
+      assistantMessage.sponsoredSource = assistantSponsoredSource
       assistantMessage.followUps = createFollowUpSuggestions(
         userContent,
         assistantMessage.content,
@@ -1456,6 +1535,10 @@ async function handleSend() {
       appendTurnTraceEvent(turnTrace, 'follow_up_generated', {
         count: assistantMessage.followUps.length,
         sponsoredCount: sponsoredFollowUps,
+      })
+      appendTurnTraceEvent(turnTrace, 'citation_sources_rendered', {
+        sourceCount: assistantMessage.sources.length,
+        sponsoredSource: Boolean(assistantMessage.sponsoredSource),
       })
 
       const adOpportunitySources = []
@@ -1484,6 +1567,8 @@ async function handleSend() {
     (error) => {
       assistantMessage.status = 'done'
       assistantMessage.content = `Sorry, an error occurred: ${error}`
+      assistantMessage.sources = []
+      assistantMessage.sponsoredSource = null
       assistantMessage.followUps = []
       appendTurnTraceEvent(turnTrace, 'assistant_generation_failed', {
         error: assistantMessage.content,

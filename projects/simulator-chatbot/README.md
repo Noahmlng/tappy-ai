@@ -12,6 +12,7 @@
 - 全链路 Turn Trace 日志（可回看每轮是否触发广告机会）
 - 最小策略开关（广告总开关、搜索混排开关、追问广告开关）
 - A/B 实验框架（无广告 vs 搜索广告 vs 追问广告）
+- Citation / Source 独立区块（将自然来源与 Sponsored 来源分区展示）
 
 ## 运行
 
@@ -31,6 +32,7 @@ npm run dev
 - 也支持通过 `/search ...` 前缀强制触发搜索链路。
 - 搜索执行状态会在对话区以 Tool 卡片展示（Planned / Running / Completed / Failed）。
 - 搜索结果区内置固定 1 个 Sponsored 插槽（标记为 `Sponsored`）。
+- Assistant 回复下方会显示 Sources 区块（自然来源）与 Sponsored 来源区块（广告来源）。
 - Assistant 回复完成后会展示可点击追问项，含固定 1 个 Sponsored 选项。
 - Sidebar 内置 Turn Trace 面板，可按轮查看链路事件和 `Ad: YES/NO` 判断结果。
 - Sidebar 内置 Ad Strategy 控制面板，可动态切换广告策略并立即生效。
