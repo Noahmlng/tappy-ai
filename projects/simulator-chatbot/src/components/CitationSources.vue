@@ -9,6 +9,7 @@
           target="_blank"
           rel="noopener noreferrer"
           class="font-medium text-blue-700 hover:underline"
+          @click="$emit('source-click', source)"
         >
           [{{ index + 1 }}] {{ source.title }}
         </a>
@@ -30,6 +31,7 @@
         target="_blank"
         rel="noopener noreferrer"
         class="block font-medium text-amber-900 hover:underline"
+        @click="$emit('sponsored-click', sponsoredSource)"
       >
         {{ sponsoredSource.title }}
       </a>
@@ -51,4 +53,6 @@ defineProps({
     default: null,
   },
 })
+
+defineEmits(['source-click', 'sponsored-click'])
 </script>

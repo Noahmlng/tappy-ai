@@ -93,13 +93,26 @@ function normalizeQuery(query) {
   return String(query || '').replace(/^\/search\s+/i, '').trim()
 }
 
-function scoreItemsByQuery(items, terms) {
+function scoreItemsByQuery(items, terms, options = {}) {
+  const preferenceBoostTags = Array.isArray(options.preferenceBoostTags)
+    ? options.preferenceBoostTags.filter((tag) => typeof tag === 'string')
+    : []
+  const preferenceBoostSet = new Set(preferenceBoostTags.map((tag) => tag.toLowerCase()))
+
   return items
     .map((item) => {
       const haystack = `${item.title} ${item.snippet} ${(item.tags || []).join(' ')}`
         .toLowerCase()
-      const score = terms.reduce((acc, term) => (haystack.includes(term) ? acc + 1 : acc), 0)
-      return { ...item, score }
+      const queryScore = terms.reduce((acc, term) => (haystack.includes(term) ? acc + 1 : acc), 0)
+      const preferenceScore = (item.tags || []).reduce((acc, tag) => {
+        return preferenceBoostSet.has(String(tag).toLowerCase()) ? acc + 0.65 : acc
+      }, 0)
+      return {
+        ...item,
+        queryScore,
+        preferenceScore,
+        score: queryScore + preferenceScore,
+      }
     })
     .sort((a, b) => b.score - a.score)
 }
@@ -119,6 +132,9 @@ export async function runWebSearchTool(query, options = {}) {
   const normalized = normalizeQuery(query)
   const limit = Number.isFinite(options.maxResults) ? options.maxResults : 4
   const sponsoredEnabled = options.sponsoredEnabled !== false
+  const preferenceBoostTags = Array.isArray(options.preferenceBoostTags)
+    ? options.preferenceBoostTags.filter((tag) => typeof tag === 'string')
+    : []
 
   await delay(600)
 
@@ -135,9 +151,13 @@ export async function runWebSearchTool(query, options = {}) {
   }))
 
   let sponsoredSlot = null
+  let sponsoredMatchScore = null
   if (sponsoredEnabled) {
-    const sponsoredCandidates = scoreItemsByQuery(MOCK_SPONSORED_INDEX, terms)
+    const sponsoredCandidates = scoreItemsByQuery(MOCK_SPONSORED_INDEX, terms, {
+      preferenceBoostTags,
+    })
     const selected = sponsoredCandidates[0] || MOCK_SPONSORED_INDEX[0]
+    sponsoredMatchScore = Number.isFinite(selected.score) ? selected.score : null
 
     sponsoredSlot = {
       slotId: 'search_sponsored_slot_1',
@@ -148,6 +168,7 @@ export async function runWebSearchTool(query, options = {}) {
         url: selected.url,
         snippet: selected.snippet,
         advertiser: selected.advertiser,
+        preferenceTags: Array.isArray(selected.tags) ? selected.tags : [],
       },
     }
   }
@@ -156,6 +177,7 @@ export async function runWebSearchTool(query, options = {}) {
     query: normalized,
     results,
     sponsoredSlot,
+    sponsoredMatchScore,
     latencyMs: Date.now() - startedAt,
   }
 }

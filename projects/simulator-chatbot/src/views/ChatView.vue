@@ -153,6 +153,37 @@
         </div>
 
         <div class="rounded-lg border border-gray-200 bg-white p-2">
+          <div class="flex items-center justify-between">
+            <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Memory / Preference</div>
+            <button
+              @click="resetPreferenceState"
+              class="rounded border border-gray-300 px-1.5 py-0.5 text-[10px] text-gray-600 hover:bg-gray-100"
+            >
+              Reset
+            </button>
+          </div>
+
+          <div v-if="topPreferenceTopics.length === 0" class="mt-2 text-[11px] text-gray-500">
+            Learning user preferences from conversations...
+          </div>
+
+          <ul v-else class="mt-2 space-y-1">
+            <li
+              v-for="topic in topPreferenceTopics"
+              :key="topic.id"
+              class="flex items-center justify-between rounded bg-gray-50 px-2 py-1 text-[11px]"
+            >
+              <span class="text-gray-700">{{ topic.label }}</span>
+              <span class="font-medium text-gray-500">{{ topic.score.toFixed(1) }}</span>
+            </li>
+          </ul>
+
+          <div v-if="preferenceBoostTags.length" class="mt-2 text-[10px] text-gray-500">
+            Ad boost tags: {{ preferenceBoostTags.join(', ') }}
+          </div>
+        </div>
+
+        <div class="rounded-lg border border-gray-200 bg-white p-2">
           <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Turn Trace</div>
           <div v-if="activeSessionTurnLogs.length === 0" class="mt-2 text-[11px] text-gray-500">
             No turn logs yet.
@@ -189,6 +220,13 @@
                     log.strategySnapshot?.searchAdsEnabled ? 'on' : 'off'
                   }}, merge {{ log.strategySnapshot?.searchBlendEnabled ? 'blended' : 'separate' }}, follow-up ads {{
                     log.strategySnapshot?.followUpAdsEnabled ? 'on' : 'off'
+                  }}
+                </div>
+                <div class="mb-1 text-[10px] text-gray-500">
+                  Preference: {{
+                    log.preferenceSnapshot?.topTopics?.length
+                      ? log.preferenceSnapshot.topTopics.join(', ')
+                      : 'none'
                   }}
                 </div>
                 <div v-if="log.adOpportunitySources?.length" class="mb-1">
@@ -387,6 +425,8 @@
                     v-if="msg.kind !== 'tool' && msg.status === 'done' && (msg.sources?.length || msg.sponsoredSource?.url)"
                     :sources="msg.sources"
                     :sponsored-source="msg.sponsoredSource"
+                    @source-click="(source) => handleSourceClick(msg, source)"
+                    @sponsored-click="(source) => handleSponsoredSourceClick(msg, source)"
                   />
 
                   <FollowUpSuggestions
@@ -477,6 +517,7 @@ const TURN_LOG_STORAGE_KEY = 'chat_bot_turn_logs_v1'
 const MAX_TURN_LOGS = 400
 const STRATEGY_STORAGE_KEY = 'chat_bot_strategy_v1'
 const EXPERIMENT_CONFIG_STORAGE_KEY = 'chat_bot_experiment_config_v1'
+const PREFERENCE_STORAGE_KEY = 'chat_bot_preference_v1'
 const DEFAULT_STRATEGY = {
   adsEnabled: true,
   searchAdsEnabled: true,
@@ -491,6 +532,36 @@ const EXPERIMENT_VARIANTS = [
 const DEFAULT_EXPERIMENT_CONFIG = {
   enabled: true,
 }
+const PREFERENCE_TOPICS = [
+  {
+    id: 'developer_tools',
+    label: 'Developer Tools',
+    keywords: ['code', 'coding', 'developer', 'sdk', 'api', 'github', 'deploy', 'engineering', 'frontend', 'backend'],
+    boostTags: ['developer', 'code', 'sdk', 'deploy', 'tool', 'productivity'],
+  },
+  {
+    id: 'retrieval_ai',
+    label: 'Retrieval & RAG',
+    keywords: ['rag', 'retrieval', 'vector', 'embedding', 'memory', 'knowledge', 'search', 'index'],
+    boostTags: ['rag', 'retrieval', 'vector', 'memory', 'search'],
+  },
+  {
+    id: 'automation',
+    label: 'Automation',
+    keywords: ['automation', 'automate', 'workflow', 'agent', 'pipeline', 'efficiency'],
+    boostTags: ['assistant', 'productivity', 'tool'],
+  },
+  {
+    id: 'product_growth',
+    label: 'Product Growth',
+    keywords: ['product', 'growth', 'launch', 'startup', 'marketing', 'user', 'conversion'],
+    boostTags: ['ai', 'tool', 'deploy', 'productivity'],
+  },
+]
+const DEFAULT_PREFERENCE_STATE = {
+  topicWeights: {},
+  updatedAt: null,
+}
 const FOLLOW_UP_SPONSORED_OPTIONS = [
   {
     adId: 'sponsored_followup_vercel_ai_sdk',
@@ -498,6 +569,7 @@ const FOLLOW_UP_SPONSORED_OPTIONS = [
     text: 'Want a faster way to ship this as an AI app?',
     prompt: 'Recommend a practical way to ship this as an AI app with fast iteration.',
     keywords: ['app', 'deploy', 'ship', 'frontend', 'product'],
+    preferenceTopics: ['developer_tools', 'product_growth'],
   },
   {
     adId: 'sponsored_followup_pinecone_rag',
@@ -505,6 +577,7 @@ const FOLLOW_UP_SPONSORED_OPTIONS = [
     text: 'Need retrieval support for this workflow?',
     prompt: 'What retrieval architecture should I use if I need scalable RAG for this?',
     keywords: ['search', 'retrieval', 'rag', 'knowledge', 'memory'],
+    preferenceTopics: ['retrieval_ai'],
   },
   {
     adId: 'sponsored_followup_github_copilot',
@@ -512,6 +585,7 @@ const FOLLOW_UP_SPONSORED_OPTIONS = [
     text: 'Want coding assistance for implementation?',
     prompt: 'Suggest an efficient implementation plan and coding workflow for this.',
     keywords: ['code', 'implement', 'sdk', 'developer', 'engineering'],
+    preferenceTopics: ['developer_tools', 'automation'],
   },
 ]
 
@@ -527,6 +601,7 @@ const activeSessionId = ref('')
 const turnLogs = ref([])
 const strategy = ref({ ...DEFAULT_STRATEGY })
 const experimentConfig = ref({ ...DEFAULT_EXPERIMENT_CONFIG })
+const preferenceState = ref({ ...DEFAULT_PREFERENCE_STATE })
 
 let persistTimer = null
 
@@ -581,6 +656,9 @@ function normalizeSponsoredSource(raw) {
     url,
     host: typeof raw.host === 'string' && raw.host ? raw.host : getHostFromUrl(url),
     advertiser: typeof raw.advertiser === 'string' ? raw.advertiser : '',
+    preferenceTags: Array.isArray(raw.preferenceTags)
+      ? raw.preferenceTags.filter((tag) => typeof tag === 'string')
+      : [],
   }
 }
 
@@ -600,6 +678,9 @@ function normalizeFollowUpItem(raw, index) {
     adId: typeof raw.adId === 'string' ? raw.adId : '',
     advertiser: typeof raw.advertiser === 'string' ? raw.advertiser : '',
     sourceTurnId: typeof raw.sourceTurnId === 'string' ? raw.sourceTurnId : '',
+    preferenceTopics: Array.isArray(raw.preferenceTopics)
+      ? raw.preferenceTopics.filter((topicId) => typeof topicId === 'string')
+      : [],
   }
 }
 
@@ -635,6 +716,45 @@ function normalizeExperimentConfig(raw) {
   }
 }
 
+function normalizePreferenceState(raw) {
+  if (!raw || typeof raw !== 'object') {
+    return { ...DEFAULT_PREFERENCE_STATE }
+  }
+
+  const topicWeights = raw.topicWeights && typeof raw.topicWeights === 'object'
+    ? Object.fromEntries(
+        Object.entries(raw.topicWeights)
+          .filter(([topicId, value]) => {
+            return PREFERENCE_TOPICS.some((topic) => topic.id === topicId) && Number.isFinite(value)
+          })
+          .map(([topicId, value]) => [topicId, Number(value)]),
+      )
+    : {}
+
+  return {
+    topicWeights,
+    updatedAt: Number.isFinite(raw.updatedAt) ? raw.updatedAt : null,
+  }
+}
+
+function normalizePreferenceSnapshot(raw) {
+  if (!raw || typeof raw !== 'object') {
+    return {
+      topTopics: [],
+      boostTags: [],
+    }
+  }
+
+  return {
+    topTopics: Array.isArray(raw.topTopics)
+      ? raw.topTopics.filter((item) => typeof item === 'string')
+      : [],
+    boostTags: Array.isArray(raw.boostTags)
+      ? raw.boostTags.filter((item) => typeof item === 'string')
+      : [],
+  }
+}
+
 function normalizeTurnLog(raw) {
   if (!raw || typeof raw !== 'object') return null
   if (typeof raw.turnId !== 'string' || !raw.turnId) return null
@@ -653,6 +773,7 @@ function normalizeTurnLog(raw) {
       ? raw.adOpportunitySources.filter((item) => typeof item === 'string')
       : [],
     strategySnapshot: normalizeStrategy(raw.strategySnapshot),
+    preferenceSnapshot: normalizePreferenceSnapshot(raw.preferenceSnapshot),
     events: Array.isArray(raw.events)
       ? raw.events
           .map((event, index) => normalizeTurnEvent(event, index))
@@ -693,6 +814,9 @@ function normalizeSponsoredSlot(raw) {
       url: typeof raw.ad.url === 'string' ? raw.ad.url : '',
       snippet: typeof raw.ad.snippet === 'string' ? raw.ad.snippet : '',
       advertiser: typeof raw.ad.advertiser === 'string' ? raw.ad.advertiser : '',
+      preferenceTags: Array.isArray(raw.ad.preferenceTags)
+        ? raw.ad.preferenceTags.filter((tag) => typeof tag === 'string')
+        : [],
     },
   }
 }
@@ -712,6 +836,9 @@ function normalizeMessage(raw) {
           isSponsored: Boolean(item.isSponsored),
           label: typeof item.label === 'string' && item.label.trim() ? item.label.trim() : 'Sponsored',
           advertiser: typeof item.advertiser === 'string' ? item.advertiser : '',
+          preferenceTags: Array.isArray(item.preferenceTags)
+            ? item.preferenceTags.filter((tag) => typeof tag === 'string')
+            : [],
         }))
     : []
 
@@ -735,6 +862,7 @@ function normalizeMessage(raw) {
           .filter(Boolean)
       : [],
     sponsoredSource: normalizeSponsoredSource(raw.sponsoredSource),
+    sourceTurnId: typeof raw.sourceTurnId === 'string' ? raw.sourceTurnId : '',
     followUps: Array.isArray(raw.followUps)
       ? raw.followUps
           .map((item, index) => normalizeFollowUpItem(item, index))
@@ -779,6 +907,10 @@ function persistStrategyNow() {
 
 function persistExperimentConfigNow() {
   localStorage.setItem(EXPERIMENT_CONFIG_STORAGE_KEY, JSON.stringify(experimentConfig.value))
+}
+
+function persistPreferenceStateNow() {
+  localStorage.setItem(PREFERENCE_STORAGE_KEY, JSON.stringify(preferenceState.value))
 }
 
 function scheduleSaveSessions() {
@@ -898,6 +1030,25 @@ function loadExperimentConfig() {
 
 loadExperimentConfig()
 
+function loadPreferenceState() {
+  try {
+    const raw = localStorage.getItem(PREFERENCE_STORAGE_KEY)
+    if (!raw) {
+      preferenceState.value = { ...DEFAULT_PREFERENCE_STATE }
+      persistPreferenceStateNow()
+      return
+    }
+
+    preferenceState.value = normalizePreferenceState(JSON.parse(raw))
+    persistPreferenceStateNow()
+  } catch (error) {
+    console.error('Failed to load preference state:', error)
+    preferenceState.value = { ...DEFAULT_PREFERENCE_STATE }
+  }
+}
+
+loadPreferenceState()
+
 const sortedSessions = computed(() => {
   return [...sessions.value].sort((a, b) => b.updatedAt - a.updatedAt)
 })
@@ -939,6 +1090,27 @@ const activeSessionExperimentVariant = computed({
 const activeExperimentVariantMeta = computed(() => {
   const variantId = activeSessionExperimentVariant.value
   return EXPERIMENT_VARIANTS.find((variant) => variant.id === variantId) || EXPERIMENT_VARIANTS[1]
+})
+const preferenceTopicRank = computed(() => {
+  return Object.entries(preferenceState.value.topicWeights || {})
+    .map(([topicId, score]) => {
+      const meta = PREFERENCE_TOPICS.find((topic) => topic.id === topicId)
+      return meta ? { id: topicId, label: meta.label, score } : null
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score)
+})
+const topPreferenceTopics = computed(() => preferenceTopicRank.value.slice(0, 4))
+const preferenceBoostTags = computed(() => {
+  const topTopicIds = preferenceTopicRank.value.slice(0, 3).map((topic) => topic.id)
+  const boostTagSet = new Set()
+  for (const topicId of topTopicIds) {
+    const meta = PREFERENCE_TOPICS.find((topic) => topic.id === topicId)
+    for (const tag of meta?.boostTags || []) {
+      boostTagSet.add(tag)
+    }
+  }
+  return Array.from(boostTagSet)
 })
 const effectiveStrategy = computed(() => {
   const base = normalizeStrategy(strategy.value)
@@ -1026,6 +1198,14 @@ watch(
   { deep: true },
 )
 
+watch(
+  preferenceState,
+  () => {
+    persistPreferenceStateNow()
+  },
+  { deep: true },
+)
+
 onBeforeUnmount(() => {
   if (persistTimer) {
     clearTimeout(persistTimer)
@@ -1049,7 +1229,13 @@ function formatTraceEventType(eventType) {
     .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
-function createTurnTrace(sessionId, userQuery, experimentVariant, strategySnapshot) {
+function createTurnTrace(
+  sessionId,
+  userQuery,
+  experimentVariant,
+  strategySnapshot,
+  preferenceSnapshot,
+) {
   const now = Date.now()
   return {
     turnId: createId('turn'),
@@ -1062,6 +1248,7 @@ function createTurnTrace(sessionId, userQuery, experimentVariant, strategySnapsh
     adOpportunityTriggered: false,
     adOpportunitySources: [],
     strategySnapshot: normalizeStrategy(strategySnapshot),
+    preferenceSnapshot: normalizePreferenceSnapshot(preferenceSnapshot),
     events: [],
   }
 }
@@ -1108,6 +1295,55 @@ function getHostLabel(url) {
   return getHostFromUrl(url)
 }
 
+function extractPreferenceTopicIds(text) {
+  const normalized = String(text || '').toLowerCase()
+  if (!normalized) return []
+
+  return PREFERENCE_TOPICS
+    .filter((topic) => topic.keywords.some((keyword) => normalized.includes(keyword)))
+    .map((topic) => topic.id)
+}
+
+function updatePreferenceByTopics(topicIds, weight = 1) {
+  if (!Array.isArray(topicIds) || topicIds.length === 0) return
+
+  const nextWeights = { ...(preferenceState.value.topicWeights || {}) }
+  for (const topicId of topicIds) {
+    if (!PREFERENCE_TOPICS.some((topic) => topic.id === topicId)) continue
+    nextWeights[topicId] = (nextWeights[topicId] || 0) + weight
+  }
+
+  preferenceState.value = {
+    topicWeights: nextWeights,
+    updatedAt: Date.now(),
+  }
+}
+
+function resetPreferenceState() {
+  preferenceState.value = { ...DEFAULT_PREFERENCE_STATE }
+}
+
+function buildPreferenceSnapshot() {
+  return {
+    topTopics: preferenceTopicRank.value.slice(0, 3).map((topic) => topic.label),
+    boostTags: [...preferenceBoostTags.value],
+  }
+}
+
+function mapTagsToPreferenceTopics(tags = []) {
+  const tagSet = new Set(
+    Array.isArray(tags)
+      ? tags.map((tag) => String(tag).toLowerCase())
+      : [],
+  )
+
+  return PREFERENCE_TOPICS
+    .filter((topic) => {
+      return (topic.boostTags || []).some((tag) => tagSet.has(String(tag).toLowerCase()))
+    })
+    .map((topic) => topic.id)
+}
+
 function buildModelMessages(messages, webSearchContext) {
   const modelMessages = messages
     .filter((msg) => {
@@ -1140,12 +1376,31 @@ function extractTopicSeed(text) {
     .join(' ')
 }
 
-function pickSponsoredFollowUp(userContent, assistantContent) {
+function getTopPreferenceTopicIds(limit = 3) {
+  return preferenceTopicRank.value.slice(0, limit).map((topic) => topic.id)
+}
+
+function pickSponsoredFollowUp(userContent, assistantContent, preferredTopicIds = []) {
   const context = `${userContent || ''} ${assistantContent || ''}`.toLowerCase()
-  const matched = FOLLOW_UP_SPONSORED_OPTIONS.find((option) => {
-    return option.keywords.some((keyword) => context.includes(keyword))
-  })
-  return matched || FOLLOW_UP_SPONSORED_OPTIONS[0]
+  const preferredSet = new Set(preferredTopicIds)
+
+  const scored = FOLLOW_UP_SPONSORED_OPTIONS.map((option) => {
+    const keywordScore = option.keywords.reduce(
+      (acc, keyword) => (context.includes(keyword) ? acc + 1 : acc),
+      0,
+    )
+    const preferenceScore = (option.preferenceTopics || []).reduce(
+      (acc, topicId) => (preferredSet.has(topicId) ? acc + 1.2 : acc),
+      0,
+    )
+
+    return {
+      ...option,
+      _score: keywordScore + preferenceScore,
+    }
+  }).sort((a, b) => b._score - a._score)
+
+  return scored[0] || FOLLOW_UP_SPONSORED_OPTIONS[0]
 }
 
 function createFollowUpSuggestions(userContent, assistantContent, sourceTurnId = '', includeSponsored = true) {
@@ -1161,6 +1416,7 @@ function createFollowUpSuggestions(userContent, assistantContent, sourceTurnId =
       adId: '',
       advertiser: '',
       sourceTurnId,
+      preferenceTopics: [],
     },
     {
       id: createId('followup'),
@@ -1171,6 +1427,7 @@ function createFollowUpSuggestions(userContent, assistantContent, sourceTurnId =
       adId: '',
       advertiser: '',
       sourceTurnId,
+      preferenceTopics: [],
     },
     {
       id: createId('followup'),
@@ -1181,11 +1438,12 @@ function createFollowUpSuggestions(userContent, assistantContent, sourceTurnId =
       adId: '',
       advertiser: '',
       sourceTurnId,
+      preferenceTopics: [],
     },
   ]
 
   if (includeSponsored) {
-    const sponsored = pickSponsoredFollowUp(userContent, assistantContent)
+    const sponsored = pickSponsoredFollowUp(userContent, assistantContent, getTopPreferenceTopicIds(3))
     suggestions.push({
       id: createId('followup'),
       text: sponsored.text,
@@ -1195,6 +1453,7 @@ function createFollowUpSuggestions(userContent, assistantContent, sourceTurnId =
       adId: sponsored.adId,
       advertiser: sponsored.advertiser,
       sourceTurnId,
+      preferenceTopics: sponsored.preferenceTopics || [],
     })
   }
 
@@ -1263,8 +1522,58 @@ function clearHistory() {
   persistTurnLogsNow()
 }
 
+function handleSourceClick(message, source) {
+  if (!message?.sourceTurnId) return
+  updateTurnTrace(message.sourceTurnId, (trace) => {
+    const nextTrace = { ...trace }
+    nextTrace.events = [
+      ...trace.events,
+      {
+        id: createId('event'),
+        type: 'source_clicked',
+        at: Date.now(),
+        payload: {
+          sourceTitle: source?.title || '',
+          sourceUrl: source?.url || '',
+        },
+      },
+    ]
+    return nextTrace
+  })
+}
+
+function handleSponsoredSourceClick(message, source) {
+  const preferenceTopics = mapTagsToPreferenceTopics(source?.preferenceTags || [])
+  if (preferenceTopics.length > 0) {
+    updatePreferenceByTopics(preferenceTopics, 1.2)
+  }
+
+  if (!message?.sourceTurnId) return
+  updateTurnTrace(message.sourceTurnId, (trace) => {
+    const nextTrace = { ...trace }
+    nextTrace.events = [
+      ...trace.events,
+      {
+        id: createId('event'),
+        type: 'sponsored_source_clicked',
+        at: Date.now(),
+        payload: {
+          sourceTitle: source?.title || '',
+          sourceUrl: source?.url || '',
+          preferenceTopics,
+        },
+      },
+    ]
+    return nextTrace
+  })
+}
+
 async function handleFollowUpSelect(item) {
   if (!item || !item.prompt || isLoading.value) return
+
+  if (item.isSponsored && Array.isArray(item.preferenceTopics) && item.preferenceTopics.length > 0) {
+    updatePreferenceByTopics(item.preferenceTopics, 1.4)
+  }
 
   if (item.sourceTurnId) {
     updateTurnTrace(item.sourceTurnId, (trace) => {
@@ -1279,6 +1588,9 @@ async function handleFollowUpSelect(item) {
             text: item.text,
             adId: item.adId || '',
             isSponsored: Boolean(item.isSponsored),
+            preferenceTopics: Array.isArray(item.preferenceTopics)
+              ? item.preferenceTopics
+              : [],
           },
         },
       ]
@@ -1299,6 +1611,11 @@ async function handleSend() {
   const userContent = input.value.trim()
   input.value = ''
   isLoading.value = true
+  const detectedPreferenceTopics = extractPreferenceTopicIds(userContent)
+  if (detectedPreferenceTopics.length > 0) {
+    updatePreferenceByTopics(detectedPreferenceTopics, 1)
+  }
+
   const effectiveStrategySnapshot = normalizeStrategy(effectiveStrategy.value)
   const experimentVariant = normalizeExperimentVariant(session.experimentVariant)
   const adsEnabled = effectiveStrategySnapshot.adsEnabled
@@ -1306,11 +1623,13 @@ async function handleSend() {
   const searchMergeMode = searchAdsEnabled && effectiveStrategySnapshot.searchBlendEnabled ? 'blended' : 'separate'
   const sponsoredFollowUpsEnabled =
     effectiveStrategySnapshot.adsEnabled && effectiveStrategySnapshot.followUpAdsEnabled
+  const boostTags = [...preferenceBoostTags.value]
   const turnTrace = createTurnTrace(
     session.id,
     userContent,
     experimentVariant,
     effectiveStrategySnapshot,
+    buildPreferenceSnapshot(),
   )
 
   appendTurnTraceEvent(turnTrace, 'turn_started', { query: userContent })
@@ -1321,6 +1640,11 @@ async function handleSend() {
     sponsoredFollowUpsEnabled,
     experimentVariant,
     experimentEnabled: experimentConfig.value.enabled,
+  })
+  appendTurnTraceEvent(turnTrace, 'preference_profile_used', {
+    detectedTopics: detectedPreferenceTopics,
+    topTopics: getTopPreferenceTopicIds(3),
+    boostTags,
   })
   upsertTurnTrace(turnTrace)
 
@@ -1340,6 +1664,7 @@ async function handleSend() {
     sponsoredSlot: null,
     sources: [],
     sponsoredSource: null,
+    sourceTurnId: '',
     followUps: [],
   }
 
@@ -1374,6 +1699,7 @@ async function handleSend() {
       sponsoredSlot: null,
       sources: [],
       sponsoredSource: null,
+      sourceTurnId: '',
       followUps: [],
     }
 
@@ -1389,6 +1715,7 @@ async function handleSend() {
 
       const webSearchOutput = await runWebSearchTool(userContent, {
         sponsoredEnabled: searchAdsEnabled,
+        preferenceBoostTags: boostTags,
       })
       toolMessage.toolState = 'done'
       toolMessage.toolQuery = webSearchOutput.query
@@ -1405,6 +1732,9 @@ async function handleSend() {
           isSponsored: true,
           label: toolMessage.sponsoredSlot.label || 'Sponsored',
           advertiser: toolMessage.sponsoredSlot.ad.advertiser || '',
+          preferenceTags: Array.isArray(toolMessage.sponsoredSlot.ad.preferenceTags)
+            ? toolMessage.sponsoredSlot.ad.preferenceTags
+            : [],
         }
         toolMessage.toolResults = [sponsoredResult, ...toolMessage.toolResults]
       }
@@ -1420,6 +1750,7 @@ async function handleSend() {
               title: toolMessage.sponsoredSlot.ad.title,
               url: toolMessage.sponsoredSlot.ad.url,
               advertiser: toolMessage.sponsoredSlot.ad.advertiser,
+              preferenceTags: toolMessage.sponsoredSlot.ad.preferenceTags || [],
             }
           : null,
       )
@@ -1431,6 +1762,10 @@ async function handleSend() {
         sponsoredCount,
         latencyMs: webSearchOutput.latencyMs,
         mergeMode: searchMergeMode,
+        sponsoredMatchScore: Number.isFinite(webSearchOutput.sponsoredMatchScore)
+          ? webSearchOutput.sponsoredMatchScore
+          : null,
+        preferenceBoostTags: boostTags,
       })
       if (sponsoredCount > 0) {
         if (searchMergeMode === 'blended') {
@@ -1492,6 +1827,7 @@ async function handleSend() {
     sponsoredSlot: null,
     sources: [],
     sponsoredSource: null,
+    sourceTurnId: turnTrace.turnId,
     followUps: [],
   }
 

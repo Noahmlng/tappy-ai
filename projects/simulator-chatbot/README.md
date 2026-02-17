@@ -13,6 +13,7 @@
 - 最小策略开关（广告总开关、搜索混排开关、追问广告开关）
 - A/B 实验框架（无广告 vs 搜索广告 vs 追问广告）
 - Citation / Source 独立区块（将自然来源与 Sponsored 来源分区展示）
+- Memory / Preference（长期偏好学习并用于广告匹配优化）
 
 ## 运行
 
@@ -37,3 +38,4 @@ npm run dev
 - Sidebar 内置 Turn Trace 面板，可按轮查看链路事件和 `Ad: YES/NO` 判断结果。
 - Sidebar 内置 Ad Strategy 控制面板，可动态切换广告策略并立即生效。
 - Sidebar 内置 Experiment 分组面板，可对当前会话切换 `no_ads/search_ads/follow_up_ads`。
+- Sidebar 内置 Memory/Preference 面板，可查看长期偏好并用于 Sponsored 匹配。
