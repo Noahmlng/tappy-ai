@@ -381,50 +381,55 @@ Must:
 2. Parsing failure rate below agreed threshold (fallback to `non_commercial`).
 3. Low-confidence outputs must degrade safely to no-render.
 
-## 9) Intent Card Implementation To-Do (P0-P2)
+## 9) Intent Card Module Definition (MVP)
 
-### 9.1 P0 (Must Ship)
+Define `next_step.intent_card` implementation with explicit modules:
 
-1. SDK: add `next_step.intent_card` evaluate/render/report pipeline.
-- Why: this is the minimum runnable path from trigger to visible card.
-2. SDK: extend request context with `intent_class`, `intent_score`, `preference_facets`.
-- Why: retrieval and gating cannot work with only raw query text.
-3. Intent module: implement LLM-based structured inference (`intent + facets + score`) with strict JSON schema validation.
-- Why: immediate accuracy boost with low engineering cost.
-4. Intent module: add hard post-rules (blocked topic, confidence floor, frequency cap, cooldown).
-- Why: prevent unsafe or noisy triggers in early traffic.
-5. Catalog: use affiliate `list all links` as single source and build `IntentCardCatalog` normalization job.
-- Why: no standalone product DB yet, but links inventory is already available.
-6. Catalog: create semantic index from normalized link corpus and support top-k retrieval.
-- Why: Intent Card requires semantic matching (not keyword-only).
-7. Observability: add event/decision logs for `served/no_fill/blocked/error` with `requestId`.
-- Why: required for debug, threshold tuning, and dashboard operations.
-8. E2E validation: run scenario suite for shopping intent, gifting preference, non-commercial intent, and sensitive-topic blocking.
-- Why: ensure trigger precision and fail-open behavior before release.
+1. SDK Orchestrator Module
+- Responsibilities:
+1. Trigger `evaluate` at `followup_generation` phase.
+2. Pass structured context (`intent_class`, `intent_score`, `preference_facets`, `query`, `recent_turns`).
+3. Render card slot and report interaction events.
+4. Enforce fail-open (timeout/error => no card, chat continues).
+- Boundaries:
+1. No recommendation logic hard-coded in UI.
+2. No direct dependence on specific affiliate connector internals.
 
-### 9.2 P1 (Should Do)
+2. Intent Inference Module
+- Responsibilities:
+1. Infer `intent_class` and `intent_score`.
+2. Extract `preference_facets` and hard constraints.
+3. Output structured machine-auditable inference trace.
+- Boundaries:
+1. Only inference and extraction; no final ranking decision.
+2. Must output safe fallback (`non_commercial`) on low confidence.
 
-1. SDK: expose dashboard-tunable parameters (`intent_threshold`, `semantic_threshold`, `max_items`, cooldown).
-- Why: operations need runtime tuning without code deploy.
-2. Intent module: add offline evaluation dataset and weekly calibration workflow.
-- Why: stabilize quality and reduce drift from prompt-only inference.
-3. Ranking: introduce reranker layer for top-k refinement.
-- Why: improve relevance quality for similar affiliate links.
-4. Catalog: improve metadata enrichment and dedup (same merchant/same destination variants).
-- Why: avoid repetitive cards and improve perceived diversity.
-5. Experimentation: run A/B on threshold and card layout.
-- Why: validate CTR and continuation-rate trade-offs with data.
+3. Catalog & Index Module
+- Responsibilities:
+1. Ingest affiliate `list all links` from supported connectors.
+2. Normalize to unified `IntentCardCatalog`.
+3. Build and refresh semantic retrieval index.
+- Boundaries:
+1. Catalog stores normalized inventory, not UI state.
+2. Connector failures degrade to last valid snapshot.
 
-### 9.3 P2 (Scale)
+4. Retrieval & Ranking Module
+- Responsibilities:
+1. Retrieve candidates by semantic query using inferred intent/facets.
+2. Apply safety/eligibility/frequency filters.
+3. Rank by relevance-first policy and output top candidates with reasons.
+- Boundaries:
+1. Policy/safety rules are mandatory and non-overridable by bid signal.
+2. Ranking output must be reproducible under same snapshot and inputs.
 
-1. Model: migrate from prompt-only inference to hybrid learned intent model.
-- Why: reduce cost/latency variance and improve consistency.
-2. Ranking: move to multi-objective optimization (relevance + conversion + user satisfaction).
-- Why: avoid over-optimizing short-term clicks.
-3. Catalog: support near-real-time inventory freshness and policy revalidation.
-- Why: reduce stale links and compliance risk at scale.
-4. Platform: cross-session pacing/frequency strategy for Intent Card.
-- Why: protect user experience as traffic grows.
+5. Observability & Governance Module
+- Responsibilities:
+1. Log decision path (`served/no_fill/blocked/error`) with `requestId`.
+2. Track exposure and interaction metrics.
+3. Support audit and threshold calibration workflows.
+- Boundaries:
+1. Logging must not block online serving path.
+2. Sensitive-topic policy actions must be explicitly traceable.
 
 ## 10) Placement Spec Template (for Future Expansion)
 
