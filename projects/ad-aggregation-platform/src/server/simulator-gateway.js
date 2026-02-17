@@ -15,6 +15,8 @@ const STATE_FILE = path.join(STATE_DIR, 'simulator-gateway-state.json')
 const PORT = Number(process.env.SIMULATOR_GATEWAY_PORT || 3100)
 const HOST = process.env.SIMULATOR_GATEWAY_HOST || '127.0.0.1'
 const MAX_DECISION_LOGS = 500
+const MAX_PLACEMENT_AUDIT_LOGS = 500
+const DECISION_REASON_ENUM = new Set(['served', 'no_fill', 'blocked', 'error'])
 
 const PLACEMENT_KEY_BY_ID = {
   chat_inline_v1: 'attach.post_answer_render',
@@ -83,6 +85,17 @@ function normalizeDisclosure(value) {
   return 'Sponsored'
 }
 
+function createDecision(result, reasonDetail, intentScore) {
+  const normalizedResult = DECISION_REASON_ENUM.has(result) ? result : 'error'
+  const detail = String(reasonDetail || '').trim() || normalizedResult
+  return {
+    result: normalizedResult,
+    reason: normalizedResult,
+    reasonDetail: detail,
+    intentScore,
+  }
+}
+
 function validateNoExtraFields(payload, allowedFields, routeName) {
   const keys = Object.keys(payload)
   const extras = keys.filter((key) => !allowedFields.has(key))
@@ -147,6 +160,7 @@ function normalizePlacement(raw) {
   return {
     placementId,
     placementKey,
+    configVersion: toPositiveInteger(raw?.configVersion, 1),
     enabled: raw?.enabled !== false,
     disclosure: normalizeDisclosure(raw?.disclosure),
     priority: toPositiveInteger(raw?.priority, 100),
@@ -218,11 +232,14 @@ function initialPlacementStats(placements) {
 
 function createInitialState() {
   const placements = defaultPlacements.map((item) => normalizePlacement(item))
+  const placementConfigVersion = Math.max(1, ...placements.map((placement) => placement.configVersion || 1))
 
   return {
     version: 1,
     updatedAt: nowIso(),
+    placementConfigVersion,
     placements,
+    placementAuditLogs: [],
     decisionLogs: [],
     eventLogs: [],
     globalStats: {
@@ -247,6 +264,11 @@ function loadState() {
     const placements = Array.isArray(parsed.placements)
       ? parsed.placements.map((item) => normalizePlacement(item))
       : defaultPlacements.map((item) => normalizePlacement(item))
+    const derivedPlacementConfigVersion = Math.max(1, ...placements.map((placement) => placement.configVersion || 1))
+    const placementConfigVersion = Math.max(
+      toPositiveInteger(parsed?.placementConfigVersion, 1),
+      derivedPlacementConfigVersion,
+    )
 
     const placementStats = parsed.placementStats && typeof parsed.placementStats === 'object'
       ? parsed.placementStats
@@ -267,7 +289,11 @@ function loadState() {
     return {
       version: 1,
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : nowIso(),
+      placementConfigVersion,
       placements,
+      placementAuditLogs: Array.isArray(parsed.placementAuditLogs)
+        ? parsed.placementAuditLogs.slice(0, MAX_PLACEMENT_AUDIT_LOGS)
+        : [],
       decisionLogs: Array.isArray(parsed.decisionLogs) ? parsed.decisionLogs.slice(0, MAX_DECISION_LOGS) : [],
       eventLogs: Array.isArray(parsed.eventLogs) ? parsed.eventLogs.slice(0, MAX_DECISION_LOGS) : [],
       globalStats: {
@@ -381,6 +407,17 @@ function recordDecision(payload) {
     },
     ...state.decisionLogs,
   ].slice(0, MAX_DECISION_LOGS)
+}
+
+function recordPlacementAudit(payload) {
+  state.placementAuditLogs = [
+    {
+      id: createId('placement_audit'),
+      createdAt: nowIso(),
+      ...payload,
+    },
+    ...state.placementAuditLogs,
+  ].slice(0, MAX_PLACEMENT_AUDIT_LOGS)
 }
 
 function computeMetricsSummary() {
@@ -543,19 +580,17 @@ async function evaluateRequest(payload) {
   const requestId = createId('adreq')
 
   if (!placement) {
+    const decision = createDecision('blocked', 'placement_not_configured', intentScore)
     return {
       requestId,
       placementId: '',
-      decision: {
-        result: 'blocked',
-        reason: 'placement_not_configured',
-        intentScore,
-      },
+      decision,
       ads: [],
     }
   }
 
   if (!placement.enabled) {
+    const decision = createDecision('blocked', 'placement_disabled', intentScore)
     recordBlockedOrNoFill(placement)
     recordDecision({
       requestId,
@@ -564,25 +599,23 @@ async function evaluateRequest(payload) {
       turnId: request.turnId || '',
       event: request.event || '',
       placementId: placement.placementId,
-      result: 'blocked',
-      reason: 'placement_disabled',
-      intentScore,
+      result: decision.result,
+      reason: decision.reason,
+      reasonDetail: decision.reasonDetail,
+      intentScore: decision.intentScore,
     })
     persistState(state)
     return {
       requestId,
       placementId: placement.placementId,
-      decision: {
-        result: 'blocked',
-        reason: 'placement_disabled',
-        intentScore,
-      },
+      decision,
       ads: [],
     }
   }
 
   const blockedTopic = matchBlockedTopic(context, placement.trigger.blockedTopics || [])
   if (blockedTopic) {
+    const decision = createDecision('blocked', `blocked_topic:${blockedTopic}`, intentScore)
     recordBlockedOrNoFill(placement)
     recordDecision({
       requestId,
@@ -591,24 +624,22 @@ async function evaluateRequest(payload) {
       turnId: request.turnId || '',
       event: request.event || '',
       placementId: placement.placementId,
-      result: 'blocked',
-      reason: `blocked_topic:${blockedTopic}`,
-      intentScore,
+      result: decision.result,
+      reason: decision.reason,
+      reasonDetail: decision.reasonDetail,
+      intentScore: decision.intentScore,
     })
     persistState(state)
     return {
       requestId,
       placementId: placement.placementId,
-      decision: {
-        result: 'blocked',
-        reason: `blocked_topic:${blockedTopic}`,
-        intentScore,
-      },
+      decision,
       ads: [],
     }
   }
 
   if (intentScore < placement.trigger.intentThreshold) {
+    const decision = createDecision('blocked', 'intent_below_threshold', intentScore)
     recordBlockedOrNoFill(placement)
     recordDecision({
       requestId,
@@ -617,19 +648,16 @@ async function evaluateRequest(payload) {
       turnId: request.turnId || '',
       event: request.event || '',
       placementId: placement.placementId,
-      result: 'blocked',
-      reason: 'intent_below_threshold',
-      intentScore,
+      result: decision.result,
+      reason: decision.reason,
+      reasonDetail: decision.reasonDetail,
+      intentScore: decision.intentScore,
     })
     persistState(state)
     return {
       requestId,
       placementId: placement.placementId,
-      decision: {
-        result: 'blocked',
-        reason: 'intent_below_threshold',
-        intentScore,
-      },
+      decision,
       ads: [],
     }
   }
@@ -642,6 +670,7 @@ async function evaluateRequest(payload) {
     const lastTs = runtimeMemory.cooldownBySessionPlacement.get(cooldownKey) || 0
     const withinCooldown = Date.now() - lastTs < placement.trigger.cooldownSeconds * 1000
     if (withinCooldown) {
+      const decision = createDecision('blocked', 'cooldown', intentScore)
       recordBlockedOrNoFill(placement)
       recordDecision({
         requestId,
@@ -650,19 +679,16 @@ async function evaluateRequest(payload) {
         turnId: request.turnId || '',
         event: request.event || '',
         placementId: placement.placementId,
-        result: 'blocked',
-        reason: 'cooldown',
-        intentScore,
+        result: decision.result,
+        reason: decision.reason,
+        reasonDetail: decision.reasonDetail,
+        intentScore: decision.intentScore,
       })
       persistState(state)
       return {
         requestId,
         placementId: placement.placementId,
-        decision: {
-          result: 'blocked',
-          reason: 'cooldown',
-          intentScore,
-        },
+        decision,
         ads: [],
       }
     }
@@ -672,6 +698,7 @@ async function evaluateRequest(payload) {
     const sessionCapKey = getSessionPlacementKey(sessionId, placement.placementId)
     const count = runtimeMemory.perSessionPlacementCount.get(sessionCapKey) || 0
     if (count >= placement.frequencyCap.maxPerSession) {
+      const decision = createDecision('blocked', 'frequency_cap_session', intentScore)
       recordBlockedOrNoFill(placement)
       recordDecision({
         requestId,
@@ -680,19 +707,16 @@ async function evaluateRequest(payload) {
         turnId: request.turnId || '',
         event: request.event || '',
         placementId: placement.placementId,
-        result: 'blocked',
-        reason: 'frequency_cap_session',
-        intentScore,
+        result: decision.result,
+        reason: decision.reason,
+        reasonDetail: decision.reasonDetail,
+        intentScore: decision.intentScore,
       })
       persistState(state)
       return {
         requestId,
         placementId: placement.placementId,
-        decision: {
-          result: 'blocked',
-          reason: 'frequency_cap_session',
-          intentScore,
-        },
+        decision,
         ads: [],
       }
     }
@@ -702,6 +726,7 @@ async function evaluateRequest(payload) {
     const userCapKey = getUserPlacementDayKey(userId, placement.placementId)
     const count = runtimeMemory.perUserPlacementDayCount.get(userCapKey) || 0
     if (count >= placement.frequencyCap.maxPerUserPerDay) {
+      const decision = createDecision('blocked', 'frequency_cap_user_day', intentScore)
       recordBlockedOrNoFill(placement)
       recordDecision({
         requestId,
@@ -710,19 +735,16 @@ async function evaluateRequest(payload) {
         turnId: request.turnId || '',
         event: request.event || '',
         placementId: placement.placementId,
-        result: 'blocked',
-        reason: 'frequency_cap_user_day',
-        intentScore,
+        result: decision.result,
+        reason: decision.reason,
+        reasonDetail: decision.reasonDetail,
+        intentScore: decision.intentScore,
       })
       persistState(state)
       return {
         requestId,
         placementId: placement.placementId,
-        decision: {
-          result: 'blocked',
-          reason: 'frequency_cap_user_day',
-          intentScore,
-        },
+        decision,
         ads: [],
       }
     }
@@ -736,6 +758,7 @@ async function evaluateRequest(payload) {
   )
 
   if (expectedRevenue < placement.trigger.minExpectedRevenue) {
+    const decision = createDecision('no_fill', 'revenue_below_min', intentScore)
     recordBlockedOrNoFill(placement)
     recordDecision({
       requestId,
@@ -744,19 +767,16 @@ async function evaluateRequest(payload) {
       turnId: request.turnId || '',
       event: request.event || '',
       placementId: placement.placementId,
-      result: 'no_fill',
-      reason: 'revenue_below_min',
-      intentScore,
+      result: decision.result,
+      reason: decision.reason,
+      reasonDetail: decision.reasonDetail,
+      intentScore: decision.intentScore,
     })
     persistState(state)
     return {
       requestId,
       placementId: placement.placementId,
-      decision: {
-        result: 'no_fill',
-        reason: 'revenue_below_min',
-        intentScore,
-      },
+      decision,
       ads: [],
     }
   }
@@ -767,6 +787,7 @@ async function evaluateRequest(payload) {
   try {
     runtimeResult = await runAdsRetrievalPipeline(runtimeAdRequest)
   } catch (error) {
+    const decision = createDecision('error', 'runtime_pipeline_error', intentScore)
     recordBlockedOrNoFill(placement)
     recordDecision({
       requestId,
@@ -775,9 +796,10 @@ async function evaluateRequest(payload) {
       turnId: request.turnId || '',
       event: request.event || '',
       placementId: placement.placementId,
-      result: 'error',
-      reason: 'runtime_pipeline_error',
-      intentScore,
+      result: decision.result,
+      reason: decision.reason,
+      reasonDetail: decision.reasonDetail,
+      intentScore: decision.intentScore,
       runtime: {
         message: error instanceof Error ? error.message : 'Runtime pipeline failed',
       },
@@ -786,11 +808,7 @@ async function evaluateRequest(payload) {
     return {
       requestId,
       placementId: placement.placementId,
-      decision: {
-        result: 'error',
-        reason: 'runtime_pipeline_error',
-        intentScore,
-      },
+      decision,
       ads: [],
     }
   }
@@ -800,6 +818,7 @@ async function evaluateRequest(payload) {
   const runtimeDebug = summarizeRuntimeDebug(runtimeResult?.debug)
 
   if (runtimeAds.length === 0) {
+    const decision = createDecision('no_fill', 'runtime_no_offer', intentScore)
     recordBlockedOrNoFill(placement)
     recordDecision({
       requestId: runtimeRequestId,
@@ -808,20 +827,17 @@ async function evaluateRequest(payload) {
       turnId: request.turnId || '',
       event: request.event || '',
       placementId: placement.placementId,
-      result: 'no_fill',
-      reason: 'runtime_no_offer',
-      intentScore,
+      result: decision.result,
+      reason: decision.reason,
+      reasonDetail: decision.reasonDetail,
+      intentScore: decision.intentScore,
       runtime: runtimeDebug,
     })
     persistState(state)
     return {
       requestId: runtimeRequestId,
       placementId: placement.placementId,
-      decision: {
-        result: 'no_fill',
-        reason: 'runtime_no_offer',
-        intentScore,
-      },
+      decision,
       ads: [],
     }
   }
@@ -834,6 +850,7 @@ async function evaluateRequest(payload) {
     disclosure: placement.disclosure || ad.disclosure || 'Sponsored',
   }))
 
+  const decision = createDecision('served', 'runtime_eligible', intentScore)
   recordDecision({
     requestId: runtimeRequestId,
     appId: request.appId || '',
@@ -841,9 +858,10 @@ async function evaluateRequest(payload) {
     turnId: request.turnId || '',
     event: request.event || '',
     placementId: placement.placementId,
-    result: 'served',
-    reason: 'runtime_eligible',
-    intentScore,
+    result: decision.result,
+    reason: decision.reason,
+    reasonDetail: decision.reasonDetail,
+    intentScore: decision.intentScore,
     runtime: runtimeDebug,
   })
 
@@ -852,19 +870,16 @@ async function evaluateRequest(payload) {
   return {
     requestId: runtimeRequestId,
     placementId: placement.placementId,
-    decision: {
-      result: 'served',
-      reason: 'runtime_eligible',
-      intentScore,
-    },
+    decision,
     ads,
   }
 }
 
-function applyPlacementPatch(placement, patch) {
-  const next = normalizePlacement({
+function buildPlacementFromPatch(placement, patch, configVersion) {
+  return normalizePlacement({
     ...placement,
     ...patch,
+    configVersion,
     trigger: {
       ...placement.trigger,
       ...(patch?.trigger && typeof patch.trigger === 'object' ? patch.trigger : {}),
@@ -874,7 +889,12 @@ function applyPlacementPatch(placement, patch) {
       ...(patch?.frequencyCap && typeof patch.frequencyCap === 'object' ? patch.frequencyCap : {}),
     },
   })
+}
 
+function applyPlacementPatch(placement, patch, configVersion) {
+  const next = buildPlacementFromPatch(placement, patch, configVersion)
+
+  placement.configVersion = next.configVersion
   placement.enabled = next.enabled
   placement.disclosure = next.disclosure
   placement.priority = next.priority
@@ -889,10 +909,12 @@ function applyPlacementPatch(placement, patch) {
 
 function getDashboardStatePayload() {
   return {
+    placementConfigVersion: state.placementConfigVersion,
     metricsSummary: computeMetricsSummary(),
     metricsByDay: computeMetricsByDay(),
     metricsByPlacement: computeMetricsByPlacement(),
     placements: state.placements,
+    placementAuditLogs: state.placementAuditLogs,
     decisionLogs: state.decisionLogs,
   }
 }
@@ -944,11 +966,29 @@ async function requestHandler(req, res) {
       }
 
       const payload = await readJsonBody(req)
-      applyPlacementPatch(target, payload)
+      const before = JSON.parse(JSON.stringify(target))
+      const preview = buildPlacementFromPatch(target, payload, target.configVersion || 1)
+      const changed = JSON.stringify(before) !== JSON.stringify(preview)
+
+      if (changed) {
+        const nextConfigVersion = state.placementConfigVersion + 1
+        applyPlacementPatch(target, payload, nextConfigVersion)
+        state.placementConfigVersion = nextConfigVersion
+        recordPlacementAudit({
+          placementId: placementId,
+          configVersion: nextConfigVersion,
+          actor: String(req.headers['x-dashboard-actor'] || req.headers['x-user-id'] || 'dashboard').trim(),
+          patch: payload && typeof payload === 'object' ? payload : {},
+          before,
+          after: JSON.parse(JSON.stringify(target)),
+        })
+      }
+
       persistState(state)
 
       sendJson(res, 200, {
         placement: target,
+        changed,
       })
       return
     } catch (error) {
@@ -991,6 +1031,16 @@ async function requestHandler(req, res) {
       rows = rows.filter((row) => row.placementId === placementId)
     }
 
+    sendJson(res, 200, { items: rows })
+    return
+  }
+
+  if (pathname === '/api/v1/dashboard/placement-audits' && req.method === 'GET') {
+    const placementId = requestUrl.searchParams.get('placementId')
+    let rows = [...state.placementAuditLogs]
+    if (placementId) {
+      rows = rows.filter((row) => row.placementId === placementId)
+    }
     sendJson(res, 200, { items: rows })
     return
   }
