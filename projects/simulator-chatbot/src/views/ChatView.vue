@@ -311,9 +311,11 @@
 
                   <template v-if="msg.kind !== 'tool' && msg.content">
                     <MarkdownRenderer
+                      :key="`${msg.id}:${msg.attachAdSlot?.requestId || ''}:${msg.attachAdSlot?.ads?.length || 0}`"
                       :content="msg.content"
                       :inline-offers="msg.attachAdSlot?.ads || []"
                       @ad-click="(ad) => handleInlineOfferClick(msg, ad)"
+                      @inline-marker-count="(count) => handleInlineMarkerCount(msg, count)"
                     />
                     <span
                       v-if="msg.status === 'streaming'"
@@ -348,6 +350,15 @@
                     <div class="mb-2 flex items-center justify-between">
                       <span class="text-[11px] font-semibold uppercase tracking-wide text-[#5b6acb]">Sponsored</span>
                       <span class="text-[10px] text-[#7d87b7]">{{ msg.attachAdSlot.placementId || 'attach.post_answer_render' }}</span>
+                    </div>
+                    <div class="mb-2 text-[10px] text-[#64748b]">
+                      Pinlink anchors matched: {{ Number.isFinite(msg.inlineMarkerCount) ? msg.inlineMarkerCount : 0 }}
+                    </div>
+                    <div
+                      v-if="(Number.isFinite(msg.inlineMarkerCount) ? msg.inlineMarkerCount : 0) === 0"
+                      class="mb-2 rounded-md border border-[#f0d9a8] bg-[#fff7e6] px-2 py-1 text-[10px] text-[#8a5b18]"
+                    >
+                      Ads returned but no inline anchor matched the answer text.
                     </div>
                     <ul class="space-y-2">
                       <li
@@ -779,6 +790,7 @@ function normalizeMessage(raw) {
       ? raw.followUps.map((item, index) => normalizeFollowUpItem(item, index)).filter(Boolean)
       : [],
     attachAdSlot: normalizeAttachAdSlot(raw.attachAdSlot),
+    inlineMarkerCount: Number.isFinite(raw.inlineMarkerCount) ? Math.max(0, Math.floor(raw.inlineMarkerCount)) : 0,
     nextStepAdSlot: normalizeNextStepAdSlot(raw.nextStepAdSlot),
   }
 }
@@ -1517,13 +1529,22 @@ function getClientLocale() {
   return 'en-US'
 }
 
-async function runAttachAdsFlow({ session, userContent, assistantMessage, turnTrace }) {
+function findMessageById(sessionId, messageId) {
+  const targetSession = sessions.value.find((item) => item.id === sessionId)
+  if (!targetSession || !Array.isArray(targetSession.messages)) return null
+  return targetSession.messages.find((message) => message?.id === messageId) || null
+}
+
+async function runAttachAdsFlow({ session, userContent, assistantMessageId, turnTrace }) {
+  const currentMessage = findMessageById(session.id, assistantMessageId)
+  if (!currentMessage) return
+
   const reportPayload = {
     appId: SDK_APP_ID,
     sessionId: session.id,
     turnId: turnTrace.turnId,
     query: userContent,
-    answerText: assistantMessage.content,
+    answerText: currentMessage.content,
     intentScore: estimateIntentScore(userContent),
     locale: getClientLocale(),
   }
@@ -1562,13 +1583,17 @@ async function runAttachAdsFlow({ session, userContent, assistantMessage, turnTr
     return
   }
 
-  assistantMessage.attachAdSlot = normalizeAttachAdSlot({
+  const targetMessage = findMessageById(session.id, assistantMessageId)
+  if (!targetMessage) return
+
+  targetMessage.attachAdSlot = normalizeAttachAdSlot({
     requestId: result?.requestId,
     placementId: result?.placementId,
     decision: result?.decision,
     ads: result?.ads,
     reportPayload,
   })
+  targetMessage.inlineMarkerCount = 0
   touchActiveSession()
   scheduleSaveSessions()
 
@@ -1638,7 +1663,10 @@ async function runAttachAdsFlow({ session, userContent, assistantMessage, turnTr
   }
 }
 
-async function runNextStepIntentCardFlow({ session, userContent, assistantMessage, turnTrace }) {
+async function runNextStepIntentCardFlow({ session, userContent, assistantMessageId, turnTrace }) {
+  const currentMessage = findMessageById(session.id, assistantMessageId)
+  if (!currentMessage) return
+
   const intentClass = inferIntentClass(userContent)
   const intentScore = estimateIntentScore(userContent)
   const preferenceFacets = extractPreferenceFacets(userContent)
@@ -1651,7 +1679,7 @@ async function runNextStepIntentCardFlow({ session, userContent, assistantMessag
     placementKey: 'next_step.intent_card',
     context: {
       query: userContent,
-      answerText: assistantMessage.content,
+      answerText: currentMessage.content,
       recent_turns: buildRecentTurns(session),
       locale: getClientLocale(),
       intent_class: intentClass,
@@ -1678,7 +1706,10 @@ async function runNextStepIntentCardFlow({ session, userContent, assistantMessag
     return
   }
 
-  assistantMessage.nextStepAdSlot = normalizeNextStepAdSlot({
+  const targetMessage = findMessageById(session.id, assistantMessageId)
+  if (!targetMessage) return
+
+  targetMessage.nextStepAdSlot = normalizeNextStepAdSlot({
     ...result,
     reportPayload,
   })
@@ -1805,6 +1836,13 @@ function handleInlineOfferClick(message, ad) {
   handleSponsoredAdClick(message, ad)
 }
 
+function handleInlineMarkerCount(message, count) {
+  if (!message || !Number.isFinite(count)) return
+  const safeCount = Math.max(0, Math.floor(count))
+  if (message.inlineMarkerCount === safeCount) return
+  message.inlineMarkerCount = safeCount
+}
+
 function handleNextStepAdClick(message, ad) {
   const slot = message?.nextStepAdSlot
   if (!slot?.reportPayload || !message?.sourceTurnId) return
@@ -1909,6 +1947,7 @@ async function handleSend(options = {}) {
     sourceUserContent: userContent,
     retryCount,
     followUps: [],
+    inlineMarkerCount: 0,
   }
 
   session.messages.push(userMessage)
@@ -1943,6 +1982,7 @@ async function handleSend(options = {}) {
       sourceUserContent: userContent,
       retryCount,
       followUps: [],
+      inlineMarkerCount: 0,
     }
 
     session.messages.push(toolMessage)
@@ -2017,6 +2057,7 @@ async function handleSend(options = {}) {
     sourceUserContent: userContent,
     retryCount,
     followUps: [],
+    inlineMarkerCount: 0,
   }
 
   session.messages.push(assistantMessage)
@@ -2071,7 +2112,7 @@ async function handleSend(options = {}) {
       runAttachAdsFlow({
         session,
         userContent,
-        assistantMessage,
+        assistantMessageId: assistantMessage.id,
         turnTrace,
       }).catch((error) => {
         appendTurnTraceEvent(turnTrace, 'ads_evaluate_failed', {
@@ -2084,7 +2125,7 @@ async function handleSend(options = {}) {
       runNextStepIntentCardFlow({
         session,
         userContent,
-        assistantMessage,
+        assistantMessageId: assistantMessage.id,
         turnTrace,
       }).catch((error) => {
         appendTurnTraceEvent(turnTrace, 'ads_evaluate_failed', {

@@ -1,12 +1,12 @@
 <template>
-  <span
+  <div
     ref="wrapperRef"
     class="markdown-content-wrapper"
     @mouseover="handleWrapperMouseOver"
     @mouseout="handleWrapperMouseOut"
     @click="handleWrapperClick"
   >
-    <span class="markdown-content" v-html="renderedHtml"></span>
+    <div class="markdown-content" v-html="renderedHtml"></div>
     <span
       v-if="activeOffer"
       ref="popoverRef"
@@ -29,11 +29,12 @@
         Open Link
       </a>
     </span>
-  </span>
+  </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import MarkdownIt from 'markdown-it'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const props = defineProps({
   content: {
@@ -46,7 +47,25 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['ad-click'])
+const emit = defineEmits(['ad-click', 'inline-marker-count'])
+
+const markdownParser = new MarkdownIt({
+  html: false,
+  breaks: true,
+  linkify: true,
+  typographer: true,
+})
+
+const defaultLinkOpen =
+  markdownParser.renderer.rules.link_open ||
+  ((tokens, idx, options, env, self) => self.renderToken(tokens, idx, options))
+
+markdownParser.renderer.rules.link_open = (tokens, idx, options, env, self) => {
+  const token = tokens[idx]
+  token.attrSet('target', '_blank')
+  token.attrSet('rel', 'noopener noreferrer')
+  return defaultLinkOpen(tokens, idx, options, env, self)
+}
 
 const wrapperRef = ref(null)
 const popoverRef = ref(null)
@@ -178,34 +197,7 @@ function resolveInlineOfferLabels(offer) {
 }
 
 function renderMarkdown(text) {
-  let html = text || ''
-
-  html = html
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-
-  html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (_, lang, code) => {
-    return `<pre><code class="language-${lang || 'text'}">${code.trim()}</code></pre>`
-  })
-
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
-  html = html.replace(/^(?:---|\*\*\*|___)$/gm, '<hr>')
-  html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>')
-  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>')
-  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>')
-  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>')
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-  html = html.replace(/__(.+?)__/g, '<strong>$1</strong>')
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
-  html = html.replace(/_(.+?)_/g, '<em>$1</em>')
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
-  html = html.replace(/^[*-] (.+)$/gm, '<li>$1</li>')
-  html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
-  html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
-  html = html.replace(/\n/g, '<span class="line-break"></span>')
-
-  return html
+  return markdownParser.render(String(text || ''))
 }
 
 function injectInlineOffers(html, offers) {
@@ -426,6 +418,20 @@ function handleDocumentKeydown(event) {
   }
 }
 
+function countInlineMarkers(html) {
+  if (typeof html !== 'string') return 0
+  const matches = html.match(/data-offer-id=/g)
+  return Array.isArray(matches) ? matches.length : 0
+}
+
+watch(
+  renderedHtml,
+  (html) => {
+    emit('inline-marker-count', countInlineMarkers(html))
+  },
+  { immediate: true },
+)
+
 onMounted(() => {
   window.addEventListener('click', handleDocumentClick, true)
   window.addEventListener('keydown', handleDocumentKeydown)
@@ -440,12 +446,12 @@ onBeforeUnmount(() => {
 <style scoped>
 .markdown-content-wrapper {
   position: relative;
-  display: inline;
+  display: block;
 }
 
 .markdown-content {
   word-wrap: break-word;
-  display: inline;
+  display: block;
 }
 
 .markdown-content :deep(.inline-offer-marker) {
@@ -487,6 +493,14 @@ onBeforeUnmount(() => {
   display: block;
 }
 
+.markdown-content :deep(p) {
+  margin: 0 0 0.75em;
+}
+
+.markdown-content :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
 .markdown-content :deep(code) {
   background-color: #f0f0f0;
   padding: 0.15em 0.4em;
@@ -525,9 +539,35 @@ onBeforeUnmount(() => {
   display: block;
 }
 
-.markdown-content :deep(.line-break) {
-  display: block;
-  height: 10px;
+.markdown-content :deep(blockquote) {
+  margin: 0.75em 0;
+  border-left: 3px solid #d1d5db;
+  padding-left: 0.75em;
+  color: #4b5563;
+}
+
+.markdown-content :deep(hr) {
+  border: 0;
+  border-top: 1px solid #e5e7eb;
+  margin: 0.9em 0;
+}
+
+.markdown-content :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.75em 0;
+}
+
+.markdown-content :deep(th),
+.markdown-content :deep(td) {
+  border: 1px solid #e5e7eb;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.markdown-content :deep(th) {
+  background: #f8fafc;
+  font-weight: 600;
 }
 
 .inline-offer-popover {
