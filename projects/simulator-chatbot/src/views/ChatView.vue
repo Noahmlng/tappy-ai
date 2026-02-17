@@ -337,6 +337,34 @@
                     @source-click="(source) => handleSourceClick(msg, source)"
                   />
 
+                  <div
+                    v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.attachAdSlot?.ads?.length"
+                    class="mt-3 rounded-xl border border-[#dbe3ff] bg-[#f7f9ff] p-3"
+                  >
+                    <div class="mb-2 flex items-center justify-between">
+                      <span class="text-[11px] font-semibold uppercase tracking-wide text-[#5b6acb]">Sponsored</span>
+                      <span class="text-[10px] text-[#7d87b7]">{{ msg.attachAdSlot.placementId || 'attach.post_answer_render' }}</span>
+                    </div>
+                    <ul class="space-y-2">
+                      <li
+                        v-for="ad in msg.attachAdSlot.ads"
+                        :key="ad.adId"
+                        class="rounded-lg border border-[#dfe5ff] bg-white p-2"
+                      >
+                        <a
+                          :href="ad.targetUrl"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="text-sm font-medium text-[#2f5bd3] hover:underline"
+                          @click="handleSponsoredAdClick(msg, ad)"
+                        >
+                          {{ ad.title }}
+                        </a>
+                        <p v-if="ad.description" class="mt-1 text-xs text-[#4b5563]">{{ ad.description }}</p>
+                      </li>
+                    </ul>
+                  </div>
+
                   <FollowUpSuggestions
                     v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.followUps?.length"
                     :items="msg.followUps"
@@ -414,6 +442,7 @@ import {
 } from 'lucide-vue-next'
 import { sendMessageStream } from '../api/deepseek'
 import { shouldUseWebSearchTool, runWebSearchTool, buildWebSearchContext } from '../api/webSearchTool'
+import { fetchSdkConfig, evaluateAttachPlacement, reportSdkEvent } from '../api/adsSdk'
 import CitationSources from '../components/CitationSources.vue'
 import FollowUpSuggestions from '../components/FollowUpSuggestions.vue'
 import MarkdownRenderer from '../components/MarkdownRenderer.vue'
@@ -426,6 +455,7 @@ const MAX_SESSIONS = 50
 const MAX_TURN_LOGS = 400
 const TOOL_STATES = ['planning', 'running', 'done', 'error']
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant. Be accurate, concise, and explicit about uncertainty.'
+const SDK_APP_ID = import.meta.env.VITE_SIMULATOR_APP_ID || 'simulator-chatbot'
 
 const input = ref('')
 const historyQuery = ref('')
@@ -510,6 +540,59 @@ function normalizeToolResultItem(raw, index) {
   }
 }
 
+function normalizeAdItem(raw, index) {
+  if (!raw || typeof raw !== 'object') return null
+  const adId = typeof raw.adId === 'string' ? raw.adId : `ad_${index}`
+  const title = typeof raw.title === 'string' ? raw.title.trim() : ''
+  const targetUrl = typeof raw.targetUrl === 'string' ? raw.targetUrl.trim() : ''
+  if (!title || !targetUrl) return null
+
+  return {
+    adId,
+    title,
+    description: typeof raw.description === 'string' ? raw.description : '',
+    targetUrl,
+    disclosure: raw.disclosure === 'Ad' ? 'Ad' : 'Sponsored',
+    reason: typeof raw.reason === 'string' ? raw.reason : '',
+  }
+}
+
+function normalizeAttachAdSlot(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const ads = Array.isArray(raw.ads)
+    ? raw.ads.map((item, index) => normalizeAdItem(item, index)).filter(Boolean)
+    : []
+  const decision = raw.decision && typeof raw.decision === 'object'
+    ? {
+        result: typeof raw.decision.result === 'string' ? raw.decision.result : 'error',
+        reason: typeof raw.decision.reason === 'string' ? raw.decision.reason : '',
+        intentScore: Number.isFinite(raw.decision.intentScore) ? raw.decision.intentScore : 0,
+      }
+    : {
+        result: 'error',
+        reason: '',
+        intentScore: 0,
+      }
+
+  return {
+    requestId: typeof raw.requestId === 'string' ? raw.requestId : '',
+    placementId: typeof raw.placementId === 'string' ? raw.placementId : '',
+    decision,
+    ads,
+    reportPayload: raw.reportPayload && typeof raw.reportPayload === 'object'
+      ? {
+          appId: String(raw.reportPayload.appId || ''),
+          sessionId: String(raw.reportPayload.sessionId || ''),
+          turnId: String(raw.reportPayload.turnId || ''),
+          query: String(raw.reportPayload.query || ''),
+          answerText: String(raw.reportPayload.answerText || ''),
+          intentScore: Number(raw.reportPayload.intentScore) || 0,
+          locale: String(raw.reportPayload.locale || ''),
+        }
+      : null,
+  }
+}
+
 function normalizeTurnEvent(raw, index) {
   if (!raw || typeof raw !== 'object') return null
 
@@ -550,6 +633,7 @@ function normalizeMessage(raw) {
     followUps: Array.isArray(raw.followUps)
       ? raw.followUps.map((item, index) => normalizeFollowUpItem(item, index)).filter(Boolean)
       : [],
+    attachAdSlot: normalizeAttachAdSlot(raw.attachAdSlot),
   }
 }
 
@@ -1159,6 +1243,185 @@ async function handleFollowUpSelect(item) {
   })
 }
 
+function estimateIntentScore(query) {
+  const text = String(query || '').toLowerCase()
+  if (!text) return 0
+
+  const signals = [
+    'buy',
+    'price',
+    'deal',
+    'discount',
+    'best',
+    'compare',
+    'top',
+    'recommend',
+    'subscription',
+    'plan',
+  ]
+  const hits = signals.reduce((count, signal) => (text.includes(signal) ? count + 1 : count), 0)
+  const score = 0.3 + hits * 0.12
+  return Math.min(0.95, Math.max(0.05, Number(score.toFixed(2))))
+}
+
+function getClientLocale() {
+  if (typeof navigator !== 'undefined' && typeof navigator.language === 'string' && navigator.language.trim()) {
+    return navigator.language.trim()
+  }
+  return 'en-US'
+}
+
+async function runAttachAdsFlow({ session, userContent, assistantMessage, turnTrace }) {
+  const reportPayload = {
+    appId: SDK_APP_ID,
+    sessionId: session.id,
+    turnId: turnTrace.turnId,
+    query: userContent,
+    answerText: assistantMessage.content,
+    intentScore: estimateIntentScore(userContent),
+    locale: getClientLocale(),
+  }
+
+  appendTurnTraceEvent(turnTrace, 'ads_config_fetch_started', {
+    appId: reportPayload.appId,
+  })
+  upsertTurnTrace(turnTrace)
+
+  try {
+    await fetchSdkConfig(reportPayload.appId)
+    appendTurnTraceEvent(turnTrace, 'ads_config_fetch_completed')
+    upsertTurnTrace(turnTrace)
+  } catch (error) {
+    appendTurnTraceEvent(turnTrace, 'ads_config_fetch_failed', {
+      error: error instanceof Error ? error.message : 'config_fetch_failed',
+    })
+    upsertTurnTrace(turnTrace)
+    return
+  }
+
+  appendTurnTraceEvent(turnTrace, 'ads_evaluate_started', {
+    placementKey: 'attach.post_answer_render',
+    event: 'answer_completed',
+  })
+  upsertTurnTrace(turnTrace)
+
+  let result
+  try {
+    result = await evaluateAttachPlacement(reportPayload)
+  } catch (error) {
+    appendTurnTraceEvent(turnTrace, 'ads_evaluate_failed', {
+      error: error instanceof Error ? error.message : 'evaluate_failed',
+    })
+    upsertTurnTrace(turnTrace)
+    return
+  }
+
+  assistantMessage.attachAdSlot = normalizeAttachAdSlot({
+    requestId: result?.requestId,
+    placementId: result?.placementId,
+    decision: result?.decision,
+    ads: result?.ads,
+    reportPayload,
+  })
+  touchActiveSession()
+  scheduleSaveSessions()
+
+  appendTurnTraceEvent(turnTrace, 'ads_evaluate_completed', {
+    requestId: result?.requestId || '',
+    result: result?.decision?.result || 'unknown',
+    reason: result?.decision?.reason || '',
+    adCount: Array.isArray(result?.ads) ? result.ads.length : 0,
+  })
+  upsertTurnTrace(turnTrace)
+
+  const decisionResult = String(result?.decision?.result || '').toLowerCase()
+  if (decisionResult === 'served' && Array.isArray(result?.ads) && result.ads.length > 0) {
+    appendTurnTraceEvent(turnTrace, 'ads_served', {
+      requestId: result.requestId || '',
+      placementId: result.placementId || '',
+      adCount: result.ads.length,
+    })
+    upsertTurnTrace(turnTrace)
+
+    try {
+      await reportSdkEvent(reportPayload)
+      appendTurnTraceEvent(turnTrace, 'ads_event_reported', {
+        requestId: result.requestId || '',
+        kind: 'impression',
+      })
+      upsertTurnTrace(turnTrace)
+    } catch (error) {
+      appendTurnTraceEvent(turnTrace, 'ads_event_report_failed', {
+        requestId: result.requestId || '',
+        kind: 'impression',
+        error: error instanceof Error ? error.message : 'event_report_failed',
+      })
+      upsertTurnTrace(turnTrace)
+    }
+    return
+  }
+
+  if (decisionResult === 'no_fill') {
+    appendTurnTraceEvent(turnTrace, 'ads_no_fill', {
+      requestId: result?.requestId || '',
+      reason: result?.decision?.reason || '',
+    })
+    upsertTurnTrace(turnTrace)
+    return
+  }
+
+  if (decisionResult === 'blocked') {
+    appendTurnTraceEvent(turnTrace, 'ads_blocked', {
+      requestId: result?.requestId || '',
+      reason: result?.decision?.reason || '',
+    })
+    upsertTurnTrace(turnTrace)
+  }
+}
+
+function handleSponsoredAdClick(message, ad) {
+  const slot = message?.attachAdSlot
+  if (!slot?.reportPayload || !message?.sourceTurnId) return
+
+  updateTurnTrace(message.sourceTurnId, (trace) => {
+    const nextTrace = { ...trace }
+    nextTrace.events = [
+      ...trace.events,
+      {
+        id: createId('event'),
+        type: 'ads_click_tracked',
+        at: Date.now(),
+        payload: {
+          adId: ad?.adId || '',
+          title: ad?.title || '',
+          requestId: slot.requestId || '',
+          placementId: slot.placementId || '',
+        },
+      },
+    ]
+    return nextTrace
+  })
+
+  reportSdkEvent(slot.reportPayload).catch((error) => {
+    updateTurnTrace(message.sourceTurnId, (trace) => {
+      const nextTrace = { ...trace }
+      nextTrace.events = [
+        ...trace.events,
+        {
+          id: createId('event'),
+          type: 'ads_event_report_failed',
+          at: Date.now(),
+          payload: {
+            kind: 'click',
+            error: error instanceof Error ? error.message : 'event_report_failed',
+          },
+        },
+      ]
+      return nextTrace
+    })
+  })
+}
+
 async function handleSend(options = {}) {
   const prefilledContent = typeof options.prefilledContent === 'string'
     ? options.prefilledContent.trim()
@@ -1375,6 +1638,19 @@ async function handleSend(options = {}) {
       touchActiveSession()
       scheduleSaveSessions()
       isLoading.value = false
+
+      // Fail-open: ads pipeline runs asynchronously and never blocks chat completion.
+      runAttachAdsFlow({
+        session,
+        userContent,
+        assistantMessage,
+        turnTrace,
+      }).catch((error) => {
+        appendTurnTraceEvent(turnTrace, 'ads_evaluate_failed', {
+          error: error instanceof Error ? error.message : 'ads_flow_failed',
+        })
+        upsertTurnTrace(turnTrace)
+      })
     },
     (error) => {
       assistantMessage.status = 'done'
