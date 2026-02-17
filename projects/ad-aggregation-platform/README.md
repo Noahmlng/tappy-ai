@@ -13,6 +13,8 @@
 - `schemas/placement.schema.json`：广告位定义
 - `schemas/ad-request.schema.json`：应用发起广告请求协议
 - `schemas/ad-response.schema.json`：平台返回广告协议
+- `schemas/next-step-intent-card-request.schema.json`：`next_step.intent_card` 请求协议
+- `schemas/next-step-intent-card-response.schema.json`：`next_step.intent_card` 响应协议
 - `schemas/web-search-events.schema.json`：Web Search 链路事件协议
 - `schemas/web-search-config.schema.json`：Web Search 链路配置协议
 - `schemas/follow-up-events.schema.json`：Follow-up 链路事件协议
@@ -21,6 +23,10 @@
 - `config/default-web-search-chain.json`：Web Search 默认配置
 - `config/default-follow-up-chain.json`：Follow-up 默认配置
 - `docs/phase-1-scope.md`：阶段范围与后续实现清单
+- `docs/sdk-placement-settings-draft.md`：SDK placement 与 trigger 参数设计雏形
+- `docs/sdk-integration-document-spec.md`：SDK 接入文档写作规范与模板
+- `docs/next-step-intent-card-contract.md`：`next_step.intent_card` 接口协议（含示例）
+- `docs/local-simulator-gateway.md`：本地 Gateway（Dashboard + Simulator 联调）
 
 ## 下步实现建议
 
@@ -61,3 +67,13 @@ npm --prefix ./projects/ad-aggregation-platform run smoke:ads
 ```bash
 npm --prefix ./projects/ad-aggregation-platform run smoke:ads:live -- --query="best iphone deals" --answerText="iPhone offers"
 ```
+
+## 本地 Simulator Gateway
+
+用于本地联调 Dashboard 与 Simulator 的配置/决策/指标接口：
+
+```bash
+npm --prefix ./projects/ad-aggregation-platform run dev:gateway
+```
+
+默认监听：`http://127.0.0.1:3100`

@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-network.local/schemas/next-step-intent-card-response.schema.json",
+  "title": "NextStepIntentCardResponse",
+  "type": "object",
+  "required": [
+    "requestId",
+    "placementId",
+    "placementKey",
+    "decision",
+    "intent_inference",
+    "ads"
+  ],
+  "properties": {
+    "requestId": { "type": "string", "minLength": 1 },
+    "placementId": { "type": "string", "minLength": 1 },
+    "placementKey": {
+      "type": "string",
+      "const": "next_step.intent_card"
+    },
+    "decision": {
+      "type": "object",
+      "required": ["result", "reason", "reasonDetail", "intent_score"],
+      "properties": {
+        "result": {
+          "type": "string",
+          "enum": ["served", "no_fill", "blocked", "error"]
+        },
+        "reason": {
+          "type": "string",
+          "enum": ["served", "no_fill", "blocked", "error"]
+        },
+        "reasonDetail": { "type": "string", "minLength": 1 },
+        "intent_score": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "intent_inference": {
+      "type": "object",
+      "required": ["intent_class", "intent_score", "preference_facets"],
+      "properties": {
+        "intent_class": {
+          "type": "string",
+          "enum": [
+            "shopping",
+            "purchase_intent",
+            "gifting",
+            "product_exploration",
+            "non_commercial",
+            "other"
+          ]
+        },
+        "intent_score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "preference_facets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["facet_key", "facet_value"],
+            "properties": {
+              "facet_key": {
+                "type": "string",
+                "enum": [
+                  "color",
+                  "material",
+                  "style",
+                  "brand",
+                  "price",
+                  "use_case",
+                  "recipient",
+                  "other"
+                ]
+              },
+              "facet_value": { "type": "string", "minLength": 1 },
+              "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+              "source": {
+                "type": "string",
+                "enum": ["user_query", "session_context", "llm_inference"]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "constraints": {
+          "type": "object",
+          "properties": {
+            "must_include": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "must_exclude": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            }
+          },
+          "additionalProperties": false
+        },
+        "inference_trace": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ads": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "item_id",
+          "title",
+          "target_url",
+          "merchant_or_network",
+          "match_reasons",
+          "disclosure"
+        ],
+        "properties": {
+          "item_id": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "minLength": 1 },
+          "snippet": { "type": "string" },
+          "target_url": { "type": "string", "format": "uri" },
+          "merchant_or_network": { "type": "string", "minLength": 1 },
+          "price_hint": { "type": "string" },
+          "match_reasons": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "minItems": 1
+          },
+          "relevance_score": { "type": "number", "minimum": 0, "maximum": 1 },
+          "disclosure": { "type": "string", "enum": ["Ad", "Sponsored"] },
+          "tracking": {
+            "type": "object",
+            "properties": {
+              "impression_url": { "type": "string", "format": "uri" },
+              "click_url": { "type": "string", "format": "uri" },
+              "dismiss_url": { "type": "string", "format": "uri" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "meta": {
+      "type": "object",
+      "properties": {
+        "retrieval_ms": { "type": "number", "minimum": 0 },
+        "candidate_count": { "type": "integer", "minimum": 0 },
+        "selected_count": { "type": "integer", "minimum": 0 },
+        "model_version": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

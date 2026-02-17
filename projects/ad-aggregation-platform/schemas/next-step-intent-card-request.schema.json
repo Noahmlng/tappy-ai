@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-network.local/schemas/next-step-intent-card-request.schema.json",
+  "title": "NextStepIntentCardRequest",
+  "type": "object",
+  "required": [
+    "appId",
+    "sessionId",
+    "turnId",
+    "event",
+    "placementId",
+    "placementKey",
+    "context"
+  ],
+  "properties": {
+    "appId": { "type": "string", "minLength": 1 },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "turnId": { "type": "string", "minLength": 1 },
+    "userId": { "type": "string" },
+    "event": {
+      "type": "string",
+      "enum": ["followup_generation", "follow_up_generation"]
+    },
+    "placementId": { "type": "string", "minLength": 1 },
+    "placementKey": {
+      "type": "string",
+      "const": "next_step.intent_card"
+    },
+    "context": {
+      "type": "object",
+      "required": ["query", "locale", "intent_class", "intent_score", "preference_facets"],
+      "properties": {
+        "query": { "type": "string", "minLength": 1 },
+        "answerText": { "type": "string" },
+        "recent_turns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["role", "content"],
+            "properties": {
+              "role": {
+                "type": "string",
+                "enum": ["user", "assistant", "system", "tool"]
+              },
+              "content": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "locale": { "type": "string", "minLength": 2 },
+        "intent_class": {
+          "type": "string",
+          "enum": [
+            "shopping",
+            "purchase_intent",
+            "gifting",
+            "product_exploration",
+            "non_commercial",
+            "other"
+          ]
+        },
+        "intent_score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "preference_facets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["facet_key", "facet_value"],
+            "properties": {
+              "facet_key": {
+                "type": "string",
+                "enum": [
+                  "color",
+                  "material",
+                  "style",
+                  "brand",
+                  "price",
+                  "use_case",
+                  "recipient",
+                  "other"
+                ]
+              },
+              "facet_value": { "type": "string", "minLength": 1 },
+              "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+              "source": {
+                "type": "string",
+                "enum": ["user_query", "session_context", "llm_inference"]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "constraints": {
+          "type": "object",
+          "properties": {
+            "must_include": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "must_exclude": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            }
+          },
+          "additionalProperties": false
+        },
+        "blocked_topics": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "expected_revenue": { "type": "number", "minimum": 0 },
+        "debug": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

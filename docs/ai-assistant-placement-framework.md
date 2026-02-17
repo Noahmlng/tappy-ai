@@ -461,3 +461,5 @@ Use this template when expanding any single placement product:
 
 1. Attach Layer affiliate-link aggregator:
 `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/docs/attach-affiliate-aggregator-design.md`
+2. Next-Step Intent Card request/response contract:
+`/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/docs/next-step-intent-card-contract.md`
