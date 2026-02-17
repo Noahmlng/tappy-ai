@@ -70,9 +70,11 @@
       </div>
 
       <div class="space-y-2 border-t border-[var(--chat-sidebar-border)] p-3">
-        <div class="rounded-xl border border-[var(--chat-sidebar-border)] bg-[var(--chat-sidebar-surface)] p-2">
-          <div class="flex items-center justify-between">
-            <div class="text-[11px] font-semibold uppercase tracking-wide text-[var(--chat-sidebar-muted)]">System Prompt</div>
+        <details class="rounded-xl border border-[var(--chat-sidebar-border)] bg-[var(--chat-sidebar-surface)] p-2">
+          <summary class="cursor-pointer list-none text-[11px] font-semibold uppercase tracking-wide text-[var(--chat-sidebar-muted)]">
+            System Prompt
+          </summary>
+          <div class="mt-2 flex items-center justify-end">
             <button
               class="rounded border border-[#3a3a3a] px-1.5 py-0.5 text-[10px] text-[var(--chat-sidebar-muted)] hover:bg-[#2d2d2d] disabled:opacity-60"
               :disabled="!activeSession"
@@ -91,10 +93,12 @@
           <div class="mt-1 text-[10px] text-[var(--chat-sidebar-muted)]">
             Applied to every request in the current chat. New Chat resets to default.
           </div>
-        </div>
+        </details>
 
-        <div class="rounded-xl border border-[var(--chat-sidebar-border)] bg-[var(--chat-sidebar-surface)] p-2">
-          <div class="text-[11px] font-semibold uppercase tracking-wide text-[var(--chat-sidebar-muted)]">Turn Trace</div>
+        <details class="rounded-xl border border-[var(--chat-sidebar-border)] bg-[var(--chat-sidebar-surface)] p-2">
+          <summary class="cursor-pointer list-none text-[11px] font-semibold uppercase tracking-wide text-[var(--chat-sidebar-muted)]">
+            Turn Trace
+          </summary>
           <div v-if="activeSessionTurnLogs.length === 0" class="mt-2 text-[11px] text-[var(--chat-sidebar-muted)]">
             No turn logs yet.
           </div>
@@ -131,7 +135,7 @@
               </div>
             </details>
           </div>
-        </div>
+        </details>
 
         <button
           @click="clearHistory"
@@ -143,7 +147,7 @@
     </aside>
 
     <main class="relative flex h-full flex-1 flex-col overflow-hidden bg-[var(--chat-main-bg)]">
-      <header class="z-30 flex h-14 shrink-0 items-center justify-between border-b border-[#ececec] bg-white/85 px-4 backdrop-blur-md">
+      <header class="z-30 flex h-14 shrink-0 items-center justify-between border-b border-[#ececec] bg-white/90 px-4 backdrop-blur-md">
         <div class="flex items-center gap-2">
           <button
             v-if="!isSidebarOpen"
@@ -152,14 +156,15 @@
           >
             <Menu :size="20" />
           </button>
-          <div class="text-sm font-medium text-[#5f6368]">Chat Bot</div>
+          <div class="rounded-full border border-[#e5e7eb] px-2.5 py-1 text-xs font-medium text-[#5f6368]">Chat Bot</div>
         </div>
 
         <button
           @click="startNewChat"
-          class="rounded-full border border-[#dddddd] px-3 py-1 text-xs font-medium text-[#3f3f46] transition-colors hover:bg-[#f5f5f5]"
+          class="inline-flex items-center gap-1 rounded-full border border-[#dddddd] px-2.5 py-1 text-xs font-medium text-[#3f3f46] transition-colors hover:bg-[#f5f5f5]"
         >
-          New Chat
+          <Plus :size="13" />
+          <span>New</span>
         </button>
       </header>
 
@@ -348,9 +353,9 @@
 
         <div
           class="cubic-bezier-transition sticky bottom-0 z-20 w-full bg-gradient-to-t from-white via-white to-white/90 transition-all duration-[700ms]"
-          :class="hasStarted ? 'mt-auto pb-6 pt-2' : 'pb-8'"
+          :class="hasStarted ? 'mt-auto pb-5 pt-2' : 'pb-8'"
         >
-          <div class="mx-auto max-w-3xl px-4">
+          <div class="mx-auto max-w-[760px] px-4">
             <div class="relative flex flex-col rounded-[28px] border border-[#d9d9e3] bg-white p-2 shadow-[0_10px_30px_rgba(0,0,0,0.06)] transition-all duration-300 focus-within:border-[#c9c9d7]">
               <textarea
                 v-model="input"
@@ -368,7 +373,7 @@
                   @click="handleSend"
                   :disabled="!input.trim() || isLoading"
                   :class="[
-                    'rounded-full p-2 outline-none transition-all',
+                    'rounded-full p-2.5 outline-none transition-all',
                     input.trim() && !isLoading ? 'bg-[#111111] text-white hover:bg-[#2a2a2a]' : 'cursor-not-allowed bg-[#ebebeb] text-[#b8b8b8]'
                   ]"
                 >
