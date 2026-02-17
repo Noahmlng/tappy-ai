@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import http from 'node:http'
 
 import defaultPlacements from '../../config/default-placements.json' with { type: 'json' }
+import { runAdsRetrievalPipeline } from '../runtime/index.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -490,27 +491,6 @@ function recordBlockedOrNoFill(placement) {
   placementStats.requests += 1
 }
 
-function buildMockAd(placement, request, intentScore) {
-  const query = String(request?.context?.query || '').trim()
-  const label = query ? query.slice(0, 36) : 'recommended offer'
-
-  return {
-    adId: createId('ad'),
-    title: `Sponsored: ${label}`,
-    description: `Matched for ${placement.placementKey || placement.placementId} (intent ${intentScore.toFixed(2)}).`,
-    targetUrl: `https://example.com/offer?placement=${encodeURIComponent(placement.placementId)}`,
-    disclosure: placement.disclosure,
-    reason: 'simulator_match',
-    tracking: {
-      impressionUrl: `https://tracking.example.com/impression/${encodeURIComponent(placement.placementId)}`,
-      clickUrl: `https://tracking.example.com/click/${encodeURIComponent(placement.placementId)}`,
-    },
-    sourceNetwork: 'simulator',
-    entityText: query || 'general',
-    entityType: 'service',
-  }
-}
-
 function matchBlockedTopic(context, blockedTopics) {
   if (!blockedTopics.length) return ''
   const corpus = `${String(context?.query || '')} ${String(context?.answerText || '')}`.toLowerCase()
@@ -520,7 +500,41 @@ function matchBlockedTopic(context, blockedTopics) {
   return ''
 }
 
-function evaluateRequest(payload) {
+function buildRuntimeAdRequest(request, placement, intentScore) {
+  const context = request?.context && typeof request.context === 'object' ? request.context : {}
+  return {
+    appId: String(request?.appId || '').trim(),
+    sessionId: String(request?.sessionId || '').trim(),
+    userId: String(request?.userId || '').trim(),
+    placementId: placement?.placementKey || placement?.placementId || ATTACH_MVP_PLACEMENT_KEY,
+    context: {
+      query: String(context.query || '').trim(),
+      answerText: String(context.answerText || '').trim(),
+      locale: String(context.locale || '').trim() || 'en-US',
+      intentScore,
+    },
+  }
+}
+
+function summarizeRuntimeDebug(debug) {
+  if (!debug || typeof debug !== 'object') return {}
+  const networkErrors = Array.isArray(debug.networkErrors)
+    ? debug.networkErrors.map((item) => ({
+        network: item?.network || '',
+        errorCode: item?.errorCode || '',
+      }))
+    : []
+
+  return {
+    entities: Array.isArray(debug.entities) ? debug.entities.length : 0,
+    totalOffers: Number.isFinite(debug.totalOffers) ? debug.totalOffers : 0,
+    selectedOffers: Number.isFinite(debug.selectedOffers) ? debug.selectedOffers : 0,
+    networkHits: debug.networkHits && typeof debug.networkHits === 'object' ? debug.networkHits : {},
+    networkErrors,
+  }
+}
+
+async function evaluateRequest(payload) {
   const request = payload && typeof payload === 'object' ? payload : {}
   const context = request.context && typeof request.context === 'object' ? request.context : {}
   const intentScore = clampNumber(context.intentScore, 0, 1, 0)
@@ -747,30 +761,100 @@ function evaluateRequest(payload) {
     }
   }
 
+  const runtimeAdRequest = buildRuntimeAdRequest(request, placement, intentScore)
+  let runtimeResult
+
+  try {
+    runtimeResult = await runAdsRetrievalPipeline(runtimeAdRequest)
+  } catch (error) {
+    recordBlockedOrNoFill(placement)
+    recordDecision({
+      requestId,
+      appId: request.appId || '',
+      sessionId,
+      turnId: request.turnId || '',
+      event: request.event || '',
+      placementId: placement.placementId,
+      result: 'error',
+      reason: 'runtime_pipeline_error',
+      intentScore,
+      runtime: {
+        message: error instanceof Error ? error.message : 'Runtime pipeline failed',
+      },
+    })
+    persistState(state)
+    return {
+      requestId,
+      placementId: placement.placementId,
+      decision: {
+        result: 'error',
+        reason: 'runtime_pipeline_error',
+        intentScore,
+      },
+      ads: [],
+    }
+  }
+
+  const runtimeAds = Array.isArray(runtimeResult?.adResponse?.ads) ? runtimeResult.adResponse.ads : []
+  const runtimeRequestId = String(runtimeResult?.adResponse?.requestId || requestId)
+  const runtimeDebug = summarizeRuntimeDebug(runtimeResult?.debug)
+
+  if (runtimeAds.length === 0) {
+    recordBlockedOrNoFill(placement)
+    recordDecision({
+      requestId: runtimeRequestId,
+      appId: request.appId || '',
+      sessionId,
+      turnId: request.turnId || '',
+      event: request.event || '',
+      placementId: placement.placementId,
+      result: 'no_fill',
+      reason: 'runtime_no_offer',
+      intentScore,
+      runtime: runtimeDebug,
+    })
+    persistState(state)
+    return {
+      requestId: runtimeRequestId,
+      placementId: placement.placementId,
+      decision: {
+        result: 'no_fill',
+        reason: 'runtime_no_offer',
+        intentScore,
+      },
+      ads: [],
+    }
+  }
+
   const serveRevenue = round(0.03 + intentScore * 0.07, 4)
   recordServeCounters(placement, request, serveRevenue)
 
-  const ads = [buildMockAd(placement, request, intentScore)]
+  const ads = runtimeAds.map((ad) => ({
+    ...ad,
+    disclosure: placement.disclosure || ad.disclosure || 'Sponsored',
+  }))
+
   recordDecision({
-    requestId,
+    requestId: runtimeRequestId,
     appId: request.appId || '',
     sessionId,
     turnId: request.turnId || '',
     event: request.event || '',
     placementId: placement.placementId,
     result: 'served',
-    reason: 'eligible',
+    reason: 'runtime_eligible',
     intentScore,
+    runtime: runtimeDebug,
   })
 
   persistState(state)
 
   return {
-    requestId,
+    requestId: runtimeRequestId,
     placementId: placement.placementId,
     decision: {
       result: 'served',
-      reason: 'eligible',
+      reason: 'runtime_eligible',
       intentScore,
     },
     ads,
@@ -924,7 +1008,7 @@ async function requestHandler(req, res) {
     try {
       const payload = await readJsonBody(req)
       const request = normalizeAttachMvpPayload(payload, 'sdk/evaluate')
-      const result = evaluateRequest({
+      const result = await evaluateRequest({
         appId: request.appId,
         sessionId: request.sessionId,
         turnId: request.turnId,
