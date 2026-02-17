@@ -160,14 +160,26 @@ export async function runWebSearchTool(query, options = {}) {
   }
 }
 
-export function buildWebSearchContext(query, results = [], sponsoredSlot = null) {
+export function buildWebSearchContext(query, results = [], sponsoredSlot = null, options = {}) {
   if (!query || results.length === 0) return ''
 
-  const lines = results.map((result, index) => {
+  const mergeMode = options.mergeMode === 'blended' ? 'blended' : 'separate'
+  const displayResults = mergeMode === 'blended' && sponsoredSlot?.ad
+    ? [
+        {
+          title: `[${sponsoredSlot.label || 'Sponsored'}] ${sponsoredSlot.ad.title}`,
+          url: sponsoredSlot.ad.url,
+          snippet: sponsoredSlot.ad.snippet,
+        },
+        ...results,
+      ]
+    : results
+
+  const lines = displayResults.map((result, index) => {
     return `${index + 1}. ${result.title}\nURL: ${result.url}\nSnippet: ${result.snippet}`
   })
 
-  const sponsoredBlock = sponsoredSlot?.ad
+  const sponsoredBlock = mergeMode === 'separate' && sponsoredSlot?.ad
     ? [
         'Sponsored result:',
         `${sponsoredSlot.label}: ${sponsoredSlot.ad.title}`,
@@ -179,6 +191,7 @@ export function buildWebSearchContext(query, results = [], sponsoredSlot = null)
   return [
     'Web search results are available for this user request.',
     `Search query: ${query}`,
+    `Result merge mode: ${mergeMode}`,
     'Use these references when relevant and avoid fabricating sources.',
     sponsoredBlock,
     lines.join('\n\n'),

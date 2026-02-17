@@ -71,6 +71,34 @@
 
       <div class="border-t border-gray-200 p-3 space-y-2">
         <div class="rounded-lg border border-gray-200 bg-white p-2">
+          <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Ad Strategy</div>
+          <div class="mt-2 space-y-2 text-[11px]">
+            <label class="flex items-center justify-between gap-2">
+              <span class="text-gray-600">Enable ads</span>
+              <input v-model="strategy.adsEnabled" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
+            </label>
+            <label class="flex items-center justify-between gap-2">
+              <span :class="strategy.adsEnabled ? 'text-gray-600' : 'text-gray-400'">Blend sponsored into search</span>
+              <input
+                v-model="strategy.searchBlendEnabled"
+                :disabled="!strategy.adsEnabled"
+                type="checkbox"
+                class="h-4 w-4 rounded border-gray-300 disabled:opacity-50"
+              />
+            </label>
+            <label class="flex items-center justify-between gap-2">
+              <span :class="strategy.adsEnabled ? 'text-gray-600' : 'text-gray-400'">Enable sponsored follow-ups</span>
+              <input
+                v-model="strategy.followUpAdsEnabled"
+                :disabled="!strategy.adsEnabled"
+                type="checkbox"
+                class="h-4 w-4 rounded border-gray-300 disabled:opacity-50"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div class="rounded-lg border border-gray-200 bg-white p-2">
           <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Turn Trace</div>
           <div v-if="activeSessionTurnLogs.length === 0" class="mt-2 text-[11px] text-gray-500">
             No turn logs yet.
@@ -99,6 +127,11 @@
               </summary>
 
               <div class="mt-2 border-t border-gray-200 pt-2 text-[11px] text-gray-600">
+                <div class="mb-1 text-[10px] text-gray-500">
+                  Strategy: ads {{ log.strategySnapshot?.adsEnabled ? 'on' : 'off' }}, merge {{
+                    log.strategySnapshot?.searchBlendEnabled ? 'blended' : 'separate'
+                  }}, follow-up ads {{ log.strategySnapshot?.followUpAdsEnabled ? 'on' : 'off' }}
+                </div>
                 <div v-if="log.adOpportunitySources?.length" class="mb-1">
                   Sources: {{ log.adOpportunitySources.join(', ') }}
                 </div>
@@ -202,6 +235,10 @@
                         Query: "{{ msg.toolQuery }}"
                       </div>
 
+                      <div class="mt-1 text-[11px] text-gray-500">
+                        Merge mode: {{ msg.searchMergeMode === 'blended' ? 'blended' : 'separate' }}
+                      </div>
+
                       <div v-if="msg.toolState === 'running'" class="mt-2 inline-flex items-center gap-2 text-gray-500 text-xs">
                         <LoaderCircle :size="12" class="animate-spin" />
                         <span>Searching web...</span>
@@ -215,7 +252,10 @@
                         Finished in {{ msg.toolLatencyMs }} ms
                       </div>
 
-                      <div v-if="msg.sponsoredSlot?.ad" class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
+                      <div
+                        v-if="msg.searchMergeMode !== 'blended' && msg.sponsoredSlot?.ad"
+                        class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2"
+                      >
                         <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
                           <span>{{ msg.sponsoredSlot.label || 'Sponsored' }}</span>
                           <span class="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] text-amber-800">Slot 1</span>
@@ -235,11 +275,37 @@
                       </div>
 
                       <ul v-if="msg.toolResults?.length" class="mt-2 space-y-2">
-                        <li v-for="(result, idx) in msg.toolResults" :key="result.id || idx" class="rounded-lg border border-gray-200 bg-white p-2">
-                          <a :href="result.url" target="_blank" rel="noopener noreferrer" class="text-sm font-medium text-blue-700 hover:underline">
+                        <li
+                          v-for="(result, idx) in msg.toolResults"
+                          :key="result.id || idx"
+                          :class="[
+                            'rounded-lg border p-2',
+                            result.isSponsored
+                              ? 'border-amber-200 bg-amber-50'
+                              : 'border-gray-200 bg-white'
+                          ]"
+                        >
+                          <a
+                            :href="result.url"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="text-sm font-medium hover:underline"
+                            :class="result.isSponsored ? 'text-amber-900' : 'text-blue-700'"
+                          >
+                            <span
+                              v-if="result.isSponsored"
+                              class="mr-1 rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-800"
+                            >
+                              {{ result.label || 'Sponsored' }}
+                            </span>
                             {{ idx + 1 }}. {{ result.title }}
                           </a>
-                          <p class="mt-1 text-xs text-gray-600">{{ result.snippet }}</p>
+                          <p class="mt-1 text-xs" :class="result.isSponsored ? 'text-amber-800' : 'text-gray-600'">
+                            {{ result.snippet }}
+                          </p>
+                          <p v-if="result.isSponsored && result.advertiser" class="mt-1 text-[11px] text-amber-700">
+                            {{ result.advertiser }}
+                          </p>
                           <p class="mt-1 text-[11px] text-gray-400">{{ getHostLabel(result.url) }}</p>
                         </li>
                       </ul>
@@ -343,6 +409,12 @@ const MAX_SESSIONS = 50
 const TOOL_STATES = ['planning', 'running', 'done', 'error']
 const TURN_LOG_STORAGE_KEY = 'chat_bot_turn_logs_v1'
 const MAX_TURN_LOGS = 400
+const STRATEGY_STORAGE_KEY = 'chat_bot_strategy_v1'
+const DEFAULT_STRATEGY = {
+  adsEnabled: true,
+  searchBlendEnabled: false,
+  followUpAdsEnabled: true,
+}
 const FOLLOW_UP_SPONSORED_OPTIONS = [
   {
     adId: 'sponsored_followup_vercel_ai_sdk',
@@ -377,6 +449,7 @@ const isComposing = ref(false)
 const sessions = ref([])
 const activeSessionId = ref('')
 const turnLogs = ref([])
+const strategy = ref({ ...DEFAULT_STRATEGY })
 
 let persistTimer = null
 
@@ -441,11 +514,28 @@ function normalizeTurnLog(raw) {
     adOpportunitySources: Array.isArray(raw.adOpportunitySources)
       ? raw.adOpportunitySources.filter((item) => typeof item === 'string')
       : [],
+    strategySnapshot: normalizeStrategy(raw.strategySnapshot),
     events: Array.isArray(raw.events)
       ? raw.events
           .map((event, index) => normalizeTurnEvent(event, index))
           .filter(Boolean)
       : [],
+  }
+}
+
+function normalizeStrategy(raw) {
+  if (!raw || typeof raw !== 'object') {
+    return { ...DEFAULT_STRATEGY }
+  }
+
+  return {
+    adsEnabled: typeof raw.adsEnabled === 'boolean' ? raw.adsEnabled : DEFAULT_STRATEGY.adsEnabled,
+    searchBlendEnabled: typeof raw.searchBlendEnabled === 'boolean'
+      ? raw.searchBlendEnabled
+      : DEFAULT_STRATEGY.searchBlendEnabled,
+    followUpAdsEnabled: typeof raw.followUpAdsEnabled === 'boolean'
+      ? raw.followUpAdsEnabled
+      : DEFAULT_STRATEGY.followUpAdsEnabled,
   }
 }
 
@@ -478,6 +568,9 @@ function normalizeMessage(raw) {
           title: typeof item.title === 'string' ? item.title : '',
           url: typeof item.url === 'string' ? item.url : '',
           snippet: typeof item.snippet === 'string' ? item.snippet : '',
+          isSponsored: Boolean(item.isSponsored),
+          label: typeof item.label === 'string' && item.label.trim() ? item.label.trim() : 'Sponsored',
+          advertiser: typeof item.advertiser === 'string' ? item.advertiser : '',
         }))
     : []
 
@@ -493,6 +586,7 @@ function normalizeMessage(raw) {
     toolResults,
     toolLatencyMs: Number.isFinite(raw.toolLatencyMs) ? raw.toolLatencyMs : null,
     toolError: typeof raw.toolError === 'string' ? raw.toolError : '',
+    searchMergeMode: raw.searchMergeMode === 'blended' ? 'blended' : 'separate',
     sponsoredSlot: normalizeSponsoredSlot(raw.sponsoredSlot),
     followUps: Array.isArray(raw.followUps)
       ? raw.followUps
@@ -527,6 +621,10 @@ function persistSessionsNow() {
 
 function persistTurnLogsNow() {
   localStorage.setItem(TURN_LOG_STORAGE_KEY, JSON.stringify(turnLogs.value))
+}
+
+function persistStrategyNow() {
+  localStorage.setItem(STRATEGY_STORAGE_KEY, JSON.stringify(strategy.value))
 }
 
 function scheduleSaveSessions() {
@@ -608,6 +706,25 @@ function loadTurnLogs() {
 
 loadTurnLogs()
 
+function loadStrategy() {
+  try {
+    const raw = localStorage.getItem(STRATEGY_STORAGE_KEY)
+    if (!raw) {
+      strategy.value = { ...DEFAULT_STRATEGY }
+      persistStrategyNow()
+      return
+    }
+
+    strategy.value = normalizeStrategy(JSON.parse(raw))
+    persistStrategyNow()
+  } catch (error) {
+    console.error('Failed to load strategy:', error)
+    strategy.value = { ...DEFAULT_STRATEGY }
+  }
+}
+
+loadStrategy()
+
 const sortedSessions = computed(() => {
   return [...sessions.value].sort((a, b) => b.updatedAt - a.updatedAt)
 })
@@ -635,6 +752,12 @@ const activeSessionTurnLogs = computed(() => {
     .sort((a, b) => b.startedAt - a.startedAt)
     .slice(0, 20)
 })
+const effectiveSearchMergeMode = computed(() => {
+  return strategy.value.adsEnabled && strategy.value.searchBlendEnabled ? 'blended' : 'separate'
+})
+const followUpSponsoredEnabled = computed(() => {
+  return strategy.value.adsEnabled && strategy.value.followUpAdsEnabled
+})
 const hasStarted = computed(() => currentMessages.value.length > 0)
 
 async function scrollToBottom() {
@@ -653,6 +776,14 @@ watch(
     if (hasStarted.value) {
       scrollToBottom()
     }
+  },
+  { deep: true },
+)
+
+watch(
+  strategy,
+  () => {
+    persistStrategyNow()
   },
   { deep: true },
 )
@@ -691,6 +822,7 @@ function createTurnTrace(sessionId, userQuery) {
     endedAt: null,
     adOpportunityTriggered: false,
     adOpportunitySources: [],
+    strategySnapshot: normalizeStrategy(strategy.value),
     events: [],
   }
 }
@@ -782,7 +914,7 @@ function pickSponsoredFollowUp(userContent, assistantContent) {
   return matched || FOLLOW_UP_SPONSORED_OPTIONS[0]
 }
 
-function createFollowUpSuggestions(userContent, assistantContent, sourceTurnId = '') {
+function createFollowUpSuggestions(userContent, assistantContent, sourceTurnId = '', includeSponsored = true) {
   const topicSeed = extractTopicSeed(userContent) || extractTopicSeed(assistantContent) || 'this topic'
 
   const suggestions = [
@@ -818,17 +950,19 @@ function createFollowUpSuggestions(userContent, assistantContent, sourceTurnId =
     },
   ]
 
-  const sponsored = pickSponsoredFollowUp(userContent, assistantContent)
-  suggestions.push({
-    id: createId('followup'),
-    text: sponsored.text,
-    prompt: sponsored.prompt,
-    isSponsored: true,
-    label: 'Sponsored',
-    adId: sponsored.adId,
-    advertiser: sponsored.advertiser,
-    sourceTurnId,
-  })
+  if (includeSponsored) {
+    const sponsored = pickSponsoredFollowUp(userContent, assistantContent)
+    suggestions.push({
+      id: createId('followup'),
+      text: sponsored.text,
+      prompt: sponsored.prompt,
+      isSponsored: true,
+      label: 'Sponsored',
+      adId: sponsored.adId,
+      advertiser: sponsored.advertiser,
+      sourceTurnId,
+    })
+  }
 
   return suggestions
 }
@@ -891,6 +1025,8 @@ function clearHistory() {
   activeSessionId.value = sessions.value[0].id
   historyQuery.value = ''
   persistSessionsNow()
+  turnLogs.value = []
+  persistTurnLogsNow()
 }
 
 async function handleFollowUpSelect(item) {
@@ -930,7 +1066,16 @@ async function handleSend() {
   input.value = ''
   isLoading.value = true
   const turnTrace = createTurnTrace(session.id, userContent)
+  const adsEnabled = strategy.value.adsEnabled
+  const searchMergeMode = effectiveSearchMergeMode.value
+  const sponsoredFollowUpsEnabled = followUpSponsoredEnabled.value
+
   appendTurnTraceEvent(turnTrace, 'turn_started', { query: userContent })
+  appendTurnTraceEvent(turnTrace, 'strategy_snapshot', {
+    adsEnabled,
+    searchMergeMode,
+    sponsoredFollowUpsEnabled,
+  })
   upsertTurnTrace(turnTrace)
 
   const userMessage = {
@@ -945,6 +1090,7 @@ async function handleSend() {
     toolResults: [],
     toolLatencyMs: null,
     toolError: '',
+    searchMergeMode: 'separate',
     sponsoredSlot: null,
     followUps: [],
   }
@@ -974,6 +1120,7 @@ async function handleSend() {
       toolResults: [],
       toolLatencyMs: null,
       toolError: '',
+      searchMergeMode,
       sponsoredSlot: null,
       followUps: [],
     }
@@ -988,30 +1135,54 @@ async function handleSend() {
       appendTurnTraceEvent(turnTrace, 'web_search_called')
       upsertTurnTrace(turnTrace)
 
-      const webSearchOutput = await runWebSearchTool(userContent)
+      const webSearchOutput = await runWebSearchTool(userContent, {
+        sponsoredEnabled: adsEnabled,
+      })
       toolMessage.toolState = 'done'
       toolMessage.toolQuery = webSearchOutput.query
       toolMessage.toolResults = webSearchOutput.results
       toolMessage.toolLatencyMs = webSearchOutput.latencyMs
       toolMessage.sponsoredSlot = normalizeSponsoredSlot(webSearchOutput.sponsoredSlot)
+
+      if (toolMessage.sponsoredSlot?.ad && searchMergeMode === 'blended') {
+        const sponsoredResult = {
+          id: toolMessage.sponsoredSlot.ad.id || createId('sponsored_result'),
+          title: toolMessage.sponsoredSlot.ad.title,
+          url: toolMessage.sponsoredSlot.ad.url,
+          snippet: toolMessage.sponsoredSlot.ad.snippet,
+          isSponsored: true,
+          label: toolMessage.sponsoredSlot.label || 'Sponsored',
+          advertiser: toolMessage.sponsoredSlot.ad.advertiser || '',
+        }
+        toolMessage.toolResults = [sponsoredResult, ...toolMessage.toolResults]
+      }
+
       const sponsoredCount = toolMessage.sponsoredSlot?.ad ? 1 : 0
       toolMessage.content = `web_search returned ${webSearchOutput.results.length} results (+${sponsoredCount} sponsored slot)`
       appendTurnTraceEvent(turnTrace, 'web_search_succeeded', {
         organicCount: webSearchOutput.results.length,
         sponsoredCount,
         latencyMs: webSearchOutput.latencyMs,
+        mergeMode: searchMergeMode,
       })
       if (sponsoredCount > 0) {
-        appendTurnTraceEvent(turnTrace, 'sponsored_slot_rendered', {
-          slotId: toolMessage.sponsoredSlot?.slotId || 'search_sponsored_slot_1',
-          adId: toolMessage.sponsoredSlot?.ad?.id || '',
-        })
+        if (searchMergeMode === 'blended') {
+          appendTurnTraceEvent(turnTrace, 'sponsored_result_blended', {
+            adId: toolMessage.sponsoredSlot?.ad?.id || '',
+          })
+        } else {
+          appendTurnTraceEvent(turnTrace, 'sponsored_slot_rendered', {
+            slotId: toolMessage.sponsoredSlot?.slotId || 'search_sponsored_slot_1',
+            adId: toolMessage.sponsoredSlot?.ad?.id || '',
+          })
+        }
       }
       upsertTurnTrace(turnTrace)
       webSearchContext = buildWebSearchContext(
         webSearchOutput.query,
         webSearchOutput.results,
         webSearchOutput.sponsoredSlot,
+        { mergeMode: searchMergeMode },
       )
     } catch (error) {
       toolMessage.toolState = 'error'
@@ -1019,6 +1190,7 @@ async function handleSend() {
       toolMessage.content = 'web_search failed'
       toolMessage.sponsoredSlot = null
       toolMessage.followUps = []
+      toolMessage.searchMergeMode = searchMergeMode
       appendTurnTraceEvent(turnTrace, 'web_search_failed', {
         error: toolMessage.toolError,
       })
@@ -1041,6 +1213,7 @@ async function handleSend() {
     toolResults: [],
     toolLatencyMs: null,
     toolError: '',
+    searchMergeMode: 'separate',
     sponsoredSlot: null,
     followUps: [],
   }
@@ -1074,6 +1247,7 @@ async function handleSend() {
         userContent,
         assistantMessage.content,
         turnTrace.turnId,
+        sponsoredFollowUpsEnabled,
       )
       const sponsoredFollowUps = assistantMessage.followUps.filter((item) => item.isSponsored).length
       appendTurnTraceEvent(turnTrace, 'assistant_generation_completed', {
@@ -1087,6 +1261,9 @@ async function handleSend() {
       const adOpportunitySources = []
       if (turnTrace.events.some((event) => event.type === 'sponsored_slot_rendered')) {
         adOpportunitySources.push('web_search_sponsored_slot')
+      }
+      if (turnTrace.events.some((event) => event.type === 'sponsored_result_blended')) {
+        adOpportunitySources.push('web_search_sponsored_blended')
       }
       if (sponsoredFollowUps > 0) {
         adOpportunitySources.push('follow_up_sponsored')
@@ -1113,7 +1290,9 @@ async function handleSend() {
       })
       const adOpportunitySources = turnTrace.events.some((event) => event.type === 'sponsored_slot_rendered')
         ? ['web_search_sponsored_slot']
-        : []
+        : turnTrace.events.some((event) => event.type === 'sponsored_result_blended')
+          ? ['web_search_sponsored_blended']
+          : []
       turnTrace.adOpportunityTriggered = adOpportunitySources.length > 0
       turnTrace.adOpportunitySources = adOpportunitySources
       turnTrace.endedAt = Date.now()
