@@ -132,6 +132,11 @@ export async function runWebSearchTool(query, options = {}) {
   const normalized = normalizeQuery(query)
   const limit = Number.isFinite(options.maxResults) ? options.maxResults : 4
   const sponsoredEnabled = options.sponsoredEnabled !== false
+  const excludedSponsoredIds = new Set(
+    Array.isArray(options.excludedSponsoredIds)
+      ? options.excludedSponsoredIds.filter((id) => typeof id === 'string')
+      : [],
+  )
   const preferenceBoostTags = Array.isArray(options.preferenceBoostTags)
     ? options.preferenceBoostTags.filter((tag) => typeof tag === 'string')
     : []
@@ -156,20 +161,28 @@ export async function runWebSearchTool(query, options = {}) {
     const sponsoredCandidates = scoreItemsByQuery(MOCK_SPONSORED_INDEX, terms, {
       preferenceBoostTags,
     })
-    const selected = sponsoredCandidates[0] || MOCK_SPONSORED_INDEX[0]
-    sponsoredMatchScore = Number.isFinite(selected.score) ? selected.score : null
+    const selected =
+      sponsoredCandidates.find((item) => {
+        const adId = `ad_${item.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
+        return !excludedSponsoredIds.has(adId)
+      }) || sponsoredCandidates[0] || MOCK_SPONSORED_INDEX[0]
 
-    sponsoredSlot = {
-      slotId: 'search_sponsored_slot_1',
-      label: 'Sponsored',
-      ad: {
-        id: `ad_${selected.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
-        title: selected.title,
-        url: selected.url,
-        snippet: selected.snippet,
-        advertiser: selected.advertiser,
-        preferenceTags: Array.isArray(selected.tags) ? selected.tags : [],
-      },
+    const selectedAdId = `ad_${selected.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
+    if (!excludedSponsoredIds.has(selectedAdId) || excludedSponsoredIds.size === 0) {
+      sponsoredMatchScore = Number.isFinite(selected.score) ? selected.score : null
+
+      sponsoredSlot = {
+        slotId: 'search_sponsored_slot_1',
+        label: 'Sponsored',
+        ad: {
+          id: selectedAdId,
+          title: selected.title,
+          url: selected.url,
+          snippet: selected.snippet,
+          advertiser: selected.advertiser,
+          preferenceTags: Array.isArray(selected.tags) ? selected.tags : [],
+        },
+      }
     }
   }
 

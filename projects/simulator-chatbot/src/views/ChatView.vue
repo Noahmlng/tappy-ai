@@ -223,6 +223,9 @@
                   }}
                 </div>
                 <div class="mb-1 text-[10px] text-gray-500">
+                  Retry count: {{ log.events?.find((event) => event.type === 'retry_policy_applied')?.payload?.retryCount || 0 }}
+                </div>
+                <div class="mb-1 text-[10px] text-gray-500">
                   Preference: {{
                     log.preferenceSnapshot?.topTopics?.length
                       ? log.preferenceSnapshot.topTopics.join(', ')
@@ -420,6 +423,20 @@
                     <MarkdownRenderer :content="msg.content" />
                     <span v-if="msg.status === 'streaming'" class="inline-block w-0.5 h-5 bg-gray-800 ml-0.5 cursor-blink align-middle"></span>
                   </template>
+
+                  <div
+                    v-if="msg.kind !== 'tool' && msg.role === 'assistant' && msg.status === 'done' && msg.sourceUserContent"
+                    class="mt-2 flex items-center gap-2"
+                  >
+                    <button
+                      class="rounded border border-gray-300 bg-white px-2 py-1 text-[11px] text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      :disabled="isLoading"
+                      @click="handleRegenerate(msg)"
+                    >
+                      Regenerate
+                    </button>
+                    <span class="text-[10px] text-gray-400">Retry #{{ msg.retryCount }}</span>
+                  </div>
 
                   <CitationSources
                     v-if="msg.kind !== 'tool' && msg.status === 'done' && (msg.sources?.length || msg.sponsoredSource?.url)"
@@ -678,6 +695,7 @@ function normalizeFollowUpItem(raw, index) {
     adId: typeof raw.adId === 'string' ? raw.adId : '',
     advertiser: typeof raw.advertiser === 'string' ? raw.advertiser : '',
     sourceTurnId: typeof raw.sourceTurnId === 'string' ? raw.sourceTurnId : '',
+    retryCount: Number.isFinite(raw.retryCount) ? Math.max(0, raw.retryCount) : 0,
     preferenceTopics: Array.isArray(raw.preferenceTopics)
       ? raw.preferenceTopics.filter((topicId) => typeof topicId === 'string')
       : [],
@@ -863,6 +881,8 @@ function normalizeMessage(raw) {
       : [],
     sponsoredSource: normalizeSponsoredSource(raw.sponsoredSource),
     sourceTurnId: typeof raw.sourceTurnId === 'string' ? raw.sourceTurnId : '',
+    sourceUserContent: typeof raw.sourceUserContent === 'string' ? raw.sourceUserContent : '',
+    retryCount: Number.isFinite(raw.retryCount) ? Math.max(0, raw.retryCount) : 0,
     followUps: Array.isArray(raw.followUps)
       ? raw.followUps
           .map((item, index) => normalizeFollowUpItem(item, index))
@@ -1295,6 +1315,46 @@ function getHostLabel(url) {
   return getHostFromUrl(url)
 }
 
+function normalizePromptKey(prompt) {
+  return String(prompt || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function getLatestRetryCountForPrompt(session, prompt) {
+  if (!session) return 0
+  const targetKey = normalizePromptKey(prompt)
+  if (!targetKey) return 0
+
+  for (let index = session.messages.length - 1; index >= 0; index -= 1) {
+    const message = session.messages[index]
+    if (!message || message.role !== 'user') continue
+    if (normalizePromptKey(message.content) !== targetKey) continue
+    return Number.isFinite(message.retryCount) ? Math.max(0, message.retryCount) : 0
+  }
+
+  return 0
+}
+
+function collectSponsoredAdIdsForPrompt(session, prompt) {
+  if (!session) return []
+  const targetKey = normalizePromptKey(prompt)
+  if (!targetKey) return []
+
+  const adIds = new Set()
+  for (const message of session.messages) {
+    if (!message || message.kind !== 'tool') continue
+    if (normalizePromptKey(message.sourceUserContent || message.toolQuery) !== targetKey) continue
+    const adId = message.sponsoredSlot?.ad?.id
+    if (adId) {
+      adIds.add(adId)
+    }
+  }
+
+  return Array.from(adIds)
+}
+
 function extractPreferenceTopicIds(text) {
   const normalized = String(text || '').toLowerCase()
   if (!normalized) return []
@@ -1568,6 +1628,41 @@ function handleSponsoredSourceClick(message, source) {
   })
 }
 
+async function handleRegenerate(message) {
+  if (!message?.sourceUserContent || isLoading.value) return
+
+  const session = activeSession.value
+  if (!session) return
+
+  const latestRetryCount = getLatestRetryCountForPrompt(session, message.sourceUserContent)
+  const nextRetryCount = Math.max(latestRetryCount, Number(message.retryCount) || 0) + 1
+
+  if (message.sourceTurnId) {
+    updateTurnTrace(message.sourceTurnId, (trace) => {
+      const nextTrace = { ...trace }
+      nextTrace.events = [
+        ...trace.events,
+        {
+          id: createId('event'),
+          type: 'regenerate_requested',
+          at: Date.now(),
+          payload: {
+            nextRetryCount,
+          },
+        },
+      ]
+      return nextTrace
+    })
+  }
+
+  input.value = ''
+  await handleSend({
+    prefilledContent: message.sourceUserContent,
+    retrySource: 'regenerate',
+    forcedRetryCount: nextRetryCount,
+  })
+}
+
 async function handleFollowUpSelect(item) {
   if (!item || !item.prompt || isLoading.value) return
 
@@ -1598,17 +1693,24 @@ async function handleFollowUpSelect(item) {
     })
   }
 
-  input.value = item.prompt
-  await handleSend()
+  input.value = ''
+  await handleSend({
+    prefilledContent: item.prompt,
+    retrySource: 'follow_up',
+  })
 }
 
-async function handleSend() {
-  if (!input.value.trim() || isLoading.value || isComposing.value) return
+async function handleSend(options = {}) {
+  const prefilledContent = typeof options.prefilledContent === 'string'
+    ? options.prefilledContent.trim()
+    : ''
+  const userContent = prefilledContent || input.value.trim()
+
+  if (!userContent || isLoading.value || isComposing.value) return
 
   const session = activeSession.value
   if (!session) return
 
-  const userContent = input.value.trim()
   input.value = ''
   isLoading.value = true
   const detectedPreferenceTopics = extractPreferenceTopicIds(userContent)
@@ -1623,6 +1725,17 @@ async function handleSend() {
   const searchMergeMode = searchAdsEnabled && effectiveStrategySnapshot.searchBlendEnabled ? 'blended' : 'separate'
   const sponsoredFollowUpsEnabled =
     effectiveStrategySnapshot.adsEnabled && effectiveStrategySnapshot.followUpAdsEnabled
+  const latestRetryCount = getLatestRetryCountForPrompt(session, userContent)
+  const retryCount = Number.isFinite(options.forcedRetryCount)
+    ? Math.max(0, options.forcedRetryCount)
+    : options.retrySource === 'regenerate'
+      ? latestRetryCount + 1
+      : 0
+  const searchAdsAfterRetry = searchAdsEnabled && retryCount < 2
+  const sponsoredFollowUpsAfterRetry = sponsoredFollowUpsEnabled && retryCount < 1
+  const excludedSponsoredIds = retryCount > 0
+    ? collectSponsoredAdIdsForPrompt(session, userContent)
+    : []
   const boostTags = [...preferenceBoostTags.value]
   const turnTrace = createTurnTrace(
     session.id,
@@ -1638,9 +1751,21 @@ async function handleSend() {
     searchAdsEnabled,
     searchMergeMode,
     sponsoredFollowUpsEnabled,
+    retryCount,
+    searchAdsAfterRetry,
+    sponsoredFollowUpsAfterRetry,
+    excludedSponsoredCount: excludedSponsoredIds.length,
     experimentVariant,
     experimentEnabled: experimentConfig.value.enabled,
   })
+  if (retryCount > 0) {
+    appendTurnTraceEvent(turnTrace, 'retry_policy_applied', {
+      retryCount,
+      searchAdsAfterRetry,
+      sponsoredFollowUpsAfterRetry,
+      excludedSponsoredIds,
+    })
+  }
   appendTurnTraceEvent(turnTrace, 'preference_profile_used', {
     detectedTopics: detectedPreferenceTopics,
     topTopics: getTopPreferenceTopicIds(3),
@@ -1665,6 +1790,8 @@ async function handleSend() {
     sources: [],
     sponsoredSource: null,
     sourceTurnId: '',
+    sourceUserContent: userContent,
+    retryCount,
     followUps: [],
   }
 
@@ -1700,6 +1827,8 @@ async function handleSend() {
       sources: [],
       sponsoredSource: null,
       sourceTurnId: '',
+      sourceUserContent: userContent,
+      retryCount,
       followUps: [],
     }
 
@@ -1714,7 +1843,8 @@ async function handleSend() {
       upsertTurnTrace(turnTrace)
 
       const webSearchOutput = await runWebSearchTool(userContent, {
-        sponsoredEnabled: searchAdsEnabled,
+        sponsoredEnabled: searchAdsAfterRetry,
+        excludedSponsoredIds,
         preferenceBoostTags: boostTags,
       })
       toolMessage.toolState = 'done'
@@ -1828,6 +1958,8 @@ async function handleSend() {
     sources: [],
     sponsoredSource: null,
     sourceTurnId: turnTrace.turnId,
+    sourceUserContent: userContent,
+    retryCount,
     followUps: [],
   }
 
@@ -1862,7 +1994,7 @@ async function handleSend() {
         userContent,
         assistantMessage.content,
         turnTrace.turnId,
-        sponsoredFollowUpsEnabled,
+        sponsoredFollowUpsAfterRetry,
       )
       const sponsoredFollowUps = assistantMessage.followUps.filter((item) => item.isSponsored).length
       appendTurnTraceEvent(turnTrace, 'assistant_generation_completed', {
