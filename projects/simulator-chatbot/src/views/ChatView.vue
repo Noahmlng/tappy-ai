@@ -375,6 +375,37 @@
                     :disabled="isLoading"
                     @select="handleFollowUpSelect"
                   />
+
+                  <div
+                    v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.nextStepAdSlot?.ads?.length"
+                    class="mt-3 rounded-xl border border-[#d9eadf] bg-[#f3fbf6] p-3"
+                  >
+                    <div class="mb-2 flex items-center justify-between">
+                      <span class="text-[11px] font-semibold uppercase tracking-wide text-[#2f7d51]">Related Products · Sponsored</span>
+                      <span class="text-[10px] text-[#4d8f69]">{{ msg.nextStepAdSlot.placementId || 'chat_followup_v1' }}</span>
+                    </div>
+                    <ul class="space-y-2">
+                      <li
+                        v-for="ad in msg.nextStepAdSlot.ads"
+                        :key="ad.itemId"
+                        class="rounded-lg border border-[#d9eadf] bg-white p-2"
+                      >
+                        <a
+                          :href="ad.targetUrl"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="text-sm font-medium text-[#2463d6] hover:underline"
+                          @click="handleNextStepAdClick(msg, ad)"
+                        >
+                          {{ ad.title }}
+                        </a>
+                        <p v-if="ad.snippet" class="mt-1 text-xs text-[#4b5563]">{{ ad.snippet }}</p>
+                        <p v-if="ad.matchReasons?.length" class="mt-1 text-[11px] text-[#6b7280]">
+                          {{ ad.matchReasons.join(' · ') }}
+                        </p>
+                      </li>
+                    </ul>
+                  </div>
                 </div>
               </div>
             </div>
@@ -446,7 +477,12 @@ import {
 } from 'lucide-vue-next'
 import { sendMessageStream } from '../api/deepseek'
 import { shouldUseWebSearchTool, runWebSearchTool, buildWebSearchContext } from '../api/webSearchTool'
-import { fetchSdkConfig, evaluateAttachPlacement, reportSdkEvent } from '../api/adsSdk'
+import {
+  fetchSdkConfig,
+  evaluateAttachPlacement,
+  evaluateNextStepIntentCardPlacement,
+  reportSdkEvent,
+} from '../api/adsSdk'
 import CitationSources from '../components/CitationSources.vue'
 import FollowUpSuggestions from '../components/FollowUpSuggestions.vue'
 import MarkdownRenderer from '../components/MarkdownRenderer.vue'
@@ -603,6 +639,105 @@ function normalizeAttachAdSlot(raw) {
   }
 }
 
+function normalizeNextStepAdItem(raw, index) {
+  if (!raw || typeof raw !== 'object') return null
+  const itemId = typeof raw.item_id === 'string'
+    ? raw.item_id
+    : typeof raw.itemId === 'string'
+      ? raw.itemId
+      : typeof raw.adId === 'string'
+        ? raw.adId
+        : `next_step_${index}`
+  const title = typeof raw.title === 'string' ? raw.title.trim() : ''
+  const targetUrl = typeof raw.target_url === 'string'
+    ? raw.target_url.trim()
+    : typeof raw.targetUrl === 'string'
+      ? raw.targetUrl.trim()
+      : ''
+
+  if (!title || !targetUrl) return null
+
+  const matchReasons = Array.isArray(raw.match_reasons)
+    ? raw.match_reasons.map((item) => String(item || '').trim()).filter(Boolean)
+    : Array.isArray(raw.matchReasons)
+      ? raw.matchReasons.map((item) => String(item || '').trim()).filter(Boolean)
+      : []
+
+  return {
+    itemId,
+    title,
+    snippet: typeof raw.snippet === 'string'
+      ? raw.snippet
+      : typeof raw.description === 'string'
+        ? raw.description
+        : '',
+    targetUrl,
+    merchantOrNetwork: typeof raw.merchant_or_network === 'string'
+      ? raw.merchant_or_network
+      : typeof raw.merchantOrNetwork === 'string'
+        ? raw.merchantOrNetwork
+        : typeof raw.sourceNetwork === 'string'
+          ? raw.sourceNetwork
+          : '',
+    priceHint: typeof raw.price_hint === 'string'
+      ? raw.price_hint
+      : typeof raw.priceHint === 'string'
+        ? raw.priceHint
+        : '',
+    matchReasons,
+    relevanceScore: Number.isFinite(raw.relevance_score)
+      ? raw.relevance_score
+      : Number.isFinite(raw.relevanceScore)
+        ? raw.relevanceScore
+        : null,
+    disclosure: raw.disclosure === 'Ad' ? 'Ad' : 'Sponsored',
+  }
+}
+
+function normalizeNextStepAdSlot(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const allowedDecisionValues = new Set(['served', 'no_fill', 'blocked', 'error'])
+  const ads = Array.isArray(raw.ads)
+    ? raw.ads.map((item, index) => normalizeNextStepAdItem(item, index)).filter(Boolean)
+    : []
+  const decision = raw.decision && typeof raw.decision === 'object'
+    ? {
+        result: allowedDecisionValues.has(raw.decision.result) ? raw.decision.result : 'error',
+        reason: allowedDecisionValues.has(raw.decision.reason) ? raw.decision.reason : 'error',
+        reasonDetail: typeof raw.decision.reasonDetail === 'string' ? raw.decision.reasonDetail : '',
+        intentScore: Number.isFinite(raw.decision.intent_score)
+          ? raw.decision.intent_score
+          : Number.isFinite(raw.decision.intentScore)
+            ? raw.decision.intentScore
+            : 0,
+      }
+    : {
+        result: 'error',
+        reason: 'error',
+        reasonDetail: '',
+        intentScore: 0,
+      }
+  const intentInferenceRaw = raw.intent_inference && typeof raw.intent_inference === 'object'
+    ? raw.intent_inference
+    : {}
+
+  return {
+    requestId: typeof raw.requestId === 'string' ? raw.requestId : '',
+    placementId: typeof raw.placementId === 'string' ? raw.placementId : '',
+    placementKey: typeof raw.placementKey === 'string' ? raw.placementKey : 'next_step.intent_card',
+    decision,
+    intentInference: {
+      intentClass: typeof intentInferenceRaw.intent_class === 'string' ? intentInferenceRaw.intent_class : '',
+      intentScore: Number.isFinite(intentInferenceRaw.intent_score) ? intentInferenceRaw.intent_score : 0,
+      preferenceFacets: Array.isArray(intentInferenceRaw.preference_facets)
+        ? intentInferenceRaw.preference_facets
+        : [],
+    },
+    ads,
+    reportPayload: raw.reportPayload && typeof raw.reportPayload === 'object' ? raw.reportPayload : null,
+  }
+}
+
 function normalizeTurnEvent(raw, index) {
   if (!raw || typeof raw !== 'object') return null
 
@@ -644,6 +779,7 @@ function normalizeMessage(raw) {
       ? raw.followUps.map((item, index) => normalizeFollowUpItem(item, index)).filter(Boolean)
       : [],
     attachAdSlot: normalizeAttachAdSlot(raw.attachAdSlot),
+    nextStepAdSlot: normalizeNextStepAdSlot(raw.nextStepAdSlot),
   }
 }
 
@@ -1268,10 +1404,110 @@ function estimateIntentScore(query) {
     'recommend',
     'subscription',
     'plan',
+    '\u4e70',
+    '\u4ef7\u683c',
+    '\u6298\u6263',
+    '\u63a8\u8350',
+    '\u9001\u793c',
   ]
   const hits = signals.reduce((count, signal) => (text.includes(signal) ? count + 1 : count), 0)
   const score = 0.3 + hits * 0.12
   return Math.min(0.95, Math.max(0.05, Number(score.toFixed(2))))
+}
+
+function inferIntentClass(query) {
+  const text = String(query || '').toLowerCase()
+  if (!text) return 'non_commercial'
+
+  const giftingSignals = [
+    'gift',
+    'present',
+    'for her',
+    'for him',
+    '\u9001\u793c',
+    '\u793c\u7269',
+    '\u5973\u670b\u53cb',
+    '\u7537\u670b\u53cb',
+  ]
+  const purchaseSignals = [
+    'buy',
+    'purchase',
+    'checkout',
+    'deal',
+    'discount',
+    '\u4e70',
+    '\u4e0b\u5355',
+    '\u4f18\u60e0',
+  ]
+  const explorationSignals = [
+    'recommend',
+    'compare',
+    'top',
+    'best',
+    '\u63a8\u8350',
+    '\u6bd4\u8f83',
+  ]
+
+  if (giftingSignals.some((signal) => text.includes(signal))) return 'gifting'
+  if (purchaseSignals.some((signal) => text.includes(signal))) return 'purchase_intent'
+  if (explorationSignals.some((signal) => text.includes(signal))) return 'product_exploration'
+  return 'non_commercial'
+}
+
+function extractPreferenceFacets(query) {
+  const text = String(query || '').trim().toLowerCase()
+  if (!text) return []
+
+  const facets = []
+  const rules = [
+    { facetKey: 'recipient', words: ['girlfriend', 'boyfriend', '\u5973\u670b\u53cb', '\u7537\u670b\u53cb'] },
+    { facetKey: 'style', words: ['minimal', 'vintage', 'luxury', '\u7b80\u7ea6', '\u590d\u53e4', '\u8f7b\u5962'] },
+    { facetKey: 'material', words: ['cotton', 'silk', 'wool', '\u6750\u8d28', '\u4e1d', '\u68c9', '\u7f8a\u6bdb'] },
+    { facetKey: 'color', words: ['colorful', 'bright', 'red', 'blue', '\u9c9c\u8273', '\u7ea2', '\u84dd'] },
+  ]
+
+  for (const rule of rules) {
+    const match = rule.words.find((word) => text.includes(word))
+    if (!match) continue
+    facets.push({
+      facet_key: rule.facetKey,
+      facet_value: match,
+      confidence: 0.74,
+      source: 'llm_inference',
+    })
+  }
+
+  const budgetMatch = text.match(/(?:\$|usd|rmb|cny)?\s?(\d{2,5})/)
+  if (budgetMatch) {
+    facets.push({
+      facet_key: 'price',
+      facet_value: budgetMatch[1],
+      confidence: 0.7,
+      source: 'user_query',
+    })
+  }
+
+  return facets.slice(0, 8)
+}
+
+function buildRecentTurns(session, limit = 6) {
+  const messages = Array.isArray(session?.messages) ? session.messages : []
+  const turns = []
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (!message || message.kind === 'tool') continue
+    if (message.role !== 'user' && message.role !== 'assistant') continue
+    if (typeof message.content !== 'string' || !message.content.trim()) continue
+
+    turns.push({
+      role: message.role,
+      content: message.content.trim(),
+    })
+    if (turns.length >= limit) break
+  }
+
+  return turns.reverse()
 }
 
 function getClientLocale() {
@@ -1402,6 +1638,126 @@ async function runAttachAdsFlow({ session, userContent, assistantMessage, turnTr
   }
 }
 
+async function runNextStepIntentCardFlow({ session, userContent, assistantMessage, turnTrace }) {
+  const intentClass = inferIntentClass(userContent)
+  const intentScore = estimateIntentScore(userContent)
+  const preferenceFacets = extractPreferenceFacets(userContent)
+  const reportPayload = {
+    appId: SDK_APP_ID,
+    sessionId: session.id,
+    turnId: turnTrace.turnId,
+    event: 'followup_generation',
+    placementId: 'chat_followup_v1',
+    placementKey: 'next_step.intent_card',
+    context: {
+      query: userContent,
+      answerText: assistantMessage.content,
+      recent_turns: buildRecentTurns(session),
+      locale: getClientLocale(),
+      intent_class: intentClass,
+      intent_score: intentScore,
+      preference_facets: preferenceFacets,
+    },
+  }
+
+  appendTurnTraceEvent(turnTrace, 'ads_evaluate_started', {
+    placementKey: reportPayload.placementKey,
+    event: reportPayload.event,
+  })
+  upsertTurnTrace(turnTrace)
+
+  let result
+  try {
+    result = await evaluateNextStepIntentCardPlacement(reportPayload)
+  } catch (error) {
+    appendTurnTraceEvent(turnTrace, 'ads_evaluate_failed', {
+      placementKey: reportPayload.placementKey,
+      error: error instanceof Error ? error.message : 'evaluate_failed',
+    })
+    upsertTurnTrace(turnTrace)
+    return
+  }
+
+  assistantMessage.nextStepAdSlot = normalizeNextStepAdSlot({
+    ...result,
+    reportPayload,
+  })
+  touchActiveSession()
+  scheduleSaveSessions()
+
+  appendTurnTraceEvent(turnTrace, 'ads_evaluate_completed', {
+    placementKey: reportPayload.placementKey,
+    requestId: result?.requestId || '',
+    result: result?.decision?.result || 'unknown',
+    reason: result?.decision?.reason || '',
+    reasonDetail: result?.decision?.reasonDetail || '',
+    adCount: Array.isArray(result?.ads) ? result.ads.length : 0,
+  })
+  upsertTurnTrace(turnTrace)
+
+  const decisionResult = String(result?.decision?.result || '').toLowerCase()
+  if (decisionResult === 'served' && Array.isArray(result?.ads) && result.ads.length > 0) {
+    appendTurnTraceEvent(turnTrace, 'ads_served', {
+      placementKey: reportPayload.placementKey,
+      requestId: result.requestId || '',
+      placementId: result.placementId || '',
+      adCount: result.ads.length,
+    })
+    upsertTurnTrace(turnTrace)
+
+    try {
+      await reportSdkEvent(reportPayload)
+      appendTurnTraceEvent(turnTrace, 'ads_event_reported', {
+        placementKey: reportPayload.placementKey,
+        requestId: result.requestId || '',
+        kind: 'impression',
+      })
+      upsertTurnTrace(turnTrace)
+    } catch (error) {
+      appendTurnTraceEvent(turnTrace, 'ads_event_report_failed', {
+        placementKey: reportPayload.placementKey,
+        requestId: result.requestId || '',
+        kind: 'impression',
+        error: error instanceof Error ? error.message : 'event_report_failed',
+      })
+      upsertTurnTrace(turnTrace)
+    }
+    return
+  }
+
+  if (decisionResult === 'no_fill') {
+    appendTurnTraceEvent(turnTrace, 'ads_no_fill', {
+      placementKey: reportPayload.placementKey,
+      requestId: result?.requestId || '',
+      reason: result?.decision?.reason || '',
+      reasonDetail: result?.decision?.reasonDetail || '',
+    })
+    upsertTurnTrace(turnTrace)
+    return
+  }
+
+  if (decisionResult === 'blocked') {
+    appendTurnTraceEvent(turnTrace, 'ads_blocked', {
+      placementKey: reportPayload.placementKey,
+      requestId: result?.requestId || '',
+      reason: result?.decision?.reason || '',
+      reasonDetail: result?.decision?.reasonDetail || '',
+    })
+    upsertTurnTrace(turnTrace)
+    return
+  }
+
+  if (decisionResult === 'error') {
+    appendTurnTraceEvent(turnTrace, 'ads_error', {
+      placementKey: reportPayload.placementKey,
+      requestId: result?.requestId || '',
+      reason: result?.decision?.reason || '',
+      reasonDetail: result?.decision?.reasonDetail || '',
+    })
+    upsertTurnTrace(turnTrace)
+  }
+}
+
 function handleSponsoredAdClick(message, ad) {
   const slot = message?.attachAdSlot
   if (!slot?.reportPayload || !message?.sourceTurnId) return
@@ -1447,6 +1803,51 @@ function handleSponsoredAdClick(message, ad) {
 
 function handleInlineOfferClick(message, ad) {
   handleSponsoredAdClick(message, ad)
+}
+
+function handleNextStepAdClick(message, ad) {
+  const slot = message?.nextStepAdSlot
+  if (!slot?.reportPayload || !message?.sourceTurnId) return
+
+  updateTurnTrace(message.sourceTurnId, (trace) => {
+    const nextTrace = { ...trace }
+    nextTrace.events = [
+      ...trace.events,
+      {
+        id: createId('event'),
+        type: 'ads_click_tracked',
+        at: Date.now(),
+        payload: {
+          adId: ad?.itemId || '',
+          title: ad?.title || '',
+          requestId: slot.requestId || '',
+          placementId: slot.placementId || '',
+          placementKey: slot.placementKey || 'next_step.intent_card',
+        },
+      },
+    ]
+    return nextTrace
+  })
+
+  reportSdkEvent(slot.reportPayload).catch((error) => {
+    updateTurnTrace(message.sourceTurnId, (trace) => {
+      const nextTrace = { ...trace }
+      nextTrace.events = [
+        ...trace.events,
+        {
+          id: createId('event'),
+          type: 'ads_event_report_failed',
+          at: Date.now(),
+          payload: {
+            kind: 'click',
+            placementKey: slot.placementKey || 'next_step.intent_card',
+            error: error instanceof Error ? error.message : 'event_report_failed',
+          },
+        },
+      ]
+      return nextTrace
+    })
+  })
 }
 
 async function handleSend(options = {}) {
@@ -1666,7 +2067,7 @@ async function handleSend(options = {}) {
       scheduleSaveSessions()
       isLoading.value = false
 
-      // Fail-open: ads pipeline runs asynchronously and never blocks chat completion.
+      // Fail-open: ads pipelines run asynchronously and never block chat completion.
       runAttachAdsFlow({
         session,
         userContent,
@@ -1674,6 +2075,20 @@ async function handleSend(options = {}) {
         turnTrace,
       }).catch((error) => {
         appendTurnTraceEvent(turnTrace, 'ads_evaluate_failed', {
+          placementKey: 'attach.post_answer_render',
+          error: error instanceof Error ? error.message : 'ads_flow_failed',
+        })
+        upsertTurnTrace(turnTrace)
+      })
+
+      runNextStepIntentCardFlow({
+        session,
+        userContent,
+        assistantMessage,
+        turnTrace,
+      }).catch((error) => {
+        appendTurnTraceEvent(turnTrace, 'ads_evaluate_failed', {
+          placementKey: 'next_step.intent_card',
           error: error instanceof Error ? error.message : 'ads_flow_failed',
         })
         upsertTurnTrace(turnTrace)

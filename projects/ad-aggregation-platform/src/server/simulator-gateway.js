@@ -35,6 +35,8 @@ const EVENT_SURFACE_MAP = {
 
 const ATTACH_MVP_PLACEMENT_KEY = 'attach.post_answer_render'
 const ATTACH_MVP_EVENT = 'answer_completed'
+const NEXT_STEP_INTENT_CARD_PLACEMENT_KEY = 'next_step.intent_card'
+const NEXT_STEP_INTENT_CARD_EVENTS = new Set(['followup_generation', 'follow_up_generation'])
 const ATTACH_MVP_ALLOWED_FIELDS = new Set([
   'appId',
   'sessionId',
@@ -43,6 +45,29 @@ const ATTACH_MVP_ALLOWED_FIELDS = new Set([
   'answerText',
   'intentScore',
   'locale',
+])
+const NEXT_STEP_INTENT_CARD_ALLOWED_FIELDS = new Set([
+  'appId',
+  'sessionId',
+  'turnId',
+  'userId',
+  'event',
+  'placementId',
+  'placementKey',
+  'context',
+])
+const NEXT_STEP_INTENT_CARD_CONTEXT_ALLOWED_FIELDS = new Set([
+  'query',
+  'answerText',
+  'recent_turns',
+  'locale',
+  'intent_class',
+  'intent_score',
+  'preference_facets',
+  'constraints',
+  'blocked_topics',
+  'expected_revenue',
+  'debug',
 ])
 
 const runtimeMemory = {
@@ -186,6 +211,250 @@ function normalizeAttachMvpPayload(payload, routeName) {
     intentScore,
     locale,
   }
+}
+
+function isNextStepIntentCardPayload(payload) {
+  if (!payload || typeof payload !== 'object') return false
+
+  const placementKey = String(payload.placementKey || '').trim()
+  if (placementKey === NEXT_STEP_INTENT_CARD_PLACEMENT_KEY) return true
+
+  const event = String(payload.event || '').trim().toLowerCase()
+  if (NEXT_STEP_INTENT_CARD_EVENTS.has(event)) return true
+
+  const context = payload.context && typeof payload.context === 'object' ? payload.context : null
+  if (!context) return false
+
+  return (
+    Object.prototype.hasOwnProperty.call(context, 'intent_class') ||
+    Object.prototype.hasOwnProperty.call(context, 'intent_score') ||
+    Object.prototype.hasOwnProperty.call(context, 'preference_facets')
+  )
+}
+
+function normalizeNextStepRecentTurns(value) {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null
+      const role = String(item.role || '').trim().toLowerCase()
+      const content = String(item.content || '').trim()
+      if (!role || !content) return null
+      return { role, content }
+    })
+    .filter(Boolean)
+    .slice(-8)
+}
+
+function normalizeNextStepPreferenceFacets(value) {
+  if (!Array.isArray(value)) return []
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null
+      const facetKey = String(item.facet_key || '').trim()
+      const facetValue = String(item.facet_value || '').trim()
+      if (!facetKey || !facetValue) return null
+
+      const confidence = clampNumber(item.confidence, 0, 1, NaN)
+      const source = String(item.source || '').trim()
+
+      return {
+        facetKey,
+        facetValue,
+        confidence: Number.isFinite(confidence) ? confidence : null,
+        source: source || '',
+      }
+    })
+    .filter(Boolean)
+}
+
+function normalizeNextStepConstraints(value) {
+  if (!value || typeof value !== 'object') return null
+  const mustInclude = Array.isArray(value.must_include)
+    ? value.must_include.map((item) => String(item || '').trim()).filter(Boolean)
+    : []
+  const mustExclude = Array.isArray(value.must_exclude)
+    ? value.must_exclude.map((item) => String(item || '').trim()).filter(Boolean)
+    : []
+
+  if (mustInclude.length === 0 && mustExclude.length === 0) return null
+  return {
+    mustInclude,
+    mustExclude,
+  }
+}
+
+function normalizeNextStepIntentCardPayload(payload, routeName) {
+  const input = payload && typeof payload === 'object' ? payload : {}
+  validateNoExtraFields(input, NEXT_STEP_INTENT_CARD_ALLOWED_FIELDS, routeName)
+
+  const appId = requiredNonEmptyString(input.appId, 'appId')
+  const sessionId = requiredNonEmptyString(input.sessionId, 'sessionId')
+  const turnId = requiredNonEmptyString(input.turnId, 'turnId')
+  const placementId = requiredNonEmptyString(input.placementId, 'placementId')
+  const placementKey = requiredNonEmptyString(input.placementKey, 'placementKey')
+  const event = String(input.event || '').trim().toLowerCase()
+  const userId = String(input.userId || '').trim()
+
+  if (placementKey !== NEXT_STEP_INTENT_CARD_PLACEMENT_KEY) {
+    throw new Error(`placementKey must be ${NEXT_STEP_INTENT_CARD_PLACEMENT_KEY}.`)
+  }
+
+  if (!NEXT_STEP_INTENT_CARD_EVENTS.has(event)) {
+    throw new Error('event must be followup_generation or follow_up_generation.')
+  }
+
+  const rawContext = input.context && typeof input.context === 'object' ? input.context : null
+  if (!rawContext) {
+    throw new Error('context is required.')
+  }
+  validateNoExtraFields(rawContext, NEXT_STEP_INTENT_CARD_CONTEXT_ALLOWED_FIELDS, `${routeName}.context`)
+
+  const query = requiredNonEmptyString(rawContext.query, 'context.query')
+  const locale = requiredNonEmptyString(rawContext.locale, 'context.locale')
+  const intentClass = requiredNonEmptyString(rawContext.intent_class, 'context.intent_class')
+  const intentScore = clampNumber(rawContext.intent_score, 0, 1, NaN)
+  if (!Number.isFinite(intentScore)) {
+    throw new Error('context.intent_score is required and must be a number between 0 and 1.')
+  }
+
+  if (!Array.isArray(rawContext.preference_facets)) {
+    throw new Error('context.preference_facets is required and must be an array.')
+  }
+  const preferenceFacets = normalizeNextStepPreferenceFacets(rawContext.preference_facets)
+
+  const expectedRevenue = clampNumber(rawContext.expected_revenue, 0, Number.MAX_SAFE_INTEGER, NaN)
+
+  return {
+    appId,
+    sessionId,
+    turnId,
+    userId,
+    event,
+    placementId,
+    placementKey,
+    context: {
+      query,
+      answerText: String(rawContext.answerText || '').trim(),
+      recentTurns: normalizeNextStepRecentTurns(rawContext.recent_turns),
+      locale,
+      intentClass,
+      intentScore,
+      preferenceFacets,
+      constraints: normalizeNextStepConstraints(rawContext.constraints),
+      blockedTopics: normalizeStringList(rawContext.blocked_topics),
+      expectedRevenue: Number.isFinite(expectedRevenue) ? expectedRevenue : undefined,
+    },
+  }
+}
+
+function mapRuntimeAdToNextStepCardItem(ad, index) {
+  if (!ad || typeof ad !== 'object') return null
+  const title = String(ad.title || '').trim()
+  const targetUrl = String(ad.targetUrl || '').trim()
+  if (!title || !targetUrl) return null
+
+  const itemId = String(ad.offerId || ad.adId || ad.entityCanonicalId || `next_step_item_${index}`).trim()
+  const merchantOrNetwork = String(ad.sourceNetwork || ad.networkId || 'affiliate').trim() || 'affiliate'
+  const primaryReason = String(ad.reason || '').trim() || 'semantic_match'
+  const tracking = ad.tracking && typeof ad.tracking === 'object' ? ad.tracking : {}
+  const normalizedTracking = {}
+
+  if (typeof tracking.impressionUrl === 'string' && tracking.impressionUrl.trim()) {
+    normalizedTracking.impression_url = tracking.impressionUrl.trim()
+  }
+  if (typeof tracking.clickUrl === 'string' && tracking.clickUrl.trim()) {
+    normalizedTracking.click_url = tracking.clickUrl.trim()
+  }
+  if (typeof tracking.dismissUrl === 'string' && tracking.dismissUrl.trim()) {
+    normalizedTracking.dismiss_url = tracking.dismissUrl.trim()
+  }
+
+  const cardItem = {
+    item_id: itemId,
+    title,
+    target_url: targetUrl,
+    merchant_or_network: merchantOrNetwork,
+    match_reasons: [primaryReason],
+    disclosure: normalizeDisclosure(ad.disclosure),
+  }
+
+  if (typeof ad.description === 'string' && ad.description.trim()) {
+    cardItem.snippet = ad.description.trim()
+  }
+  if (typeof ad.priceHint === 'string' && ad.priceHint.trim()) {
+    cardItem.price_hint = ad.priceHint.trim()
+  }
+  if (typeof ad.relevanceScore === 'number' && Number.isFinite(ad.relevanceScore)) {
+    cardItem.relevance_score = clampNumber(ad.relevanceScore, 0, 1, 0)
+  }
+  if (Object.keys(normalizedTracking).length > 0) {
+    cardItem.tracking = normalizedTracking
+  }
+
+  return cardItem
+}
+
+function buildNextStepIntentCardResponse(result, request) {
+  const ads = Array.isArray(result?.ads)
+    ? result.ads.map((item, index) => mapRuntimeAdToNextStepCardItem(item, index)).filter(Boolean)
+    : []
+  const intentScore = Number.isFinite(request?.context?.intentScore) ? request.context.intentScore : 0
+  const decision = result?.decision && typeof result.decision === 'object' ? result.decision : {}
+  const constraints = request?.context?.constraints
+  const trace = []
+
+  if (request?.context?.intentClass) {
+    trace.push(`intent:${request.context.intentClass}`)
+  }
+  if (Array.isArray(request?.context?.preferenceFacets)) {
+    for (const facet of request.context.preferenceFacets) {
+      if (!facet?.facetKey || !facet?.facetValue) continue
+      trace.push(`facet:${facet.facetKey}=${facet.facetValue}`)
+    }
+  }
+
+  const response = {
+    requestId: result?.requestId || createId('adreq'),
+    placementId: result?.placementId || request?.placementId || '',
+    placementKey: NEXT_STEP_INTENT_CARD_PLACEMENT_KEY,
+    decision: {
+      result: DECISION_REASON_ENUM.has(decision.result) ? decision.result : 'error',
+      reason: DECISION_REASON_ENUM.has(decision.reason) ? decision.reason : 'error',
+      reasonDetail: String(decision.reasonDetail || decision.result || 'error'),
+      intent_score: Number.isFinite(decision.intentScore) ? decision.intentScore : intentScore,
+    },
+    intent_inference: {
+      intent_class: String(request?.context?.intentClass || 'non_commercial'),
+      intent_score: intentScore,
+      preference_facets: Array.isArray(request?.context?.preferenceFacets)
+        ? request.context.preferenceFacets.map((facet) => ({
+            facet_key: facet.facetKey,
+            facet_value: facet.facetValue,
+            ...(Number.isFinite(facet.confidence) ? { confidence: facet.confidence } : {}),
+            ...(facet.source ? { source: facet.source } : {}),
+          }))
+        : [],
+    },
+    ads,
+    meta: {
+      selected_count: ads.length,
+    },
+  }
+
+  if (constraints) {
+    response.intent_inference.constraints = {
+      ...(constraints.mustInclude?.length ? { must_include: constraints.mustInclude } : {}),
+      ...(constraints.mustExclude?.length ? { must_exclude: constraints.mustExclude } : {}),
+    }
+  }
+
+  if (trace.length > 0) {
+    response.intent_inference.inference_trace = trace.slice(0, 8)
+  }
+
+  return response
 }
 
 function toPositiveInteger(value, fallback) {
@@ -1252,6 +1521,28 @@ async function requestHandler(req, res) {
   if (pathname === '/api/v1/sdk/evaluate' && req.method === 'POST') {
     try {
       const payload = await readJsonBody(req)
+      if (isNextStepIntentCardPayload(payload)) {
+        const request = normalizeNextStepIntentCardPayload(payload, 'sdk/evaluate')
+        const result = await evaluateRequest({
+          appId: request.appId,
+          sessionId: request.sessionId,
+          turnId: request.turnId,
+          userId: request.userId,
+          event: request.event,
+          placementId: request.placementId,
+          placementKey: request.placementKey,
+          context: {
+            query: request.context.query,
+            answerText: request.context.answerText,
+            intentScore: request.context.intentScore,
+            expectedRevenue: request.context.expectedRevenue,
+            locale: request.context.locale,
+          },
+        })
+        sendJson(res, 200, buildNextStepIntentCardResponse(result, request))
+        return
+      }
+
       const request = normalizeAttachMvpPayload(payload, 'sdk/evaluate')
       const result = await evaluateRequest({
         appId: request.appId,
@@ -1282,24 +1573,49 @@ async function requestHandler(req, res) {
   if (pathname === '/api/v1/sdk/events' && req.method === 'POST') {
     try {
       const payload = await readJsonBody(req)
-      const request = normalizeAttachMvpPayload(payload, 'sdk/events')
+      if (isNextStepIntentCardPayload(payload)) {
+        const request = normalizeNextStepIntentCardPayload(payload, 'sdk/events')
 
-      state.eventLogs = [
-        {
-          id: createId('event'),
-          createdAt: nowIso(),
-          appId: request.appId,
-          sessionId: request.sessionId,
-          turnId: request.turnId,
-          query: request.query,
-          answerText: request.answerText,
-          intentScore: request.intentScore,
-          locale: request.locale,
-          event: ATTACH_MVP_EVENT,
-          placementKey: ATTACH_MVP_PLACEMENT_KEY,
-        },
-        ...state.eventLogs,
-      ].slice(0, MAX_DECISION_LOGS)
+        state.eventLogs = [
+          {
+            id: createId('event'),
+            createdAt: nowIso(),
+            appId: request.appId,
+            sessionId: request.sessionId,
+            turnId: request.turnId,
+            userId: request.userId,
+            query: request.context.query,
+            answerText: request.context.answerText,
+            intentClass: request.context.intentClass,
+            intentScore: request.context.intentScore,
+            preferenceFacets: request.context.preferenceFacets,
+            locale: request.context.locale,
+            event: request.event,
+            placementId: request.placementId,
+            placementKey: request.placementKey,
+          },
+          ...state.eventLogs,
+        ].slice(0, MAX_DECISION_LOGS)
+      } else {
+        const request = normalizeAttachMvpPayload(payload, 'sdk/events')
+
+        state.eventLogs = [
+          {
+            id: createId('event'),
+            createdAt: nowIso(),
+            appId: request.appId,
+            sessionId: request.sessionId,
+            turnId: request.turnId,
+            query: request.query,
+            answerText: request.answerText,
+            intentScore: request.intentScore,
+            locale: request.locale,
+            event: ATTACH_MVP_EVENT,
+            placementKey: ATTACH_MVP_PLACEMENT_KEY,
+          },
+          ...state.eventLogs,
+        ].slice(0, MAX_DECISION_LOGS)
+      }
 
       persistState(state)
 

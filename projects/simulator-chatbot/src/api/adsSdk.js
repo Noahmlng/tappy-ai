@@ -57,6 +57,39 @@ function normalizeAttachPayload(payload = {}) {
   }
 }
 
+function normalizeNextStepIntentCardPayload(payload = {}) {
+  const contextInput = payload.context && typeof payload.context === 'object' ? payload.context : {}
+  const context = {
+    query: String(contextInput.query || '').trim(),
+    answerText: String(contextInput.answerText || '').trim(),
+    locale: String(contextInput.locale || '').trim(),
+    intent_class: String(contextInput.intent_class || '').trim(),
+    intent_score: Number(contextInput.intent_score),
+    preference_facets: Array.isArray(contextInput.preference_facets)
+      ? contextInput.preference_facets
+      : [],
+  }
+
+  if (Array.isArray(contextInput.recent_turns)) {
+    context.recent_turns = contextInput.recent_turns
+  }
+
+  if (contextInput.constraints && typeof contextInput.constraints === 'object') {
+    context.constraints = contextInput.constraints
+  }
+
+  return {
+    appId: String(payload.appId || '').trim(),
+    sessionId: String(payload.sessionId || '').trim(),
+    turnId: String(payload.turnId || '').trim(),
+    userId: String(payload.userId || '').trim(),
+    event: String(payload.event || 'followup_generation').trim(),
+    placementId: String(payload.placementId || 'chat_followup_v1').trim(),
+    placementKey: String(payload.placementKey || 'next_step.intent_card').trim(),
+    context,
+  }
+}
+
 export async function evaluateAttachPlacement(payload) {
   const body = normalizeAttachPayload(payload)
   return requestJson('/v1/sdk/evaluate', {
@@ -69,8 +102,20 @@ export async function evaluateAttachPlacement(payload) {
   })
 }
 
+export async function evaluateNextStepIntentCardPlacement(payload) {
+  const body = normalizeNextStepIntentCardPayload(payload)
+  return requestJson('/v1/sdk/evaluate', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    timeoutMs: DEFAULT_TIMEOUT_MS,
+  })
+}
+
 export async function reportSdkEvent(payload) {
-  const body = normalizeAttachPayload(payload)
+  const body = payload?.context ? normalizeNextStepIntentCardPayload(payload) : normalizeAttachPayload(payload)
   return requestJson('/v1/sdk/events', {
     method: 'POST',
     headers: {
@@ -80,4 +125,3 @@ export async function reportSdkEvent(payload) {
     timeoutMs: 2500,
   })
 }
-
