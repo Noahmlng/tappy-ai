@@ -5,6 +5,7 @@ import http from 'node:http'
 
 import defaultPlacements from '../../config/default-placements.json' with { type: 'json' }
 import { runAdsRetrievalPipeline } from '../runtime/index.js'
+import { getAllNetworkHealth } from '../runtime/network-health-state.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -16,6 +17,7 @@ const PORT = Number(process.env.SIMULATOR_GATEWAY_PORT || 3100)
 const HOST = process.env.SIMULATOR_GATEWAY_HOST || '127.0.0.1'
 const MAX_DECISION_LOGS = 500
 const MAX_PLACEMENT_AUDIT_LOGS = 500
+const MAX_NETWORK_FLOW_LOGS = 300
 const DECISION_REASON_ENUM = new Set(['served', 'no_fill', 'blocked', 'error'])
 
 const PLACEMENT_KEY_BY_ID = {
@@ -93,6 +95,53 @@ function createDecision(result, reasonDetail, intentScore) {
     reason: normalizedResult,
     reasonDetail: detail,
     intentScore,
+  }
+}
+
+function createInitialNetworkFlowStats() {
+  return {
+    totalRuntimeEvaluations: 0,
+    degradedRuntimeEvaluations: 0,
+    resilientServes: 0,
+    servedWithNetworkErrors: 0,
+    noFillWithNetworkErrors: 0,
+    runtimeErrors: 0,
+    circuitOpenEvaluations: 0,
+  }
+}
+
+function normalizeNetworkFlowStats(raw) {
+  const fallback = createInitialNetworkFlowStats()
+  const value = raw && typeof raw === 'object' ? raw : {}
+  return {
+    totalRuntimeEvaluations: toPositiveInteger(value.totalRuntimeEvaluations, fallback.totalRuntimeEvaluations),
+    degradedRuntimeEvaluations: toPositiveInteger(value.degradedRuntimeEvaluations, fallback.degradedRuntimeEvaluations),
+    resilientServes: toPositiveInteger(value.resilientServes, fallback.resilientServes),
+    servedWithNetworkErrors: toPositiveInteger(value.servedWithNetworkErrors, fallback.servedWithNetworkErrors),
+    noFillWithNetworkErrors: toPositiveInteger(value.noFillWithNetworkErrors, fallback.noFillWithNetworkErrors),
+    runtimeErrors: toPositiveInteger(value.runtimeErrors, fallback.runtimeErrors),
+    circuitOpenEvaluations: toPositiveInteger(value.circuitOpenEvaluations, fallback.circuitOpenEvaluations),
+  }
+}
+
+function summarizeNetworkHealthMap(networkHealth = {}) {
+  const items = Object.values(networkHealth || {})
+  let healthy = 0
+  let degraded = 0
+  let open = 0
+
+  for (const item of items) {
+    const status = String(item?.status || '').toLowerCase()
+    if (status === 'healthy') healthy += 1
+    else if (status === 'degraded') degraded += 1
+    else if (status === 'open') open += 1
+  }
+
+  return {
+    totalNetworks: items.length,
+    healthy,
+    degraded,
+    open,
   }
 }
 
@@ -240,6 +289,8 @@ function createInitialState() {
     placementConfigVersion,
     placements,
     placementAuditLogs: [],
+    networkFlowStats: createInitialNetworkFlowStats(),
+    networkFlowLogs: [],
     decisionLogs: [],
     eventLogs: [],
     globalStats: {
@@ -293,6 +344,10 @@ function loadState() {
       placements,
       placementAuditLogs: Array.isArray(parsed.placementAuditLogs)
         ? parsed.placementAuditLogs.slice(0, MAX_PLACEMENT_AUDIT_LOGS)
+        : [],
+      networkFlowStats: normalizeNetworkFlowStats(parsed?.networkFlowStats),
+      networkFlowLogs: Array.isArray(parsed.networkFlowLogs)
+        ? parsed.networkFlowLogs.slice(0, MAX_NETWORK_FLOW_LOGS)
         : [],
       decisionLogs: Array.isArray(parsed.decisionLogs) ? parsed.decisionLogs.slice(0, MAX_DECISION_LOGS) : [],
       eventLogs: Array.isArray(parsed.eventLogs) ? parsed.eventLogs.slice(0, MAX_DECISION_LOGS) : [],
@@ -418,6 +473,68 @@ function recordPlacementAudit(payload) {
     },
     ...state.placementAuditLogs,
   ].slice(0, MAX_PLACEMENT_AUDIT_LOGS)
+}
+
+function recordNetworkFlowObservation(payload) {
+  state.networkFlowLogs = [
+    {
+      id: createId('network_flow'),
+      createdAt: nowIso(),
+      ...payload,
+    },
+    ...state.networkFlowLogs,
+  ].slice(0, MAX_NETWORK_FLOW_LOGS)
+}
+
+function recordRuntimeNetworkStats(decisionResult, runtimeDebug, meta = {}) {
+  const stats = state.networkFlowStats
+  stats.totalRuntimeEvaluations += 1
+
+  const networkErrors = Array.isArray(runtimeDebug?.networkErrors) ? runtimeDebug.networkErrors : []
+  const snapshotUsage = runtimeDebug?.snapshotUsage && typeof runtimeDebug.snapshotUsage === 'object'
+    ? runtimeDebug.snapshotUsage
+    : {}
+  const networkHealth = runtimeDebug?.networkHealth && typeof runtimeDebug.networkHealth === 'object'
+    ? runtimeDebug.networkHealth
+    : getAllNetworkHealth()
+
+  const hasSnapshotFallback = Object.values(snapshotUsage).some(Boolean)
+  const healthSummary = summarizeNetworkHealthMap(networkHealth)
+  const hasNetworkError = networkErrors.length > 0
+  const isDegraded = hasNetworkError || hasSnapshotFallback || healthSummary.degraded > 0 || healthSummary.open > 0
+
+  if (isDegraded) {
+    stats.degradedRuntimeEvaluations += 1
+  }
+
+  if (decisionResult === 'served' && isDegraded) {
+    stats.resilientServes += 1
+  }
+
+  if (decisionResult === 'served' && hasNetworkError) {
+    stats.servedWithNetworkErrors += 1
+  }
+
+  if (decisionResult === 'no_fill' && hasNetworkError) {
+    stats.noFillWithNetworkErrors += 1
+  }
+
+  if (decisionResult === 'error') {
+    stats.runtimeErrors += 1
+  }
+
+  if (healthSummary.open > 0) {
+    stats.circuitOpenEvaluations += 1
+  }
+
+  recordNetworkFlowObservation({
+    requestId: meta.requestId || '',
+    placementId: meta.placementId || '',
+    decisionResult: decisionResult || '',
+    networkErrors,
+    snapshotUsage,
+    networkHealthSummary: healthSummary,
+  })
 }
 
 function computeMetricsSummary() {
@@ -788,6 +905,10 @@ async function evaluateRequest(payload) {
     runtimeResult = await runAdsRetrievalPipeline(runtimeAdRequest)
   } catch (error) {
     const decision = createDecision('error', 'runtime_pipeline_error', intentScore)
+    recordRuntimeNetworkStats(decision.result, null, {
+      requestId,
+      placementId: placement.placementId,
+    })
     recordBlockedOrNoFill(placement)
     recordDecision({
       requestId,
@@ -819,6 +940,10 @@ async function evaluateRequest(payload) {
 
   if (runtimeAds.length === 0) {
     const decision = createDecision('no_fill', 'runtime_no_offer', intentScore)
+    recordRuntimeNetworkStats(decision.result, runtimeDebug, {
+      requestId: runtimeRequestId,
+      placementId: placement.placementId,
+    })
     recordBlockedOrNoFill(placement)
     recordDecision({
       requestId: runtimeRequestId,
@@ -851,6 +976,10 @@ async function evaluateRequest(payload) {
   }))
 
   const decision = createDecision('served', 'runtime_eligible', intentScore)
+  recordRuntimeNetworkStats(decision.result, runtimeDebug, {
+    requestId: runtimeRequestId,
+    placementId: placement.placementId,
+  })
   recordDecision({
     requestId: runtimeRequestId,
     appId: request.appId || '',
@@ -908,6 +1037,7 @@ function applyPlacementPatch(placement, patch, configVersion) {
 }
 
 function getDashboardStatePayload() {
+  const networkHealth = getAllNetworkHealth()
   return {
     placementConfigVersion: state.placementConfigVersion,
     metricsSummary: computeMetricsSummary(),
@@ -915,6 +1045,10 @@ function getDashboardStatePayload() {
     metricsByPlacement: computeMetricsByPlacement(),
     placements: state.placements,
     placementAuditLogs: state.placementAuditLogs,
+    networkHealth,
+    networkHealthSummary: summarizeNetworkHealthMap(networkHealth),
+    networkFlowStats: state.networkFlowStats,
+    networkFlowLogs: state.networkFlowLogs,
     decisionLogs: state.decisionLogs,
   }
 }
@@ -1042,6 +1176,17 @@ async function requestHandler(req, res) {
       rows = rows.filter((row) => row.placementId === placementId)
     }
     sendJson(res, 200, { items: rows })
+    return
+  }
+
+  if (pathname === '/api/v1/dashboard/network-health' && req.method === 'GET') {
+    const networkHealth = getAllNetworkHealth()
+    sendJson(res, 200, {
+      networkHealth,
+      networkHealthSummary: summarizeNetworkHealthMap(networkHealth),
+      networkFlowStats: state.networkFlowStats,
+      items: state.networkFlowLogs,
+    })
     return
   }
 
