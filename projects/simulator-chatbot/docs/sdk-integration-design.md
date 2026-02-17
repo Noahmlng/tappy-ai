@@ -281,12 +281,58 @@ Dashboard 的核心职责：
 2. 新增变更审计与配置版本回滚。
 3. 增加 AB 实验字段（可选）。
 
-## 13. 验收标准（MVP）
+## 13. 上线门槛（Go-Live Gates）
 
+本阶段上线前必须同时满足以下 3 条，不满足任一条即不可上线。
+
+## 13.1 Gate A: 主回答不被阻塞
+
+目标：
+1. `answer_completed` 到 assistant 消息 `status=done` 的主链路不等待广告结果。
+
+验收方式：
+1. 在 SDK 正常、慢响应、超时三种场景各抽样 30 轮。
+2. 对比“接入前基线”和“接入后”主回答完成时延（P50/P95）。
+
+通过标准：
+1. 主回答完成率不下降。
+2. 主回答 P95 时延劣化 <= 5%。
+3. 允许广告异步晚到，但不允许主回答卡住。
+
+## 13.2 Gate B: 广告失败不影响聊天（Fail-open）
+
+目标：
+1. 当 `sdk/config`、`sdk/evaluate`、`sdk/events` 任一失败时，会话仍可继续。
+
+验收方式：
+1. 人为制造 Gateway 超时/5xx/网络中断。
+2. 连续验证 20 轮对话，覆盖无广告、no-fill、error 三类返回。
+
+通过标准：
+1. 聊天可继续发送与接收，不出现“广告失败导致对话失败”。
+2. Turn Trace 出现失败事件：`ads_config_fetch_failed` 或 `ads_evaluate_failed` 或 `ads_event_report_failed`。
+3. 失败后不触发阻塞重试，仅允许异步上报重试。
+
+## 13.3 Gate C: requestId 全链路可追踪
+
+目标：
+1. 每次 `served/no_fill/blocked/error` 都可追溯到唯一 `requestId`。
+
+验收方式：
+1. 从前端一次对话开始，抽取 20 个样本。
+2. 逐条核对：Simulator Turn Trace -> Gateway decision logs -> Dashboard decisions。
+
+通过标准：
+1. 三端均能查询到同一 `requestId`。
+2. `requestId` 对应的 `placementId`、`decision.result`、`decision.reason` 一致。
+3. `served` 样本可追踪到至少一次事件上报记录。
+
+## 13.4 旧验收项合并说明
+
+以下既有 MVP 验收点保留，作为补充指标：
 1. 一轮对话结束后可稳定返回 attach 广告或 no-fill 原因。
 2. 点击广告可上报 click 事件并在 logs 可查。
 3. Dashboard 修改阈值后，新对话 1 分钟内生效。
-4. 广告链路故障时，对话成功率不下降。
 
 ## 14. 当前建议的“先做清单”
 
