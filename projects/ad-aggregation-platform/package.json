@@ -1,0 +1,9 @@
+{
+  "name": "@ai-network/ad-aggregation-platform",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "validate:schemas": "echo 'Schema validation hooks will be added in phase 1 implementation.'"
+  }
+}

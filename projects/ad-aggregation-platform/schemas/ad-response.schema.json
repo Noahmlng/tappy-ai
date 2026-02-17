@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-network.local/schemas/ad-response.schema.json",
+  "title": "AdResponse",
+  "type": "object",
+  "required": ["requestId", "placementId", "ads"],
+  "properties": {
+    "requestId": { "type": "string", "minLength": 1 },
+    "placementId": { "type": "string", "minLength": 1 },
+    "ads": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["adId", "title", "description", "targetUrl", "disclosure"],
+        "properties": {
+          "adId": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "targetUrl": { "type": "string", "format": "uri" },
+          "iconUrl": { "type": "string", "format": "uri" },
+          "disclosure": { "type": "string", "enum": ["Ad", "Sponsored"] },
+          "reason": { "type": "string" },
+          "tracking": {
+            "type": "object",
+            "properties": {
+              "impressionUrl": { "type": "string", "format": "uri" },
+              "clickUrl": { "type": "string", "format": "uri" },
+              "dismissUrl": { "type": "string", "format": "uri" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

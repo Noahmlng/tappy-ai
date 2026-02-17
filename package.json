@@ -1,0 +1,16 @@
+{
+  "name": "ai-native-network-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "projects/simulator-chatbot",
+    "projects/ad-aggregation-platform"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @ai-network/simulator-chatbot",
+    "build": "npm run build --workspace @ai-network/simulator-chatbot",
+    "lint": "npm run lint --workspace @ai-network/simulator-chatbot",
+    "dev:chatbot": "npm run dev --workspace @ai-network/simulator-chatbot",
+    "build:chatbot": "npm run build --workspace @ai-network/simulator-chatbot"
+  }
+}

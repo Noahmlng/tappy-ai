@@ -1,0 +1,30 @@
+[
+  {
+    "placementId": "chat_inline_v1",
+    "surface": "CHAT_INLINE",
+    "format": "NATIVE_BLOCK",
+    "trigger": {
+      "intentThreshold": 0.55,
+      "minExpectedRevenue": 0.2,
+      "cooldownSeconds": 120
+    },
+    "frequencyCap": {
+      "maxPerSession": 2,
+      "maxPerUserPerDay": 6
+    }
+  },
+  {
+    "placementId": "chat_followup_v1",
+    "surface": "FOLLOW_UP",
+    "format": "CARD",
+    "trigger": {
+      "intentThreshold": 0.45,
+      "minExpectedRevenue": 0.1,
+      "cooldownSeconds": 90
+    },
+    "frequencyCap": {
+      "maxPerSession": 3,
+      "maxPerUserPerDay": 8
+    }
+  }
+]
