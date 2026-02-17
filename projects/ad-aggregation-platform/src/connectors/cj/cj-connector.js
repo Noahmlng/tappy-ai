@@ -442,12 +442,44 @@ export function createCjConnector(options = {}) {
     }
   }
 
+  async function healthCheck(params = {}) {
+    try {
+      const startedAt = Date.now()
+      const [offersResult, productsResult, linksResult] = await Promise.all([
+        listOffers({ limit: params.limit ?? 1, page: 1 }),
+        listProducts({ limit: params.limit ?? 1, page: 1 }),
+        listLinks({ limit: params.limit ?? 1, page: 1 })
+      ])
+
+      return {
+        ok: true,
+        network: 'cj',
+        checkedAt: new Date().toISOString(),
+        latencyMs: Date.now() - startedAt,
+        counts: {
+          offers: Array.isArray(offersResult.offers) ? offersResult.offers.length : 0,
+          products: Array.isArray(productsResult.products) ? productsResult.products.length : 0,
+          links: Array.isArray(linksResult.links) ? linksResult.links.length : 0
+        }
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        network: 'cj',
+        checkedAt: new Date().toISOString(),
+        errorCode: typeof error?.statusCode === 'number' ? `HTTP_${error.statusCode}` : 'HEALTHCHECK_FAILED',
+        message: error?.message || 'Health check failed'
+      }
+    }
+  }
+
   return {
     request,
     listProducts,
     listLinks,
     listOffers,
-    fetchOffers
+    fetchOffers,
+    healthCheck
   }
 }
 

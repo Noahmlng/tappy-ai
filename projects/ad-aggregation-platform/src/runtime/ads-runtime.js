@@ -4,6 +4,15 @@ import { createPartnerStackConnector } from '../connectors/partnerstack/index.js
 import { extractEntitiesWithLlm } from '../ner/index.js'
 import { normalizeUnifiedOffers } from '../offers/index.js'
 import { offerSnapshotCache, queryCache } from '../cache/runtime-caches.js'
+import {
+  getAllNetworkHealth,
+  normalizeHealthPolicy,
+  recordHealthCheckResult,
+  recordNetworkFailure,
+  recordNetworkSuccess,
+  shouldRunHealthCheck,
+  shouldSkipNetworkFetch
+} from './network-health-state.js'
 
 const DEFAULT_MAX_ADS = 20
 const DEFAULT_PLACEMENT_ID = 'attach.post_answer_render'
@@ -72,6 +81,14 @@ function toPositiveNumber(value, fallback) {
   const numeric = typeof value === 'string' ? Number(value) : value
   if (typeof numeric === 'number' && Number.isFinite(numeric) && numeric > 0) {
     return numeric
+  }
+  return fallback
+}
+
+function toPositiveInteger(value, fallback) {
+  const numeric = typeof value === 'string' ? Number(value) : value
+  if (typeof numeric === 'number' && Number.isFinite(numeric) && numeric > 0) {
+    return Math.floor(numeric)
   }
   return fallback
 }
@@ -294,7 +311,11 @@ function buildQueryCacheKey(request, maxAds) {
       cjLimit: debug.cjLimit,
       cjPage: debug.cjPage,
       cjWebsiteId: debug.cjWebsiteId,
-      cjAdvertiserIds: debug.cjAdvertiserIds
+      cjAdvertiserIds: debug.cjAdvertiserIds,
+      disableNetworkDegradation: debug.disableNetworkDegradation,
+      healthFailureThreshold: debug.healthFailureThreshold,
+      circuitOpenMs: debug.circuitOpenMs,
+      healthCheckIntervalMs: debug.healthCheckIntervalMs
     }
   }
   return JSON.stringify(payload)
@@ -312,8 +333,11 @@ async function fetchOffersWithSnapshot(config) {
     network,
     queryParams,
     fetcher,
+    healthCheck,
     snapshotCacheEnabled,
-    snapshotCacheTtlMs
+    snapshotCacheTtlMs,
+    degradationEnabled,
+    healthPolicy
   } = config
   const snapshotKey = buildSnapshotCacheKey(network, queryParams)
   const getSnapshot = () => {
@@ -324,6 +348,76 @@ async function fetchOffersWithSnapshot(config) {
     if (!snapshotCacheEnabled) return
     offerSnapshotCache.set(snapshotKey, { offers }, snapshotCacheTtlMs)
   }
+  const snapshotResult = (cacheStatus, error = null) => {
+    const snapshot = getSnapshot()
+    if (snapshot && Array.isArray(snapshot.offers) && snapshot.offers.length > 0) {
+      return {
+        offers: snapshot.offers,
+        snapshotUsed: true,
+        cacheStatus,
+        error
+      }
+    }
+
+    return {
+      offers: [],
+      snapshotUsed: false,
+      cacheStatus,
+      error
+    }
+  }
+  const runConnectorHealthCheck = async () => {
+    if (typeof healthCheck !== 'function') {
+      return {
+        ok: true,
+        network,
+        errorCode: '',
+        message: ''
+      }
+    }
+
+    try {
+      const result = await healthCheck()
+      if (result && typeof result === 'object' && typeof result.ok === 'boolean') {
+        return result
+      }
+      return {
+        ok: true,
+        network,
+        errorCode: '',
+        message: ''
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        network,
+        errorCode: resolveErrorCode(error),
+        message: error?.message || 'Health check failed'
+      }
+    }
+  }
+
+  if (degradationEnabled) {
+    const gate = shouldSkipNetworkFetch(network, healthPolicy)
+    if (gate.skip) {
+      return snapshotResult('circuit_open', {
+        errorCode: 'CIRCUIT_OPEN',
+        message: `Circuit open for ${network}, retry in ${gate.retryAfterMs}ms`
+      })
+    }
+
+    if (gate.reason === 'cooldown_elapsed' && shouldRunHealthCheck(network, healthPolicy)) {
+      const healthCheckResult = await runConnectorHealthCheck()
+      recordHealthCheckResult(network, healthCheckResult, healthPolicy)
+
+      if (!healthCheckResult.ok) {
+        return snapshotResult('healthcheck_failed', {
+          errorCode: healthCheckResult.errorCode || 'HEALTHCHECK_FAILED',
+          message: healthCheckResult.message || 'Health check failed'
+        })
+      }
+    }
+  }
 
   try {
     const liveResult = await fetcher()
@@ -331,6 +425,9 @@ async function fetchOffersWithSnapshot(config) {
 
     if (liveOffers.length > 0) {
       setSnapshot(liveOffers)
+      if (degradationEnabled) {
+        recordNetworkSuccess(network)
+      }
       return {
         offers: liveOffers,
         snapshotUsed: false,
@@ -339,45 +436,19 @@ async function fetchOffersWithSnapshot(config) {
       }
     }
 
-    const snapshot = getSnapshot()
-    if (snapshot && Array.isArray(snapshot.offers) && snapshot.offers.length > 0) {
-      return {
-        offers: snapshot.offers,
-        snapshotUsed: true,
-        cacheStatus: 'snapshot_fallback_empty',
-        error: null
-      }
+    if (degradationEnabled) {
+      recordNetworkSuccess(network)
     }
-
-    return {
-      offers: [],
-      snapshotUsed: false,
-      cacheStatus: 'live_empty',
-      error: null
-    }
+    return snapshotResult('snapshot_fallback_empty', null)
   } catch (error) {
-    const snapshot = getSnapshot()
-    if (snapshot && Array.isArray(snapshot.offers) && snapshot.offers.length > 0) {
-      return {
-        offers: snapshot.offers,
-        snapshotUsed: true,
-        cacheStatus: 'snapshot_fallback_error',
-        error: {
-          errorCode: resolveErrorCode(error),
-          message: error?.message || 'Unknown error'
-        }
-      }
+    const normalizedError = {
+      errorCode: resolveErrorCode(error),
+      message: error?.message || 'Unknown error'
     }
-
-    return {
-      offers: [],
-      snapshotUsed: false,
-      cacheStatus: 'live_error',
-      error: {
-        errorCode: resolveErrorCode(error),
-        message: error?.message || 'Unknown error'
-      }
+    if (degradationEnabled) {
+      recordNetworkFailure(network, normalizedError, healthPolicy)
     }
+    return snapshotResult('snapshot_fallback_error', normalizedError)
   }
 }
 
@@ -399,6 +470,20 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
   const snapshotCacheEnabled = !Boolean(
     options.disableOfferSnapshotCache ?? request.context.debug.disableOfferSnapshotCache
   )
+  const degradationEnabled = !Boolean(
+    options.disableNetworkDegradation ?? request.context.debug.disableNetworkDegradation
+  )
+  const healthPolicy = normalizeHealthPolicy({
+    failureThreshold: toPositiveInteger(
+      options.healthFailureThreshold ?? request.context.debug.healthFailureThreshold,
+      2
+    ),
+    circuitOpenMs: toPositiveInteger(options.circuitOpenMs ?? request.context.debug.circuitOpenMs, 30000),
+    healthCheckIntervalMs: toPositiveInteger(
+      options.healthCheckIntervalMs ?? request.context.debug.healthCheckIntervalMs,
+      10000
+    )
+  })
   const queryCacheKey = buildQueryCacheKey(request, maxAds)
 
   if (queryCacheEnabled) {
@@ -413,8 +498,11 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
       debug.cache = {
         queryCacheHit: true,
         queryCacheTtlMs,
-        snapshotCacheEnabled
+        snapshotCacheEnabled,
+        degradationEnabled,
+        healthPolicy
       }
+      debug.networkHealth = getAllNetworkHealth()
 
       const entitySummaries = Array.isArray(debug.entities)
         ? debug.entities.map((entity) => ({
@@ -475,15 +563,21 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
       network: 'partnerstack',
       queryParams: partnerstackQueryParams,
       fetcher: () => partnerstackConnector.fetchOffers(partnerstackQueryParams),
+      healthCheck: partnerstackConnector.healthCheck,
       snapshotCacheEnabled,
-      snapshotCacheTtlMs
+      snapshotCacheTtlMs,
+      degradationEnabled,
+      healthPolicy
     }),
     fetchOffersWithSnapshot({
       network: 'cj',
       queryParams: cjQueryParams,
       fetcher: () => cjConnector.fetchOffers(cjQueryParams),
+      healthCheck: cjConnector.healthCheck,
       snapshotCacheEnabled,
-      snapshotCacheTtlMs
+      snapshotCacheTtlMs,
+      degradationEnabled,
+      healthPolicy
     })
   ])
 
@@ -545,7 +639,8 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     adCount: orderedAds.length,
     errorCodes: networkErrors.map((item) => item.errorCode),
     queryCacheHit: false,
-    snapshotUsage
+    snapshotUsage,
+    networkHealth: getAllNetworkHealth()
   })
 
   const debug = {
@@ -562,12 +657,15 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
       partnerstack: partnerstackResult.cacheStatus,
       cj: cjResult.cacheStatus
     },
+    networkHealth: getAllNetworkHealth(),
     cache: {
       queryCacheHit: false,
       queryCacheEnabled,
       queryCacheTtlMs,
       snapshotCacheEnabled,
-      snapshotCacheTtlMs
+      snapshotCacheTtlMs,
+      degradationEnabled,
+      healthPolicy
     },
     testAllOffers: request.context.testAllOffers
   }

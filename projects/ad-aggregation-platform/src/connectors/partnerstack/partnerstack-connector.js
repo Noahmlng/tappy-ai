@@ -305,12 +305,40 @@ export function createPartnerStackConnector(options = {}) {
     }
   }
 
+  async function healthCheck(params = {}) {
+    try {
+      const startedAt = Date.now()
+      const result = await listPartnerships({
+        limit: params.limit ?? 1
+      })
+
+      return {
+        ok: true,
+        network: 'partnerstack',
+        checkedAt: new Date().toISOString(),
+        latencyMs: Date.now() - startedAt,
+        counts: {
+          partnerships: Array.isArray(result.partnerships) ? result.partnerships.length : 0
+        }
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        network: 'partnerstack',
+        checkedAt: new Date().toISOString(),
+        errorCode: typeof error?.statusCode === 'number' ? `HTTP_${error.statusCode}` : 'HEALTHCHECK_FAILED',
+        message: error?.message || 'Health check failed'
+      }
+    }
+  }
+
   return {
     request,
     listPartnerships,
     listLinksByPartnership,
     listOffers,
-    fetchOffers
+    fetchOffers,
+    healthCheck
   }
 }
 

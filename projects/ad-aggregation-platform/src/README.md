@@ -12,12 +12,12 @@
 
 3. `connectors/partnerstack/`
 - PartnerStack API connector（Bearer 认证）。
-- 能力：`listPartnerships`、`listLinksByPartnership`、`listOffers`、`fetchOffers`。
+- 能力：`listPartnerships`、`listLinksByPartnership`、`listOffers`、`fetchOffers`、`healthCheck`。
 - 内置：基础超时控制 + 429/5xx 重试 + links fallback。
 
 4. `connectors/cj/`
 - CJ API connector（Bearer 认证）。
-- 能力：`listOffers`、`listProducts`、`listLinks`、`fetchOffers`。
+- 能力：`listOffers`、`listProducts`、`listLinks`、`fetchOffers`、`healthCheck`。
 - 内置：多 endpoint fallback、基础超时控制、429/5xx 重试、products/links/offers 合并去重。
 
 5. `offers/`
@@ -34,6 +34,8 @@
 - 当前 `ads[]` 输出顺序按网络分组：默认 `partnerstack -> cj -> 其他`。
 - 非 `testAllOffers` 模式下基础排序：相关性优先，其次可用性，再次新鲜度。
 - 最小可观测日志事件：`ads_pipeline_result`（字段：`requestId`、`entities`、`networkHits`、`adCount`、`errorCodes`）。
+- 内置健康检查与降级：单网失败不影响总返回，支持熔断冷却与快照回退。
+- 可通过 runtime 参数调节：`healthFailureThreshold`、`circuitOpenMs`、`healthCheckIntervalMs`，或用 `disableNetworkDegradation=true` 关闭。
 
 7. `cache/`
 - 查询缓存（query cache）：缓存整条 pipeline 输出，降低重复查询抖动。
