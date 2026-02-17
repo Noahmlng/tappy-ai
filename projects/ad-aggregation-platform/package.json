@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "validate:schemas": "echo 'Schema validation hooks will be added in phase 1 implementation.'",
-    "check:env": "node ./src/config/check-env.js"
+    "check:env": "node ./src/config/check-env.js",
+    "smoke:ads": "node ./scripts/smoke-ads-runtime.js --mode=mock",
+    "smoke:ads:live": "node ./scripts/smoke-ads-runtime.js --mode=live"
   }
 }

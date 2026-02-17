@@ -45,3 +45,19 @@
 ```bash
 npm --prefix ./projects/ad-aggregation-platform run check:env
 ```
+
+## 联调与 Smoke Test
+
+本地联调脚本：
+
+```bash
+npm --prefix ./projects/ad-aggregation-platform run smoke:ads
+```
+
+- 默认 `mock` 模式，不依赖真实网络和密钥，验证一条 query 能返回 `ads[]`。
+
+真实链路 smoke test（会调用 OpenRouter + 联盟接口）：
+
+```bash
+npm --prefix ./projects/ad-aggregation-platform run smoke:ads:live -- --query="best iphone deals" --answerText="iPhone offers"
+```
