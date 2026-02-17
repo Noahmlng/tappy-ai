@@ -1,6 +1,6 @@
 # AI Assistant Placement Product Spec
 
-- Document Version: v1.0
+- Document Version: v1.1
 - Last Updated: 2026-02-17
 - Scope: Chat/Assistant placement product definition, governance, and execution alignment
 
@@ -62,7 +62,7 @@ This allows direct spec expansion for one specific placement.
 | `attach.post_answer_render` | Attach | Post-answer entity enhancement (affiliate/link) | answer_completed + entity_detected | link/price/destination |
 | `attach.inline_entity_annotation` | Attach | Inline sponsored annotation on entities | entity_detected + quality_pass | annotation/tag/light_offer |
 | `attach.post_result_addon` | Attach | Add-on module after main answer | answer_completed + transactional_intent | card/list/action |
-| `next_step.intent_card` | Next-Step | Intent-triggered card for next action | intent_threshold | card/list/form/action |
+| `next_step.intent_card` | Next-Step | Intent-triggered recommendation card in related-product section | intent_threshold + semantic_match | card/list/form/action |
 | `next_step.guided_followup` | Next-Step | Sponsored follow-up option in suggestion set | followup_generation | suggestion/branch |
 | `next_step.clarification_branch` | Next-Step | Commercially eligible option in clarification | clarification_needed | choice/branch/action |
 | `next_step.multimodal_prompt_block` | Next-Step | Multimodal suggestion block for next step | high_complexity_or_emotional_context | image/video/block |
@@ -142,11 +142,32 @@ Must Not:
 ## 6.2 Next-Step Layer
 
 Intent:
-- Provide optional next actions and branches.
+- Provide optional next actions and branches based on interpreted user intent.
 
 Must:
 1. Keep sponsored branch skippable.
 2. Preserve user agency for next message.
+3. Render as an independent recommendation surface (for example, an Intent Card), not as a mandatory step in core answer flow.
+4. Use current-turn + session-context signals for recommendation relevance.
+5. Keep fail-open behavior: recommendation failure cannot block chat continuation.
+
+Must Not:
+1. Rewrite main answer content.
+2. Force user into sponsored flow before they continue chat.
+3. Trigger recommendation without minimum intent confidence.
+
+### 6.2.1 Next-Step Standard Decision Pipeline
+
+1. Intent understanding:
+- Parse purchase/exploration intent and preference constraints from current turn and recent turns.
+2. Eligibility gate:
+- Check intent confidence, safety policy, frequency cap, and cooldown.
+3. Candidate retrieval:
+- Run semantic retrieval over ad inventory using intent + preference embedding.
+4. Ranking:
+- Score by relevance, policy pass, expected utility, and monetization signal.
+5. Render decision:
+- If score threshold is met, render Intent Card in Next-Step surface; otherwise no render.
 
 ## 6.3 Intervention Layer
 
@@ -244,7 +265,59 @@ Must:
 - Primary Metrics: `addon_ctr`, `lead_rate`, `chat_continuation_rate`.
 - Fallback: no qualified candidates => no module.
 
-## 8) Placement Spec Template (for Future Expansion)
+## 8) Next-Step Layer Product Specs
+
+## 8.1 `next_step.intent_card` (Related Product Recommendation)
+
+- Surface: `related_product_recommendation` block below answer and before follow-up suggestions.
+- Positioning: Intent-triggered sponsored recommendation card for "what to do/buy next".
+- User Value:
+1. Reduces search effort by turning intent and preference signals into concrete recommendations.
+2. Preserves chat continuity because the card is optional and non-blocking.
+- Commercial Value:
+1. Captures high-intent traffic at decision moment.
+2. Improves recommendation quality via semantic matching instead of keyword-only matching.
+- Trigger Logic:
+1. `answer_completed = true`
+2. `next_step_slot_available = true`
+3. `intent_class in {shopping, purchase_intent, gifting, product_exploration}`
+4. `intent_score >= next_step_intent_threshold`
+5. `semantic_match_score >= semantic_retrieval_threshold`
+6. `safety_pass = true` and `frequency_cap_pass = true`
+- Semantic Retrieval Contract:
+1. Query input: current turn + recent turns + extracted preference facets.
+2. Retrieval method: vector/semantic search over ad inventory index.
+3. Match evidence: each candidate must include at least one relevance reason tied to user intent or preference.
+- Interaction Contract:
+1. Max one card module per turn; max three items per module.
+2. Each item supports `view_detail` and/or `open_destination`.
+3. User can skip, ignore, or dismiss without affecting main chat flow.
+- Control Owner:
+1. Platform controls trigger gate, ranking policy, and render/no-render.
+2. Advertiser provides candidate inventory payload only.
+- Disclosure:
+1. Module-level `Sponsored` label.
+2. Item-level attribution to source/merchant.
+- Guardrails:
+1. No render in blocked sensitive categories.
+2. No duplicate merchant/item within cooldown window.
+3. Recommendation copy cannot impersonate assistant core answer.
+4. If semantic confidence is low, do not render.
+- Billing Event: `impression` (optional), `click` (default), `qualified_lead` (optional by vertical).
+- Primary Metrics:
+1. `intent_card_impression_rate`
+2. `intent_card_ctr`
+3. `semantic_relevance_feedback_rate`
+4. `chat_continuation_rate_after_card`
+5. `revenue_per_intent_card`
+- Fallback:
+1. No qualified semantic candidate => no card.
+2. Retrieval timeout/error => skip card and continue chat (fail-open).
+- Example Scenarios:
+1. User says "我现在想买点东西": classify purchase intent and recommend relevant product cards.
+2. User says "我女朋友喜欢材质鲜艳的": extract preference facets and run semantic retrieval for matching products (for example, style-aligned items such as "采气花" in inventory).
+
+## 9) Placement Spec Template (for Future Expansion)
 
 Use this template when expanding any single placement product:
 
@@ -264,13 +337,13 @@ Use this template when expanding any single placement product:
 14. `Fallback`
 15. `Open Questions`
 
-## 9) Candidate Extensions (Not in MVP Commit)
+## 10) Candidate Extensions (Not in MVP Commit)
 
 1. `next_step.post_completion_reengagement`
 2. `intervention.tool_selection_router`
 3. `takeover.cross_session_program`
 
-## 10) Implementation Specs Index
+## 11) Implementation Specs Index
 
 1. Attach Layer affiliate-link aggregator:
 `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/docs/attach-affiliate-aggregator-design.md`
