@@ -118,8 +118,17 @@
               ]"
             >
               <div class="flex-shrink-0 mt-1">
-                <div v-if="msg.role === 'assistant'" class="w-8 h-8 rounded-full border border-gray-200 flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 shadow-sm">
+                <div
+                  v-if="msg.role === 'assistant' && msg.kind !== 'tool'"
+                  class="w-8 h-8 rounded-full border border-gray-200 flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 shadow-sm"
+                >
                   <Bot :size="18" class="text-white" />
+                </div>
+                <div
+                  v-else-if="msg.role === 'assistant' && msg.kind === 'tool'"
+                  class="w-8 h-8 rounded-full border border-gray-200 flex items-center justify-center bg-gray-100 shadow-sm"
+                >
+                  <Search :size="16" class="text-gray-600" />
                 </div>
                 <div v-else class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-sm">
                   <UserCircle :size="18" class="text-white" />
@@ -137,14 +146,51 @@
                 <div v-if="msg.role === 'user'" class="whitespace-pre-wrap leading-normal">{{ msg.content }}</div>
 
                 <div v-else class="leading-normal">
-                  <template v-if="msg.status === 'reasoning' && !msg.content">
+                  <template v-if="msg.kind === 'tool'">
+                    <div class="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+                      <div class="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-500">
+                        <span class="font-semibold">Tool</span>
+                        <span class="rounded-md bg-gray-200 px-1.5 py-0.5 text-[10px] text-gray-700">web_search</span>
+                        <span class="ml-auto normal-case text-[11px] font-medium text-gray-600">{{ formatToolState(msg.toolState) }}</span>
+                      </div>
+
+                      <div v-if="msg.toolQuery" class="mt-2 text-[13px] text-gray-600">
+                        Query: "{{ msg.toolQuery }}"
+                      </div>
+
+                      <div v-if="msg.toolState === 'running'" class="mt-2 inline-flex items-center gap-2 text-gray-500 text-xs">
+                        <LoaderCircle :size="12" class="animate-spin" />
+                        <span>Searching web...</span>
+                      </div>
+
+                      <div v-if="msg.toolState === 'error'" class="mt-2 text-xs text-red-600">
+                        {{ msg.toolError || 'Tool execution failed.' }}
+                      </div>
+
+                      <div v-if="msg.toolState === 'done' && msg.toolLatencyMs !== null" class="mt-2 text-[11px] text-gray-500">
+                        Finished in {{ msg.toolLatencyMs }} ms
+                      </div>
+
+                      <ul v-if="msg.toolResults?.length" class="mt-2 space-y-2">
+                        <li v-for="(result, idx) in msg.toolResults" :key="result.id || idx" class="rounded-lg border border-gray-200 bg-white p-2">
+                          <a :href="result.url" target="_blank" rel="noopener noreferrer" class="text-sm font-medium text-blue-700 hover:underline">
+                            {{ idx + 1 }}. {{ result.title }}
+                          </a>
+                          <p class="mt-1 text-xs text-gray-600">{{ result.snippet }}</p>
+                          <p class="mt-1 text-[11px] text-gray-400">{{ getHostLabel(result.url) }}</p>
+                        </li>
+                      </ul>
+                    </div>
+                  </template>
+
+                  <template v-else-if="msg.status === 'reasoning' && !msg.content">
                     <div class="inline-flex items-center gap-2 text-gray-500 text-sm">
                       <LoaderCircle :size="14" class="animate-spin" />
                       <span>Reasoning...</span>
                     </div>
                   </template>
 
-                  <template v-if="msg.content">
+                  <template v-if="msg.kind !== 'tool' && msg.content">
                     <MarkdownRenderer :content="msg.content" />
                     <span v-if="msg.status === 'streaming'" class="inline-block w-0.5 h-5 bg-gray-800 ml-0.5 cursor-blink align-middle"></span>
                   </template>
@@ -217,11 +263,13 @@ import {
   LoaderCircle,
 } from 'lucide-vue-next'
 import { sendMessageStream } from '../api/deepseek'
+import { shouldUseWebSearchTool, runWebSearchTool, buildWebSearchContext } from '../api/webSearchTool'
 import MarkdownRenderer from '../components/MarkdownRenderer.vue'
 
 const STORAGE_KEY = 'chat_bot_history_v2'
 const LEGACY_STORAGE_KEYS = ['chat_bot_sessions_v1']
 const MAX_SESSIONS = 50
+const TOOL_STATES = ['planning', 'running', 'done', 'error']
 
 const input = ref('')
 const historyQuery = ref('')
@@ -252,11 +300,31 @@ function createSession(initialTitle = 'New Chat') {
 
 function normalizeMessage(raw) {
   if (!raw || (raw.role !== 'user' && raw.role !== 'assistant')) return null
+
+  const toolState = TOOL_STATES.includes(raw.toolState) ? raw.toolState : 'done'
+  const toolResults = Array.isArray(raw.toolResults)
+    ? raw.toolResults
+        .filter((item) => item && typeof item === 'object')
+        .map((item, index) => ({
+          id: typeof item.id === 'string' ? item.id : `tool_result_${index}`,
+          title: typeof item.title === 'string' ? item.title : '',
+          url: typeof item.url === 'string' ? item.url : '',
+          snippet: typeof item.snippet === 'string' ? item.snippet : '',
+        }))
+    : []
+
   return {
     id: typeof raw.id === 'string' && raw.id ? raw.id : createId('msg'),
     role: raw.role,
+    kind: raw.kind === 'tool' && raw.role === 'assistant' ? 'tool' : 'chat',
     content: typeof raw.content === 'string' ? raw.content : '',
     status: raw.status === 'reasoning' || raw.status === 'streaming' ? raw.status : 'done',
+    toolName: typeof raw.toolName === 'string' ? raw.toolName : '',
+    toolState,
+    toolQuery: typeof raw.toolQuery === 'string' ? raw.toolQuery : '',
+    toolResults,
+    toolLatencyMs: Number.isFinite(raw.toolLatencyMs) ? raw.toolLatencyMs : null,
+    toolError: typeof raw.toolError === 'string' ? raw.toolError : '',
   }
 }
 
@@ -398,6 +466,44 @@ function touchActiveSession() {
   session.updatedAt = Date.now()
 }
 
+function formatToolState(toolState) {
+  if (toolState === 'planning') return 'Planned'
+  if (toolState === 'running') return 'Running'
+  if (toolState === 'error') return 'Failed'
+  return 'Completed'
+}
+
+function getHostLabel(url) {
+  try {
+    const host = new URL(url).hostname
+    return host.replace(/^www\./, '')
+  } catch {
+    return ''
+  }
+}
+
+function buildModelMessages(messages, webSearchContext) {
+  const modelMessages = messages
+    .filter((msg) => {
+      if (!msg || (msg.role !== 'user' && msg.role !== 'assistant')) return false
+      if (msg.kind === 'tool') return false
+      return typeof msg.content === 'string' && msg.content.trim().length > 0
+    })
+    .map((msg) => ({
+      role: msg.role,
+      content: msg.content,
+    }))
+
+  if (webSearchContext) {
+    modelMessages.push({
+      role: 'assistant',
+      content: `[Tool:web_search]\n${webSearchContext}`,
+    })
+  }
+
+  return modelMessages
+}
+
 function updateTitleFromFirstMessage(session, firstUserText) {
   if (!session) return
   if (session.title === 'New Chat' && firstUserText?.trim()) {
@@ -477,20 +583,73 @@ async function handleSend() {
 
   session.messages.push(userMessage)
   updateTitleFromFirstMessage(session, userContent)
+  touchActiveSession()
+  scheduleSaveSessions()
+
+  let webSearchContext = ''
+
+  if (shouldUseWebSearchTool(userContent)) {
+    const toolMessage = {
+      id: createId('msg'),
+      role: 'assistant',
+      kind: 'tool',
+      content: 'web_search planned',
+      status: 'done',
+      toolName: 'web_search',
+      toolState: 'planning',
+      toolQuery: userContent,
+      toolResults: [],
+      toolLatencyMs: null,
+      toolError: '',
+    }
+
+    session.messages.push(toolMessage)
+    touchActiveSession()
+    scheduleSaveSessions()
+
+    try {
+      toolMessage.toolState = 'running'
+      scheduleSaveSessions()
+
+      const webSearchOutput = await runWebSearchTool(userContent)
+      toolMessage.toolState = 'done'
+      toolMessage.toolQuery = webSearchOutput.query
+      toolMessage.toolResults = webSearchOutput.results
+      toolMessage.toolLatencyMs = webSearchOutput.latencyMs
+      toolMessage.content = `web_search returned ${webSearchOutput.results.length} results`
+      webSearchContext = buildWebSearchContext(webSearchOutput.query, webSearchOutput.results)
+    } catch (error) {
+      toolMessage.toolState = 'error'
+      toolMessage.toolError = error instanceof Error ? error.message : 'Tool execution failed'
+      toolMessage.content = 'web_search failed'
+    }
+
+    touchActiveSession()
+    scheduleSaveSessions()
+  }
 
   const assistantMessage = {
     id: createId('msg'),
     role: 'assistant',
+    kind: 'chat',
     content: '',
     status: 'reasoning',
+    toolName: '',
+    toolState: 'done',
+    toolQuery: '',
+    toolResults: [],
+    toolLatencyMs: null,
+    toolError: '',
   }
 
   session.messages.push(assistantMessage)
   touchActiveSession()
   scheduleSaveSessions()
 
+  const modelMessages = buildModelMessages(session.messages, webSearchContext)
+
   await sendMessageStream(
-    session.messages,
+    modelMessages,
     (text) => {
       if (assistantMessage.status === 'reasoning') {
         assistantMessage.status = 'streaming'

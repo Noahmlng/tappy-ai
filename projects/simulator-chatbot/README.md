@@ -7,6 +7,7 @@
 - ChatGPT-like 对话流程（提问 -> 推理中 -> 输出）
 - DeepSeek 流式回复
 - 多会话历史持久化（`localStorage`）
+- Web Search Tool Call 模拟链路（触发 -> 执行 -> 状态展示 -> 结果注入回答）
 
 ## 运行
 
@@ -19,3 +20,9 @@ npm run dev
 
 - `VITE_DEEPSEEK_API_KEY`
 - `VITE_DEEPSEEK_MODEL`（默认：`deepseek-reasoner`）
+
+## Tool Call 说明
+
+- 当用户问题包含实时/搜索意图关键词时，会触发 `web_search` 工具。
+- 也支持通过 `/search ...` 前缀强制触发搜索链路。
+- 搜索执行状态会在对话区以 Tool 卡片展示（Planned / Running / Completed / Failed）。
