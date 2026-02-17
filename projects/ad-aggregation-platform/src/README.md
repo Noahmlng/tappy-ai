@@ -9,3 +9,8 @@
 - 基于 LLM 的 NER 服务封装，输出结构化 JSON。
 - 入口：`ner/index.js` -> `extractEntitiesWithLlm(input, options)`
 - 输出实体字段：`entityText`、`entityType`、`confidence`、`normalizedText`
+
+3. `connectors/partnerstack/`
+- PartnerStack API connector（Bearer 认证）。
+- 能力：`listPartnerships`、`listLinksByPartnership`、`listOffers`、`fetchOffers`。
+- 内置：基础超时控制 + 429/5xx 重试 + links fallback。
