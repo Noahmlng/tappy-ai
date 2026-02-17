@@ -171,6 +171,25 @@
                         Finished in {{ msg.toolLatencyMs }} ms
                       </div>
 
+                      <div v-if="msg.sponsoredSlot?.ad" class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
+                        <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                          <span>{{ msg.sponsoredSlot.label || 'Sponsored' }}</span>
+                          <span class="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] text-amber-800">Slot 1</span>
+                        </div>
+                        <a
+                          :href="msg.sponsoredSlot.ad.url"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="mt-1 block text-sm font-medium text-amber-900 hover:underline"
+                        >
+                          {{ msg.sponsoredSlot.ad.title }}
+                        </a>
+                        <p class="mt-1 text-xs text-amber-800">{{ msg.sponsoredSlot.ad.snippet }}</p>
+                        <p class="mt-1 text-[11px] text-amber-700">
+                          {{ msg.sponsoredSlot.ad.advertiser }}
+                        </p>
+                      </div>
+
                       <ul v-if="msg.toolResults?.length" class="mt-2 space-y-2">
                         <li v-for="(result, idx) in msg.toolResults" :key="result.id || idx" class="rounded-lg border border-gray-200 bg-white p-2">
                           <a :href="result.url" target="_blank" rel="noopener noreferrer" class="text-sm font-medium text-blue-700 hover:underline">
@@ -298,6 +317,23 @@ function createSession(initialTitle = 'New Chat') {
   }
 }
 
+function normalizeSponsoredSlot(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  if (!raw.ad || typeof raw.ad !== 'object') return null
+
+  return {
+    slotId: typeof raw.slotId === 'string' ? raw.slotId : 'search_sponsored_slot_1',
+    label: typeof raw.label === 'string' && raw.label.trim() ? raw.label.trim() : 'Sponsored',
+    ad: {
+      id: typeof raw.ad.id === 'string' ? raw.ad.id : '',
+      title: typeof raw.ad.title === 'string' ? raw.ad.title : '',
+      url: typeof raw.ad.url === 'string' ? raw.ad.url : '',
+      snippet: typeof raw.ad.snippet === 'string' ? raw.ad.snippet : '',
+      advertiser: typeof raw.ad.advertiser === 'string' ? raw.ad.advertiser : '',
+    },
+  }
+}
+
 function normalizeMessage(raw) {
   if (!raw || (raw.role !== 'user' && raw.role !== 'assistant')) return null
 
@@ -325,6 +361,7 @@ function normalizeMessage(raw) {
     toolResults,
     toolLatencyMs: Number.isFinite(raw.toolLatencyMs) ? raw.toolLatencyMs : null,
     toolError: typeof raw.toolError === 'string' ? raw.toolError : '',
+    sponsoredSlot: normalizeSponsoredSlot(raw.sponsoredSlot),
   }
 }
 
@@ -601,6 +638,7 @@ async function handleSend() {
       toolResults: [],
       toolLatencyMs: null,
       toolError: '',
+      sponsoredSlot: null,
     }
 
     session.messages.push(toolMessage)
@@ -616,12 +654,19 @@ async function handleSend() {
       toolMessage.toolQuery = webSearchOutput.query
       toolMessage.toolResults = webSearchOutput.results
       toolMessage.toolLatencyMs = webSearchOutput.latencyMs
-      toolMessage.content = `web_search returned ${webSearchOutput.results.length} results`
-      webSearchContext = buildWebSearchContext(webSearchOutput.query, webSearchOutput.results)
+      toolMessage.sponsoredSlot = normalizeSponsoredSlot(webSearchOutput.sponsoredSlot)
+      const sponsoredCount = toolMessage.sponsoredSlot?.ad ? 1 : 0
+      toolMessage.content = `web_search returned ${webSearchOutput.results.length} results (+${sponsoredCount} sponsored slot)`
+      webSearchContext = buildWebSearchContext(
+        webSearchOutput.query,
+        webSearchOutput.results,
+        webSearchOutput.sponsoredSlot,
+      )
     } catch (error) {
       toolMessage.toolState = 'error'
       toolMessage.toolError = error instanceof Error ? error.message : 'Tool execution failed'
       toolMessage.content = 'web_search failed'
+      toolMessage.sponsoredSlot = null
     }
 
     touchActiveSession()
@@ -640,6 +685,7 @@ async function handleSend() {
     toolResults: [],
     toolLatencyMs: null,
     toolError: '',
+    sponsoredSlot: null,
   }
 
   session.messages.push(assistantMessage)

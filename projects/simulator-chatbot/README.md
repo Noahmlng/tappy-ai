@@ -26,3 +26,4 @@ npm run dev
 - 当用户问题包含实时/搜索意图关键词时，会触发 `web_search` 工具。
 - 也支持通过 `/search ...` 前缀强制触发搜索链路。
 - 搜索执行状态会在对话区以 Tool 卡片展示（Planned / Running / Completed / Failed）。
+- 搜索结果区内置固定 1 个 Sponsored 插槽（标记为 `Sponsored`）。

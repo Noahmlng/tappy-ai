@@ -52,6 +52,30 @@ const MOCK_WEB_INDEX = [
   },
 ]
 
+const MOCK_SPONSORED_INDEX = [
+  {
+    title: 'Deploy LLM Apps Faster with Vercel AI SDK',
+    url: 'https://vercel.com/ai',
+    snippet: 'Build and ship AI products with streaming UI primitives and observability.',
+    advertiser: 'Vercel',
+    tags: ['ai', 'sdk', 'deploy', 'chatgpt', 'tool'],
+  },
+  {
+    title: 'Pinecone Vector Database for RAG',
+    url: 'https://www.pinecone.io/',
+    snippet: 'Production-grade vector search for retrieval, memory, and recommendation.',
+    advertiser: 'Pinecone',
+    tags: ['rag', 'search', 'retrieval', 'vector', 'memory'],
+  },
+  {
+    title: 'GitHub Copilot for Teams',
+    url: 'https://github.com/features/copilot',
+    snippet: 'Accelerate engineering output with AI pair programming in your IDE.',
+    advertiser: 'GitHub',
+    tags: ['developer', 'code', 'assistant', 'productivity'],
+  },
+]
+
 function delay(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms)
@@ -69,6 +93,17 @@ function normalizeQuery(query) {
   return String(query || '').replace(/^\/search\s+/i, '').trim()
 }
 
+function scoreItemsByQuery(items, terms) {
+  return items
+    .map((item) => {
+      const haystack = `${item.title} ${item.snippet} ${(item.tags || []).join(' ')}`
+        .toLowerCase()
+      const score = terms.reduce((acc, term) => (haystack.includes(term) ? acc + 1 : acc), 0)
+      return { ...item, score }
+    })
+    .sort((a, b) => b.score - a.score)
+}
+
 export function shouldUseWebSearchTool(query) {
   const normalized = normalizeQuery(query)
   if (!normalized) return false
@@ -83,19 +118,13 @@ export async function runWebSearchTool(query, options = {}) {
   const startedAt = Date.now()
   const normalized = normalizeQuery(query)
   const limit = Number.isFinite(options.maxResults) ? options.maxResults : 4
+  const sponsoredEnabled = options.sponsoredEnabled !== false
 
   await delay(600)
 
   const terms = tokenize(normalized)
-  const scored = MOCK_WEB_INDEX.map((item) => {
-    const haystack = `${item.title} ${item.snippet} ${(item.tags || []).join(' ')}`
-      .toLowerCase()
-
-    const score = terms.reduce((acc, term) => (haystack.includes(term) ? acc + 1 : acc), 0)
-    return { ...item, score }
-  })
+  const scored = scoreItemsByQuery(MOCK_WEB_INDEX, terms)
     .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
 
   const fallback = scored.length > 0 ? scored : MOCK_WEB_INDEX.slice(0, 3)
   const results = fallback.slice(0, limit).map((item, index) => ({
@@ -105,24 +134,55 @@ export async function runWebSearchTool(query, options = {}) {
     snippet: item.snippet,
   }))
 
+  let sponsoredSlot = null
+  if (sponsoredEnabled) {
+    const sponsoredCandidates = scoreItemsByQuery(MOCK_SPONSORED_INDEX, terms)
+    const selected = sponsoredCandidates[0] || MOCK_SPONSORED_INDEX[0]
+
+    sponsoredSlot = {
+      slotId: 'search_sponsored_slot_1',
+      label: 'Sponsored',
+      ad: {
+        id: `ad_${selected.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
+        title: selected.title,
+        url: selected.url,
+        snippet: selected.snippet,
+        advertiser: selected.advertiser,
+      },
+    }
+  }
+
   return {
     query: normalized,
     results,
+    sponsoredSlot,
     latencyMs: Date.now() - startedAt,
   }
 }
 
-export function buildWebSearchContext(query, results = []) {
+export function buildWebSearchContext(query, results = [], sponsoredSlot = null) {
   if (!query || results.length === 0) return ''
 
   const lines = results.map((result, index) => {
     return `${index + 1}. ${result.title}\nURL: ${result.url}\nSnippet: ${result.snippet}`
   })
 
+  const sponsoredBlock = sponsoredSlot?.ad
+    ? [
+        'Sponsored result:',
+        `${sponsoredSlot.label}: ${sponsoredSlot.ad.title}`,
+        `URL: ${sponsoredSlot.ad.url}`,
+        `Snippet: ${sponsoredSlot.ad.snippet}`,
+      ].join('\n')
+    : ''
+
   return [
     'Web search results are available for this user request.',
     `Search query: ${query}`,
     'Use these references when relevant and avoid fabricating sources.',
+    sponsoredBlock,
     lines.join('\n\n'),
-  ].join('\n\n')
+  ]
+    .filter(Boolean)
+    .join('\n\n')
 }
