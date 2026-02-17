@@ -1,9 +1,11 @@
 import { loadRuntimeConfig } from '../../config/runtime-config.js'
-import { mapPartnerStackToUnifiedOffer, normalizeUnifiedOffers } from '../../offers/index.js'
+import { mapPartnerStackPartnershipToUnifiedOffer, normalizeUnifiedOffers } from '../../offers/index.js'
 
 const DEFAULT_BASE_URL = 'https://api.partnerstack.com/api/v2'
 const DEFAULT_MAX_RETRIES = 3
 const DEFAULT_TIMEOUT_MS = 8000
+const DEFAULT_PARTNERSHIP_LIMIT = 200
+const MAX_PARTNERSHIP_LIMIT = 200
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504])
 
 function isRetryableError(error) {
@@ -56,6 +58,38 @@ function pickFirst(...values) {
     if (typeof value === 'string' && value.trim()) return value.trim()
   }
   return ''
+}
+
+function toBoundedLimit(value, fallback = DEFAULT_PARTNERSHIP_LIMIT) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric) || numeric <= 0) return fallback
+  return Math.max(1, Math.min(MAX_PARTNERSHIP_LIMIT, Math.floor(numeric)))
+}
+
+function buildSearchTerms(value) {
+  const raw = normalizeText(value)
+  if (!raw) return []
+
+  const terms = raw
+    .toLowerCase()
+    .split(/[^a-z0-9]+/g)
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 4)
+
+  return [...new Set(terms)]
+}
+
+function toSearchCorpus(record) {
+  return [
+    normalizeText(record?.company?.name),
+    normalizeText(record?.link?.destination),
+    normalizeText(record?.link?.url),
+    normalizeText(record?.offers?.description),
+    normalizeText(record?.status),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
 }
 
 class PartnerStackApiError extends Error {
@@ -181,24 +215,35 @@ export function createPartnerStackConnector(options = {}) {
     })
   }
 
-  async function listOffers(params = {}) {
-    const path = '/marketplace/programs'
+  async function listPartnerships(params = {}) {
+    const path = '/partnerships'
     const payload = await request(path, {
       query: {
-        search: params.search,
-        limit: params.limit
+        limit: toBoundedLimit(params.limit, DEFAULT_PARTNERSHIP_LIMIT)
       }
     })
-    const offers = extractList(payload)
-    return { offers, raw: payload, sourcePath: path }
+
+    const partnerships = extractList(payload)
+    return { partnerships, raw: payload, sourcePath: path }
   }
 
   async function fetchOffers(params = {}) {
-    const offersResult = await listOffers(params)
+    const partnershipsResult = await listPartnerships(params)
+    const searchTerms = buildSearchTerms(params.search)
+    const activePartnerships = partnershipsResult.partnerships.filter((item) =>
+      normalizeText(item?.status).toLowerCase() === 'active'
+    )
+    const matchedPartnerships = searchTerms.length > 0
+      ? activePartnerships.filter((item) => {
+          const corpus = toSearchCorpus(item)
+          return searchTerms.some((term) => corpus.includes(term))
+        })
+      : activePartnerships
+
     const mapped = normalizeUnifiedOffers(
-      offersResult.offers.map((offer) =>
-        mapPartnerStackToUnifiedOffer(offer, {
-          sourceType: 'offer'
+      matchedPartnerships.map((partnership) =>
+        mapPartnerStackPartnershipToUnifiedOffer(partnership, {
+          sourceType: 'link'
         })
       )
     )
@@ -206,10 +251,13 @@ export function createPartnerStackConnector(options = {}) {
     return {
       offers: mapped,
       debug: {
-        mode: 'partner_marketplace_programs',
-        sourcePath: offersResult.sourcePath,
-        rawOfferCount: offersResult.offers.length,
-        mappedOfferCount: mapped.length
+        mode: 'partner_partnership_links',
+        sourcePath: partnershipsResult.sourcePath,
+        rawPartnershipCount: partnershipsResult.partnerships.length,
+        activePartnershipCount: activePartnerships.length,
+        matchedPartnershipCount: matchedPartnerships.length,
+        mappedOfferCount: mapped.length,
+        searchTerms
       }
     }
   }
@@ -217,7 +265,7 @@ export function createPartnerStackConnector(options = {}) {
   async function healthCheck(params = {}) {
     try {
       const startedAt = Date.now()
-      const result = await listOffers({
+      const result = await listPartnerships({
         limit: params.limit ?? 1
       })
 
@@ -227,7 +275,7 @@ export function createPartnerStackConnector(options = {}) {
         checkedAt: new Date().toISOString(),
         latencyMs: Date.now() - startedAt,
         counts: {
-          offers: Array.isArray(result.offers) ? result.offers.length : 0
+          partnerships: Array.isArray(result.partnerships) ? result.partnerships.length : 0
         }
       }
     } catch (error) {
@@ -243,7 +291,7 @@ export function createPartnerStackConnector(options = {}) {
 
   return {
     request,
-    listOffers,
+    listPartnerships,
     fetchOffers,
     healthCheck
   }

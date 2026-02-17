@@ -3,7 +3,7 @@ import { NER_ENTITY_TYPES } from './entity-schema.js'
 import { buildNerUserPrompt, NER_SYSTEM_PROMPT } from './prompt.js'
 
 const DEFAULT_GLM_CHAT_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
-const DEFAULT_TIMEOUT_MS = 20000
+const DEFAULT_TIMEOUT_MS = 45000
 
 function normalizeText(value) {
   return value.trim().replace(/\s+/g, ' ')

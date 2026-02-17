@@ -30,6 +30,37 @@ const INACTIVE_OFFER_STATUSES = new Set([
   'rejected',
   'blocked'
 ])
+const HEURISTIC_ENTITY_STOPWORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'as',
+  'at',
+  'be',
+  'best',
+  'by',
+  'for',
+  'from',
+  'how',
+  'i',
+  'in',
+  'is',
+  'it',
+  'of',
+  'on',
+  'or',
+  'our',
+  'the',
+  'this',
+  'to',
+  'try',
+  'use',
+  'we',
+  'with',
+  'you',
+  'your'
+])
 
 function cleanText(value) {
   if (typeof value !== 'string') return ''
@@ -71,6 +102,12 @@ function uniqueStrings(values) {
   }
 
   return output
+}
+
+function normalizeForMatching(value) {
+  return cleanText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
 }
 
 function isFiniteNumber(value) {
@@ -124,29 +161,105 @@ function buildSearchKeywords(request, entities = [], options = {}) {
   return uniqueStrings(terms).slice(0, 12).join(' ')
 }
 
+function normalizeHeuristicEntity(text) {
+  const normalized = cleanText(text).replace(/[^a-z0-9]+/gi, ' ').trim()
+  if (!normalized) return ''
+  return normalized.toLowerCase()
+}
+
+function isValidHeuristicEntity(candidate) {
+  const normalized = normalizeHeuristicEntity(candidate)
+  if (!normalized) return false
+
+  const parts = normalized.split(/\s+/g).filter(Boolean)
+  if (parts.length === 0) return false
+  if (parts.every((part) => HEURISTIC_ENTITY_STOPWORDS.has(part))) return false
+  if (parts.length === 1) {
+    const token = parts[0]
+    if (token.length < 4) return false
+    if (HEURISTIC_ENTITY_STOPWORDS.has(token)) return false
+  }
+  return true
+}
+
+function extractHeuristicEntities(query = '', answerText = '') {
+  const corpus = `${cleanText(query)}\n${cleanText(answerText)}`
+  if (!corpus.trim()) return []
+
+  const patterns = [
+    /\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+\b/g,
+    /\b[A-Z][A-Za-z0-9&.+-]*(?:\s+[A-Z][A-Za-z0-9&.+-]*){0,2}\s+AI\b/g,
+    /\b[A-Z][A-Za-z0-9&.+-]*(?:\s+[A-Z][A-Za-z0-9&.+-]*){1,2}\b/g
+  ]
+
+  const seen = new Set()
+  const entities = []
+
+  for (const pattern of patterns) {
+    const matches = corpus.match(pattern)
+    if (!Array.isArray(matches)) continue
+
+    for (const rawMatch of matches) {
+      const entityText = cleanText(rawMatch)
+      if (!isValidHeuristicEntity(entityText)) continue
+
+      const normalizedText = normalizeHeuristicEntity(entityText)
+      if (!normalizedText) continue
+      if (seen.has(normalizedText)) continue
+      seen.add(normalizedText)
+
+      entities.push({
+        entityText,
+        normalizedText,
+        entityType: 'service',
+        confidence: 0.35
+      })
+    }
+  }
+
+  return entities.slice(0, 8)
+}
+
 function buildEntityMatcher(entities = []) {
-  const normalized = uniqueStrings(
+  const tokens = uniqueStrings(
     entities.flatMap((entity) => [entity.entityText, entity.normalizedText])
-  ).map((item) => item.toLowerCase())
+  ).map((item) => ({
+    raw: item.toLowerCase(),
+    compact: normalizeForMatching(item)
+  }))
 
   return function scoreOffer(offer) {
-    if (normalized.length === 0) return { score: 0, matchedEntityText: '' }
+    if (tokens.length === 0) return { score: 0, matchedEntityText: '' }
 
     const candidateFields = [
-      cleanText(offer.entityText).toLowerCase(),
-      cleanText(offer.normalizedEntityText).toLowerCase(),
-      cleanText(offer.title).toLowerCase(),
-      cleanText(offer.description).toLowerCase()
+      cleanText(offer.entityText),
+      cleanText(offer.normalizedEntityText),
+      cleanText(offer.title),
+      cleanText(offer.description),
+      cleanText(offer.targetUrl),
+      cleanText(offer.trackingUrl)
     ]
+      .map((field) => ({
+        raw: field.toLowerCase(),
+        compact: normalizeForMatching(field)
+      }))
+      .filter((field) => field.raw || field.compact)
 
     let score = 0
     let matchedEntityText = ''
 
-    for (const token of normalized) {
-      if (!token) continue
-      if (candidateFields.some((field) => field.includes(token))) {
-        score += token.length
-        if (!matchedEntityText) matchedEntityText = token
+    for (const token of tokens) {
+      if (!token.raw && !token.compact) continue
+
+      const matched = candidateFields.some((field) => {
+        if (token.raw && field.raw.includes(token.raw)) return true
+        if (!token.compact || !field.compact) return false
+        return field.compact.includes(token.compact)
+      })
+
+      if (matched) {
+        score += Math.max(token.raw.length, token.compact.length)
+        if (!matchedEntityText) matchedEntityText = token.raw || token.compact
       }
     }
 
@@ -535,6 +648,20 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
         placementId: DEFAULT_PLACEMENT_ID,
         message: nerInfo.message
       })
+    }
+  }
+
+  if (entities.length === 0) {
+    const heuristicEntities = extractHeuristicEntities(request.context.query, request.context.answerText)
+    if (heuristicEntities.length > 0) {
+      entities = heuristicEntities
+      nerInfo = {
+        ...nerInfo,
+        status: nerInfo.status === 'ok' ? 'ok_with_fallback' : 'fallback',
+        message: nerInfo.status === 'ok'
+          ? 'llm_no_entities_used_heuristic_fallback'
+          : `${cleanText(nerInfo.message) || 'ner_failed'}; used_heuristic_fallback`
+      }
     }
   }
 
