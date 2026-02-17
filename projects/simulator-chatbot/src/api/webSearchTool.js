@@ -45,34 +45,10 @@ const MOCK_WEB_INDEX = [
     tags: ['node', 'release', 'version', 'latest'],
   },
   {
-    title: 'How sponsored results are labeled in search interfaces',
-    url: 'https://support.google.com/google-ads/answer/1722122',
-    snippet: 'General policy references for sponsored search result disclosures.',
-    tags: ['ads', 'sponsored', 'search', 'policy'],
-  },
-]
-
-const MOCK_SPONSORED_INDEX = [
-  {
-    title: 'Deploy LLM Apps Faster with Vercel AI SDK',
-    url: 'https://vercel.com/ai',
-    snippet: 'Build and ship AI products with streaming UI primitives and observability.',
-    advertiser: 'Vercel',
-    tags: ['ai', 'sdk', 'deploy', 'chatgpt', 'tool'],
-  },
-  {
-    title: 'Pinecone Vector Database for RAG',
-    url: 'https://www.pinecone.io/',
-    snippet: 'Production-grade vector search for retrieval, memory, and recommendation.',
-    advertiser: 'Pinecone',
-    tags: ['rag', 'search', 'retrieval', 'vector', 'memory'],
-  },
-  {
-    title: 'GitHub Copilot for Teams',
-    url: 'https://github.com/features/copilot',
-    snippet: 'Accelerate engineering output with AI pair programming in your IDE.',
-    advertiser: 'GitHub',
-    tags: ['developer', 'code', 'assistant', 'productivity'],
+    title: 'Anthropic API docs',
+    url: 'https://docs.anthropic.com/en/docs/welcome',
+    snippet: 'Claude API docs covering messages, tools, and prompt engineering.',
+    tags: ['anthropic', 'api', 'tools', 'llm'],
   },
 ]
 
@@ -93,25 +69,15 @@ function normalizeQuery(query) {
   return String(query || '').replace(/^\/search\s+/i, '').trim()
 }
 
-function scoreItemsByQuery(items, terms, options = {}) {
-  const preferenceBoostTags = Array.isArray(options.preferenceBoostTags)
-    ? options.preferenceBoostTags.filter((tag) => typeof tag === 'string')
-    : []
-  const preferenceBoostSet = new Set(preferenceBoostTags.map((tag) => tag.toLowerCase()))
-
+function scoreItemsByQuery(items, terms) {
   return items
     .map((item) => {
       const haystack = `${item.title} ${item.snippet} ${(item.tags || []).join(' ')}`
         .toLowerCase()
-      const queryScore = terms.reduce((acc, term) => (haystack.includes(term) ? acc + 1 : acc), 0)
-      const preferenceScore = (item.tags || []).reduce((acc, tag) => {
-        return preferenceBoostSet.has(String(tag).toLowerCase()) ? acc + 0.65 : acc
-      }, 0)
+      const score = terms.reduce((acc, term) => (haystack.includes(term) ? acc + 1 : acc), 0)
       return {
         ...item,
-        queryScore,
-        preferenceScore,
-        score: queryScore + preferenceScore,
+        score,
       }
     })
     .sort((a, b) => b.score - a.score)
@@ -131,15 +97,6 @@ export async function runWebSearchTool(query, options = {}) {
   const startedAt = Date.now()
   const normalized = normalizeQuery(query)
   const limit = Number.isFinite(options.maxResults) ? options.maxResults : 4
-  const sponsoredEnabled = options.sponsoredEnabled !== false
-  const excludedSponsoredIds = new Set(
-    Array.isArray(options.excludedSponsoredIds)
-      ? options.excludedSponsoredIds.filter((id) => typeof id === 'string')
-      : [],
-  )
-  const preferenceBoostTags = Array.isArray(options.preferenceBoostTags)
-    ? options.preferenceBoostTags.filter((tag) => typeof tag === 'string')
-    : []
 
   await delay(600)
 
@@ -155,80 +112,24 @@ export async function runWebSearchTool(query, options = {}) {
     snippet: item.snippet,
   }))
 
-  let sponsoredSlot = null
-  let sponsoredMatchScore = null
-  if (sponsoredEnabled) {
-    const sponsoredCandidates = scoreItemsByQuery(MOCK_SPONSORED_INDEX, terms, {
-      preferenceBoostTags,
-    })
-    const selected =
-      sponsoredCandidates.find((item) => {
-        const adId = `ad_${item.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
-        return !excludedSponsoredIds.has(adId)
-      }) || sponsoredCandidates[0] || MOCK_SPONSORED_INDEX[0]
-
-    const selectedAdId = `ad_${selected.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`
-    if (!excludedSponsoredIds.has(selectedAdId) || excludedSponsoredIds.size === 0) {
-      sponsoredMatchScore = Number.isFinite(selected.score) ? selected.score : null
-
-      sponsoredSlot = {
-        slotId: 'search_sponsored_slot_1',
-        label: 'Sponsored',
-        ad: {
-          id: selectedAdId,
-          title: selected.title,
-          url: selected.url,
-          snippet: selected.snippet,
-          advertiser: selected.advertiser,
-          preferenceTags: Array.isArray(selected.tags) ? selected.tags : [],
-        },
-      }
-    }
-  }
-
   return {
     query: normalized,
     results,
-    sponsoredSlot,
-    sponsoredMatchScore,
     latencyMs: Date.now() - startedAt,
   }
 }
 
-export function buildWebSearchContext(query, results = [], sponsoredSlot = null, options = {}) {
+export function buildWebSearchContext(query, results = []) {
   if (!query || results.length === 0) return ''
 
-  const mergeMode = options.mergeMode === 'blended' ? 'blended' : 'separate'
-  const displayResults = mergeMode === 'blended' && sponsoredSlot?.ad
-    ? [
-        {
-          title: `[${sponsoredSlot.label || 'Sponsored'}] ${sponsoredSlot.ad.title}`,
-          url: sponsoredSlot.ad.url,
-          snippet: sponsoredSlot.ad.snippet,
-        },
-        ...results,
-      ]
-    : results
-
-  const lines = displayResults.map((result, index) => {
+  const lines = results.map((result, index) => {
     return `${index + 1}. ${result.title}\nURL: ${result.url}\nSnippet: ${result.snippet}`
   })
-
-  const sponsoredBlock = mergeMode === 'separate' && sponsoredSlot?.ad
-    ? [
-        'Sponsored result:',
-        `${sponsoredSlot.label}: ${sponsoredSlot.ad.title}`,
-        `URL: ${sponsoredSlot.ad.url}`,
-        `Snippet: ${sponsoredSlot.ad.snippet}`,
-      ].join('\n')
-    : ''
 
   return [
     'Web search results are available for this user request.',
     `Search query: ${query}`,
-    `Result merge mode: ${mergeMode}`,
     'Use these references when relevant and avoid fabricating sources.',
-    sponsoredBlock,
     lines.join('\n\n'),
   ]
     .filter(Boolean)

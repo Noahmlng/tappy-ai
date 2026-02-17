@@ -1,62 +1,60 @@
 <template>
-  <div class="flex h-screen w-full bg-white text-gray-800 font-sans overflow-hidden">
+  <div class="flex h-screen w-full overflow-hidden bg-white font-sans text-gray-800">
     <aside
       :class="[
-        'fixed lg:relative z-40 w-[280px] h-full bg-[#f9f9f9] transition-transform duration-300 ease-in-out flex flex-col border-r border-gray-200',
+        'fixed z-40 flex h-full w-[280px] -translate-x-full flex-col border-r border-gray-200 bg-[#f9f9f9] transition-transform duration-300 ease-in-out lg:relative lg:z-0 lg:translate-x-0',
         isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
       ]"
     >
-      <div class="p-3 flex flex-col gap-2 border-b border-gray-200">
-        <div class="flex items-center justify-between mb-1 lg:hidden">
-          <button @click="isSidebarOpen = false" class="p-2 hover:bg-gray-200 rounded-lg">
+      <div class="border-b border-gray-200 p-3">
+        <div class="mb-2 flex items-center justify-between lg:hidden">
+          <button @click="isSidebarOpen = false" class="rounded-lg p-2 hover:bg-gray-200">
             <X :size="18" />
           </button>
         </div>
 
         <button
           @click="startNewChat"
-          class="flex items-center justify-between w-full p-2 text-sm font-medium hover:bg-gray-200 rounded-lg transition-colors group"
+          class="group flex w-full items-center justify-between rounded-lg p-2 text-sm font-medium transition-colors hover:bg-gray-200"
         >
           <div class="flex items-center gap-2">
-            <div class="p-1 rounded-full border border-gray-300 bg-white">
+            <div class="rounded-full border border-gray-300 bg-white p-1">
               <Plus :size="14" />
             </div>
             <span>New Chat</span>
           </div>
-          <MessageSquare :size="14" class="opacity-0 group-hover:opacity-100 text-gray-500" />
+          <MessageSquare :size="14" class="text-gray-500 opacity-0 group-hover:opacity-100" />
         </button>
 
-        <label class="flex items-center gap-2 rounded-lg bg-white border border-gray-200 px-2 py-2 text-sm">
+        <label class="mt-2 flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-2 py-2 text-sm">
           <Search :size="16" class="text-gray-400" />
           <input
             v-model="historyQuery"
             type="text"
             placeholder="Search history"
-            class="w-full bg-transparent outline-none text-gray-700 placeholder:text-gray-400"
+            class="w-full bg-transparent text-gray-700 outline-none placeholder:text-gray-400"
           />
         </label>
       </div>
 
-      <div class="flex-1 overflow-y-auto px-3 py-2 space-y-1 scrollbar-thin">
-        <div class="text-[11px] font-semibold text-gray-500 px-2 py-2 uppercase tracking-tight">Recent</div>
+      <div class="scrollbar-thin flex-1 space-y-1 overflow-y-auto px-3 py-2">
+        <div class="px-2 py-2 text-[11px] font-semibold uppercase tracking-tight text-gray-500">Recent</div>
 
         <div
           v-for="session in filteredSessions"
           :key="session.id"
           :class="[
-            'w-full p-2 text-sm rounded-lg relative group outline-none transition-colors',
-            session.id === activeSessionId
-              ? 'bg-gray-200 text-gray-900'
-              : 'text-gray-700 hover:bg-gray-200'
+            'group relative w-full rounded-lg p-2 text-sm outline-none transition-colors',
+            session.id === activeSessionId ? 'bg-gray-200 text-gray-900' : 'text-gray-700 hover:bg-gray-200'
           ]"
         >
-          <button @click="openSession(session.id)" class="w-full text-left pr-9">
+          <button @click="openSession(session.id)" class="w-full pr-9 text-left">
             <div class="truncate">{{ session.title }}</div>
-            <div class="text-[11px] text-gray-500 mt-1">{{ formatSessionTime(session.updatedAt) }}</div>
+            <div class="mt-1 text-[11px] text-gray-500">{{ formatSessionTime(session.updatedAt) }}</div>
           </button>
           <button
             @click.stop="deleteSession(session.id)"
-            class="absolute right-2 top-1/2 -translate-y-1/2 hidden group-hover:flex p-1 rounded hover:bg-gray-300"
+            class="absolute right-2 top-1/2 hidden -translate-y-1/2 rounded p-1 hover:bg-gray-300 group-hover:flex"
             aria-label="Delete chat"
             title="Delete chat"
           >
@@ -69,172 +67,35 @@
         </div>
       </div>
 
-      <div class="border-t border-gray-200 p-3 space-y-2">
-        <div class="rounded-lg border border-gray-200 bg-white p-2">
-          <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Experiment (A/B)</div>
-          <div class="mt-2 space-y-2 text-[11px]">
-            <label class="flex items-center justify-between gap-2">
-              <span class="text-gray-600">Enable experiment routing</span>
-              <input
-                v-model="experimentConfig.enabled"
-                type="checkbox"
-                class="h-4 w-4 rounded border-gray-300"
-              />
-            </label>
-
-            <label class="flex items-center justify-between gap-2">
-              <span class="text-gray-600">Current session group</span>
-              <select
-                v-model="activeSessionExperimentVariant"
-                :disabled="!activeSession"
-                class="rounded border border-gray-300 bg-white px-1.5 py-1 text-[11px] text-gray-700 disabled:opacity-60"
-              >
-                <option v-for="variant in EXPERIMENT_VARIANTS" :key="variant.id" :value="variant.id">
-                  {{ variant.label }}
-                </option>
-              </select>
-            </label>
-
-            <div class="rounded bg-gray-50 px-2 py-1.5 text-[10px] text-gray-600">
-              {{ activeExperimentVariantMeta.description }}
-            </div>
-          </div>
-        </div>
-
-        <div class="rounded-lg border border-gray-200 bg-white p-2">
-          <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Ad Strategy</div>
-          <div class="mt-2 space-y-2 text-[11px]">
-            <label class="flex items-center justify-between gap-2">
-              <span :class="experimentConfig.enabled ? 'text-gray-400' : 'text-gray-600'">Enable ads</span>
-              <input
-                v-model="strategy.adsEnabled"
-                :disabled="experimentConfig.enabled"
-                type="checkbox"
-                class="h-4 w-4 rounded border-gray-300 disabled:opacity-50"
-              />
-            </label>
-            <label class="flex items-center justify-between gap-2">
-              <span
-                :class="!experimentConfig.enabled && strategy.adsEnabled ? 'text-gray-600' : 'text-gray-400'"
-              >Enable sponsored search</span>
-              <input
-                v-model="strategy.searchAdsEnabled"
-                :disabled="experimentConfig.enabled || !strategy.adsEnabled"
-                type="checkbox"
-                class="h-4 w-4 rounded border-gray-300 disabled:opacity-50"
-              />
-            </label>
-            <label class="flex items-center justify-between gap-2">
-              <span
-                :class="!experimentConfig.enabled && strategy.adsEnabled && strategy.searchAdsEnabled ? 'text-gray-600' : 'text-gray-400'"
-              >Blend sponsored into search</span>
-              <input
-                v-model="strategy.searchBlendEnabled"
-                :disabled="experimentConfig.enabled || !strategy.adsEnabled || !strategy.searchAdsEnabled"
-                type="checkbox"
-                class="h-4 w-4 rounded border-gray-300 disabled:opacity-50"
-              />
-            </label>
-            <label class="flex items-center justify-between gap-2">
-              <span
-                :class="!experimentConfig.enabled && strategy.adsEnabled ? 'text-gray-600' : 'text-gray-400'"
-              >Enable sponsored follow-ups</span>
-              <input
-                v-model="strategy.followUpAdsEnabled"
-                :disabled="experimentConfig.enabled || !strategy.adsEnabled"
-                type="checkbox"
-                class="h-4 w-4 rounded border-gray-300 disabled:opacity-50"
-              />
-            </label>
-            <div v-if="experimentConfig.enabled" class="rounded bg-amber-50 px-2 py-1 text-[10px] text-amber-700">
-              Experiment is active. Manual strategy is paused and experiment group policy is applied.
-            </div>
-          </div>
-        </div>
-
-        <div class="rounded-lg border border-gray-200 bg-white p-2">
-          <div class="flex items-center justify-between">
-            <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Memory / Preference</div>
-            <button
-              @click="resetPreferenceState"
-              class="rounded border border-gray-300 px-1.5 py-0.5 text-[10px] text-gray-600 hover:bg-gray-100"
-            >
-              Reset
-            </button>
-          </div>
-
-          <div v-if="topPreferenceTopics.length === 0" class="mt-2 text-[11px] text-gray-500">
-            Learning user preferences from conversations...
-          </div>
-
-          <ul v-else class="mt-2 space-y-1">
-            <li
-              v-for="topic in topPreferenceTopics"
-              :key="topic.id"
-              class="flex items-center justify-between rounded bg-gray-50 px-2 py-1 text-[11px]"
-            >
-              <span class="text-gray-700">{{ topic.label }}</span>
-              <span class="font-medium text-gray-500">{{ topic.score.toFixed(1) }}</span>
-            </li>
-          </ul>
-
-          <div v-if="preferenceBoostTags.length" class="mt-2 text-[10px] text-gray-500">
-            Ad boost tags: {{ preferenceBoostTags.join(', ') }}
-          </div>
-        </div>
-
+      <div class="space-y-2 border-t border-gray-200 p-3">
         <div class="rounded-lg border border-gray-200 bg-white p-2">
           <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Turn Trace</div>
           <div v-if="activeSessionTurnLogs.length === 0" class="mt-2 text-[11px] text-gray-500">
             No turn logs yet.
           </div>
-          <div v-else class="mt-2 max-h-44 space-y-1 overflow-y-auto pr-1">
+          <div v-else class="mt-2 max-h-56 space-y-1 overflow-y-auto pr-1">
             <details
               v-for="log in activeSessionTurnLogs"
               :key="log.turnId"
               class="rounded border border-gray-200 bg-gray-50 px-2 py-1"
             >
-              <summary class="cursor-pointer list-none">
+              <summary class="list-none cursor-pointer">
                 <div class="flex items-center gap-1 text-[11px]">
                   <span class="truncate font-medium text-gray-700">{{ log.userQuery }}</span>
                   <span
                     :class="[
                       'ml-auto rounded px-1.5 py-0.5 text-[10px] font-semibold',
-                      log.adOpportunityTriggered
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-gray-200 text-gray-600'
+                      log.toolUsed ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-200 text-gray-600'
                     ]"
                   >
-                    {{ log.adOpportunityTriggered ? 'Ad: YES' : 'Ad: NO' }}
+                    {{ log.toolUsed ? 'Tool: YES' : 'Tool: NO' }}
                   </span>
                 </div>
                 <div class="mt-1 text-[10px] text-gray-400">{{ formatTraceTime(log.startedAt) }}</div>
               </summary>
 
               <div class="mt-2 border-t border-gray-200 pt-2 text-[11px] text-gray-600">
-                <div class="mb-1 text-[10px] text-gray-500">
-                  Experiment: {{ log.experimentVariant || 'search_ads' }}
-                </div>
-                <div class="mb-1 text-[10px] text-gray-500">
-                  Strategy: ads {{ log.strategySnapshot?.adsEnabled ? 'on' : 'off' }}, search ads {{
-                    log.strategySnapshot?.searchAdsEnabled ? 'on' : 'off'
-                  }}, merge {{ log.strategySnapshot?.searchBlendEnabled ? 'blended' : 'separate' }}, follow-up ads {{
-                    log.strategySnapshot?.followUpAdsEnabled ? 'on' : 'off'
-                  }}
-                </div>
-                <div class="mb-1 text-[10px] text-gray-500">
-                  Retry count: {{ log.events?.find((event) => event.type === 'retry_policy_applied')?.payload?.retryCount || 0 }}
-                </div>
-                <div class="mb-1 text-[10px] text-gray-500">
-                  Preference: {{
-                    log.preferenceSnapshot?.topTopics?.length
-                      ? log.preferenceSnapshot.topTopics.join(', ')
-                      : 'none'
-                  }}
-                </div>
-                <div v-if="log.adOpportunitySources?.length" class="mb-1">
-                  Sources: {{ log.adOpportunitySources.join(', ') }}
-                </div>
+                <div class="mb-1 text-[10px] text-gray-500">Retry count: {{ log.retryCount || 0 }}</div>
                 <ul class="space-y-1">
                   <li v-for="event in log.events" :key="event.id" class="leading-tight">
                     <span class="text-gray-400">{{ formatTraceTime(event.at) }}</span>
@@ -256,71 +117,119 @@
       </div>
     </aside>
 
-    <main class="flex-1 flex flex-col h-full overflow-hidden relative bg-white">
-      <header class="h-14 flex items-center justify-between px-4 shrink-0 bg-white/80 backdrop-blur-md z-30 border-b border-gray-100">
+    <main class="relative flex h-full flex-1 flex-col overflow-hidden bg-white">
+      <header class="z-30 flex h-14 shrink-0 items-center justify-between border-b border-gray-100 bg-white/80 px-4 backdrop-blur-md">
         <div class="flex items-center gap-2">
-          <button v-if="!isSidebarOpen" @click="isSidebarOpen = true" class="p-2 hover:bg-gray-100 rounded-lg text-gray-500 lg:block hidden">
+          <button
+            v-if="!isSidebarOpen"
+            @click="isSidebarOpen = true"
+            class="hidden rounded-lg p-2 text-gray-500 hover:bg-gray-100 lg:block"
+          >
             <Menu :size="20" />
           </button>
-          <div class="font-semibold text-lg text-gray-700">Chat Bot</div>
+          <div class="text-lg font-semibold text-gray-700">Chat Bot</div>
         </div>
 
-        <button @click="startNewChat" class="rounded-full border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 transition-colors">
+        <button
+          @click="startNewChat"
+          class="rounded-full border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100"
+        >
           New Chat
         </button>
       </header>
 
-      <div ref="scrollRef" class="flex-1 overflow-y-auto flex flex-col">
+      <div ref="scrollRef" class="flex flex-1 flex-col overflow-y-auto">
         <div
-          class="shrink-0 transition-all duration-[700ms] cubic-bezier-transition"
+          class="cubic-bezier-transition shrink-0 transition-all duration-[700ms]"
           :class="hasStarted ? 'max-h-0' : 'max-h-[35vh] flex-grow'"
         ></div>
 
         <div
-          class="shrink-0 transition-all duration-[700ms] cubic-bezier-transition flex flex-col items-center"
-          :class="hasStarted ? 'max-h-0 opacity-0 mb-0 scale-95 overflow-hidden' : 'max-h-20 opacity-100 mb-8 scale-100'"
+          class="cubic-bezier-transition shrink-0 flex flex-col items-center transition-all duration-[700ms]"
+          :class="hasStarted ? 'mb-0 max-h-0 scale-95 overflow-hidden opacity-0' : 'mb-8 max-h-20 scale-100 opacity-100'"
         >
-          <h1 class="text-3xl font-semibold text-gray-800 text-center">What can I help with?</h1>
+          <h1 class="text-center text-3xl font-semibold text-gray-800">What can I help with?</h1>
         </div>
 
         <div
-          class="w-full max-w-3xl mx-auto px-4 flex flex-col gap-8 transition-all duration-[700ms]"
-          :class="hasStarted ? 'opacity-100 py-8' : 'opacity-0 max-h-0 overflow-hidden'"
+          class="w-full max-w-3xl mx-auto flex flex-col gap-8 px-4 transition-all duration-[700ms]"
+          :class="hasStarted ? 'py-8 opacity-100' : 'max-h-0 overflow-hidden opacity-0'"
         >
           <template v-for="msg in currentMessages" :key="msg.id">
             <div
               :class="[
-                'flex gap-3 animate-in',
+                'animate-in flex gap-3',
                 msg.role === 'user' ? 'flex-row-reverse items-start' : 'flex-row items-start'
               ]"
             >
-              <div class="flex-shrink-0 mt-1">
+              <div class="mt-1 flex-shrink-0">
                 <div
                   v-if="msg.role === 'assistant' && msg.kind !== 'tool'"
-                  class="w-8 h-8 rounded-full border border-gray-200 flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 shadow-sm"
+                  class="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-gradient-to-br from-purple-500 to-pink-500 shadow-sm"
                 >
                   <Bot :size="18" class="text-white" />
                 </div>
                 <div
                   v-else-if="msg.role === 'assistant' && msg.kind === 'tool'"
-                  class="w-8 h-8 rounded-full border border-gray-200 flex items-center justify-center bg-gray-100 shadow-sm"
+                  class="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-gray-100 shadow-sm"
                 >
                   <Search :size="16" class="text-gray-600" />
                 </div>
-                <div v-else class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-sm">
+                <div
+                  v-else
+                  class="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 shadow-sm"
+                >
                   <UserCircle :size="18" class="text-white" />
                 </div>
               </div>
 
               <div
                 :class="[
-                  'max-w-[75%] px-4 py-2.5 text-[16px] leading-relaxed min-h-[44px]',
+                  'min-h-[44px] max-w-[75%] px-4 py-2.5 text-[16px] leading-relaxed',
                   msg.role === 'user'
-                    ? 'bg-[#f4f4f4] text-gray-800 rounded-2xl rounded-tr-sm'
-                    : 'bg-transparent text-gray-800 rounded-2xl rounded-tl-sm'
+                    ? 'rounded-2xl rounded-tr-sm bg-[#f4f4f4] text-gray-800'
+                    : 'rounded-2xl rounded-tl-sm bg-transparent text-gray-800'
                 ]"
               >
-                <div v-if="msg.role === 'user'" class="whitespace-pre-wrap leading-normal">{{ msg.content }}</div>
+                <div v-if="msg.role === 'user'" class="leading-normal">
+                  <template v-if="queryRewriteMessageId === msg.id">
+                    <textarea
+                      v-model="queryRewriteDraft"
+                      rows="2"
+                      class="w-full resize-y rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-[14px] leading-normal text-gray-800 outline-none focus:border-gray-400"
+                      @keydown.esc.prevent="cancelQueryRewriteEdit"
+                    ></textarea>
+                    <div class="mt-2 flex items-center justify-end gap-2">
+                      <button
+                        class="rounded border border-gray-300 px-2 py-1 text-[11px] text-gray-600 hover:bg-gray-100"
+                        @click="cancelQueryRewriteEdit"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        class="rounded border border-blue-700 bg-blue-700 px-2 py-1 text-[11px] text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        :disabled="!queryRewriteDraft.trim() || isLoading"
+                        @click="submitQueryRewrite(msg)"
+                      >
+                        Rewrite & Run
+                      </button>
+                    </div>
+                  </template>
+
+                  <template v-else>
+                    <div class="whitespace-pre-wrap">{{ msg.content }}</div>
+                    <div class="mt-2 flex justify-end">
+                      <button
+                        class="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-2 py-1 text-[11px] text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        :disabled="isLoading"
+                        @click="startQueryRewriteEdit(msg)"
+                      >
+                        <PenSquare :size="12" />
+                        <span>Edit & Rewrite</span>
+                      </button>
+                    </div>
+                  </template>
+                </div>
 
                 <div v-else class="leading-normal">
                   <template v-if="msg.kind === 'tool'">
@@ -328,18 +237,12 @@
                       <div class="flex items-center gap-2 text-xs uppercase tracking-wide text-gray-500">
                         <span class="font-semibold">Tool</span>
                         <span class="rounded-md bg-gray-200 px-1.5 py-0.5 text-[10px] text-gray-700">web_search</span>
-                        <span class="ml-auto normal-case text-[11px] font-medium text-gray-600">{{ formatToolState(msg.toolState) }}</span>
+                        <span class="ml-auto text-[11px] font-medium normal-case text-gray-600">{{ formatToolState(msg.toolState) }}</span>
                       </div>
 
-                      <div v-if="msg.toolQuery" class="mt-2 text-[13px] text-gray-600">
-                        Query: "{{ msg.toolQuery }}"
-                      </div>
+                      <div v-if="msg.toolQuery" class="mt-2 text-[13px] text-gray-600">Query: "{{ msg.toolQuery }}"</div>
 
-                      <div class="mt-1 text-[11px] text-gray-500">
-                        Merge mode: {{ msg.searchMergeMode === 'blended' ? 'blended' : 'separate' }}
-                      </div>
-
-                      <div v-if="msg.toolState === 'running'" class="mt-2 inline-flex items-center gap-2 text-gray-500 text-xs">
+                      <div v-if="msg.toolState === 'running'" class="mt-2 inline-flex items-center gap-2 text-xs text-gray-500">
                         <LoaderCircle :size="12" class="animate-spin" />
                         <span>Searching web...</span>
                       </div>
@@ -352,60 +255,17 @@
                         Finished in {{ msg.toolLatencyMs }} ms
                       </div>
 
-                      <div
-                        v-if="msg.searchMergeMode !== 'blended' && msg.sponsoredSlot?.ad"
-                        class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2"
-                      >
-                        <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
-                          <span>{{ msg.sponsoredSlot.label || 'Sponsored' }}</span>
-                          <span class="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] text-amber-800">Slot 1</span>
-                        </div>
-                        <a
-                          :href="msg.sponsoredSlot.ad.url"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          class="mt-1 block text-sm font-medium text-amber-900 hover:underline"
-                        >
-                          {{ msg.sponsoredSlot.ad.title }}
-                        </a>
-                        <p class="mt-1 text-xs text-amber-800">{{ msg.sponsoredSlot.ad.snippet }}</p>
-                        <p class="mt-1 text-[11px] text-amber-700">
-                          {{ msg.sponsoredSlot.ad.advertiser }}
-                        </p>
-                      </div>
-
                       <ul v-if="msg.toolResults?.length" class="mt-2 space-y-2">
-                        <li
-                          v-for="(result, idx) in msg.toolResults"
-                          :key="result.id || idx"
-                          :class="[
-                            'rounded-lg border p-2',
-                            result.isSponsored
-                              ? 'border-amber-200 bg-amber-50'
-                              : 'border-gray-200 bg-white'
-                          ]"
-                        >
+                        <li v-for="(result, idx) in msg.toolResults" :key="result.id || idx" class="rounded-lg border border-gray-200 bg-white p-2">
                           <a
                             :href="result.url"
                             target="_blank"
                             rel="noopener noreferrer"
-                            class="text-sm font-medium hover:underline"
-                            :class="result.isSponsored ? 'text-amber-900' : 'text-blue-700'"
+                            class="text-sm font-medium text-blue-700 hover:underline"
                           >
-                            <span
-                              v-if="result.isSponsored"
-                              class="mr-1 rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-800"
-                            >
-                              {{ result.label || 'Sponsored' }}
-                            </span>
                             {{ idx + 1 }}. {{ result.title }}
                           </a>
-                          <p class="mt-1 text-xs" :class="result.isSponsored ? 'text-amber-800' : 'text-gray-600'">
-                            {{ result.snippet }}
-                          </p>
-                          <p v-if="result.isSponsored && result.advertiser" class="mt-1 text-[11px] text-amber-700">
-                            {{ result.advertiser }}
-                          </p>
+                          <p class="mt-1 text-xs text-gray-600">{{ result.snippet }}</p>
                           <p class="mt-1 text-[11px] text-gray-400">{{ getHostLabel(result.url) }}</p>
                         </li>
                       </ul>
@@ -413,7 +273,7 @@
                   </template>
 
                   <template v-else-if="msg.status === 'reasoning' && !msg.content">
-                    <div class="inline-flex items-center gap-2 text-gray-500 text-sm">
+                    <div class="inline-flex items-center gap-2 text-sm text-gray-500">
                       <LoaderCircle :size="14" class="animate-spin" />
                       <span>Reasoning...</span>
                     </div>
@@ -421,7 +281,10 @@
 
                   <template v-if="msg.kind !== 'tool' && msg.content">
                     <MarkdownRenderer :content="msg.content" />
-                    <span v-if="msg.status === 'streaming'" class="inline-block w-0.5 h-5 bg-gray-800 ml-0.5 cursor-blink align-middle"></span>
+                    <span
+                      v-if="msg.status === 'streaming'"
+                      class="cursor-blink ml-0.5 inline-block h-5 w-0.5 bg-gray-800 align-middle"
+                    ></span>
                   </template>
 
                   <div
@@ -439,11 +302,9 @@
                   </div>
 
                   <CitationSources
-                    v-if="msg.kind !== 'tool' && msg.status === 'done' && (msg.sources?.length || msg.sponsoredSource?.url)"
+                    v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.sources?.length"
                     :sources="msg.sources"
-                    :sponsored-source="msg.sponsoredSource"
                     @source-click="(source) => handleSourceClick(msg, source)"
-                    @sponsored-click="(source) => handleSponsoredSourceClick(msg, source)"
                   />
 
                   <FollowUpSuggestions
@@ -461,19 +322,19 @@
         </div>
 
         <div
-          class="w-full sticky bottom-0 bg-white z-20 transition-all duration-[700ms] cubic-bezier-transition"
+          class="cubic-bezier-transition sticky bottom-0 z-20 w-full bg-white transition-all duration-[700ms]"
           :class="hasStarted ? 'mt-auto pb-6 pt-2' : 'pb-8'"
         >
-          <div class="max-w-3xl mx-auto px-4">
-            <div class="relative flex flex-col bg-[#f4f4f4] rounded-[26px] p-2 border border-transparent focus-within:border-gray-200 transition-all duration-300">
+          <div class="mx-auto max-w-3xl px-4">
+            <div class="relative flex flex-col rounded-[26px] border border-transparent bg-[#f4f4f4] p-2 transition-all duration-300 focus-within:border-gray-200">
               <textarea
-                rows="1"
                 v-model="input"
+                rows="1"
                 @compositionstart="isComposing = true"
                 @compositionend="isComposing = false"
                 @keydown.enter.prevent="handleSend"
                 placeholder="Message Chat Bot"
-                class="w-full bg-transparent border-none focus:ring-0 focus:outline-none outline-none resize-none py-3 pl-4 pr-24 text-[16px] max-h-52 placeholder:text-gray-500"
+                class="max-h-52 w-full resize-none border-none bg-transparent py-3 pl-4 pr-24 text-[16px] outline-none focus:outline-none focus:ring-0 placeholder:text-gray-500"
                 style="min-height: 44px"
               ></textarea>
 
@@ -482,8 +343,8 @@
                   @click="handleSend"
                   :disabled="!input.trim() || isLoading"
                   :class="[
-                    'p-2 rounded-full transition-all outline-none',
-                    input.trim() && !isLoading ? 'bg-black text-white hover:bg-gray-800' : 'bg-gray-300 text-gray-100 cursor-not-allowed'
+                    'rounded-full p-2 outline-none transition-all',
+                    input.trim() && !isLoading ? 'bg-black text-white hover:bg-gray-800' : 'cursor-not-allowed bg-gray-300 text-gray-100'
                   ]"
                 >
                   <ArrowUp :size="18" :stroke-width="3" />
@@ -492,13 +353,13 @@
             </div>
 
             <div class="mt-3 text-center">
-              <p class="text-[11px] text-gray-500 select-none">Chat Bot can make mistakes. Check important info.</p>
+              <p class="select-none text-[11px] text-gray-500">Chat Bot can make mistakes. Check important info.</p>
             </div>
           </div>
         </div>
 
         <div
-          class="shrink-0 transition-all duration-[700ms] cubic-bezier-transition"
+          class="cubic-bezier-transition shrink-0 transition-all duration-[700ms]"
           :class="hasStarted ? 'max-h-0' : 'max-h-[25vh] flex-grow'"
         ></div>
       </div>
@@ -513,6 +374,7 @@ import {
   Plus,
   MessageSquare,
   Search,
+  PenSquare,
   Trash2,
   Menu,
   ArrowUp,
@@ -526,85 +388,13 @@ import CitationSources from '../components/CitationSources.vue'
 import FollowUpSuggestions from '../components/FollowUpSuggestions.vue'
 import MarkdownRenderer from '../components/MarkdownRenderer.vue'
 
-const STORAGE_KEY = 'chat_bot_history_v2'
-const LEGACY_STORAGE_KEYS = ['chat_bot_sessions_v1']
+const STORAGE_KEY = 'chat_bot_history_v3'
+const LEGACY_STORAGE_KEYS = ['chat_bot_history_v2', 'chat_bot_sessions_v1']
+const TURN_LOG_STORAGE_KEY = 'chat_bot_turn_logs_v2'
+const LEGACY_TURN_LOG_STORAGE_KEYS = ['chat_bot_turn_logs_v1']
 const MAX_SESSIONS = 50
-const TOOL_STATES = ['planning', 'running', 'done', 'error']
-const TURN_LOG_STORAGE_KEY = 'chat_bot_turn_logs_v1'
 const MAX_TURN_LOGS = 400
-const STRATEGY_STORAGE_KEY = 'chat_bot_strategy_v1'
-const EXPERIMENT_CONFIG_STORAGE_KEY = 'chat_bot_experiment_config_v1'
-const PREFERENCE_STORAGE_KEY = 'chat_bot_preference_v1'
-const DEFAULT_STRATEGY = {
-  adsEnabled: true,
-  searchAdsEnabled: true,
-  searchBlendEnabled: false,
-  followUpAdsEnabled: true,
-}
-const EXPERIMENT_VARIANTS = [
-  { id: 'no_ads', label: 'A · No Ads', description: 'No sponsored search and no sponsored follow-up.' },
-  { id: 'search_ads', label: 'B · Search Ads', description: 'Only sponsored search is enabled.' },
-  { id: 'follow_up_ads', label: 'C · Follow-up Ads', description: 'Only sponsored follow-up is enabled.' },
-]
-const DEFAULT_EXPERIMENT_CONFIG = {
-  enabled: true,
-}
-const PREFERENCE_TOPICS = [
-  {
-    id: 'developer_tools',
-    label: 'Developer Tools',
-    keywords: ['code', 'coding', 'developer', 'sdk', 'api', 'github', 'deploy', 'engineering', 'frontend', 'backend'],
-    boostTags: ['developer', 'code', 'sdk', 'deploy', 'tool', 'productivity'],
-  },
-  {
-    id: 'retrieval_ai',
-    label: 'Retrieval & RAG',
-    keywords: ['rag', 'retrieval', 'vector', 'embedding', 'memory', 'knowledge', 'search', 'index'],
-    boostTags: ['rag', 'retrieval', 'vector', 'memory', 'search'],
-  },
-  {
-    id: 'automation',
-    label: 'Automation',
-    keywords: ['automation', 'automate', 'workflow', 'agent', 'pipeline', 'efficiency'],
-    boostTags: ['assistant', 'productivity', 'tool'],
-  },
-  {
-    id: 'product_growth',
-    label: 'Product Growth',
-    keywords: ['product', 'growth', 'launch', 'startup', 'marketing', 'user', 'conversion'],
-    boostTags: ['ai', 'tool', 'deploy', 'productivity'],
-  },
-]
-const DEFAULT_PREFERENCE_STATE = {
-  topicWeights: {},
-  updatedAt: null,
-}
-const FOLLOW_UP_SPONSORED_OPTIONS = [
-  {
-    adId: 'sponsored_followup_vercel_ai_sdk',
-    advertiser: 'Vercel',
-    text: 'Want a faster way to ship this as an AI app?',
-    prompt: 'Recommend a practical way to ship this as an AI app with fast iteration.',
-    keywords: ['app', 'deploy', 'ship', 'frontend', 'product'],
-    preferenceTopics: ['developer_tools', 'product_growth'],
-  },
-  {
-    adId: 'sponsored_followup_pinecone_rag',
-    advertiser: 'Pinecone',
-    text: 'Need retrieval support for this workflow?',
-    prompt: 'What retrieval architecture should I use if I need scalable RAG for this?',
-    keywords: ['search', 'retrieval', 'rag', 'knowledge', 'memory'],
-    preferenceTopics: ['retrieval_ai'],
-  },
-  {
-    adId: 'sponsored_followup_github_copilot',
-    advertiser: 'GitHub',
-    text: 'Want coding assistance for implementation?',
-    prompt: 'Suggest an efficient implementation plan and coding workflow for this.',
-    keywords: ['code', 'implement', 'sdk', 'developer', 'engineering'],
-    preferenceTopics: ['developer_tools', 'automation'],
-  },
-]
+const TOOL_STATES = ['planning', 'running', 'done', 'error']
 
 const input = ref('')
 const historyQuery = ref('')
@@ -612,13 +402,12 @@ const isSidebarOpen = ref(true)
 const scrollRef = ref(null)
 const isLoading = ref(false)
 const isComposing = ref(false)
+const queryRewriteMessageId = ref('')
+const queryRewriteDraft = ref('')
 
 const sessions = ref([])
 const activeSessionId = ref('')
 const turnLogs = ref([])
-const strategy = ref({ ...DEFAULT_STRATEGY })
-const experimentConfig = ref({ ...DEFAULT_EXPERIMENT_CONFIG })
-const preferenceState = ref({ ...DEFAULT_PREFERENCE_STATE })
 
 let persistTimer = null
 
@@ -631,7 +420,6 @@ function createSession(initialTitle = 'New Chat') {
   return {
     id: createId('session'),
     title: initialTitle,
-    experimentVariant: pickRandomExperimentVariant(),
     createdAt: now,
     updatedAt: now,
     messages: [],
@@ -660,25 +448,6 @@ function normalizeSourceItem(raw, index) {
   }
 }
 
-function normalizeSponsoredSource(raw) {
-  if (!raw || typeof raw !== 'object') return null
-  const title = typeof raw.title === 'string' ? raw.title.trim() : ''
-  const url = typeof raw.url === 'string' ? raw.url.trim() : ''
-  if (!title || !url) return null
-
-  return {
-    id: typeof raw.id === 'string' ? raw.id : '',
-    label: typeof raw.label === 'string' && raw.label.trim() ? raw.label.trim() : 'Sponsored',
-    title,
-    url,
-    host: typeof raw.host === 'string' && raw.host ? raw.host : getHostFromUrl(url),
-    advertiser: typeof raw.advertiser === 'string' ? raw.advertiser : '',
-    preferenceTags: Array.isArray(raw.preferenceTags)
-      ? raw.preferenceTags.filter((tag) => typeof tag === 'string')
-      : [],
-  }
-}
-
 function normalizeFollowUpItem(raw, index) {
   if (!raw || typeof raw !== 'object') return null
 
@@ -690,15 +459,22 @@ function normalizeFollowUpItem(raw, index) {
     id: typeof raw.id === 'string' && raw.id ? raw.id : `follow_up_${index}`,
     text,
     prompt,
-    isSponsored: Boolean(raw.isSponsored),
-    label: typeof raw.label === 'string' && raw.label.trim() ? raw.label.trim() : 'Sponsored',
-    adId: typeof raw.adId === 'string' ? raw.adId : '',
-    advertiser: typeof raw.advertiser === 'string' ? raw.advertiser : '',
     sourceTurnId: typeof raw.sourceTurnId === 'string' ? raw.sourceTurnId : '',
-    retryCount: Number.isFinite(raw.retryCount) ? Math.max(0, raw.retryCount) : 0,
-    preferenceTopics: Array.isArray(raw.preferenceTopics)
-      ? raw.preferenceTopics.filter((topicId) => typeof topicId === 'string')
-      : [],
+  }
+}
+
+function normalizeToolResultItem(raw, index) {
+  if (!raw || typeof raw !== 'object') return null
+  const title = typeof raw.title === 'string' ? raw.title : ''
+  const url = typeof raw.url === 'string' ? raw.url : ''
+  const snippet = typeof raw.snippet === 'string' ? raw.snippet : ''
+  if (!title || !url) return null
+
+  return {
+    id: typeof raw.id === 'string' ? raw.id : `tool_result_${index}`,
+    title,
+    url,
+    snippet,
   }
 }
 
@@ -713,151 +489,12 @@ function normalizeTurnEvent(raw, index) {
   }
 }
 
-function normalizeExperimentVariant(raw) {
-  const value = typeof raw === 'string' ? raw : ''
-  const matched = EXPERIMENT_VARIANTS.find((variant) => variant.id === value)
-  return matched ? matched.id : 'search_ads'
-}
-
-function pickRandomExperimentVariant() {
-  const index = Math.floor(Math.random() * EXPERIMENT_VARIANTS.length)
-  return EXPERIMENT_VARIANTS[index]?.id || 'search_ads'
-}
-
-function normalizeExperimentConfig(raw) {
-  if (!raw || typeof raw !== 'object') {
-    return { ...DEFAULT_EXPERIMENT_CONFIG }
-  }
-
-  return {
-    enabled: typeof raw.enabled === 'boolean' ? raw.enabled : DEFAULT_EXPERIMENT_CONFIG.enabled,
-  }
-}
-
-function normalizePreferenceState(raw) {
-  if (!raw || typeof raw !== 'object') {
-    return { ...DEFAULT_PREFERENCE_STATE }
-  }
-
-  const topicWeights = raw.topicWeights && typeof raw.topicWeights === 'object'
-    ? Object.fromEntries(
-        Object.entries(raw.topicWeights)
-          .filter(([topicId, value]) => {
-            return PREFERENCE_TOPICS.some((topic) => topic.id === topicId) && Number.isFinite(value)
-          })
-          .map(([topicId, value]) => [topicId, Number(value)]),
-      )
-    : {}
-
-  return {
-    topicWeights,
-    updatedAt: Number.isFinite(raw.updatedAt) ? raw.updatedAt : null,
-  }
-}
-
-function normalizePreferenceSnapshot(raw) {
-  if (!raw || typeof raw !== 'object') {
-    return {
-      topTopics: [],
-      boostTags: [],
-    }
-  }
-
-  return {
-    topTopics: Array.isArray(raw.topTopics)
-      ? raw.topTopics.filter((item) => typeof item === 'string')
-      : [],
-    boostTags: Array.isArray(raw.boostTags)
-      ? raw.boostTags.filter((item) => typeof item === 'string')
-      : [],
-  }
-}
-
-function normalizeTurnLog(raw) {
-  if (!raw || typeof raw !== 'object') return null
-  if (typeof raw.turnId !== 'string' || !raw.turnId) return null
-  if (typeof raw.sessionId !== 'string' || !raw.sessionId) return null
-
-  return {
-    turnId: raw.turnId,
-    traceId: typeof raw.traceId === 'string' ? raw.traceId : '',
-    sessionId: raw.sessionId,
-    userQuery: typeof raw.userQuery === 'string' ? raw.userQuery : '',
-    startedAt: Number.isFinite(raw.startedAt) ? raw.startedAt : Date.now(),
-    endedAt: Number.isFinite(raw.endedAt) ? raw.endedAt : null,
-    experimentVariant: normalizeExperimentVariant(raw.experimentVariant),
-    adOpportunityTriggered: Boolean(raw.adOpportunityTriggered),
-    adOpportunitySources: Array.isArray(raw.adOpportunitySources)
-      ? raw.adOpportunitySources.filter((item) => typeof item === 'string')
-      : [],
-    strategySnapshot: normalizeStrategy(raw.strategySnapshot),
-    preferenceSnapshot: normalizePreferenceSnapshot(raw.preferenceSnapshot),
-    events: Array.isArray(raw.events)
-      ? raw.events
-          .map((event, index) => normalizeTurnEvent(event, index))
-          .filter(Boolean)
-      : [],
-  }
-}
-
-function normalizeStrategy(raw) {
-  if (!raw || typeof raw !== 'object') {
-    return { ...DEFAULT_STRATEGY }
-  }
-
-  return {
-    adsEnabled: typeof raw.adsEnabled === 'boolean' ? raw.adsEnabled : DEFAULT_STRATEGY.adsEnabled,
-    searchAdsEnabled: typeof raw.searchAdsEnabled === 'boolean'
-      ? raw.searchAdsEnabled
-      : DEFAULT_STRATEGY.searchAdsEnabled,
-    searchBlendEnabled: typeof raw.searchBlendEnabled === 'boolean'
-      ? raw.searchBlendEnabled
-      : DEFAULT_STRATEGY.searchBlendEnabled,
-    followUpAdsEnabled: typeof raw.followUpAdsEnabled === 'boolean'
-      ? raw.followUpAdsEnabled
-      : DEFAULT_STRATEGY.followUpAdsEnabled,
-  }
-}
-
-function normalizeSponsoredSlot(raw) {
-  if (!raw || typeof raw !== 'object') return null
-  if (!raw.ad || typeof raw.ad !== 'object') return null
-
-  return {
-    slotId: typeof raw.slotId === 'string' ? raw.slotId : 'search_sponsored_slot_1',
-    label: typeof raw.label === 'string' && raw.label.trim() ? raw.label.trim() : 'Sponsored',
-    ad: {
-      id: typeof raw.ad.id === 'string' ? raw.ad.id : '',
-      title: typeof raw.ad.title === 'string' ? raw.ad.title : '',
-      url: typeof raw.ad.url === 'string' ? raw.ad.url : '',
-      snippet: typeof raw.ad.snippet === 'string' ? raw.ad.snippet : '',
-      advertiser: typeof raw.ad.advertiser === 'string' ? raw.ad.advertiser : '',
-      preferenceTags: Array.isArray(raw.ad.preferenceTags)
-        ? raw.ad.preferenceTags.filter((tag) => typeof tag === 'string')
-        : [],
-    },
-  }
-}
-
 function normalizeMessage(raw) {
   if (!raw || (raw.role !== 'user' && raw.role !== 'assistant')) return null
 
   const toolState = TOOL_STATES.includes(raw.toolState) ? raw.toolState : 'done'
   const toolResults = Array.isArray(raw.toolResults)
-    ? raw.toolResults
-        .filter((item) => item && typeof item === 'object')
-        .map((item, index) => ({
-          id: typeof item.id === 'string' ? item.id : `tool_result_${index}`,
-          title: typeof item.title === 'string' ? item.title : '',
-          url: typeof item.url === 'string' ? item.url : '',
-          snippet: typeof item.snippet === 'string' ? item.snippet : '',
-          isSponsored: Boolean(item.isSponsored),
-          label: typeof item.label === 'string' && item.label.trim() ? item.label.trim() : 'Sponsored',
-          advertiser: typeof item.advertiser === 'string' ? item.advertiser : '',
-          preferenceTags: Array.isArray(item.preferenceTags)
-            ? item.preferenceTags.filter((tag) => typeof tag === 'string')
-            : [],
-        }))
+    ? raw.toolResults.map((item, index) => normalizeToolResultItem(item, index)).filter(Boolean)
     : []
 
   return {
@@ -872,21 +509,14 @@ function normalizeMessage(raw) {
     toolResults,
     toolLatencyMs: Number.isFinite(raw.toolLatencyMs) ? raw.toolLatencyMs : null,
     toolError: typeof raw.toolError === 'string' ? raw.toolError : '',
-    searchMergeMode: raw.searchMergeMode === 'blended' ? 'blended' : 'separate',
-    sponsoredSlot: normalizeSponsoredSlot(raw.sponsoredSlot),
     sources: Array.isArray(raw.sources)
-      ? raw.sources
-          .map((item, index) => normalizeSourceItem(item, index))
-          .filter(Boolean)
+      ? raw.sources.map((item, index) => normalizeSourceItem(item, index)).filter(Boolean)
       : [],
-    sponsoredSource: normalizeSponsoredSource(raw.sponsoredSource),
     sourceTurnId: typeof raw.sourceTurnId === 'string' ? raw.sourceTurnId : '',
     sourceUserContent: typeof raw.sourceUserContent === 'string' ? raw.sourceUserContent : '',
     retryCount: Number.isFinite(raw.retryCount) ? Math.max(0, raw.retryCount) : 0,
     followUps: Array.isArray(raw.followUps)
-      ? raw.followUps
-          .map((item, index) => normalizeFollowUpItem(item, index))
-          .filter(Boolean)
+      ? raw.followUps.map((item, index) => normalizeFollowUpItem(item, index)).filter(Boolean)
       : [],
   }
 }
@@ -895,7 +525,7 @@ function normalizeSession(raw) {
   if (!raw || typeof raw !== 'object') return null
 
   const messages = Array.isArray(raw.messages)
-    ? raw.messages.map(normalizeMessage).filter(Boolean)
+    ? raw.messages.map((item) => normalizeMessage(item)).filter(Boolean)
     : []
 
   const createdAt = Number.isFinite(raw.createdAt) ? raw.createdAt : Date.now()
@@ -904,12 +534,35 @@ function normalizeSession(raw) {
   return {
     id: typeof raw.id === 'string' && raw.id ? raw.id : createId('session'),
     title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim() : 'New Chat',
-    experimentVariant: raw.experimentVariant
-      ? normalizeExperimentVariant(raw.experimentVariant)
-      : pickRandomExperimentVariant(),
     createdAt,
     updatedAt,
     messages,
+  }
+}
+
+function normalizeTurnLog(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  if (typeof raw.turnId !== 'string' || !raw.turnId) return null
+  if (typeof raw.sessionId !== 'string' || !raw.sessionId) return null
+
+  const retryCount = Number.isFinite(raw.retryCount)
+    ? Math.max(0, raw.retryCount)
+    : Number.isFinite(raw?.events?.find?.((event) => event?.type === 'retry_policy_applied')?.payload?.retryCount)
+      ? Math.max(0, raw.events.find((event) => event?.type === 'retry_policy_applied').payload.retryCount)
+      : 0
+
+  return {
+    turnId: raw.turnId,
+    traceId: typeof raw.traceId === 'string' ? raw.traceId : '',
+    sessionId: raw.sessionId,
+    userQuery: typeof raw.userQuery === 'string' ? raw.userQuery : '',
+    startedAt: Number.isFinite(raw.startedAt) ? raw.startedAt : Date.now(),
+    endedAt: Number.isFinite(raw.endedAt) ? raw.endedAt : null,
+    toolUsed: Boolean(raw.toolUsed),
+    retryCount,
+    events: Array.isArray(raw.events)
+      ? raw.events.map((event, index) => normalizeTurnEvent(event, index)).filter(Boolean)
+      : [],
   }
 }
 
@@ -919,18 +572,6 @@ function persistSessionsNow() {
 
 function persistTurnLogsNow() {
   localStorage.setItem(TURN_LOG_STORAGE_KEY, JSON.stringify(turnLogs.value))
-}
-
-function persistStrategyNow() {
-  localStorage.setItem(STRATEGY_STORAGE_KEY, JSON.stringify(strategy.value))
-}
-
-function persistExperimentConfigNow() {
-  localStorage.setItem(EXPERIMENT_CONFIG_STORAGE_KEY, JSON.stringify(experimentConfig.value))
-}
-
-function persistPreferenceStateNow() {
-  localStorage.setItem(PREFERENCE_STORAGE_KEY, JSON.stringify(preferenceState.value))
 }
 
 function scheduleSaveSessions() {
@@ -973,7 +614,7 @@ function loadSessions() {
 
     const parsed = JSON.parse(raw)
     const rawSessions = Array.isArray(parsed) ? parsed : []
-    const normalized = rawSessions.map(normalizeSession).filter(Boolean)
+    const normalized = rawSessions.map((item) => normalizeSession(item)).filter(Boolean)
 
     if (normalized.length === 0) {
       ensureSessionExists()
@@ -991,11 +632,19 @@ function loadSessions() {
   }
 }
 
-loadSessions()
-
 function loadTurnLogs() {
   try {
-    const raw = localStorage.getItem(TURN_LOG_STORAGE_KEY)
+    let raw = localStorage.getItem(TURN_LOG_STORAGE_KEY)
+    if (!raw) {
+      for (const key of LEGACY_TURN_LOG_STORAGE_KEYS) {
+        const legacyRaw = localStorage.getItem(key)
+        if (legacyRaw) {
+          raw = legacyRaw
+          break
+        }
+      }
+    }
+
     if (!raw) {
       turnLogs.value = []
       return
@@ -1003,71 +652,16 @@ function loadTurnLogs() {
 
     const parsed = JSON.parse(raw)
     const records = Array.isArray(parsed) ? parsed : []
-    turnLogs.value = records.map(normalizeTurnLog).filter(Boolean).slice(0, MAX_TURN_LOGS)
+    turnLogs.value = records.map((item) => normalizeTurnLog(item)).filter(Boolean).slice(0, MAX_TURN_LOGS)
+    persistTurnLogsNow()
   } catch (error) {
     console.error('Failed to load turn logs:', error)
     turnLogs.value = []
   }
 }
 
+loadSessions()
 loadTurnLogs()
-
-function loadStrategy() {
-  try {
-    const raw = localStorage.getItem(STRATEGY_STORAGE_KEY)
-    if (!raw) {
-      strategy.value = { ...DEFAULT_STRATEGY }
-      persistStrategyNow()
-      return
-    }
-
-    strategy.value = normalizeStrategy(JSON.parse(raw))
-    persistStrategyNow()
-  } catch (error) {
-    console.error('Failed to load strategy:', error)
-    strategy.value = { ...DEFAULT_STRATEGY }
-  }
-}
-
-loadStrategy()
-
-function loadExperimentConfig() {
-  try {
-    const raw = localStorage.getItem(EXPERIMENT_CONFIG_STORAGE_KEY)
-    if (!raw) {
-      experimentConfig.value = { ...DEFAULT_EXPERIMENT_CONFIG }
-      persistExperimentConfigNow()
-      return
-    }
-
-    experimentConfig.value = normalizeExperimentConfig(JSON.parse(raw))
-    persistExperimentConfigNow()
-  } catch (error) {
-    console.error('Failed to load experiment config:', error)
-    experimentConfig.value = { ...DEFAULT_EXPERIMENT_CONFIG }
-  }
-}
-
-loadExperimentConfig()
-
-function loadPreferenceState() {
-  try {
-    const raw = localStorage.getItem(PREFERENCE_STORAGE_KEY)
-    if (!raw) {
-      preferenceState.value = { ...DEFAULT_PREFERENCE_STATE }
-      persistPreferenceStateNow()
-      return
-    }
-
-    preferenceState.value = normalizePreferenceState(JSON.parse(raw))
-    persistPreferenceStateNow()
-  } catch (error) {
-    console.error('Failed to load preference state:', error)
-    preferenceState.value = { ...DEFAULT_PREFERENCE_STATE }
-  }
-}
-
-loadPreferenceState()
 
 const sortedSessions = computed(() => {
   return [...sessions.value].sort((a, b) => b.updatedAt - a.updatedAt)
@@ -1090,96 +684,14 @@ const activeSession = computed(() => {
 })
 
 const currentMessages = computed(() => activeSession.value?.messages || [])
+
 const activeSessionTurnLogs = computed(() => {
   return turnLogs.value
     .filter((log) => log.sessionId === activeSessionId.value)
     .sort((a, b) => b.startedAt - a.startedAt)
     .slice(0, 20)
 })
-const activeSessionExperimentVariant = computed({
-  get() {
-    return activeSession.value?.experimentVariant || 'search_ads'
-  },
-  set(nextVariant) {
-    if (!activeSession.value) return
-    activeSession.value.experimentVariant = normalizeExperimentVariant(nextVariant)
-    touchActiveSession()
-    persistSessionsNow()
-  },
-})
-const activeExperimentVariantMeta = computed(() => {
-  const variantId = activeSessionExperimentVariant.value
-  return EXPERIMENT_VARIANTS.find((variant) => variant.id === variantId) || EXPERIMENT_VARIANTS[1]
-})
-const preferenceTopicRank = computed(() => {
-  return Object.entries(preferenceState.value.topicWeights || {})
-    .map(([topicId, score]) => {
-      const meta = PREFERENCE_TOPICS.find((topic) => topic.id === topicId)
-      return meta ? { id: topicId, label: meta.label, score } : null
-    })
-    .filter(Boolean)
-    .sort((a, b) => b.score - a.score)
-})
-const topPreferenceTopics = computed(() => preferenceTopicRank.value.slice(0, 4))
-const preferenceBoostTags = computed(() => {
-  const topTopicIds = preferenceTopicRank.value.slice(0, 3).map((topic) => topic.id)
-  const boostTagSet = new Set()
-  for (const topicId of topTopicIds) {
-    const meta = PREFERENCE_TOPICS.find((topic) => topic.id === topicId)
-    for (const tag of meta?.boostTags || []) {
-      boostTagSet.add(tag)
-    }
-  }
-  return Array.from(boostTagSet)
-})
-const effectiveStrategy = computed(() => {
-  const base = normalizeStrategy(strategy.value)
-  const variant = normalizeExperimentVariant(activeSession.value?.experimentVariant)
 
-  if (!experimentConfig.value.enabled) {
-    return base
-  }
-
-  if (variant === 'no_ads') {
-    return {
-      ...base,
-      adsEnabled: false,
-      searchAdsEnabled: false,
-      searchBlendEnabled: false,
-      followUpAdsEnabled: false,
-    }
-  }
-
-  if (variant === 'search_ads') {
-    return {
-      ...base,
-      adsEnabled: true,
-      searchAdsEnabled: true,
-      followUpAdsEnabled: false,
-    }
-  }
-
-  if (variant === 'follow_up_ads') {
-    return {
-      ...base,
-      adsEnabled: true,
-      searchAdsEnabled: false,
-      searchBlendEnabled: false,
-      followUpAdsEnabled: true,
-    }
-  }
-
-  return base
-})
-const effectiveSearchAdsEnabled = computed(() => {
-  return effectiveStrategy.value.adsEnabled && effectiveStrategy.value.searchAdsEnabled
-})
-const effectiveSearchMergeMode = computed(() => {
-  return effectiveSearchAdsEnabled.value && effectiveStrategy.value.searchBlendEnabled ? 'blended' : 'separate'
-})
-const followUpSponsoredEnabled = computed(() => {
-  return effectiveStrategy.value.adsEnabled && effectiveStrategy.value.followUpAdsEnabled
-})
 const hasStarted = computed(() => currentMessages.value.length > 0)
 
 async function scrollToBottom() {
@@ -1198,30 +710,6 @@ watch(
     if (hasStarted.value) {
       scrollToBottom()
     }
-  },
-  { deep: true },
-)
-
-watch(
-  strategy,
-  () => {
-    persistStrategyNow()
-  },
-  { deep: true },
-)
-
-watch(
-  experimentConfig,
-  () => {
-    persistExperimentConfigNow()
-  },
-  { deep: true },
-)
-
-watch(
-  preferenceState,
-  () => {
-    persistPreferenceStateNow()
   },
   { deep: true },
 )
@@ -1249,13 +737,7 @@ function formatTraceEventType(eventType) {
     .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
-function createTurnTrace(
-  sessionId,
-  userQuery,
-  experimentVariant,
-  strategySnapshot,
-  preferenceSnapshot,
-) {
+function createTurnTrace(sessionId, userQuery, retryCount = 0) {
   const now = Date.now()
   return {
     turnId: createId('turn'),
@@ -1264,11 +746,8 @@ function createTurnTrace(
     userQuery,
     startedAt: now,
     endedAt: null,
-    experimentVariant: normalizeExperimentVariant(experimentVariant),
-    adOpportunityTriggered: false,
-    adOpportunitySources: [],
-    strategySnapshot: normalizeStrategy(strategySnapshot),
-    preferenceSnapshot: normalizePreferenceSnapshot(preferenceSnapshot),
+    toolUsed: false,
+    retryCount,
     events: [],
   }
 }
@@ -1337,73 +816,6 @@ function getLatestRetryCountForPrompt(session, prompt) {
   return 0
 }
 
-function collectSponsoredAdIdsForPrompt(session, prompt) {
-  if (!session) return []
-  const targetKey = normalizePromptKey(prompt)
-  if (!targetKey) return []
-
-  const adIds = new Set()
-  for (const message of session.messages) {
-    if (!message || message.kind !== 'tool') continue
-    if (normalizePromptKey(message.sourceUserContent || message.toolQuery) !== targetKey) continue
-    const adId = message.sponsoredSlot?.ad?.id
-    if (adId) {
-      adIds.add(adId)
-    }
-  }
-
-  return Array.from(adIds)
-}
-
-function extractPreferenceTopicIds(text) {
-  const normalized = String(text || '').toLowerCase()
-  if (!normalized) return []
-
-  return PREFERENCE_TOPICS
-    .filter((topic) => topic.keywords.some((keyword) => normalized.includes(keyword)))
-    .map((topic) => topic.id)
-}
-
-function updatePreferenceByTopics(topicIds, weight = 1) {
-  if (!Array.isArray(topicIds) || topicIds.length === 0) return
-
-  const nextWeights = { ...(preferenceState.value.topicWeights || {}) }
-  for (const topicId of topicIds) {
-    if (!PREFERENCE_TOPICS.some((topic) => topic.id === topicId)) continue
-    nextWeights[topicId] = (nextWeights[topicId] || 0) + weight
-  }
-
-  preferenceState.value = {
-    topicWeights: nextWeights,
-    updatedAt: Date.now(),
-  }
-}
-
-function resetPreferenceState() {
-  preferenceState.value = { ...DEFAULT_PREFERENCE_STATE }
-}
-
-function buildPreferenceSnapshot() {
-  return {
-    topTopics: preferenceTopicRank.value.slice(0, 3).map((topic) => topic.label),
-    boostTags: [...preferenceBoostTags.value],
-  }
-}
-
-function mapTagsToPreferenceTopics(tags = []) {
-  const tagSet = new Set(
-    Array.isArray(tags)
-      ? tags.map((tag) => String(tag).toLowerCase())
-      : [],
-  )
-
-  return PREFERENCE_TOPICS
-    .filter((topic) => {
-      return (topic.boostTags || []).some((tag) => tagSet.has(String(tag).toLowerCase()))
-    })
-    .map((topic) => topic.id)
-}
-
 function buildModelMessages(messages, webSearchContext) {
   const modelMessages = messages
     .filter((msg) => {
@@ -1436,88 +848,29 @@ function extractTopicSeed(text) {
     .join(' ')
 }
 
-function getTopPreferenceTopicIds(limit = 3) {
-  return preferenceTopicRank.value.slice(0, limit).map((topic) => topic.id)
-}
-
-function pickSponsoredFollowUp(userContent, assistantContent, preferredTopicIds = []) {
-  const context = `${userContent || ''} ${assistantContent || ''}`.toLowerCase()
-  const preferredSet = new Set(preferredTopicIds)
-
-  const scored = FOLLOW_UP_SPONSORED_OPTIONS.map((option) => {
-    const keywordScore = option.keywords.reduce(
-      (acc, keyword) => (context.includes(keyword) ? acc + 1 : acc),
-      0,
-    )
-    const preferenceScore = (option.preferenceTopics || []).reduce(
-      (acc, topicId) => (preferredSet.has(topicId) ? acc + 1.2 : acc),
-      0,
-    )
-
-    return {
-      ...option,
-      _score: keywordScore + preferenceScore,
-    }
-  }).sort((a, b) => b._score - a._score)
-
-  return scored[0] || FOLLOW_UP_SPONSORED_OPTIONS[0]
-}
-
-function createFollowUpSuggestions(userContent, assistantContent, sourceTurnId = '', includeSponsored = true) {
+function createFollowUpSuggestions(userContent, assistantContent, sourceTurnId = '') {
   const topicSeed = extractTopicSeed(userContent) || extractTopicSeed(assistantContent) || 'this topic'
 
-  const suggestions = [
+  return [
     {
       id: createId('followup'),
       text: 'Can you break this into practical steps?',
       prompt: `Break down "${topicSeed}" into practical implementation steps.`,
-      isSponsored: false,
-      label: '',
-      adId: '',
-      advertiser: '',
       sourceTurnId,
-      preferenceTopics: [],
     },
     {
       id: createId('followup'),
       text: 'What are the main trade-offs here?',
       prompt: `What are the main trade-offs and risks for "${topicSeed}"?`,
-      isSponsored: false,
-      label: '',
-      adId: '',
-      advertiser: '',
       sourceTurnId,
-      preferenceTopics: [],
     },
     {
       id: createId('followup'),
       text: 'Can you give me one concrete example?',
       prompt: `Give one concrete example for "${topicSeed}" with expected output.`,
-      isSponsored: false,
-      label: '',
-      adId: '',
-      advertiser: '',
       sourceTurnId,
-      preferenceTopics: [],
     },
   ]
-
-  if (includeSponsored) {
-    const sponsored = pickSponsoredFollowUp(userContent, assistantContent, getTopPreferenceTopicIds(3))
-    suggestions.push({
-      id: createId('followup'),
-      text: sponsored.text,
-      prompt: sponsored.prompt,
-      isSponsored: true,
-      label: 'Sponsored',
-      adId: sponsored.adId,
-      advertiser: sponsored.advertiser,
-      sourceTurnId,
-      preferenceTopics: sponsored.preferenceTopics || [],
-    })
-  }
-
-  return suggestions
 }
 
 function updateTitleFromFirstMessage(session, firstUserText) {
@@ -1543,11 +896,13 @@ function formatSessionTime(timestamp) {
 }
 
 function openSession(sessionId) {
+  cancelQueryRewriteEdit()
   activeSessionId.value = sessionId
   scrollToBottom()
 }
 
 function startNewChat() {
+  cancelQueryRewriteEdit()
   const newSession = createSession()
   sessions.value = [newSession, ...sessions.value].slice(0, MAX_SESSIONS)
   activeSessionId.value = newSession.id
@@ -1556,6 +911,7 @@ function startNewChat() {
 }
 
 function deleteSession(sessionId) {
+  cancelQueryRewriteEdit()
   const nextSessions = sessions.value.filter((session) => session.id !== sessionId)
   sessions.value = nextSessions
 
@@ -1574,6 +930,7 @@ function clearHistory() {
   const confirmed = window.confirm('Clear all chat history?')
   if (!confirmed) return
 
+  cancelQueryRewriteEdit()
   sessions.value = [createSession()]
   activeSessionId.value = sessions.value[0].id
   historyQuery.value = ''
@@ -1595,32 +952,6 @@ function handleSourceClick(message, source) {
         payload: {
           sourceTitle: source?.title || '',
           sourceUrl: source?.url || '',
-        },
-      },
-    ]
-    return nextTrace
-  })
-}
-
-function handleSponsoredSourceClick(message, source) {
-  const preferenceTopics = mapTagsToPreferenceTopics(source?.preferenceTags || [])
-  if (preferenceTopics.length > 0) {
-    updatePreferenceByTopics(preferenceTopics, 1.2)
-  }
-
-  if (!message?.sourceTurnId) return
-  updateTurnTrace(message.sourceTurnId, (trace) => {
-    const nextTrace = { ...trace }
-    nextTrace.events = [
-      ...trace.events,
-      {
-        id: createId('event'),
-        type: 'sponsored_source_clicked',
-        at: Date.now(),
-        payload: {
-          sourceTitle: source?.title || '',
-          sourceUrl: source?.url || '',
-          preferenceTopics,
         },
       },
     ]
@@ -1663,12 +994,76 @@ async function handleRegenerate(message) {
   })
 }
 
+function startQueryRewriteEdit(message) {
+  if (!message || message.role !== 'user' || isLoading.value) return
+  queryRewriteMessageId.value = message.id
+  queryRewriteDraft.value = String(message.content || '')
+}
+
+function cancelQueryRewriteEdit() {
+  queryRewriteMessageId.value = ''
+  queryRewriteDraft.value = ''
+}
+
+function collectTurnIdsFromMessages(messages = []) {
+  const turnIdSet = new Set()
+  for (const message of messages) {
+    if (typeof message?.sourceTurnId === 'string' && message.sourceTurnId) {
+      turnIdSet.add(message.sourceTurnId)
+    }
+
+    if (!Array.isArray(message?.followUps)) continue
+    for (const followUp of message.followUps) {
+      if (typeof followUp?.sourceTurnId === 'string' && followUp.sourceTurnId) {
+        turnIdSet.add(followUp.sourceTurnId)
+      }
+    }
+  }
+
+  return Array.from(turnIdSet)
+}
+
+function pruneTurnLogsByIds(turnIds = []) {
+  const target = new Set(turnIds.filter((id) => typeof id === 'string' && id))
+  if (target.size === 0) return
+
+  turnLogs.value = turnLogs.value.filter((log) => !target.has(log.turnId))
+  persistTurnLogsNow()
+}
+
+async function submitQueryRewrite(message) {
+  if (!message || message.role !== 'user' || isLoading.value) return
+
+  const session = activeSession.value
+  if (!session) return
+
+  const rewrittenQuery = queryRewriteDraft.value.trim()
+  if (!rewrittenQuery) return
+
+  const targetIndex = session.messages.findIndex((item) => item.id === message.id)
+  if (targetIndex < 0) return
+
+  const originalQuery = String(message.content || '')
+  const removedMessages = session.messages.slice(targetIndex)
+  const removedTurnIds = collectTurnIdsFromMessages(removedMessages)
+
+  session.messages = session.messages.slice(0, targetIndex)
+  pruneTurnLogsByIds(removedTurnIds)
+  touchActiveSession()
+  scheduleSaveSessions()
+  cancelQueryRewriteEdit()
+
+  input.value = ''
+  await handleSend({
+    prefilledContent: rewrittenQuery,
+    retrySource: 'query_rewrite',
+    queryRewriteFrom: originalQuery,
+    sourceMessageId: message.id,
+  })
+}
+
 async function handleFollowUpSelect(item) {
   if (!item || !item.prompt || isLoading.value) return
-
-  if (item.isSponsored && Array.isArray(item.preferenceTopics) && item.preferenceTopics.length > 0) {
-    updatePreferenceByTopics(item.preferenceTopics, 1.4)
-  }
 
   if (item.sourceTurnId) {
     updateTurnTrace(item.sourceTurnId, (trace) => {
@@ -1677,15 +1072,10 @@ async function handleFollowUpSelect(item) {
         ...trace.events,
         {
           id: createId('event'),
-          type: item.isSponsored ? 'sponsored_follow_up_clicked' : 'follow_up_clicked',
+          type: 'follow_up_clicked',
           at: Date.now(),
           payload: {
             text: item.text,
-            adId: item.adId || '',
-            isSponsored: Boolean(item.isSponsored),
-            preferenceTopics: Array.isArray(item.preferenceTopics)
-              ? item.preferenceTopics
-              : [],
           },
         },
       ]
@@ -1713,64 +1103,26 @@ async function handleSend(options = {}) {
 
   input.value = ''
   isLoading.value = true
-  const detectedPreferenceTopics = extractPreferenceTopicIds(userContent)
-  if (detectedPreferenceTopics.length > 0) {
-    updatePreferenceByTopics(detectedPreferenceTopics, 1)
-  }
 
-  const effectiveStrategySnapshot = normalizeStrategy(effectiveStrategy.value)
-  const experimentVariant = normalizeExperimentVariant(session.experimentVariant)
-  const adsEnabled = effectiveStrategySnapshot.adsEnabled
-  const searchAdsEnabled = effectiveStrategySnapshot.adsEnabled && effectiveStrategySnapshot.searchAdsEnabled
-  const searchMergeMode = searchAdsEnabled && effectiveStrategySnapshot.searchBlendEnabled ? 'blended' : 'separate'
-  const sponsoredFollowUpsEnabled =
-    effectiveStrategySnapshot.adsEnabled && effectiveStrategySnapshot.followUpAdsEnabled
   const latestRetryCount = getLatestRetryCountForPrompt(session, userContent)
   const retryCount = Number.isFinite(options.forcedRetryCount)
     ? Math.max(0, options.forcedRetryCount)
     : options.retrySource === 'regenerate'
       ? latestRetryCount + 1
       : 0
-  const searchAdsAfterRetry = searchAdsEnabled && retryCount < 2
-  const sponsoredFollowUpsAfterRetry = sponsoredFollowUpsEnabled && retryCount < 1
-  const excludedSponsoredIds = retryCount > 0
-    ? collectSponsoredAdIdsForPrompt(session, userContent)
-    : []
-  const boostTags = [...preferenceBoostTags.value]
-  const turnTrace = createTurnTrace(
-    session.id,
-    userContent,
-    experimentVariant,
-    effectiveStrategySnapshot,
-    buildPreferenceSnapshot(),
-  )
 
+  const turnTrace = createTurnTrace(session.id, userContent, retryCount)
   appendTurnTraceEvent(turnTrace, 'turn_started', { query: userContent })
-  appendTurnTraceEvent(turnTrace, 'strategy_snapshot', {
-    adsEnabled,
-    searchAdsEnabled,
-    searchMergeMode,
-    sponsoredFollowUpsEnabled,
-    retryCount,
-    searchAdsAfterRetry,
-    sponsoredFollowUpsAfterRetry,
-    excludedSponsoredCount: excludedSponsoredIds.length,
-    experimentVariant,
-    experimentEnabled: experimentConfig.value.enabled,
-  })
-  if (retryCount > 0) {
-    appendTurnTraceEvent(turnTrace, 'retry_policy_applied', {
-      retryCount,
-      searchAdsAfterRetry,
-      sponsoredFollowUpsAfterRetry,
-      excludedSponsoredIds,
+  if (options.retrySource === 'query_rewrite') {
+    appendTurnTraceEvent(turnTrace, 'query_rewrite_applied', {
+      sourceMessageId: typeof options.sourceMessageId === 'string' ? options.sourceMessageId : '',
+      fromQuery: typeof options.queryRewriteFrom === 'string' ? options.queryRewriteFrom : '',
+      toQuery: userContent,
     })
   }
-  appendTurnTraceEvent(turnTrace, 'preference_profile_used', {
-    detectedTopics: detectedPreferenceTopics,
-    topTopics: getTopPreferenceTopicIds(3),
-    boostTags,
-  })
+  if (retryCount > 0) {
+    appendTurnTraceEvent(turnTrace, 'retry_policy_applied', { retryCount })
+  }
   upsertTurnTrace(turnTrace)
 
   const userMessage = {
@@ -1785,10 +1137,7 @@ async function handleSend(options = {}) {
     toolResults: [],
     toolLatencyMs: null,
     toolError: '',
-    searchMergeMode: 'separate',
-    sponsoredSlot: null,
     sources: [],
-    sponsoredSource: null,
     sourceTurnId: '',
     sourceUserContent: userContent,
     retryCount,
@@ -1804,9 +1153,9 @@ async function handleSend(options = {}) {
 
   let webSearchContext = ''
   let assistantSources = []
-  let assistantSponsoredSource = null
 
   if (shouldUseWebSearchTool(userContent)) {
+    turnTrace.toolUsed = true
     appendTurnTraceEvent(turnTrace, 'web_search_planned')
     upsertTurnTrace(turnTrace)
 
@@ -1822,10 +1171,7 @@ async function handleSend(options = {}) {
       toolResults: [],
       toolLatencyMs: null,
       toolError: '',
-      searchMergeMode,
-      sponsoredSlot: null,
       sources: [],
-      sponsoredSource: null,
       sourceTurnId: '',
       sourceUserContent: userContent,
       retryCount,
@@ -1842,95 +1188,41 @@ async function handleSend(options = {}) {
       appendTurnTraceEvent(turnTrace, 'web_search_called')
       upsertTurnTrace(turnTrace)
 
-      const webSearchOutput = await runWebSearchTool(userContent, {
-        sponsoredEnabled: searchAdsAfterRetry,
-        excludedSponsoredIds,
-        preferenceBoostTags: boostTags,
-      })
+      const webSearchOutput = await runWebSearchTool(userContent)
       toolMessage.toolState = 'done'
       toolMessage.toolQuery = webSearchOutput.query
       toolMessage.toolResults = webSearchOutput.results
       toolMessage.toolLatencyMs = webSearchOutput.latencyMs
-      toolMessage.sponsoredSlot = normalizeSponsoredSlot(webSearchOutput.sponsoredSlot)
-
-      if (toolMessage.sponsoredSlot?.ad && searchMergeMode === 'blended') {
-        const sponsoredResult = {
-          id: toolMessage.sponsoredSlot.ad.id || createId('sponsored_result'),
-          title: toolMessage.sponsoredSlot.ad.title,
-          url: toolMessage.sponsoredSlot.ad.url,
-          snippet: toolMessage.sponsoredSlot.ad.snippet,
-          isSponsored: true,
-          label: toolMessage.sponsoredSlot.label || 'Sponsored',
-          advertiser: toolMessage.sponsoredSlot.ad.advertiser || '',
-          preferenceTags: Array.isArray(toolMessage.sponsoredSlot.ad.preferenceTags)
-            ? toolMessage.sponsoredSlot.ad.preferenceTags
-            : [],
-        }
-        toolMessage.toolResults = [sponsoredResult, ...toolMessage.toolResults]
-      }
+      toolMessage.content = `web_search returned ${webSearchOutput.results.length} results`
 
       assistantSources = webSearchOutput.results
         .map((result, index) => normalizeSourceItem(result, index))
         .filter(Boolean)
-      assistantSponsoredSource = normalizeSponsoredSource(
-        toolMessage.sponsoredSlot?.ad
-          ? {
-              id: toolMessage.sponsoredSlot.ad.id,
-              label: toolMessage.sponsoredSlot.label || 'Sponsored',
-              title: toolMessage.sponsoredSlot.ad.title,
-              url: toolMessage.sponsoredSlot.ad.url,
-              advertiser: toolMessage.sponsoredSlot.ad.advertiser,
-              preferenceTags: toolMessage.sponsoredSlot.ad.preferenceTags || [],
-            }
-          : null,
-      )
 
-      const sponsoredCount = toolMessage.sponsoredSlot?.ad ? 1 : 0
-      toolMessage.content = `web_search returned ${webSearchOutput.results.length} results (+${sponsoredCount} sponsored slot)`
       appendTurnTraceEvent(turnTrace, 'web_search_succeeded', {
-        organicCount: webSearchOutput.results.length,
-        sponsoredCount,
+        resultCount: webSearchOutput.results.length,
         latencyMs: webSearchOutput.latencyMs,
-        mergeMode: searchMergeMode,
-        sponsoredMatchScore: Number.isFinite(webSearchOutput.sponsoredMatchScore)
-          ? webSearchOutput.sponsoredMatchScore
-          : null,
-        preferenceBoostTags: boostTags,
       })
-      if (sponsoredCount > 0) {
-        if (searchMergeMode === 'blended') {
-          appendTurnTraceEvent(turnTrace, 'sponsored_result_blended', {
-            adId: toolMessage.sponsoredSlot?.ad?.id || '',
-          })
-        } else {
-          appendTurnTraceEvent(turnTrace, 'sponsored_slot_rendered', {
-            slotId: toolMessage.sponsoredSlot?.slotId || 'search_sponsored_slot_1',
-            adId: toolMessage.sponsoredSlot?.ad?.id || '',
-          })
-        }
+
+      if (options.retrySource === 'query_rewrite') {
+        appendTurnTraceEvent(turnTrace, 'query_rewrite_recall_observed', {
+          fromQuery: typeof options.queryRewriteFrom === 'string' ? options.queryRewriteFrom : '',
+          toQuery: webSearchOutput.query,
+          resultCount: webSearchOutput.results.length,
+        })
       }
+
       appendTurnTraceEvent(turnTrace, 'citation_sources_prepared', {
         sourceCount: assistantSources.length,
-        sponsoredSource: Boolean(assistantSponsoredSource),
       })
       upsertTurnTrace(turnTrace)
-      webSearchContext = buildWebSearchContext(
-        webSearchOutput.query,
-        webSearchOutput.results,
-        webSearchOutput.sponsoredSlot,
-        { mergeMode: searchMergeMode },
-      )
+
+      webSearchContext = buildWebSearchContext(webSearchOutput.query, webSearchOutput.results)
     } catch (error) {
       toolMessage.toolState = 'error'
       toolMessage.toolError = error instanceof Error ? error.message : 'Tool execution failed'
       toolMessage.content = 'web_search failed'
-      toolMessage.sponsoredSlot = null
-      toolMessage.sources = []
-      toolMessage.sponsoredSource = null
-      toolMessage.followUps = []
-      toolMessage.searchMergeMode = searchMergeMode
       assistantSources = []
-      assistantSponsoredSource = null
       appendTurnTraceEvent(turnTrace, 'web_search_failed', {
         error: toolMessage.toolError,
       })
@@ -1953,10 +1245,7 @@ async function handleSend(options = {}) {
     toolResults: [],
     toolLatencyMs: null,
     toolError: '',
-    searchMergeMode: 'separate',
-    sponsoredSlot: null,
     sources: [],
-    sponsoredSource: null,
     sourceTurnId: turnTrace.turnId,
     sourceUserContent: userContent,
     retryCount,
@@ -1989,44 +1278,23 @@ async function handleSend(options = {}) {
     () => {
       assistantMessage.status = 'done'
       assistantMessage.sources = assistantSources
-      assistantMessage.sponsoredSource = assistantSponsoredSource
       assistantMessage.followUps = createFollowUpSuggestions(
         userContent,
         assistantMessage.content,
         turnTrace.turnId,
-        sponsoredFollowUpsAfterRetry,
       )
-      const sponsoredFollowUps = assistantMessage.followUps.filter((item) => item.isSponsored).length
+
       appendTurnTraceEvent(turnTrace, 'assistant_generation_completed', {
         responseLength: assistantMessage.content.length,
       })
       appendTurnTraceEvent(turnTrace, 'follow_up_generated', {
         count: assistantMessage.followUps.length,
-        sponsoredCount: sponsoredFollowUps,
       })
       appendTurnTraceEvent(turnTrace, 'citation_sources_rendered', {
         sourceCount: assistantMessage.sources.length,
-        sponsoredSource: Boolean(assistantMessage.sponsoredSource),
       })
 
-      const adOpportunitySources = []
-      if (turnTrace.events.some((event) => event.type === 'sponsored_slot_rendered')) {
-        adOpportunitySources.push('web_search_sponsored_slot')
-      }
-      if (turnTrace.events.some((event) => event.type === 'sponsored_result_blended')) {
-        adOpportunitySources.push('web_search_sponsored_blended')
-      }
-      if (sponsoredFollowUps > 0) {
-        adOpportunitySources.push('follow_up_sponsored')
-      }
-
-      turnTrace.adOpportunityTriggered = adOpportunitySources.length > 0
-      turnTrace.adOpportunitySources = adOpportunitySources
       turnTrace.endedAt = Date.now()
-      appendTurnTraceEvent(turnTrace, 'ad_opportunity_evaluated', {
-        triggered: turnTrace.adOpportunityTriggered,
-        sources: adOpportunitySources,
-      })
       upsertTurnTrace(turnTrace)
       touchActiveSession()
       scheduleSaveSessions()
@@ -2036,23 +1304,12 @@ async function handleSend(options = {}) {
       assistantMessage.status = 'done'
       assistantMessage.content = `Sorry, an error occurred: ${error}`
       assistantMessage.sources = []
-      assistantMessage.sponsoredSource = null
       assistantMessage.followUps = []
+
       appendTurnTraceEvent(turnTrace, 'assistant_generation_failed', {
         error: assistantMessage.content,
       })
-      const adOpportunitySources = turnTrace.events.some((event) => event.type === 'sponsored_slot_rendered')
-        ? ['web_search_sponsored_slot']
-        : turnTrace.events.some((event) => event.type === 'sponsored_result_blended')
-          ? ['web_search_sponsored_blended']
-          : []
-      turnTrace.adOpportunityTriggered = adOpportunitySources.length > 0
-      turnTrace.adOpportunitySources = adOpportunitySources
       turnTrace.endedAt = Date.now()
-      appendTurnTraceEvent(turnTrace, 'ad_opportunity_evaluated', {
-        triggered: turnTrace.adOpportunityTriggered,
-        sources: adOpportunitySources,
-      })
       upsertTurnTrace(turnTrace)
       touchActiveSession()
       scheduleSaveSessions()

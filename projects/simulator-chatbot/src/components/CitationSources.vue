@@ -18,27 +18,6 @@
     </ul>
 
     <div v-else class="mt-2 text-[11px] text-gray-500">No external sources used.</div>
-
-    <div
-      v-if="sponsoredSource?.url"
-      class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs"
-    >
-      <div class="mb-1 inline-flex items-center rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-800">
-        {{ sponsoredSource.label || 'Sponsored' }}
-      </div>
-      <a
-        :href="sponsoredSource.url"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="block font-medium text-amber-900 hover:underline"
-        @click="$emit('sponsored-click', sponsoredSource)"
-      >
-        {{ sponsoredSource.title }}
-      </a>
-      <div v-if="sponsoredSource.advertiser" class="mt-0.5 text-[11px] text-amber-700">
-        {{ sponsoredSource.advertiser }}
-      </div>
-    </div>
   </div>
 </template>
 
@@ -48,11 +27,7 @@ defineProps({
     type: Array,
     default: () => [],
   },
-  sponsoredSource: {
-    type: Object,
-    default: null,
-  },
 })
 
-defineEmits(['source-click', 'sponsored-click'])
+defineEmits(['source-click'])
 </script>
