@@ -559,18 +559,21 @@ function normalizeAdItem(raw, index) {
 
 function normalizeAttachAdSlot(raw) {
   if (!raw || typeof raw !== 'object') return null
+  const allowedDecisionValues = new Set(['served', 'no_fill', 'blocked', 'error'])
   const ads = Array.isArray(raw.ads)
     ? raw.ads.map((item, index) => normalizeAdItem(item, index)).filter(Boolean)
     : []
   const decision = raw.decision && typeof raw.decision === 'object'
     ? {
-        result: typeof raw.decision.result === 'string' ? raw.decision.result : 'error',
-        reason: typeof raw.decision.reason === 'string' ? raw.decision.reason : '',
+        result: allowedDecisionValues.has(raw.decision.result) ? raw.decision.result : 'error',
+        reason: allowedDecisionValues.has(raw.decision.reason) ? raw.decision.reason : 'error',
+        reasonDetail: typeof raw.decision.reasonDetail === 'string' ? raw.decision.reasonDetail : '',
         intentScore: Number.isFinite(raw.decision.intentScore) ? raw.decision.intentScore : 0,
       }
     : {
         result: 'error',
-        reason: '',
+        reason: 'error',
+        reasonDetail: '',
         intentScore: 0,
       }
 
@@ -1330,6 +1333,7 @@ async function runAttachAdsFlow({ session, userContent, assistantMessage, turnTr
     requestId: result?.requestId || '',
     result: result?.decision?.result || 'unknown',
     reason: result?.decision?.reason || '',
+    reasonDetail: result?.decision?.reasonDetail || '',
     adCount: Array.isArray(result?.ads) ? result.ads.length : 0,
   })
   upsertTurnTrace(turnTrace)
@@ -1365,6 +1369,7 @@ async function runAttachAdsFlow({ session, userContent, assistantMessage, turnTr
     appendTurnTraceEvent(turnTrace, 'ads_no_fill', {
       requestId: result?.requestId || '',
       reason: result?.decision?.reason || '',
+      reasonDetail: result?.decision?.reasonDetail || '',
     })
     upsertTurnTrace(turnTrace)
     return
@@ -1374,6 +1379,17 @@ async function runAttachAdsFlow({ session, userContent, assistantMessage, turnTr
     appendTurnTraceEvent(turnTrace, 'ads_blocked', {
       requestId: result?.requestId || '',
       reason: result?.decision?.reason || '',
+      reasonDetail: result?.decision?.reasonDetail || '',
+    })
+    upsertTurnTrace(turnTrace)
+    return
+  }
+
+  if (decisionResult === 'error') {
+    appendTurnTraceEvent(turnTrace, 'ads_error', {
+      requestId: result?.requestId || '',
+      reason: result?.decision?.reason || '',
+      reasonDetail: result?.decision?.reasonDetail || '',
     })
     upsertTurnTrace(turnTrace)
   }
