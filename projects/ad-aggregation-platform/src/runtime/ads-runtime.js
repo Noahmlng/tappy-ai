@@ -6,6 +6,7 @@ import { normalizeUnifiedOffers } from '../offers/index.js'
 
 const DEFAULT_MAX_ADS = 20
 const DEFAULT_PLACEMENT_ID = 'attach.post_answer_render'
+const DEFAULT_NETWORK_ORDER = ['partnerstack', 'cj']
 const INACTIVE_OFFER_STATUSES = new Set([
   'inactive',
   'disabled',
@@ -126,6 +127,26 @@ function toAdRecord(offer, options = {}) {
     entityText,
     entityType: entityType || 'service'
   }
+}
+
+function networkRank(network) {
+  const normalized = cleanText(network).toLowerCase()
+  const index = DEFAULT_NETWORK_ORDER.indexOf(normalized)
+  if (index === -1) return DEFAULT_NETWORK_ORDER.length
+  return index
+}
+
+function groupAdsByNetworkOrder(ads = []) {
+  const list = Array.isArray(ads) ? ads : []
+  return list
+    .map((ad, index) => ({ ad, index }))
+    .sort((a, b) => {
+      const aRank = networkRank(a.ad.sourceNetwork)
+      const bRank = networkRank(b.ad.sourceNetwork)
+      if (aRank !== bRank) return aRank - bRank
+      return a.index - b.index
+    })
+    .map((item) => item.ad)
 }
 
 function isValidUrl(value) {
@@ -260,19 +281,21 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
       entityText: item.matchedEntityText
     })
   )
+  const orderedAds = groupAdsByNetworkOrder(ads)
 
   return {
     adResponse: {
       requestId: createRequestId(),
-      placementId: request.placementId,
-      ads
+      placementId: DEFAULT_PLACEMENT_ID,
+      ads: orderedAds
     },
     debug: {
       entities,
       keywords,
       totalOffers: offers.length,
-      selectedOffers: ads.length,
+      selectedOffers: orderedAds.length,
       invalidOffersDroppedByTestAllValidation: invalidForTestAll,
+      networkOrder: DEFAULT_NETWORK_ORDER,
       networkErrors,
       testAllOffers: request.context.testAllOffers
     }
