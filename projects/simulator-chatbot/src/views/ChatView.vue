@@ -310,7 +310,11 @@
                   </template>
 
                   <template v-if="msg.kind !== 'tool' && msg.content">
-                    <MarkdownRenderer :content="msg.content" />
+                    <MarkdownRenderer
+                      :content="msg.content"
+                      :inline-offers="msg.attachAdSlot?.ads || []"
+                      @ad-click="(ad) => handleInlineOfferClick(msg, ad)"
+                    />
                     <span
                       v-if="msg.status === 'streaming'"
                       class="cursor-blink ml-0.5 inline-block h-5 w-0.5 bg-gray-800 align-middle"
@@ -1436,6 +1440,10 @@ function handleSponsoredAdClick(message, ad) {
       return nextTrace
     })
   })
+}
+
+function handleInlineOfferClick(message, ad) {
+  handleSponsoredAdClick(message, ad)
 }
 
 async function handleSend(options = {}) {
