@@ -65,6 +65,23 @@ function clampNumber(value, min, max, fallback) {
   return Math.min(max, Math.max(min, n))
 }
 
+function normalizeStringList(value) {
+  if (!Array.isArray(value)) return []
+  return Array.from(
+    new Set(
+      value
+        .map((item) => String(item || '').trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  )
+}
+
+function normalizeDisclosure(value) {
+  const text = String(value || '').trim()
+  if (text === 'Ad' || text === 'Sponsored') return text
+  return 'Sponsored'
+}
+
 function validateNoExtraFields(payload, allowedFields, routeName) {
   const keys = Object.keys(payload)
   const extras = keys.filter((key) => !allowedFields.has(key))
@@ -130,6 +147,7 @@ function normalizePlacement(raw) {
     placementId,
     placementKey,
     enabled: raw?.enabled !== false,
+    disclosure: normalizeDisclosure(raw?.disclosure),
     priority: toPositiveInteger(raw?.priority, 100),
     surface: String(raw?.surface || 'CHAT_INLINE'),
     format: String(raw?.format || 'CARD'),
@@ -137,6 +155,7 @@ function normalizePlacement(raw) {
       intentThreshold: clampNumber(raw?.trigger?.intentThreshold, 0, 1, 0.6),
       cooldownSeconds: toPositiveInteger(raw?.trigger?.cooldownSeconds, 0),
       minExpectedRevenue: clampNumber(raw?.trigger?.minExpectedRevenue, 0, Number.MAX_SAFE_INTEGER, 0),
+      blockedTopics: normalizeStringList(raw?.trigger?.blockedTopics),
     },
     frequencyCap: {
       maxPerSession: toPositiveInteger(raw?.frequencyCap?.maxPerSession, 0),
@@ -480,7 +499,7 @@ function buildMockAd(placement, request, intentScore) {
     title: `Sponsored: ${label}`,
     description: `Matched for ${placement.placementKey || placement.placementId} (intent ${intentScore.toFixed(2)}).`,
     targetUrl: `https://example.com/offer?placement=${encodeURIComponent(placement.placementId)}`,
-    disclosure: 'Sponsored',
+    disclosure: placement.disclosure,
     reason: 'simulator_match',
     tracking: {
       impressionUrl: `https://tracking.example.com/impression/${encodeURIComponent(placement.placementId)}`,
@@ -490,6 +509,15 @@ function buildMockAd(placement, request, intentScore) {
     entityText: query || 'general',
     entityType: 'service',
   }
+}
+
+function matchBlockedTopic(context, blockedTopics) {
+  if (!blockedTopics.length) return ''
+  const corpus = `${String(context?.query || '')} ${String(context?.answerText || '')}`.toLowerCase()
+  for (const topic of blockedTopics) {
+    if (corpus.includes(topic)) return topic
+  }
+  return ''
 }
 
 function evaluateRequest(payload) {
@@ -533,6 +561,33 @@ function evaluateRequest(payload) {
       decision: {
         result: 'blocked',
         reason: 'placement_disabled',
+        intentScore,
+      },
+      ads: [],
+    }
+  }
+
+  const blockedTopic = matchBlockedTopic(context, placement.trigger.blockedTopics || [])
+  if (blockedTopic) {
+    recordBlockedOrNoFill(placement)
+    recordDecision({
+      requestId,
+      appId: request.appId || '',
+      sessionId: request.sessionId || '',
+      turnId: request.turnId || '',
+      event: request.event || '',
+      placementId: placement.placementId,
+      result: 'blocked',
+      reason: `blocked_topic:${blockedTopic}`,
+      intentScore,
+    })
+    persistState(state)
+    return {
+      requestId,
+      placementId: placement.placementId,
+      decision: {
+        result: 'blocked',
+        reason: `blocked_topic:${blockedTopic}`,
         intentScore,
       },
       ads: [],
@@ -737,6 +792,7 @@ function applyPlacementPatch(placement, patch) {
   })
 
   placement.enabled = next.enabled
+  placement.disclosure = next.disclosure
   placement.priority = next.priority
   placement.surface = next.surface
   placement.format = next.format

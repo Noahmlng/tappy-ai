@@ -6,13 +6,15 @@
     "surface": "CHAT_INLINE",
     "format": "NATIVE_BLOCK",
     "trigger": {
-      "intentThreshold": 0.55,
+      "intentThreshold": 0.6,
       "minExpectedRevenue": 0.2,
-      "cooldownSeconds": 120
+      "cooldownSeconds": 180,
+      "blockedTopics": ["medical", "finance", "minors"]
     },
+    "disclosure": "Sponsored",
     "frequencyCap": {
-      "maxPerSession": 2,
-      "maxPerUserPerDay": 6
+      "maxPerSession": 1,
+      "maxPerUserPerDay": 3
     }
   },
   {
@@ -24,8 +26,10 @@
     "trigger": {
       "intentThreshold": 0.45,
       "minExpectedRevenue": 0.1,
-      "cooldownSeconds": 90
+      "cooldownSeconds": 90,
+      "blockedTopics": ["medical", "finance", "minors"]
     },
+    "disclosure": "Sponsored",
     "frequencyCap": {
       "maxPerSession": 3,
       "maxPerUserPerDay": 8
