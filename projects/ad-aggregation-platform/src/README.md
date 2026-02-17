@@ -32,3 +32,8 @@
 - 当前 `adResponse.placementId` 固定返回 `attach.post_answer_render`。
 - 当前 `ads[]` 输出顺序按网络分组：默认 `partnerstack -> cj -> 其他`。
 - 最小可观测日志事件：`ads_pipeline_result`（字段：`requestId`、`entities`、`networkHits`、`adCount`、`errorCodes`）。
+
+7. `cache/`
+- 查询缓存（query cache）：缓存整条 pipeline 输出，降低重复查询抖动。
+- Offer 快照缓存（offer snapshot cache）：网络报错或空返回时回退到最近快照。
+- Runtime 可通过 `options.disableQueryCache`、`options.disableOfferSnapshotCache` 控制开关。

@@ -3,10 +3,14 @@ import { createCjConnector } from '../connectors/cj/index.js'
 import { createPartnerStackConnector } from '../connectors/partnerstack/index.js'
 import { extractEntitiesWithLlm } from '../ner/index.js'
 import { normalizeUnifiedOffers } from '../offers/index.js'
+import { offerSnapshotCache, queryCache } from '../cache/runtime-caches.js'
 
 const DEFAULT_MAX_ADS = 20
 const DEFAULT_PLACEMENT_ID = 'attach.post_answer_render'
 const DEFAULT_NETWORK_ORDER = ['partnerstack', 'cj']
+const DEFAULT_QUERY_CACHE_TTL_MS = 15000
+const DEFAULT_SNAPSHOT_CACHE_TTL_MS = 120000
+const QUERY_CACHE_VERSION = 'v1'
 const INACTIVE_OFFER_STATUSES = new Set([
   'inactive',
   'disabled',
@@ -40,6 +44,10 @@ function safeLog(logger, level, payload) {
   }
 }
 
+function deepClone(value) {
+  return JSON.parse(JSON.stringify(value))
+}
+
 function uniqueStrings(values) {
   const seen = new Set()
   const output = []
@@ -58,6 +66,14 @@ function uniqueStrings(values) {
 
 function isFiniteNumber(value) {
   return typeof value === 'number' && Number.isFinite(value)
+}
+
+function toPositiveNumber(value, fallback) {
+  const numeric = typeof value === 'string' ? Number(value) : value
+  if (typeof numeric === 'number' && Number.isFinite(numeric) && numeric > 0) {
+    return numeric
+  }
+  return fallback
 }
 
 function normalizeAdRequest(adRequest) {
@@ -233,12 +249,167 @@ function resolveErrorCode(error) {
   return 'UNKNOWN'
 }
 
+function buildQueryCacheKey(request, maxAds) {
+  const debug = request.context.debug || {}
+  const payload = {
+    v: QUERY_CACHE_VERSION,
+    appId: request.appId,
+    placementId: DEFAULT_PLACEMENT_ID,
+    query: request.context.query,
+    answerText: request.context.answerText,
+    locale: request.context.locale,
+    testAllOffers: request.context.testAllOffers,
+    maxAds,
+    debug: {
+      partnerstackLimit: debug.partnerstackLimit,
+      partnerstackLimitPartnerships: debug.partnerstackLimitPartnerships,
+      partnerstackLimitLinks: debug.partnerstackLimitLinks,
+      cjLimit: debug.cjLimit,
+      cjPage: debug.cjPage,
+      cjWebsiteId: debug.cjWebsiteId,
+      cjAdvertiserIds: debug.cjAdvertiserIds
+    }
+  }
+  return JSON.stringify(payload)
+}
+
+function buildSnapshotCacheKey(network, queryParams) {
+  return JSON.stringify({
+    network,
+    queryParams
+  })
+}
+
+async function fetchOffersWithSnapshot(config) {
+  const {
+    network,
+    queryParams,
+    fetcher,
+    snapshotCacheEnabled,
+    snapshotCacheTtlMs
+  } = config
+  const snapshotKey = buildSnapshotCacheKey(network, queryParams)
+  const getSnapshot = () => {
+    if (!snapshotCacheEnabled) return null
+    return offerSnapshotCache.get(snapshotKey)
+  }
+  const setSnapshot = (offers) => {
+    if (!snapshotCacheEnabled) return
+    offerSnapshotCache.set(snapshotKey, { offers }, snapshotCacheTtlMs)
+  }
+
+  try {
+    const liveResult = await fetcher()
+    const liveOffers = Array.isArray(liveResult?.offers) ? liveResult.offers : []
+
+    if (liveOffers.length > 0) {
+      setSnapshot(liveOffers)
+      return {
+        offers: liveOffers,
+        snapshotUsed: false,
+        cacheStatus: 'live',
+        error: null
+      }
+    }
+
+    const snapshot = getSnapshot()
+    if (snapshot && Array.isArray(snapshot.offers) && snapshot.offers.length > 0) {
+      return {
+        offers: snapshot.offers,
+        snapshotUsed: true,
+        cacheStatus: 'snapshot_fallback_empty',
+        error: null
+      }
+    }
+
+    return {
+      offers: [],
+      snapshotUsed: false,
+      cacheStatus: 'live_empty',
+      error: null
+    }
+  } catch (error) {
+    const snapshot = getSnapshot()
+    if (snapshot && Array.isArray(snapshot.offers) && snapshot.offers.length > 0) {
+      return {
+        offers: snapshot.offers,
+        snapshotUsed: true,
+        cacheStatus: 'snapshot_fallback_error',
+        error: {
+          errorCode: resolveErrorCode(error),
+          message: error?.message || 'Unknown error'
+        }
+      }
+    }
+
+    return {
+      offers: [],
+      snapshotUsed: false,
+      cacheStatus: 'live_error',
+      error: {
+        errorCode: resolveErrorCode(error),
+        message: error?.message || 'Unknown error'
+      }
+    }
+  }
+}
+
 export async function runAdsRetrievalPipeline(adRequest, options = {}) {
   const request = normalizeAdRequest(adRequest)
   const runtimeConfig = options.runtimeConfig || loadRuntimeConfig()
   const maxAds = Number.isInteger(options.maxAds) ? options.maxAds : DEFAULT_MAX_ADS
   const requestId = createRequestId()
   const logger = getLogger(options)
+  const queryCacheTtlMs = toPositiveNumber(
+    options.queryCacheTtlMs ?? request.context.debug.queryCacheTtlMs,
+    DEFAULT_QUERY_CACHE_TTL_MS
+  )
+  const snapshotCacheTtlMs = toPositiveNumber(
+    options.snapshotCacheTtlMs ?? request.context.debug.snapshotCacheTtlMs,
+    DEFAULT_SNAPSHOT_CACHE_TTL_MS
+  )
+  const queryCacheEnabled = !Boolean(options.disableQueryCache ?? request.context.debug.disableQueryCache)
+  const snapshotCacheEnabled = !Boolean(
+    options.disableOfferSnapshotCache ?? request.context.debug.disableOfferSnapshotCache
+  )
+  const queryCacheKey = buildQueryCacheKey(request, maxAds)
+
+  if (queryCacheEnabled) {
+    const cached = queryCache.get(queryCacheKey)
+    if (cached) {
+      const adResponse = {
+        requestId,
+        placementId: DEFAULT_PLACEMENT_ID,
+        ads: deepClone(cached.ads)
+      }
+      const debug = deepClone(cached.debug)
+      debug.cache = {
+        queryCacheHit: true,
+        queryCacheTtlMs,
+        snapshotCacheEnabled
+      }
+
+      const entitySummaries = Array.isArray(debug.entities)
+        ? debug.entities.map((entity) => ({
+            entityText: entity.entityText,
+            entityType: entity.entityType,
+            confidence: entity.confidence
+          }))
+        : []
+      safeLog(logger, 'info', {
+        event: 'ads_pipeline_result',
+        requestId,
+        placementId: DEFAULT_PLACEMENT_ID,
+        entities: entitySummaries,
+        networkHits: debug.networkHits || { partnerstack: 0, cj: 0 },
+        adCount: adResponse.ads.length,
+        errorCodes: (debug.networkErrors || []).map((item) => item.errorCode),
+        queryCacheHit: true
+      })
+
+      return { adResponse, debug }
+    }
+  }
 
   const partnerstackConnector =
     options.partnerstackConnector || createPartnerStackConnector({ runtimeConfig })
@@ -258,20 +429,34 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
 
   const entities = Array.isArray(nerResult?.entities) ? nerResult.entities : []
   const keywords = buildSearchKeywords(request, entities)
+  const partnerstackQueryParams = {
+    search: keywords,
+    limit: request.context.debug.partnerstackLimit,
+    limitPartnerships: request.context.debug.partnerstackLimitPartnerships,
+    limitLinksPerPartnership: request.context.debug.partnerstackLimitLinks
+  }
+  const cjQueryParams = {
+    keywords,
+    limit: request.context.debug.cjLimit,
+    page: request.context.debug.cjPage,
+    websiteId: request.context.debug.cjWebsiteId,
+    advertiserIds: request.context.debug.cjAdvertiserIds
+  }
 
-  const [partnerstackResult, cjResult] = await Promise.allSettled([
-    partnerstackConnector.fetchOffers({
-      search: keywords,
-      limit: request.context.debug.partnerstackLimit,
-      limitPartnerships: request.context.debug.partnerstackLimitPartnerships,
-      limitLinksPerPartnership: request.context.debug.partnerstackLimitLinks
+  const [partnerstackResult, cjResult] = await Promise.all([
+    fetchOffersWithSnapshot({
+      network: 'partnerstack',
+      queryParams: partnerstackQueryParams,
+      fetcher: () => partnerstackConnector.fetchOffers(partnerstackQueryParams),
+      snapshotCacheEnabled,
+      snapshotCacheTtlMs
     }),
-    cjConnector.fetchOffers({
-      keywords,
-      limit: request.context.debug.cjLimit,
-      page: request.context.debug.cjPage,
-      websiteId: request.context.debug.cjWebsiteId,
-      advertiserIds: request.context.debug.cjAdvertiserIds
+    fetchOffersWithSnapshot({
+      network: 'cj',
+      queryParams: cjQueryParams,
+      fetcher: () => cjConnector.fetchOffers(cjQueryParams),
+      snapshotCacheEnabled,
+      snapshotCacheTtlMs
     })
   ])
 
@@ -281,28 +466,27 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     partnerstack: 0,
     cj: 0
   }
-
-  if (partnerstackResult.status === 'fulfilled') {
-    const partnerstackOffers = partnerstackResult.value?.offers || []
-    networkHits.partnerstack = partnerstackOffers.length
-    rawOffers.push(...partnerstackOffers)
-  } else {
-    networkErrors.push({
-      network: 'partnerstack',
-      errorCode: resolveErrorCode(partnerstackResult.reason),
-      message: partnerstackResult.reason?.message || 'Unknown error'
-    })
+  const snapshotUsage = {
+    partnerstack: partnerstackResult.snapshotUsed,
+    cj: cjResult.snapshotUsed
   }
 
-  if (cjResult.status === 'fulfilled') {
-    const cjOffers = cjResult.value?.offers || []
-    networkHits.cj = cjOffers.length
-    rawOffers.push(...cjOffers)
-  } else {
+  networkHits.partnerstack = partnerstackResult.offers.length
+  networkHits.cj = cjResult.offers.length
+  rawOffers.push(...partnerstackResult.offers, ...cjResult.offers)
+
+  if (partnerstackResult.error) {
+    networkErrors.push({
+      network: 'partnerstack',
+      errorCode: partnerstackResult.error.errorCode,
+      message: partnerstackResult.error.message
+    })
+  }
+  if (cjResult.error) {
     networkErrors.push({
       network: 'cj',
-      errorCode: resolveErrorCode(cjResult.reason),
-      message: cjResult.reason?.message || 'Unknown error'
+      errorCode: cjResult.error.errorCode,
+      message: cjResult.error.message
     })
   }
 
@@ -332,8 +516,45 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     entities: entitySummaries,
     networkHits,
     adCount: orderedAds.length,
-    errorCodes: networkErrors.map((item) => item.errorCode)
+    errorCodes: networkErrors.map((item) => item.errorCode),
+    queryCacheHit: false,
+    snapshotUsage
   })
+
+  const debug = {
+    entities,
+    keywords,
+    totalOffers: offers.length,
+    selectedOffers: orderedAds.length,
+    invalidOffersDroppedByTestAllValidation: invalidForTestAll,
+    networkOrder: DEFAULT_NETWORK_ORDER,
+    networkHits,
+    networkErrors,
+    snapshotUsage,
+    snapshotCacheStatus: {
+      partnerstack: partnerstackResult.cacheStatus,
+      cj: cjResult.cacheStatus
+    },
+    cache: {
+      queryCacheHit: false,
+      queryCacheEnabled,
+      queryCacheTtlMs,
+      snapshotCacheEnabled,
+      snapshotCacheTtlMs
+    },
+    testAllOffers: request.context.testAllOffers
+  }
+
+  if (queryCacheEnabled) {
+    queryCache.set(
+      queryCacheKey,
+      {
+        ads: deepClone(orderedAds),
+        debug: deepClone(debug)
+      },
+      queryCacheTtlMs
+    )
+  }
 
   return {
     adResponse: {
@@ -341,16 +562,6 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
       placementId: DEFAULT_PLACEMENT_ID,
       ads: orderedAds
     },
-    debug: {
-      entities,
-      keywords,
-      totalOffers: offers.length,
-      selectedOffers: orderedAds.length,
-      invalidOffersDroppedByTestAllValidation: invalidForTestAll,
-      networkOrder: DEFAULT_NETWORK_ORDER,
-      networkHits,
-      networkErrors,
-      testAllOffers: request.context.testAllOffers
-    }
+    debug
   }
 }
