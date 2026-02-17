@@ -1,6 +1,8 @@
 [
   {
     "placementId": "chat_inline_v1",
+    "placementKey": "attach.post_answer_render",
+    "enabled": true,
     "surface": "CHAT_INLINE",
     "format": "NATIVE_BLOCK",
     "trigger": {
@@ -15,6 +17,8 @@
   },
   {
     "placementId": "chat_followup_v1",
+    "placementKey": "next_step.intent_card",
+    "enabled": false,
     "surface": "FOLLOW_UP",
     "format": "CARD",
     "trigger": {
