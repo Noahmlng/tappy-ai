@@ -14,3 +14,8 @@
 - PartnerStack API connector（Bearer 认证）。
 - 能力：`listPartnerships`、`listLinksByPartnership`、`listOffers`、`fetchOffers`。
 - 内置：基础超时控制 + 429/5xx 重试 + links fallback。
+
+4. `connectors/cj/`
+- CJ API connector（Bearer 认证）。
+- 能力：`listOffers`、`listProducts`、`listLinks`、`fetchOffers`。
+- 内置：多 endpoint fallback、基础超时控制、429/5xx 重试、products/links/offers 合并去重。
