@@ -507,6 +507,7 @@ const MAX_TURN_LOGS = 400
 const TOOL_STATES = ['planning', 'running', 'done', 'error']
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant. Be accurate, concise, and explicit about uncertainty.'
 const SDK_APP_ID = import.meta.env.VITE_SIMULATOR_APP_ID || 'simulator-chatbot'
+const ENABLE_NEXT_STEP_FLOW = false
 
 const input = ref('')
 const historyQuery = ref('')
@@ -1566,7 +1567,18 @@ function findMessageById(sessionId, messageId) {
   return targetSession.messages.find((message) => message?.id === messageId) || null
 }
 
-async function runAttachAdsFlow({ session, userContent, assistantMessageId, turnTrace }) {
+function isPlacementEnabledInConfig(config, placementKey) {
+  if (!config || typeof config !== 'object') return false
+  const placements = Array.isArray(config.placements) ? config.placements : []
+  const key = String(placementKey || '').trim()
+  if (!key) return false
+
+  const placement = placements.find((item) => String(item?.placementKey || '').trim() === key)
+  if (!placement) return false
+  return placement.enabled !== false
+}
+
+async function runAttachAdsFlow({ session, userContent, assistantMessageId, turnTrace, sdkConfig = null }) {
   const currentMessage = findMessageById(session.id, assistantMessageId)
   if (!currentMessage) return
 
@@ -1585,13 +1597,25 @@ async function runAttachAdsFlow({ session, userContent, assistantMessageId, turn
   })
   upsertTurnTrace(turnTrace)
 
+  let resolvedSdkConfig = sdkConfig
   try {
-    await fetchSdkConfig(reportPayload.appId)
+    if (!resolvedSdkConfig) {
+      resolvedSdkConfig = await fetchSdkConfig(reportPayload.appId)
+    }
     appendTurnTraceEvent(turnTrace, 'ads_config_fetch_completed')
     upsertTurnTrace(turnTrace)
   } catch (error) {
     appendTurnTraceEvent(turnTrace, 'ads_config_fetch_failed', {
       error: error instanceof Error ? error.message : 'config_fetch_failed',
+    })
+    upsertTurnTrace(turnTrace)
+    return
+  }
+
+  if (!isPlacementEnabledInConfig(resolvedSdkConfig, 'attach.post_answer_render')) {
+    appendTurnTraceEvent(turnTrace, 'ads_skipped', {
+      placementKey: 'attach.post_answer_render',
+      reason: 'placement_disabled',
     })
     upsertTurnTrace(turnTrace)
     return
@@ -1694,9 +1718,28 @@ async function runAttachAdsFlow({ session, userContent, assistantMessageId, turn
   }
 }
 
-async function runNextStepIntentCardFlow({ session, userContent, assistantMessageId, turnTrace }) {
+async function runNextStepIntentCardFlow({ session, userContent, assistantMessageId, turnTrace, sdkConfig = null }) {
+  if (!ENABLE_NEXT_STEP_FLOW) {
+    appendTurnTraceEvent(turnTrace, 'ads_skipped', {
+      placementKey: 'next_step.intent_card',
+      reason: 'flow_disabled',
+    })
+    upsertTurnTrace(turnTrace)
+    return
+  }
+
   const currentMessage = findMessageById(session.id, assistantMessageId)
   if (!currentMessage) return
+
+  const resolvedSdkConfig = sdkConfig || await fetchSdkConfig(SDK_APP_ID).catch(() => null)
+  if (!isPlacementEnabledInConfig(resolvedSdkConfig, 'next_step.intent_card')) {
+    appendTurnTraceEvent(turnTrace, 'ads_skipped', {
+      placementKey: 'next_step.intent_card',
+      reason: 'placement_disabled',
+    })
+    upsertTurnTrace(turnTrace)
+    return
+  }
 
   const intentClass = inferIntentClass(userContent)
   const intentScore = estimateIntentScore(userContent)
@@ -2153,18 +2196,26 @@ async function handleSend(options = {}) {
         upsertTurnTrace(turnTrace)
       })
 
-      runNextStepIntentCardFlow({
-        session,
-        userContent,
-        assistantMessageId: assistantMessage.id,
-        turnTrace,
-      }).catch((error) => {
-        appendTurnTraceEvent(turnTrace, 'ads_evaluate_failed', {
+      if (ENABLE_NEXT_STEP_FLOW) {
+        runNextStepIntentCardFlow({
+          session,
+          userContent,
+          assistantMessageId: assistantMessage.id,
+          turnTrace,
+        }).catch((error) => {
+          appendTurnTraceEvent(turnTrace, 'ads_evaluate_failed', {
+            placementKey: 'next_step.intent_card',
+            error: error instanceof Error ? error.message : 'ads_flow_failed',
+          })
+          upsertTurnTrace(turnTrace)
+        })
+      } else {
+        appendTurnTraceEvent(turnTrace, 'ads_skipped', {
           placementKey: 'next_step.intent_card',
-          error: error instanceof Error ? error.message : 'ads_flow_failed',
+          reason: 'flow_disabled',
         })
         upsertTurnTrace(turnTrace)
-      })
+      }
     },
     (error) => {
       assistantMessage.status = 'done'
