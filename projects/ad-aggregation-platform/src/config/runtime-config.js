@@ -5,29 +5,30 @@ const REQUIRED_ENV_VARS = [
   'PARTNERSTACK_API_KEY'
 ]
 
-function readRequiredEnv(env, key) {
+function readEnv(env, key, { required = true } = {}) {
   const value = env[key]
   if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new Error(`[config] Missing required environment variable: ${key}`)
+    if (required) {
+      throw new Error(`[config] Missing required environment variable: ${key}`)
+    }
+    return ''
   }
   return value.trim()
 }
 
-export function loadRuntimeConfig(env = process.env) {
-  for (const key of REQUIRED_ENV_VARS) {
-    readRequiredEnv(env, key)
-  }
+export function loadRuntimeConfig(env = process.env, options = {}) {
+  const strict = options?.strict !== false
 
   return {
     openrouter: {
-      apiKey: readRequiredEnv(env, 'OPENROUTER_API_KEY'),
-      model: readRequiredEnv(env, 'OPENROUTER_MODEL')
+      apiKey: readEnv(env, 'OPENROUTER_API_KEY', { required: strict }),
+      model: readEnv(env, 'OPENROUTER_MODEL', { required: strict })
     },
     cj: {
-      token: readRequiredEnv(env, 'CJ_TOKEN')
+      token: readEnv(env, 'CJ_TOKEN', { required: strict })
     },
     partnerstack: {
-      apiKey: readRequiredEnv(env, 'PARTNERSTACK_API_KEY')
+      apiKey: readEnv(env, 'PARTNERSTACK_API_KEY', { required: strict })
     }
   }
 }

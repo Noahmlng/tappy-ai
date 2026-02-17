@@ -454,7 +454,7 @@ async function fetchOffersWithSnapshot(config) {
 
 export async function runAdsRetrievalPipeline(adRequest, options = {}) {
   const request = normalizeAdRequest(adRequest)
-  const runtimeConfig = options.runtimeConfig || loadRuntimeConfig()
+  const runtimeConfig = options.runtimeConfig || loadRuntimeConfig(process.env, { strict: false })
   const maxAds = Number.isInteger(options.maxAds) ? options.maxAds : DEFAULT_MAX_ADS
   const requestId = createRequestId()
   const logger = getLogger(options)
@@ -531,18 +531,49 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
   const cjConnector = options.cjConnector || createCjConnector({ runtimeConfig })
   const nerExtractor = options.nerExtractor || extractEntitiesWithLlm
 
-  const nerResult = await nerExtractor(
-    {
-      query: request.context.query,
-      answerText: request.context.answerText,
-      locale: request.context.locale
-    },
-    {
-      runtimeConfig
-    }
-  )
+  let entities = []
+  let nerInfo = {
+    status: 'skipped',
+    message: 'openrouter_config_missing'
+  }
 
-  const entities = Array.isArray(nerResult?.entities) ? nerResult.entities : []
+  const hasOpenrouterConfig =
+    cleanText(runtimeConfig?.openrouter?.apiKey).length > 0 &&
+    cleanText(runtimeConfig?.openrouter?.model).length > 0
+
+  if (hasOpenrouterConfig) {
+    try {
+      const nerResult = await nerExtractor(
+        {
+          query: request.context.query,
+          answerText: request.context.answerText,
+          locale: request.context.locale
+        },
+        {
+          runtimeConfig
+        }
+      )
+
+      entities = Array.isArray(nerResult?.entities) ? nerResult.entities : []
+      nerInfo = {
+        status: 'ok',
+        message: '',
+        model: cleanText(runtimeConfig?.openrouter?.model)
+      }
+    } catch (error) {
+      nerInfo = {
+        status: 'error',
+        message: error instanceof Error ? error.message : 'ner_failed'
+      }
+      safeLog(logger, 'error', {
+        event: 'ads_pipeline_ner_error',
+        requestId,
+        placementId: DEFAULT_PLACEMENT_ID,
+        message: nerInfo.message
+      })
+    }
+  }
+
   const keywords = buildSearchKeywords(request, entities)
   const partnerstackQueryParams = {
     search: keywords,
@@ -645,6 +676,7 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
 
   const debug = {
     entities,
+    ner: nerInfo,
     keywords,
     totalOffers: offers.length,
     selectedOffers: orderedAds.length,

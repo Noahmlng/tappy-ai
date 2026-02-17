@@ -96,6 +96,20 @@ export async function extractEntitiesWithLlm(input, options = {}) {
   const runtimeConfig = options.runtimeConfig || loadRuntimeConfig()
   const endpoint = options.endpoint || DEFAULT_OPENROUTER_URL
   const requestId = options.requestId || `ner_${Date.now()}`
+  const apiKey = typeof runtimeConfig?.openrouter?.apiKey === 'string'
+    ? runtimeConfig.openrouter.apiKey.trim()
+    : ''
+  const model = typeof runtimeConfig?.openrouter?.model === 'string'
+    ? runtimeConfig.openrouter.model.trim()
+    : ''
+
+  if (!apiKey || !model) {
+    return {
+      requestId,
+      model,
+      entities: []
+    }
+  }
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -104,12 +118,12 @@ export async function extractEntitiesWithLlm(input, options = {}) {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${runtimeConfig.openrouter.apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'X-Title': 'ad-aggregation-platform-ner'
       },
       body: JSON.stringify({
-        model: runtimeConfig.openrouter.model,
+        model,
         temperature: 0,
         messages: [
           { role: 'system', content: NER_SYSTEM_PROMPT },
@@ -142,7 +156,7 @@ export async function extractEntitiesWithLlm(input, options = {}) {
 
     return {
       requestId,
-      model: runtimeConfig.openrouter.model,
+      model,
       entities: result.entities
     }
   } finally {
