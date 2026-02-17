@@ -69,7 +69,51 @@
         </div>
       </div>
 
-      <div class="border-t border-gray-200 p-3">
+      <div class="border-t border-gray-200 p-3 space-y-2">
+        <div class="rounded-lg border border-gray-200 bg-white p-2">
+          <div class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Turn Trace</div>
+          <div v-if="activeSessionTurnLogs.length === 0" class="mt-2 text-[11px] text-gray-500">
+            No turn logs yet.
+          </div>
+          <div v-else class="mt-2 max-h-44 space-y-1 overflow-y-auto pr-1">
+            <details
+              v-for="log in activeSessionTurnLogs"
+              :key="log.turnId"
+              class="rounded border border-gray-200 bg-gray-50 px-2 py-1"
+            >
+              <summary class="cursor-pointer list-none">
+                <div class="flex items-center gap-1 text-[11px]">
+                  <span class="truncate font-medium text-gray-700">{{ log.userQuery }}</span>
+                  <span
+                    :class="[
+                      'ml-auto rounded px-1.5 py-0.5 text-[10px] font-semibold',
+                      log.adOpportunityTriggered
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-gray-200 text-gray-600'
+                    ]"
+                  >
+                    {{ log.adOpportunityTriggered ? 'Ad: YES' : 'Ad: NO' }}
+                  </span>
+                </div>
+                <div class="mt-1 text-[10px] text-gray-400">{{ formatTraceTime(log.startedAt) }}</div>
+              </summary>
+
+              <div class="mt-2 border-t border-gray-200 pt-2 text-[11px] text-gray-600">
+                <div v-if="log.adOpportunitySources?.length" class="mb-1">
+                  Sources: {{ log.adOpportunitySources.join(', ') }}
+                </div>
+                <ul class="space-y-1">
+                  <li v-for="event in log.events" :key="event.id" class="leading-tight">
+                    <span class="text-gray-400">{{ formatTraceTime(event.at) }}</span>
+                    <span class="mx-1">·</span>
+                    <span>{{ formatTraceEventType(event.type) }}</span>
+                  </li>
+                </ul>
+              </div>
+            </details>
+          </div>
+        </div>
+
         <button
           @click="clearHistory"
           class="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-100"
@@ -213,6 +257,13 @@
                     <MarkdownRenderer :content="msg.content" />
                     <span v-if="msg.status === 'streaming'" class="inline-block w-0.5 h-5 bg-gray-800 ml-0.5 cursor-blink align-middle"></span>
                   </template>
+
+                  <FollowUpSuggestions
+                    v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.followUps?.length"
+                    :items="msg.followUps"
+                    :disabled="isLoading"
+                    @select="handleFollowUpSelect"
+                  />
                 </div>
               </div>
             </div>
@@ -283,12 +334,38 @@ import {
 } from 'lucide-vue-next'
 import { sendMessageStream } from '../api/deepseek'
 import { shouldUseWebSearchTool, runWebSearchTool, buildWebSearchContext } from '../api/webSearchTool'
+import FollowUpSuggestions from '../components/FollowUpSuggestions.vue'
 import MarkdownRenderer from '../components/MarkdownRenderer.vue'
 
 const STORAGE_KEY = 'chat_bot_history_v2'
 const LEGACY_STORAGE_KEYS = ['chat_bot_sessions_v1']
 const MAX_SESSIONS = 50
 const TOOL_STATES = ['planning', 'running', 'done', 'error']
+const TURN_LOG_STORAGE_KEY = 'chat_bot_turn_logs_v1'
+const MAX_TURN_LOGS = 400
+const FOLLOW_UP_SPONSORED_OPTIONS = [
+  {
+    adId: 'sponsored_followup_vercel_ai_sdk',
+    advertiser: 'Vercel',
+    text: 'Want a faster way to ship this as an AI app?',
+    prompt: 'Recommend a practical way to ship this as an AI app with fast iteration.',
+    keywords: ['app', 'deploy', 'ship', 'frontend', 'product'],
+  },
+  {
+    adId: 'sponsored_followup_pinecone_rag',
+    advertiser: 'Pinecone',
+    text: 'Need retrieval support for this workflow?',
+    prompt: 'What retrieval architecture should I use if I need scalable RAG for this?',
+    keywords: ['search', 'retrieval', 'rag', 'knowledge', 'memory'],
+  },
+  {
+    adId: 'sponsored_followup_github_copilot',
+    advertiser: 'GitHub',
+    text: 'Want coding assistance for implementation?',
+    prompt: 'Suggest an efficient implementation plan and coding workflow for this.',
+    keywords: ['code', 'implement', 'sdk', 'developer', 'engineering'],
+  },
+]
 
 const input = ref('')
 const historyQuery = ref('')
@@ -299,6 +376,7 @@ const isComposing = ref(false)
 
 const sessions = ref([])
 const activeSessionId = ref('')
+const turnLogs = ref([])
 
 let persistTimer = null
 
@@ -314,6 +392,60 @@ function createSession(initialTitle = 'New Chat') {
     createdAt: now,
     updatedAt: now,
     messages: [],
+  }
+}
+
+function normalizeFollowUpItem(raw, index) {
+  if (!raw || typeof raw !== 'object') return null
+
+  const text = typeof raw.text === 'string' ? raw.text.trim() : ''
+  const prompt = typeof raw.prompt === 'string' ? raw.prompt.trim() : text
+  if (!text || !prompt) return null
+
+  return {
+    id: typeof raw.id === 'string' && raw.id ? raw.id : `follow_up_${index}`,
+    text,
+    prompt,
+    isSponsored: Boolean(raw.isSponsored),
+    label: typeof raw.label === 'string' && raw.label.trim() ? raw.label.trim() : 'Sponsored',
+    adId: typeof raw.adId === 'string' ? raw.adId : '',
+    advertiser: typeof raw.advertiser === 'string' ? raw.advertiser : '',
+    sourceTurnId: typeof raw.sourceTurnId === 'string' ? raw.sourceTurnId : '',
+  }
+}
+
+function normalizeTurnEvent(raw, index) {
+  if (!raw || typeof raw !== 'object') return null
+
+  return {
+    id: typeof raw.id === 'string' && raw.id ? raw.id : `event_${index}`,
+    type: typeof raw.type === 'string' && raw.type ? raw.type : 'unknown_event',
+    at: Number.isFinite(raw.at) ? raw.at : Date.now(),
+    payload: raw.payload && typeof raw.payload === 'object' ? raw.payload : {},
+  }
+}
+
+function normalizeTurnLog(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  if (typeof raw.turnId !== 'string' || !raw.turnId) return null
+  if (typeof raw.sessionId !== 'string' || !raw.sessionId) return null
+
+  return {
+    turnId: raw.turnId,
+    traceId: typeof raw.traceId === 'string' ? raw.traceId : '',
+    sessionId: raw.sessionId,
+    userQuery: typeof raw.userQuery === 'string' ? raw.userQuery : '',
+    startedAt: Number.isFinite(raw.startedAt) ? raw.startedAt : Date.now(),
+    endedAt: Number.isFinite(raw.endedAt) ? raw.endedAt : null,
+    adOpportunityTriggered: Boolean(raw.adOpportunityTriggered),
+    adOpportunitySources: Array.isArray(raw.adOpportunitySources)
+      ? raw.adOpportunitySources.filter((item) => typeof item === 'string')
+      : [],
+    events: Array.isArray(raw.events)
+      ? raw.events
+          .map((event, index) => normalizeTurnEvent(event, index))
+          .filter(Boolean)
+      : [],
   }
 }
 
@@ -362,6 +494,11 @@ function normalizeMessage(raw) {
     toolLatencyMs: Number.isFinite(raw.toolLatencyMs) ? raw.toolLatencyMs : null,
     toolError: typeof raw.toolError === 'string' ? raw.toolError : '',
     sponsoredSlot: normalizeSponsoredSlot(raw.sponsoredSlot),
+    followUps: Array.isArray(raw.followUps)
+      ? raw.followUps
+          .map((item, index) => normalizeFollowUpItem(item, index))
+          .filter(Boolean)
+      : [],
   }
 }
 
@@ -386,6 +523,10 @@ function normalizeSession(raw) {
 
 function persistSessionsNow() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions.value))
+}
+
+function persistTurnLogsNow() {
+  localStorage.setItem(TURN_LOG_STORAGE_KEY, JSON.stringify(turnLogs.value))
 }
 
 function scheduleSaveSessions() {
@@ -448,6 +589,25 @@ function loadSessions() {
 
 loadSessions()
 
+function loadTurnLogs() {
+  try {
+    const raw = localStorage.getItem(TURN_LOG_STORAGE_KEY)
+    if (!raw) {
+      turnLogs.value = []
+      return
+    }
+
+    const parsed = JSON.parse(raw)
+    const records = Array.isArray(parsed) ? parsed : []
+    turnLogs.value = records.map(normalizeTurnLog).filter(Boolean).slice(0, MAX_TURN_LOGS)
+  } catch (error) {
+    console.error('Failed to load turn logs:', error)
+    turnLogs.value = []
+  }
+}
+
+loadTurnLogs()
+
 const sortedSessions = computed(() => {
   return [...sessions.value].sort((a, b) => b.updatedAt - a.updatedAt)
 })
@@ -469,6 +629,12 @@ const activeSession = computed(() => {
 })
 
 const currentMessages = computed(() => activeSession.value?.messages || [])
+const activeSessionTurnLogs = computed(() => {
+  return turnLogs.value
+    .filter((log) => log.sessionId === activeSessionId.value)
+    .sort((a, b) => b.startedAt - a.startedAt)
+    .slice(0, 20)
+})
 const hasStarted = computed(() => currentMessages.value.length > 0)
 
 async function scrollToBottom() {
@@ -501,6 +667,63 @@ function touchActiveSession() {
   const session = activeSession.value
   if (!session) return
   session.updatedAt = Date.now()
+}
+
+function formatTraceTime(timestamp) {
+  if (!Number.isFinite(timestamp)) return '--:--'
+  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+function formatTraceEventType(eventType) {
+  return String(eventType || '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function createTurnTrace(sessionId, userQuery) {
+  const now = Date.now()
+  return {
+    turnId: createId('turn'),
+    traceId: createId('trace'),
+    sessionId,
+    userQuery,
+    startedAt: now,
+    endedAt: null,
+    adOpportunityTriggered: false,
+    adOpportunitySources: [],
+    events: [],
+  }
+}
+
+function appendTurnTraceEvent(turnTrace, type, payload = {}) {
+  if (!turnTrace) return
+  turnTrace.events.push({
+    id: createId('event'),
+    type,
+    at: Date.now(),
+    payload,
+  })
+}
+
+function upsertTurnTrace(turnTrace) {
+  if (!turnTrace || !turnTrace.turnId) return
+  const index = turnLogs.value.findIndex((item) => item.turnId === turnTrace.turnId)
+  if (index >= 0) {
+    turnLogs.value[index] = { ...turnTrace }
+  } else {
+    turnLogs.value = [{ ...turnTrace }, ...turnLogs.value].slice(0, MAX_TURN_LOGS)
+  }
+  persistTurnLogsNow()
+}
+
+function updateTurnTrace(turnId, update) {
+  const index = turnLogs.value.findIndex((item) => item.turnId === turnId)
+  if (index < 0) return
+
+  const current = turnLogs.value[index]
+  const next = typeof update === 'function' ? update({ ...current }) : { ...current, ...update }
+  turnLogs.value[index] = next
+  persistTurnLogsNow()
 }
 
 function formatToolState(toolState) {
@@ -539,6 +762,75 @@ function buildModelMessages(messages, webSearchContext) {
   }
 
   return modelMessages
+}
+
+function extractTopicSeed(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, ' ')
+    .split(/\s+/)
+    .filter((word) => word.length > 2)
+    .slice(0, 5)
+    .join(' ')
+}
+
+function pickSponsoredFollowUp(userContent, assistantContent) {
+  const context = `${userContent || ''} ${assistantContent || ''}`.toLowerCase()
+  const matched = FOLLOW_UP_SPONSORED_OPTIONS.find((option) => {
+    return option.keywords.some((keyword) => context.includes(keyword))
+  })
+  return matched || FOLLOW_UP_SPONSORED_OPTIONS[0]
+}
+
+function createFollowUpSuggestions(userContent, assistantContent, sourceTurnId = '') {
+  const topicSeed = extractTopicSeed(userContent) || extractTopicSeed(assistantContent) || 'this topic'
+
+  const suggestions = [
+    {
+      id: createId('followup'),
+      text: 'Can you break this into practical steps?',
+      prompt: `Break down "${topicSeed}" into practical implementation steps.`,
+      isSponsored: false,
+      label: '',
+      adId: '',
+      advertiser: '',
+      sourceTurnId,
+    },
+    {
+      id: createId('followup'),
+      text: 'What are the main trade-offs here?',
+      prompt: `What are the main trade-offs and risks for "${topicSeed}"?`,
+      isSponsored: false,
+      label: '',
+      adId: '',
+      advertiser: '',
+      sourceTurnId,
+    },
+    {
+      id: createId('followup'),
+      text: 'Can you give me one concrete example?',
+      prompt: `Give one concrete example for "${topicSeed}" with expected output.`,
+      isSponsored: false,
+      label: '',
+      adId: '',
+      advertiser: '',
+      sourceTurnId,
+    },
+  ]
+
+  const sponsored = pickSponsoredFollowUp(userContent, assistantContent)
+  suggestions.push({
+    id: createId('followup'),
+    text: sponsored.text,
+    prompt: sponsored.prompt,
+    isSponsored: true,
+    label: 'Sponsored',
+    adId: sponsored.adId,
+    advertiser: sponsored.advertiser,
+    sourceTurnId,
+  })
+
+  return suggestions
 }
 
 function updateTitleFromFirstMessage(session, firstUserText) {
@@ -601,6 +893,33 @@ function clearHistory() {
   persistSessionsNow()
 }
 
+async function handleFollowUpSelect(item) {
+  if (!item || !item.prompt || isLoading.value) return
+
+  if (item.sourceTurnId) {
+    updateTurnTrace(item.sourceTurnId, (trace) => {
+      const nextTrace = { ...trace }
+      nextTrace.events = [
+        ...trace.events,
+        {
+          id: createId('event'),
+          type: item.isSponsored ? 'sponsored_follow_up_clicked' : 'follow_up_clicked',
+          at: Date.now(),
+          payload: {
+            text: item.text,
+            adId: item.adId || '',
+            isSponsored: Boolean(item.isSponsored),
+          },
+        },
+      ]
+      return nextTrace
+    })
+  }
+
+  input.value = item.prompt
+  await handleSend()
+}
+
 async function handleSend() {
   if (!input.value.trim() || isLoading.value || isComposing.value) return
 
@@ -610,22 +929,39 @@ async function handleSend() {
   const userContent = input.value.trim()
   input.value = ''
   isLoading.value = true
+  const turnTrace = createTurnTrace(session.id, userContent)
+  appendTurnTraceEvent(turnTrace, 'turn_started', { query: userContent })
+  upsertTurnTrace(turnTrace)
 
   const userMessage = {
     id: createId('msg'),
     role: 'user',
+    kind: 'chat',
     content: userContent,
     status: 'done',
+    toolName: '',
+    toolState: 'done',
+    toolQuery: '',
+    toolResults: [],
+    toolLatencyMs: null,
+    toolError: '',
+    sponsoredSlot: null,
+    followUps: [],
   }
 
   session.messages.push(userMessage)
   updateTitleFromFirstMessage(session, userContent)
   touchActiveSession()
   scheduleSaveSessions()
+  appendTurnTraceEvent(turnTrace, 'user_message_added')
+  upsertTurnTrace(turnTrace)
 
   let webSearchContext = ''
 
   if (shouldUseWebSearchTool(userContent)) {
+    appendTurnTraceEvent(turnTrace, 'web_search_planned')
+    upsertTurnTrace(turnTrace)
+
     const toolMessage = {
       id: createId('msg'),
       role: 'assistant',
@@ -639,6 +975,7 @@ async function handleSend() {
       toolLatencyMs: null,
       toolError: '',
       sponsoredSlot: null,
+      followUps: [],
     }
 
     session.messages.push(toolMessage)
@@ -648,6 +985,8 @@ async function handleSend() {
     try {
       toolMessage.toolState = 'running'
       scheduleSaveSessions()
+      appendTurnTraceEvent(turnTrace, 'web_search_called')
+      upsertTurnTrace(turnTrace)
 
       const webSearchOutput = await runWebSearchTool(userContent)
       toolMessage.toolState = 'done'
@@ -657,6 +996,18 @@ async function handleSend() {
       toolMessage.sponsoredSlot = normalizeSponsoredSlot(webSearchOutput.sponsoredSlot)
       const sponsoredCount = toolMessage.sponsoredSlot?.ad ? 1 : 0
       toolMessage.content = `web_search returned ${webSearchOutput.results.length} results (+${sponsoredCount} sponsored slot)`
+      appendTurnTraceEvent(turnTrace, 'web_search_succeeded', {
+        organicCount: webSearchOutput.results.length,
+        sponsoredCount,
+        latencyMs: webSearchOutput.latencyMs,
+      })
+      if (sponsoredCount > 0) {
+        appendTurnTraceEvent(turnTrace, 'sponsored_slot_rendered', {
+          slotId: toolMessage.sponsoredSlot?.slotId || 'search_sponsored_slot_1',
+          adId: toolMessage.sponsoredSlot?.ad?.id || '',
+        })
+      }
+      upsertTurnTrace(turnTrace)
       webSearchContext = buildWebSearchContext(
         webSearchOutput.query,
         webSearchOutput.results,
@@ -667,6 +1018,11 @@ async function handleSend() {
       toolMessage.toolError = error instanceof Error ? error.message : 'Tool execution failed'
       toolMessage.content = 'web_search failed'
       toolMessage.sponsoredSlot = null
+      toolMessage.followUps = []
+      appendTurnTraceEvent(turnTrace, 'web_search_failed', {
+        error: toolMessage.toolError,
+      })
+      upsertTurnTrace(turnTrace)
     }
 
     touchActiveSession()
@@ -686,11 +1042,14 @@ async function handleSend() {
     toolLatencyMs: null,
     toolError: '',
     sponsoredSlot: null,
+    followUps: [],
   }
 
   session.messages.push(assistantMessage)
   touchActiveSession()
   scheduleSaveSessions()
+  appendTurnTraceEvent(turnTrace, 'assistant_generation_started')
+  upsertTurnTrace(turnTrace)
 
   const modelMessages = buildModelMessages(session.messages, webSearchContext)
 
@@ -711,6 +1070,36 @@ async function handleSend() {
     },
     () => {
       assistantMessage.status = 'done'
+      assistantMessage.followUps = createFollowUpSuggestions(
+        userContent,
+        assistantMessage.content,
+        turnTrace.turnId,
+      )
+      const sponsoredFollowUps = assistantMessage.followUps.filter((item) => item.isSponsored).length
+      appendTurnTraceEvent(turnTrace, 'assistant_generation_completed', {
+        responseLength: assistantMessage.content.length,
+      })
+      appendTurnTraceEvent(turnTrace, 'follow_up_generated', {
+        count: assistantMessage.followUps.length,
+        sponsoredCount: sponsoredFollowUps,
+      })
+
+      const adOpportunitySources = []
+      if (turnTrace.events.some((event) => event.type === 'sponsored_slot_rendered')) {
+        adOpportunitySources.push('web_search_sponsored_slot')
+      }
+      if (sponsoredFollowUps > 0) {
+        adOpportunitySources.push('follow_up_sponsored')
+      }
+
+      turnTrace.adOpportunityTriggered = adOpportunitySources.length > 0
+      turnTrace.adOpportunitySources = adOpportunitySources
+      turnTrace.endedAt = Date.now()
+      appendTurnTraceEvent(turnTrace, 'ad_opportunity_evaluated', {
+        triggered: turnTrace.adOpportunityTriggered,
+        sources: adOpportunitySources,
+      })
+      upsertTurnTrace(turnTrace)
       touchActiveSession()
       scheduleSaveSessions()
       isLoading.value = false
@@ -718,6 +1107,21 @@ async function handleSend() {
     (error) => {
       assistantMessage.status = 'done'
       assistantMessage.content = `Sorry, an error occurred: ${error}`
+      assistantMessage.followUps = []
+      appendTurnTraceEvent(turnTrace, 'assistant_generation_failed', {
+        error: assistantMessage.content,
+      })
+      const adOpportunitySources = turnTrace.events.some((event) => event.type === 'sponsored_slot_rendered')
+        ? ['web_search_sponsored_slot']
+        : []
+      turnTrace.adOpportunityTriggered = adOpportunitySources.length > 0
+      turnTrace.adOpportunitySources = adOpportunitySources
+      turnTrace.endedAt = Date.now()
+      appendTurnTraceEvent(turnTrace, 'ad_opportunity_evaluated', {
+        triggered: turnTrace.adOpportunityTriggered,
+        sources: adOpportunitySources,
+      })
+      upsertTurnTrace(turnTrace)
       touchActiveSession()
       scheduleSaveSessions()
       isLoading.value = false
