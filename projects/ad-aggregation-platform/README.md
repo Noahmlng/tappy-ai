@@ -28,3 +28,20 @@
 2. 建立 placement config service（配置中心）
 3. 建立 trigger engine（触发策略）
 4. 建立 delivery API（统一广告输出）
+
+## 环境变量（运行时密钥）
+
+本项目的密钥读取统一在 `src/config/runtime-config.js`，当前要求以下变量全部存在：
+
+- `OPENROUTER_API_KEY`
+- `OPENROUTER_MODEL`
+- `CJ_TOKEN`
+- `PARTNERSTACK_API_KEY`
+
+可复制 `projects/ad-aggregation-platform/.env.example` 作为本地配置模板。
+
+校验命令：
+
+```bash
+npm --prefix ./projects/ad-aggregation-platform run check:env
+```
