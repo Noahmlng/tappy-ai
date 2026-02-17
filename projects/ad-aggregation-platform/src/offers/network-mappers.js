@@ -8,6 +8,16 @@ function pickFirst(...values) {
   return ''
 }
 
+function normalizeMaybeUrl(...values) {
+  const text = pickFirst(...values)
+  if (!text) return ''
+  if (/^https?:\/\//i.test(text)) return text
+  if (/^[a-z0-9.-]+\.[a-z]{2,}(\/.*)?$/i.test(text)) {
+    return `https://${text}`
+  }
+  return ''
+}
+
 export function mapPartnerStackToUnifiedOffer(record, options = {}) {
   const sourceType = options.sourceType || 'offer'
   const sourceId = pickFirst(
@@ -25,14 +35,20 @@ export function mapPartnerStackToUnifiedOffer(record, options = {}) {
     offerId: sourceId ? `partnerstack:${sourceType}:${sourceId}` : '',
     title: pickFirst(record?.name, record?.title, record?.campaign_name, record?.program_name),
     description: pickFirst(record?.description, record?.campaign_description),
-    targetUrl: pickFirst(
+    targetUrl: normalizeMaybeUrl(
       record?.destination_url,
       record?.destinationUrl,
       record?.target_url,
       record?.targetUrl,
-      record?.url
+      record?.url,
+      record?.website
     ),
-    trackingUrl: pickFirst(record?.tracking_url, record?.trackingUrl, record?.url),
+    trackingUrl: normalizeMaybeUrl(
+      record?.tracking_url,
+      record?.trackingUrl,
+      record?.url,
+      record?.website
+    ),
     merchantName: pickFirst(record?.merchant_name, record?.partner_name),
     productName: pickFirst(record?.product_name, record?.program_name, record?.campaign_name, record?.name),
     entityText: pickFirst(record?.merchant_name, record?.program_name, record?.name, record?.title),

@@ -21,10 +21,6 @@ function normalizeText(value) {
   return value.trim().replace(/\s+/g, ' ')
 }
 
-function toArray(value) {
-  return Array.isArray(value) ? value : []
-}
-
 function extractList(payload) {
   if (Array.isArray(payload)) return payload
   if (!payload || typeof payload !== 'object') return []
@@ -60,14 +56,6 @@ function pickFirst(...values) {
     if (typeof value === 'string' && value.trim()) return value.trim()
   }
   return ''
-}
-
-function resolvePartnershipIdentifier(partnership) {
-  return pickFirst(
-    String(partnership?.identifier ?? ''),
-    String(partnership?.key ?? ''),
-    String(partnership?.id ?? '')
-  )
 }
 
 class PartnerStackApiError extends Error {
@@ -193,114 +181,35 @@ export function createPartnerStackConnector(options = {}) {
     })
   }
 
-  async function listPartnerships(params = {}) {
-    const payload = await request('/partnerships', {
-      query: {
-        page: params.page,
-        per_page: params.perPage,
-        limit: params.limit
-      }
-    })
-
-    const partnerships = extractList(payload).map((partnership) => ({
-      ...partnership,
-      _identifier: resolvePartnershipIdentifier(partnership)
-    }))
-
-    return { partnerships, raw: payload }
-  }
-
-  async function listLinksByPartnership(partnershipIdentifier, params = {}) {
-    if (!normalizeText(partnershipIdentifier)) {
-      throw new Error('[partnerstack] partnershipIdentifier is required')
-    }
-
-    const payload = await request(`/links/partnership/${encodeURIComponent(partnershipIdentifier)}`, {
-      query: {
-        page: params.page,
-        per_page: params.perPage,
-        limit: params.limit
-      }
-    })
-
-    const links = extractList(payload)
-    return { links, raw: payload }
-  }
-
   async function listOffers(params = {}) {
-    const candidates = [
-      { path: '/offers', query: { search: params.search, limit: params.limit } },
-      { path: '/marketplace/programs', query: { search: params.search, limit: params.limit } },
-      { path: '/programs', query: { search: params.search, limit: params.limit } }
-    ]
-    const errors = []
-
-    for (const candidate of candidates) {
-      try {
-        const payload = await request(candidate.path, { query: candidate.query })
-        const offers = extractList(payload)
-        if (offers.length > 0) {
-          return { offers, raw: payload, sourcePath: candidate.path }
-        }
-      } catch (error) {
-        if (error instanceof PartnerStackApiError && error.statusCode === 404) {
-          errors.push({ path: candidate.path, statusCode: 404 })
-          continue
-        }
-        throw error
+    const path = '/marketplace/programs'
+    const payload = await request(path, {
+      query: {
+        search: params.search,
+        limit: params.limit
       }
-    }
-
-    return { offers: [], raw: { errors }, sourcePath: null }
+    })
+    const offers = extractList(payload)
+    return { offers, raw: payload, sourcePath: path }
   }
 
   async function fetchOffers(params = {}) {
     const offersResult = await listOffers(params)
-    if (offersResult.offers.length > 0) {
-      const mapped = normalizeUnifiedOffers(
-        offersResult.offers.map((offer) =>
-          mapPartnerStackToUnifiedOffer(offer, {
-            sourceType: 'offer'
-          })
-        )
-      )
-
-      return { offers: mapped, debug: { mode: 'offers_endpoint', sourcePath: offersResult.sourcePath } }
-    }
-
-    const partnershipsResult = await listPartnerships({ limit: params.limitPartnerships })
-    const partnershipIdentifiers = toArray(partnershipsResult.partnerships)
-      .map((item) => item?._identifier)
-      .filter((value) => typeof value === 'string' && value.length > 0)
-
-    const allOffers = []
-    const linkErrors = []
-
-    for (const partnershipIdentifier of partnershipIdentifiers) {
-      try {
-        const linksResult = await listLinksByPartnership(partnershipIdentifier, { limit: params.limitLinksPerPartnership })
-        for (const link of linksResult.links) {
-          allOffers.push(
-            mapPartnerStackToUnifiedOffer(link, {
-              sourceType: 'link',
-              partnershipIdentifier
-            })
-          )
-        }
-      } catch (error) {
-        linkErrors.push({
-          partnershipIdentifier,
-          message: error?.message || 'Unknown error'
+    const mapped = normalizeUnifiedOffers(
+      offersResult.offers.map((offer) =>
+        mapPartnerStackToUnifiedOffer(offer, {
+          sourceType: 'offer'
         })
-      }
-    }
+      )
+    )
 
     return {
-      offers: normalizeUnifiedOffers(allOffers),
+      offers: mapped,
       debug: {
-        mode: 'links_fallback',
-        partnerships: partnershipIdentifiers.length,
-        linkErrors
+        mode: 'partner_marketplace_programs',
+        sourcePath: offersResult.sourcePath,
+        rawOfferCount: offersResult.offers.length,
+        mappedOfferCount: mapped.length
       }
     }
   }
@@ -308,7 +217,7 @@ export function createPartnerStackConnector(options = {}) {
   async function healthCheck(params = {}) {
     try {
       const startedAt = Date.now()
-      const result = await listPartnerships({
+      const result = await listOffers({
         limit: params.limit ?? 1
       })
 
@@ -318,7 +227,7 @@ export function createPartnerStackConnector(options = {}) {
         checkedAt: new Date().toISOString(),
         latencyMs: Date.now() - startedAt,
         counts: {
-          partnerships: Array.isArray(result.partnerships) ? result.partnerships.length : 0
+          offers: Array.isArray(result.offers) ? result.offers.length : 0
         }
       }
     } catch (error) {
@@ -334,8 +243,6 @@ export function createPartnerStackConnector(options = {}) {
 
   return {
     request,
-    listPartnerships,
-    listLinksByPartnership,
     listOffers,
     fetchOffers,
     healthCheck
