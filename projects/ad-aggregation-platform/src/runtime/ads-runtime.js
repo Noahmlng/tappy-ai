@@ -23,6 +23,23 @@ function cleanText(value) {
   return value.trim().replace(/\s+/g, ' ')
 }
 
+function getLogger(options = {}) {
+  const candidate = options.logger
+  if (candidate && (typeof candidate.info === 'function' || typeof candidate.error === 'function')) {
+    return candidate
+  }
+  return console
+}
+
+function safeLog(logger, level, payload) {
+  if (!logger || typeof logger[level] !== 'function') return
+  try {
+    logger[level](payload)
+  } catch {
+    // Intentionally ignore logging failures.
+  }
+}
+
 function uniqueStrings(values) {
   const seen = new Set()
   const output = []
@@ -208,10 +225,20 @@ function createRequestId() {
   return `adreq_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`
 }
 
+function resolveErrorCode(error) {
+  if (!error || typeof error !== 'object') return 'UNKNOWN'
+  if (typeof error.statusCode === 'number') return `HTTP_${error.statusCode}`
+  if (typeof error.code === 'string' && cleanText(error.code)) return cleanText(error.code)
+  if (typeof error.name === 'string' && cleanText(error.name)) return cleanText(error.name).toUpperCase()
+  return 'UNKNOWN'
+}
+
 export async function runAdsRetrievalPipeline(adRequest, options = {}) {
   const request = normalizeAdRequest(adRequest)
   const runtimeConfig = options.runtimeConfig || loadRuntimeConfig()
   const maxAds = Number.isInteger(options.maxAds) ? options.maxAds : DEFAULT_MAX_ADS
+  const requestId = createRequestId()
+  const logger = getLogger(options)
 
   const partnerstackConnector =
     options.partnerstackConnector || createPartnerStackConnector({ runtimeConfig })
@@ -250,21 +277,31 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
 
   const networkErrors = []
   const rawOffers = []
+  const networkHits = {
+    partnerstack: 0,
+    cj: 0
+  }
 
   if (partnerstackResult.status === 'fulfilled') {
-    rawOffers.push(...(partnerstackResult.value?.offers || []))
+    const partnerstackOffers = partnerstackResult.value?.offers || []
+    networkHits.partnerstack = partnerstackOffers.length
+    rawOffers.push(...partnerstackOffers)
   } else {
     networkErrors.push({
       network: 'partnerstack',
+      errorCode: resolveErrorCode(partnerstackResult.reason),
       message: partnerstackResult.reason?.message || 'Unknown error'
     })
   }
 
   if (cjResult.status === 'fulfilled') {
-    rawOffers.push(...(cjResult.value?.offers || []))
+    const cjOffers = cjResult.value?.offers || []
+    networkHits.cj = cjOffers.length
+    rawOffers.push(...cjOffers)
   } else {
     networkErrors.push({
       network: 'cj',
+      errorCode: resolveErrorCode(cjResult.reason),
       message: cjResult.reason?.message || 'Unknown error'
     })
   }
@@ -282,10 +319,25 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     })
   )
   const orderedAds = groupAdsByNetworkOrder(ads)
+  const entitySummaries = entities.map((entity) => ({
+    entityText: entity.entityText,
+    entityType: entity.entityType,
+    confidence: entity.confidence
+  }))
+
+  safeLog(logger, 'info', {
+    event: 'ads_pipeline_result',
+    requestId,
+    placementId: DEFAULT_PLACEMENT_ID,
+    entities: entitySummaries,
+    networkHits,
+    adCount: orderedAds.length,
+    errorCodes: networkErrors.map((item) => item.errorCode)
+  })
 
   return {
     adResponse: {
-      requestId: createRequestId(),
+      requestId,
       placementId: DEFAULT_PLACEMENT_ID,
       ads: orderedAds
     },
@@ -296,6 +348,7 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
       selectedOffers: orderedAds.length,
       invalidOffersDroppedByTestAllValidation: invalidForTestAll,
       networkOrder: DEFAULT_NETWORK_ORDER,
+      networkHits,
       networkErrors,
       testAllOffers: request.context.testAllOffers
     }
