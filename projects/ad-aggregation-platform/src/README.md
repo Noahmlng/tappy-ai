@@ -24,6 +24,7 @@
 - UnifiedOffer 归一化层（跨网络统一内部结构）。
 - 能力：`normalizeUnifiedOffer`、`normalizeUnifiedOffers`、`mapPartnerStackToUnifiedOffer`、`mapCjToUnifiedOffer`。
 - 两个 connector 的 `fetchOffers` 已统一走该层输出。
+- 内置：URL canonicalization（参数排序、追踪参数清理）与“同商家同商品”去重。
 
 6. `runtime/`
 - Runtime 检索链路（`query/answerText -> LLM-NER -> 多网络检索 -> 合并 -> ads[]`）。

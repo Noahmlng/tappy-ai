@@ -33,6 +33,8 @@ export function mapPartnerStackToUnifiedOffer(record, options = {}) {
       record?.url
     ),
     trackingUrl: pickFirst(record?.tracking_url, record?.trackingUrl, record?.url),
+    merchantName: pickFirst(record?.merchant_name, record?.partner_name),
+    productName: pickFirst(record?.product_name, record?.program_name, record?.campaign_name, record?.name),
     entityText: pickFirst(record?.merchant_name, record?.program_name, record?.name, record?.title),
     entityType: sourceType === 'link' ? 'service' : pickFirst(record?.entity_type, record?.type, 'service'),
     locale: pickFirst(record?.locale, record?.language),
@@ -81,6 +83,8 @@ export function mapCjToUnifiedOffer(record, options = {}) {
       record?.['click-url']
     ),
     trackingUrl: pickFirst(record?.['tracking-url'], record?.trackingUrl, record?.clickUrl, record?.['click-url']),
+    merchantName: pickFirst(record?.['advertiser-name'], record?.advertiser, record?.advertiserName),
+    productName: pickFirst(record?.['product-name'], record?.name, record?.title, record?.['link-name']),
     entityText: pickFirst(record?.brand, record?.advertiser, record?.['advertiser-name'], record?.name, record?.title),
     entityType: sourceType === 'product' ? 'product' : 'service',
     locale: pickFirst(record?.locale, record?.language),
