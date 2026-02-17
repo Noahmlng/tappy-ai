@@ -66,25 +66,27 @@ const inlineOfferEntries = computed(() => {
     const targetUrl = typeof offer.targetUrl === 'string' ? offer.targetUrl.trim() : ''
     if (!targetUrl) continue
 
-    const label = resolveInlineOfferLabel(offer)
-    if (!label) continue
+    const labels = resolveInlineOfferLabels(offer)
+    if (labels.length === 0) continue
 
     const id = typeof offer.adId === 'string' && offer.adId.trim()
       ? offer.adId.trim()
-      : `${label.toLowerCase()}::${targetUrl}`
+      : `${labels[0].toLowerCase()}::${targetUrl}`
 
     if (seen.has(id)) continue
     seen.add(id)
 
     entries.push({
       id,
-      label,
-      labelLower: label.toLowerCase(),
+      labels: labels.map((item) => ({
+        text: item,
+        lower: item.toLowerCase(),
+      })),
       offer,
     })
   }
 
-  return entries.sort((a, b) => b.label.length - a.label.length)
+  return entries.sort((a, b) => maxEntryLabelLength(b) - maxEntryLabelLength(a))
 })
 
 const offerMap = computed(() => {
@@ -105,16 +107,74 @@ const renderedHtml = computed(() => {
   return injectInlineOffers(baseHtml, inlineOfferEntries.value)
 })
 
-function resolveInlineOfferLabel(offer) {
+function maxEntryLabelLength(entry) {
+  if (!entry || !Array.isArray(entry.labels)) return 0
+  return entry.labels.reduce((max, item) => Math.max(max, item?.text?.length || 0), 0)
+}
+
+function normalizeLabelText(value) {
+  if (typeof value !== 'string') return ''
+  return value.trim().replace(/\s+/g, ' ')
+}
+
+function splitLabelWords(value) {
+  return normalizeLabelText(value)
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .split(/[^A-Za-z0-9]+/g)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function resolveInlineOfferLabels(offer) {
+  const suffixes = new Set(['inc', 'llc', 'ltd', 'corp', 'corporation', 'company', 'co', 'plc', 'gmbh'])
+  const seen = new Set()
+  const labels = []
+
+  const pushLabel = (value) => {
+    const label = normalizeLabelText(value)
+    if (!label) return
+    const compact = label.replace(/[^A-Za-z0-9]/g, '')
+    if (compact.length < 4) return
+    const key = label.toLowerCase()
+    if (seen.has(key)) return
+    seen.add(key)
+    labels.push(label)
+  }
+
+  const pushVariants = (value) => {
+    const words = splitLabelWords(value)
+    if (words.length === 0) return
+
+    pushLabel(value)
+    pushLabel(words.join(' '))
+    pushLabel(words.join(''))
+
+    let trimmed = [...words]
+    while (trimmed.length > 1 && suffixes.has(trimmed[trimmed.length - 1].toLowerCase())) {
+      trimmed = trimmed.slice(0, -1)
+    }
+    if (trimmed.length > 0) {
+      pushLabel(trimmed.join(' '))
+      pushLabel(trimmed.join(''))
+    }
+
+    if (trimmed.length > 1 && trimmed[trimmed.length - 1].toLowerCase() === 'ai') {
+      const withoutAi = trimmed.slice(0, -1)
+      pushLabel(withoutAi.join(' '))
+      pushLabel(withoutAi.join(''))
+    }
+  }
+
   const candidates = [
     typeof offer.entityText === 'string' ? offer.entityText : '',
     typeof offer.title === 'string' ? offer.title : '',
   ]
+
   for (const candidate of candidates) {
-    const label = candidate.trim()
-    if (label) return label
+    pushVariants(candidate)
   }
-  return ''
+
+  return labels
 }
 
 function renderMarkdown(text) {
@@ -219,21 +279,23 @@ function findNextOfferMatch(original, lower, cursor, offers) {
   let best = null
 
   for (const entry of offers) {
-    const index = findMatchIndexWithBoundary(original, lower, entry.labelLower, cursor)
-    if (index === -1) continue
+    for (const label of Array.isArray(entry.labels) ? entry.labels : []) {
+      const index = findMatchIndexWithBoundary(original, lower, label.lower, cursor)
+      if (index === -1) continue
 
-    const candidate = {
-      index,
-      length: entry.label.length,
-      entry,
-    }
+      const candidate = {
+        index,
+        length: label.text.length,
+        entry,
+      }
 
-    if (
-      !best ||
-      candidate.index < best.index ||
-      (candidate.index === best.index && candidate.length > best.length)
-    ) {
-      best = candidate
+      if (
+        !best ||
+        candidate.index < best.index ||
+        (candidate.index === best.index && candidate.length > best.length)
+      ) {
+        best = candidate
+      }
     }
   }
 

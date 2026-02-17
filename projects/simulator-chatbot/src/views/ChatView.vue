@@ -558,6 +558,9 @@ function normalizeAdItem(raw, index) {
     targetUrl,
     disclosure: raw.disclosure === 'Ad' ? 'Ad' : 'Sponsored',
     reason: typeof raw.reason === 'string' ? raw.reason : '',
+    entityText: typeof raw.entityText === 'string' ? raw.entityText.trim() : '',
+    entityType: typeof raw.entityType === 'string' ? raw.entityType.trim() : '',
+    sourceNetwork: typeof raw.sourceNetwork === 'string' ? raw.sourceNetwork.trim() : '',
   }
 }
 
