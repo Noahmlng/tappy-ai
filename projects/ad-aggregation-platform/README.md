@@ -26,6 +26,7 @@
 - `docs/sdk-placement-settings-draft.md`：SDK placement 与 trigger 参数设计雏形
 - `docs/sdk-integration-document-spec.md`：SDK 接入文档写作规范与模板
 - `docs/next-step-intent-card-contract.md`：`next_step.intent_card` 接口协议（含示例）
+- `docs/e2e-next-step-scenarios.md`：Next-Step E2E 场景集（购物/送礼偏好/无商业意图/敏感话题）
 - `docs/local-simulator-gateway.md`：本地 Gateway（Dashboard + Simulator 联调）
 
 ## 下步实现建议
@@ -66,6 +67,12 @@ npm --prefix ./projects/ad-aggregation-platform run smoke:ads
 
 ```bash
 npm --prefix ./projects/ad-aggregation-platform run smoke:ads:live -- --query="best iphone deals" --answerText="iPhone offers"
+```
+
+Next-Step E2E 场景集（购物 / 送礼偏好 / 无商业意图 / 敏感话题）：
+
+```bash
+npm --prefix ./projects/ad-aggregation-platform run e2e:next-step
 ```
 
 ## 本地 Simulator Gateway
