@@ -63,7 +63,29 @@ function createMockPartnerStackConnector() {
           }
         ]
       }
-    }
+    },
+    async fetchLinksCatalog() {
+      return {
+        offers: [
+          {
+            offerId: 'partnerstack:link:mock-next-step-1',
+            sourceNetwork: 'partnerstack',
+            sourceType: 'link',
+            title: 'Mock PartnerStack Link Catalog Offer',
+            description: 'Mock PartnerStack link catalog description',
+            targetUrl: 'https://partnerstack.example.com/link/mock-next-step-1',
+            trackingUrl: 'https://partnerstack.example.com/track/link/mock-next-step-1',
+            entityText: 'mock',
+            normalizedEntityText: 'mock',
+            entityType: 'service',
+            availability: 'active'
+          }
+        ],
+        debug: {
+          mode: 'partnerstack_links_catalog'
+        }
+      }
+    },
   }
 }
 
@@ -87,7 +109,29 @@ function createMockCjConnector() {
           }
         ]
       }
-    }
+    },
+    async fetchLinksCatalog() {
+      return {
+        offers: [
+          {
+            offerId: 'cj:link:mock-next-step-1',
+            sourceNetwork: 'cj',
+            sourceType: 'link',
+            title: 'Mock CJ Link Catalog Offer',
+            description: 'Mock CJ link catalog description',
+            targetUrl: 'https://cj.example.com/link/mock-next-step-1',
+            trackingUrl: 'https://cj.example.com/track/link/mock-next-step-1',
+            entityText: 'mock',
+            normalizedEntityText: 'mock',
+            entityType: 'product',
+            availability: 'active'
+          }
+        ],
+        debug: {
+          mode: 'cj_links_catalog'
+        }
+      }
+    },
   }
 }
 
@@ -123,7 +167,7 @@ function buildAdRequest(options) {
   }
 }
 
-function assertSmokeResult(result, mode) {
+function assertSmokeResult(result, mode, adRequest) {
   if (!result || typeof result !== 'object') {
     throw new Error('Pipeline result is empty.')
   }
@@ -135,6 +179,18 @@ function assertSmokeResult(result, mode) {
   }
   if (mode === 'mock' && result.adResponse.ads.length === 0) {
     throw new Error('Mock smoke test expected non-empty ads[].')
+  }
+  if (
+    mode === 'mock'
+    && adRequest?.placementId === 'next_step.intent_card'
+    && result.adResponse.ads.length > 0
+  ) {
+    const hasLinkCatalogOffer = result.adResponse.ads.some((item) =>
+      String(item?.adId || '').includes(':link:')
+    )
+    if (!hasLinkCatalogOffer) {
+      throw new Error('Expected next_step.intent_card mock smoke to use link catalog offers.')
+    }
   }
 }
 
@@ -161,7 +217,7 @@ async function main() {
         }
 
   const result = await runAdsRetrievalPipeline(adRequest, options)
-  assertSmokeResult(result, mode)
+  assertSmokeResult(result, mode, adRequest)
 
   console.log(
     JSON.stringify(
