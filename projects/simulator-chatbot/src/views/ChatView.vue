@@ -391,38 +391,13 @@
                     @select="handleFollowUpSelect"
                   />
 
-                  <!--
-                  <div
-                    v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.nextStepAdSlot?.ads?.length"
-                    class="mt-3 rounded-xl border border-[#d9eadf] bg-[#f3fbf6] p-3"
-                  >
-                    <div class="mb-2 flex items-center justify-between">
-                      <span class="text-[11px] font-semibold uppercase tracking-wide text-[#2f7d51]">Related Products · Sponsored</span>
-                      <span class="text-[10px] text-[#4d8f69]">{{ msg.nextStepAdSlot.placementId || 'chat_followup_v1' }}</span>
-                    </div>
-                    <ul class="space-y-2">
-                      <li
-                        v-for="ad in msg.nextStepAdSlot.ads"
-                        :key="ad.itemId"
-                        class="rounded-lg border border-[#d9eadf] bg-white p-2"
-                      >
-                        <a
-                          :href="resolveAdHref(ad)"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          class="text-sm font-medium text-[#2463d6] hover:underline"
-                          @click="handleNextStepAdClick(msg, ad)"
-                        >
-                          {{ ad.title }}
-                        </a>
-                        <p v-if="ad.snippet" class="mt-1 text-xs text-[#4b5563]">{{ ad.snippet }}</p>
-                        <p v-if="ad.matchReasons?.length" class="mt-1 text-[11px] text-[#6b7280]">
-                          {{ ad.matchReasons.join(' · ') }}
-                        </p>
-                      </li>
-                    </ul>
-                  </div>
-                  -->
+                  <IntentCard
+                    v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.nextStepAdSlot?.ads?.length && !msg.nextStepAdSlot?.dismissedAt"
+                    :slot-data="msg.nextStepAdSlot"
+                    :max-items="3"
+                    @click-item="(ad) => handleNextStepAdClick(msg, ad)"
+                    @dismiss="() => handleNextStepAdDismiss(msg)"
+                  />
                 </div>
               </div>
             </div>
@@ -502,6 +477,7 @@ import {
 } from '../api/adsSdk'
 import CitationSources from '../components/CitationSources.vue'
 import FollowUpSuggestions from '../components/FollowUpSuggestions.vue'
+import IntentCard from '../components/IntentCard.vue'
 import MarkdownRenderer from '../components/MarkdownRenderer.vue'
 
 const STORAGE_KEY = 'chat_bot_history_v3'
@@ -785,6 +761,11 @@ function normalizeNextStepAdSlot(raw) {
         : [],
     },
     ads,
+    dismissedAt: Number.isFinite(raw.dismissedAt)
+      ? raw.dismissedAt
+      : Number.isFinite(raw.dismissed_at)
+        ? raw.dismissed_at
+        : null,
     reportPayload: raw.reportPayload && typeof raw.reportPayload === 'object' ? raw.reportPayload : null,
   }
 }
@@ -1983,6 +1964,79 @@ function handleNextStepAdClick(message, ad) {
       return nextTrace
     })
   })
+}
+
+function handleNextStepAdDismiss(message) {
+  if (!message || typeof message !== 'object') return
+  const slot = message.nextStepAdSlot
+  if (!slot || typeof slot !== 'object') return
+  if (Number.isFinite(slot.dismissedAt)) return
+
+  slot.dismissedAt = Date.now()
+  touchActiveSession()
+  scheduleSaveSessions()
+
+  if (!message.sourceTurnId) return
+
+  updateTurnTrace(message.sourceTurnId, (trace) => {
+    const nextTrace = { ...trace }
+    nextTrace.events = [
+      ...trace.events,
+      {
+        id: createId('event'),
+        type: 'ads_dismissed',
+        at: Date.now(),
+        payload: {
+          requestId: slot.requestId || '',
+          placementId: slot.placementId || '',
+          placementKey: slot.placementKey || 'next_step.intent_card',
+        },
+      },
+    ]
+    return nextTrace
+  })
+
+  if (!slot.reportPayload) return
+
+  reportSdkEvent(slot.reportPayload)
+    .then(() => {
+      updateTurnTrace(message.sourceTurnId, (trace) => {
+        const nextTrace = { ...trace }
+        nextTrace.events = [
+          ...trace.events,
+          {
+            id: createId('event'),
+            type: 'ads_event_reported',
+            at: Date.now(),
+            payload: {
+              kind: 'dismiss',
+              placementKey: slot.placementKey || 'next_step.intent_card',
+              requestId: slot.requestId || '',
+            },
+          },
+        ]
+        return nextTrace
+      })
+    })
+    .catch((error) => {
+      updateTurnTrace(message.sourceTurnId, (trace) => {
+        const nextTrace = { ...trace }
+        nextTrace.events = [
+          ...trace.events,
+          {
+            id: createId('event'),
+            type: 'ads_event_report_failed',
+            at: Date.now(),
+            payload: {
+              kind: 'dismiss',
+              placementKey: slot.placementKey || 'next_step.intent_card',
+              error: error instanceof Error ? error.message : 'event_report_failed',
+            },
+          },
+        ]
+        return nextTrace
+      })
+    })
 }
 
 async function handleSend(options = {}) {
