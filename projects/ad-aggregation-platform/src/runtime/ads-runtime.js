@@ -3,6 +3,11 @@ import { createCjConnector } from '../connectors/cj/index.js'
 import { createPartnerStackConnector } from '../connectors/partnerstack/index.js'
 import { extractEntitiesWithLlm } from '../ner/index.js'
 import { normalizeUnifiedOffers } from '../offers/index.js'
+import {
+  enrichOffersWithIntentCardCatalog,
+  normalizeIntentCardCatalog,
+  summarizeIntentCardCatalog,
+} from '../intent-card/index.js'
 import { offerSnapshotCache, queryCache } from '../cache/runtime-caches.js'
 import {
   getAllNetworkHealth,
@@ -253,13 +258,19 @@ function buildEntityMatcher(entities = []) {
   return function scoreOffer(offer) {
     if (tokens.length === 0) return { score: 0, matchedEntityText: '' }
 
+    const intentCardCatalog =
+      offer?.metadata && typeof offer.metadata === 'object' ? offer.metadata.intentCardCatalog : null
+    const intentCardTags = Array.isArray(intentCardCatalog?.tags) ? intentCardCatalog.tags.join(' ') : ''
+
     const candidateFields = [
       cleanText(offer.entityText),
       cleanText(offer.normalizedEntityText),
       cleanText(offer.title),
       cleanText(offer.description),
       cleanText(offer.targetUrl),
-      cleanText(offer.trackingUrl)
+      cleanText(offer.trackingUrl),
+      cleanText(intentCardCatalog?.category),
+      cleanText(intentCardTags),
     ]
       .map((field) => ({
         raw: field.toLowerCase(),
@@ -300,9 +311,10 @@ function toAdRecord(offer, options = {}) {
   const reason = options.reason || 'network_offer'
   const entityText = cleanText(options.entityText || offer.entityText || offer.normalizedEntityText)
   const entityType = cleanText(offer.entityType || 'service').toLowerCase()
+  const catalogItemId = cleanText(offer?.metadata?.intentCardCatalog?.item_id)
 
   return {
-    adId: cleanText(offer.offerId) || `${offer.sourceNetwork}_${Date.now()}`,
+    adId: catalogItemId || cleanText(offer.offerId) || `${offer.sourceNetwork}_${Date.now()}`,
     title: cleanText(offer.title) || 'Offer',
     description: cleanText(offer.description),
     targetUrl: cleanText(offer.targetUrl),
@@ -888,12 +900,16 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
   }
 
   const offers = normalizeUnifiedOffers(rawOffers)
+  const intentCardCatalog = isNextStepIntentCard ? normalizeIntentCardCatalog(offers) : []
+  const offersForRanking = isNextStepIntentCard
+    ? enrichOffersWithIntentCardCatalog(offers, intentCardCatalog)
+    : offers
   const {
     selected,
     invalidForTestAll,
     matchedCandidates = 0,
     unmatchedOffers = 0
-  } = rankAndSelectOffers(offers, entities, request.context, maxAds)
+  } = rankAndSelectOffers(offersForRanking, entities, request.context, maxAds)
   const ads = selected.map((item) =>
     toAdRecord(item.offer, {
       reason: request.context.testAllOffers
@@ -948,6 +964,7 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
       partnerstack: partnerstackResult.sourceDebug || {},
       cj: cjResult.sourceDebug || {}
     },
+    intentCardCatalog: isNextStepIntentCard ? summarizeIntentCardCatalog(intentCardCatalog) : null,
     networkHealth: getAllNetworkHealth(),
     cache: {
       queryCacheHit: false,
