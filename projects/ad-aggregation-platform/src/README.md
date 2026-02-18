@@ -33,8 +33,8 @@
 - 对 `next_step.intent_card`：默认使用 Affiliate links catalog（PartnerStack `listLinksByPartnership` + CJ `listLinks`）作为商品库来源。
 - 对 `next_step.intent_card`：在检索前先构建 `IntentCardCatalog`（统一 `item_id/title/url/network/category/tags`），再回填给候选用于匹配与追踪。
 - `adResponse.placementId` 与输入 placement 对齐返回（例如 `attach.post_answer_render` / `next_step.intent_card`）。
-- 当前 `ads[]` 输出顺序按网络分组：默认 `partnerstack -> cj -> 其他`。
-- 非 `testAllOffers` 模式下基础排序：相关性优先，其次可用性，再次新鲜度。
+- 输出顺序：`next_step.intent_card` 按排序结果直接输出；其他 placement 仍按网络分组（默认 `partnerstack -> cj -> 其他`）。
+- 非 `testAllOffers` 模式下 v1 排序：相关性优先，其次质量（`qualityScore`），再次商业信号（`bidValue/epc/cpc`），最后可用性与新鲜度作为平局兜底。
 - 最小可观测日志事件：`ads_pipeline_result`（字段：`requestId`、`entities`、`networkHits`、`adCount`、`errorCodes`）。
 - 内置健康检查与降级：单网失败不影响总返回，支持熔断冷却与快照回退。
 - 可通过 runtime 参数调节：`healthFailureThreshold`、`circuitOpenMs`、`healthCheckIntervalMs`，或用 `disableNetworkDegradation=true` 关闭。

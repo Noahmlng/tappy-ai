@@ -388,6 +388,41 @@ function freshnessRank(updatedAt) {
   return timestamp
 }
 
+function normalizeRankingNumber(value, fallback = -1) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return fallback
+}
+
+function qualityRank(offer) {
+  return normalizeRankingNumber(offer?.qualityScore, -1)
+}
+
+function commercialSignalRank(offer) {
+  const metadata =
+    offer?.metadata && typeof offer.metadata === 'object' && !Array.isArray(offer.metadata)
+      ? offer.metadata
+      : {}
+
+  const candidates = [
+    offer?.bidValue,
+    metadata?.commercialSignal,
+    metadata?.estimatedRevenue,
+    metadata?.epc,
+    metadata?.cpc,
+  ]
+
+  for (const value of candidates) {
+    const normalized = normalizeRankingNumber(value, Number.NaN)
+    if (Number.isFinite(normalized)) return normalized
+  }
+
+  return -1
+}
+
 function rankAndSelectOffers(offers, entities, requestContext, maxAds) {
   if (requestContext.testAllOffers) {
     const selected = []
@@ -411,6 +446,8 @@ function rankAndSelectOffers(offers, entities, requestContext, maxAds) {
       offer,
       score,
       matchedEntityText,
+      qualityScore: qualityRank(offer),
+      commercialSignal: commercialSignalRank(offer),
       availabilityScore: availabilityRank(offer.availability),
       freshnessScore: freshnessRank(offer.updatedAt)
     }
@@ -418,6 +455,8 @@ function rankAndSelectOffers(offers, entities, requestContext, maxAds) {
 
   withScore.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score
+    if (b.qualityScore !== a.qualityScore) return b.qualityScore - a.qualityScore
+    if (b.commercialSignal !== a.commercialSignal) return b.commercialSignal - a.commercialSignal
     if (b.availabilityScore !== a.availabilityScore) return b.availabilityScore - a.availabilityScore
     if (b.freshnessScore !== a.freshnessScore) return b.freshnessScore - a.freshnessScore
     return 0
@@ -918,7 +957,7 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
       entityText: item.matchedEntityText
     })
   )
-  const orderedAds = groupAdsByNetworkOrder(ads)
+  const orderedAds = isNextStepIntentCard ? ads : groupAdsByNetworkOrder(ads)
   const entitySummaries = entities.map((entity) => ({
     entityText: entity.entityText,
     entityType: entity.entityType,
