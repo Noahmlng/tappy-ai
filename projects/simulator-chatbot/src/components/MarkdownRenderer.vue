@@ -190,6 +190,21 @@ function resolveInlineOfferLabels(offer) {
     typeof offer.title === 'string' ? offer.title : '',
   ]
 
+  const href = resolveOfferHref(offer)
+  if (href) {
+    try {
+      const parsed = new URL(href)
+      const host = parsed.hostname.replace(/^www\./i, '')
+      const hostParts = host.split('.').filter(Boolean)
+      if (hostParts.length >= 2) {
+        const domainLabel = hostParts[hostParts.length - 2]
+        pushVariants(domainLabel)
+      }
+    } catch {
+      // Ignore invalid URL; labels from entity/title remain available.
+    }
+  }
+
   for (const candidate of candidates) {
     pushVariants(candidate)
   }
@@ -334,9 +349,12 @@ function replaceTextNodeWithInlineOffers(doc, textNode, offers) {
       fragment.appendChild(doc.createTextNode(original.slice(cursor, match.index)))
     }
 
-    const marker = doc.createElement('span')
+    const marker = doc.createElement('a')
     marker.className = 'inline-offer-marker'
     marker.setAttribute('data-offer-id', match.entry.id)
+    marker.setAttribute('href', resolveOfferHref(match.entry.offer))
+    marker.setAttribute('target', '_blank')
+    marker.setAttribute('rel', 'noopener noreferrer')
     marker.textContent = original.slice(match.index, match.index + match.length)
     fragment.appendChild(marker)
 
@@ -532,10 +550,18 @@ function handleWrapperClick(event) {
   const marker = findMarkerElement(event.target)
   if (!marker) return
 
+  const offerId = marker.getAttribute('data-offer-id') || ''
+  const offer = offerMap.value.get(offerId)
+  if (offer) {
+    emit('ad-click', offer)
+  }
+
+  // Real link rendering: let anchor navigate while still tracking click.
+  if (marker.tagName === 'A') return
+
   event.preventDefault()
   event.stopPropagation()
 
-  const offerId = marker.getAttribute('data-offer-id') || ''
   if (pinnedOfferId.value === offerId) {
     hidePopover(true)
     return
@@ -625,6 +651,16 @@ onBeforeUnmount(() => {
 .markdown-content :deep(.inline-offer-marker:hover) {
   text-decoration-color: #4b5563;
   background: linear-gradient(180deg, transparent 68%, rgba(107, 114, 128, 0.24) 68%);
+}
+
+.markdown-content :deep(a.inline-offer-marker) {
+  color: #1d4ed8;
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-color: #1d4ed8;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  background: none;
 }
 
 .markdown-content :deep(h1) {
