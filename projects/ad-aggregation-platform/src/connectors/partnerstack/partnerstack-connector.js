@@ -92,6 +92,71 @@ function toSearchCorpus(record) {
     .toLowerCase()
 }
 
+function extractPartnershipIdentifier(record) {
+  return pickFirst(record?.key, record?.id, record?.company?.key, record?.company?.id)
+}
+
+function isPartnershipActive(record) {
+  const status = normalizeText(record?.status).toLowerCase()
+  if (!status) return true
+  return status === 'active'
+}
+
+function extractEmbeddedLinksFromPartnership(partnership) {
+  const destination = pickFirst(
+    partnership?.link?.destination,
+    partnership?.link?.url,
+    partnership?.destination_url,
+    partnership?.destinationUrl,
+    partnership?.url
+  )
+  const tracking = pickFirst(
+    partnership?.link?.url,
+    partnership?.tracking_url,
+    partnership?.trackingUrl,
+    partnership?.url
+  )
+
+  if (!destination && !tracking) return []
+
+  return [
+    {
+      id: pickFirst(partnership?.link?.id, partnership?.key, partnership?.id),
+      name: pickFirst(partnership?.company?.name, partnership?.name, partnership?.title),
+      destination_url: destination,
+      tracking_url: tracking,
+      merchant_name: pickFirst(partnership?.company?.name),
+      partner_name: pickFirst(partnership?.company?.name),
+      status: pickFirst(partnership?.status, 'active'),
+      source: 'embedded_partnership_link',
+    },
+  ]
+}
+
+function mergeLinkWithPartnership(link, partnership) {
+  const item = link && typeof link === 'object' ? link : {}
+  return {
+    ...item,
+    merchant_name: pickFirst(item?.merchant_name, partnership?.company?.name, partnership?.name),
+    partner_name: pickFirst(item?.partner_name, partnership?.company?.name, partnership?.name),
+    destination_url: pickFirst(
+      item?.destination_url,
+      item?.destinationUrl,
+      item?.url,
+      partnership?.link?.destination,
+      partnership?.destination_url
+    ),
+    tracking_url: pickFirst(
+      item?.tracking_url,
+      item?.trackingUrl,
+      item?.url,
+      partnership?.link?.url,
+      partnership?.tracking_url
+    ),
+    status: pickFirst(item?.status, partnership?.status, 'active'),
+  }
+}
+
 class PartnerStackApiError extends Error {
   constructor(message, options = {}) {
     super(message)
@@ -227,6 +292,156 @@ export function createPartnerStackConnector(options = {}) {
     return { partnerships, raw: payload, sourcePath: path }
   }
 
+  async function listLinksByPartnership(partnershipIdentifier, params = {}) {
+    const identifier = normalizeText(partnershipIdentifier)
+    if (!identifier) {
+      return {
+        links: [],
+        raw: null,
+        sourcePath: '',
+        sourceBaseUrl: baseUrl,
+        fallbackUsed: true,
+      }
+    }
+
+    const linkLimit = toBoundedLimit(params.limit, 50)
+    const pathCandidates = [
+      `/partnerships/${encodeURIComponent(identifier)}/links`,
+      `/partnerships/${encodeURIComponent(identifier)}/referral-links`,
+      `/partners/${encodeURIComponent(identifier)}/links`,
+    ]
+
+    for (const path of pathCandidates) {
+      try {
+        const payload = await request(path, {
+          query: {
+            limit: linkLimit,
+          },
+        })
+        const links = extractList(payload)
+        return {
+          links,
+          raw: payload,
+          sourcePath: path,
+          sourceBaseUrl: baseUrl,
+          fallbackUsed: false,
+        }
+      } catch (error) {
+        if (!(error instanceof PartnerStackApiError) || error.statusCode !== 404) {
+          throw error
+        }
+      }
+    }
+
+    const fallbackLinks = extractEmbeddedLinksFromPartnership(params.partnership)
+    return {
+      links: fallbackLinks,
+      raw: null,
+      sourcePath: 'embedded_partnership_link',
+      sourceBaseUrl: baseUrl,
+      fallbackUsed: true,
+    }
+  }
+
+  async function fetchLinksCatalog(params = {}) {
+    const partnershipsResult = await listPartnerships({
+      limit: params.limitPartnerships ?? params.limit,
+    })
+    const searchTerms = buildSearchTerms(params.search)
+
+    const activePartnerships = partnershipsResult.partnerships.filter((item) => isPartnershipActive(item))
+    const matchedPartnerships = searchTerms.length > 0
+      ? activePartnerships.filter((item) => {
+          const corpus = toSearchCorpus(item)
+          return searchTerms.some((term) => corpus.includes(term))
+        })
+      : activePartnerships
+
+    const linksPerPartnership = toBoundedLimit(params.limitLinksPerPartnership, 50)
+    const partnershipResults = await Promise.all(
+      matchedPartnerships.map(async (partnership) => {
+        const partnershipIdentifier = extractPartnershipIdentifier(partnership)
+        if (!partnershipIdentifier) {
+          return {
+            partnershipIdentifier: '',
+            links: extractEmbeddedLinksFromPartnership(partnership),
+            sourcePath: 'embedded_partnership_link',
+            fallbackUsed: true,
+            error: null,
+          }
+        }
+
+        try {
+          const result = await listLinksByPartnership(partnershipIdentifier, {
+            limit: linksPerPartnership,
+            partnership,
+          })
+          return {
+            partnershipIdentifier,
+            links: result.links,
+            sourcePath: result.sourcePath,
+            fallbackUsed: result.fallbackUsed,
+            error: null,
+          }
+        } catch (error) {
+          return {
+            partnershipIdentifier,
+            links: extractEmbeddedLinksFromPartnership(partnership),
+            sourcePath: 'embedded_partnership_link',
+            fallbackUsed: true,
+            error,
+          }
+        }
+      }),
+    )
+
+    const mapped = []
+    const errors = []
+    let rawLinkCount = 0
+    let fallbackLinkCount = 0
+
+    for (let index = 0; index < partnershipResults.length; index += 1) {
+      const item = partnershipResults[index]
+      const partnership = matchedPartnerships[index]
+      const links = Array.isArray(item.links) ? item.links : []
+      rawLinkCount += links.length
+      if (item.fallbackUsed) fallbackLinkCount += links.length
+
+      if (item.error) {
+        errors.push({
+          partnershipIdentifier: item.partnershipIdentifier,
+          message: item.error?.message || 'listLinksByPartnership_failed',
+        })
+      }
+
+      for (const link of links) {
+        mapped.push(
+          mapPartnerStackPartnershipToUnifiedOffer(mergeLinkWithPartnership(link, partnership), {
+            sourceType: 'link',
+            partnershipIdentifier: item.partnershipIdentifier,
+          }),
+        )
+      }
+    }
+
+    const offers = normalizeUnifiedOffers(mapped)
+    return {
+      offers,
+      debug: {
+        mode: 'partnerstack_links_catalog',
+        sourcePath: partnershipsResult.sourcePath,
+        rawPartnershipCount: partnershipsResult.partnerships.length,
+        activePartnershipCount: activePartnerships.length,
+        matchedPartnershipCount: matchedPartnerships.length,
+        rawLinkCount,
+        fallbackLinkCount,
+        mappedOfferCount: offers.length,
+        searchTerms,
+        errors,
+      },
+    }
+  }
+
   async function fetchOffers(params = {}) {
     const partnershipsResult = await listPartnerships(params)
     const searchTerms = buildSearchTerms(params.search)
@@ -292,6 +507,8 @@ export function createPartnerStackConnector(options = {}) {
   return {
     request,
     listPartnerships,
+    listLinksByPartnership,
+    fetchLinksCatalog,
     fetchOffers,
     healthCheck
   }

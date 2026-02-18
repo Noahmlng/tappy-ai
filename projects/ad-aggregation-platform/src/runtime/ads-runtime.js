@@ -220,6 +220,28 @@ function extractHeuristicEntities(query = '', answerText = '') {
   return entities.slice(0, 8)
 }
 
+function extractKeywordEntitiesFromQuery(query = '') {
+  const text = cleanText(query).toLowerCase()
+  if (!text) return []
+
+  const latinTokens = text
+    .split(/[^a-z0-9]+/g)
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 3 && !HEURISTIC_ENTITY_STOPWORDS.has(item))
+  const cjkTokens = Array.from(
+    new Set((text.match(/[\u4e00-\u9fff]{2,}/g) || []).map((item) => item.trim()).filter(Boolean))
+  )
+  const tokens = [...latinTokens, ...cjkTokens]
+
+  const unique = uniqueStrings(tokens).slice(0, 8)
+  return unique.map((token) => ({
+    entityText: token,
+    normalizedText: token,
+    entityType: 'service',
+    confidence: 0.2
+  }))
+}
+
 function buildEntityMatcher(entities = []) {
   const tokens = uniqueStrings(
     entities.flatMap((entity) => [entity.entityText, entity.normalizedText])
@@ -416,7 +438,7 @@ function buildQueryCacheKey(request, maxAds, entitySignature = '') {
   const payload = {
     v: QUERY_CACHE_VERSION,
     appId: request.appId,
-    placementId: DEFAULT_PLACEMENT_ID,
+    placementId: request.placementId || DEFAULT_PLACEMENT_ID,
     query: request.context.query,
     answerText: request.context.answerText,
     locale: request.context.locale,
@@ -467,14 +489,15 @@ async function fetchOffersWithSnapshot(config) {
     if (!snapshotCacheEnabled) return
     offerSnapshotCache.set(snapshotKey, { offers }, snapshotCacheTtlMs)
   }
-  const snapshotResult = (cacheStatus, error = null) => {
+  const snapshotResult = (cacheStatus, error = null, sourceDebug = null) => {
     const snapshot = getSnapshot()
     if (snapshot && Array.isArray(snapshot.offers) && snapshot.offers.length > 0) {
       return {
         offers: snapshot.offers,
         snapshotUsed: true,
         cacheStatus,
-        error
+        error,
+        sourceDebug
       }
     }
 
@@ -482,7 +505,8 @@ async function fetchOffersWithSnapshot(config) {
       offers: [],
       snapshotUsed: false,
       cacheStatus,
-      error
+      error,
+      sourceDebug
     }
   }
   const runConnectorHealthCheck = async () => {
@@ -541,6 +565,9 @@ async function fetchOffersWithSnapshot(config) {
   try {
     const liveResult = await fetcher()
     const liveOffers = Array.isArray(liveResult?.offers) ? liveResult.offers : []
+    const sourceDebug = liveResult?.debug && typeof liveResult.debug === 'object'
+      ? liveResult.debug
+      : null
 
     if (liveOffers.length > 0) {
       setSnapshot(liveOffers)
@@ -551,14 +578,15 @@ async function fetchOffersWithSnapshot(config) {
         offers: liveOffers,
         snapshotUsed: false,
         cacheStatus: 'live',
-        error: null
+        error: null,
+        sourceDebug
       }
     }
 
     if (degradationEnabled) {
       recordNetworkSuccess(network)
     }
-    return snapshotResult('snapshot_fallback_empty', null)
+    return snapshotResult('snapshot_fallback_empty', null, sourceDebug)
   } catch (error) {
     const normalizedError = {
       errorCode: resolveErrorCode(error),
@@ -567,12 +595,14 @@ async function fetchOffersWithSnapshot(config) {
     if (degradationEnabled) {
       recordNetworkFailure(network, normalizedError, healthPolicy)
     }
-    return snapshotResult('snapshot_fallback_error', normalizedError)
+    return snapshotResult('snapshot_fallback_error', normalizedError, null)
   }
 }
 
 export async function runAdsRetrievalPipeline(adRequest, options = {}) {
   const request = normalizeAdRequest(adRequest)
+  const placementId = request.placementId || DEFAULT_PLACEMENT_ID
+  const isNextStepIntentCard = placementId === 'next_step.intent_card'
   const runtimeConfig = options.runtimeConfig || loadRuntimeConfig(process.env, { strict: false })
   const maxAds = Number.isInteger(options.maxAds) ? options.maxAds : DEFAULT_MAX_ADS
   const requestId = createRequestId()
@@ -645,7 +675,7 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
       safeLog(logger, 'error', {
         event: 'ads_pipeline_ner_error',
         requestId,
-        placementId: DEFAULT_PLACEMENT_ID,
+        placementId,
         message: nerInfo.message
       })
     }
@@ -665,9 +695,23 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     }
   }
 
-  const strictEntityMode = !request.context.testAllOffers
+  if (isNextStepIntentCard && entities.length === 0) {
+    const keywordEntities = extractKeywordEntitiesFromQuery(request.context.query)
+    if (keywordEntities.length > 0) {
+      entities = keywordEntities
+      nerInfo = {
+        ...nerInfo,
+        status: nerInfo.status === 'ok' ? 'ok_with_keyword_fallback' : 'keyword_fallback',
+        message: nerInfo.status === 'ok'
+          ? 'llm_no_entities_used_keyword_fallback'
+          : `${cleanText(nerInfo.message) || 'ner_failed'}; used_keyword_fallback`
+      }
+    }
+  }
+
+  const strictEntityMode = !request.context.testAllOffers && !isNextStepIntentCard
   const keywords = buildSearchKeywords(request, entities, {
-    includeQuery: !strictEntityMode
+    includeQuery: !strictEntityMode || isNextStepIntentCard
   })
   const entitySignature = entities
     .map((entity) => `${cleanText(entity.entityType).toLowerCase()}:${cleanText(entity.normalizedText).toLowerCase()}`)
@@ -708,7 +752,7 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     safeLog(logger, 'info', {
       event: 'ads_pipeline_result',
       requestId,
-      placementId: DEFAULT_PLACEMENT_ID,
+      placementId,
       entities: [],
       networkHits: { partnerstack: 0, cj: 0 },
       adCount: 0,
@@ -719,7 +763,7 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     return {
       adResponse: {
         requestId,
-        placementId: DEFAULT_PLACEMENT_ID,
+        placementId,
         ads: []
       },
       debug
@@ -733,7 +777,7 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     if (cached) {
       const adResponse = {
         requestId,
-        placementId: DEFAULT_PLACEMENT_ID,
+        placementId,
         ads: deepClone(cached.ads)
       }
       const debug = deepClone(cached.debug)
@@ -756,7 +800,7 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
       safeLog(logger, 'info', {
         event: 'ads_pipeline_result',
         requestId,
-        placementId: DEFAULT_PLACEMENT_ID,
+        placementId,
         entities: entitySummaries,
         networkHits: debug.networkHits || { partnerstack: 0, cj: 0 },
         adCount: adResponse.ads.length,
@@ -786,7 +830,11 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     fetchOffersWithSnapshot({
       network: 'partnerstack',
       queryParams: partnerstackQueryParams,
-      fetcher: () => partnerstackConnector.fetchOffers(partnerstackQueryParams),
+      fetcher: () => (
+        isNextStepIntentCard && typeof partnerstackConnector.fetchLinksCatalog === 'function'
+          ? partnerstackConnector.fetchLinksCatalog(partnerstackQueryParams)
+          : partnerstackConnector.fetchOffers(partnerstackQueryParams)
+      ),
       healthCheck: partnerstackConnector.healthCheck,
       snapshotCacheEnabled,
       snapshotCacheTtlMs,
@@ -796,7 +844,11 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     fetchOffersWithSnapshot({
       network: 'cj',
       queryParams: cjQueryParams,
-      fetcher: () => cjConnector.fetchOffers(cjQueryParams),
+      fetcher: () => (
+        isNextStepIntentCard && typeof cjConnector.fetchLinksCatalog === 'function'
+          ? cjConnector.fetchLinksCatalog(cjQueryParams)
+          : cjConnector.fetchOffers(cjQueryParams)
+      ),
       healthCheck: cjConnector.healthCheck,
       snapshotCacheEnabled,
       snapshotCacheTtlMs,
@@ -860,7 +912,7 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
   safeLog(logger, 'info', {
     event: 'ads_pipeline_result',
     requestId,
-    placementId: DEFAULT_PLACEMENT_ID,
+    placementId,
     entities: entitySummaries,
     networkHits,
     adCount: orderedAds.length,
@@ -887,6 +939,14 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     snapshotCacheStatus: {
       partnerstack: partnerstackResult.cacheStatus,
       cj: cjResult.cacheStatus
+    },
+    sourceModes: {
+      partnerstack: isNextStepIntentCard ? 'links_catalog' : 'offers_catalog',
+      cj: isNextStepIntentCard ? 'links_catalog' : 'offers_catalog'
+    },
+    sourceDebug: {
+      partnerstack: partnerstackResult.sourceDebug || {},
+      cj: cjResult.sourceDebug || {}
     },
     networkHealth: getAllNetworkHealth(),
     cache: {
@@ -915,7 +975,7 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
   return {
     adResponse: {
       requestId,
-      placementId: DEFAULT_PLACEMENT_ID,
+      placementId,
       ads: orderedAds
     },
     debug

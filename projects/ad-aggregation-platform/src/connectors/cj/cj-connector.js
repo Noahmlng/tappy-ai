@@ -442,6 +442,31 @@ export function createCjConnector(options = {}) {
     }
   }
 
+  async function fetchLinksCatalog(params = {}) {
+    const linksResult = await listLinks(params)
+    const mapped = normalizeUnifiedOffers(
+      (Array.isArray(linksResult.links) ? linksResult.links : []).map((link) =>
+        mapCjToUnifiedOffer(link, {
+          sourceType: 'link',
+        })
+      )
+    )
+
+    return {
+      offers: mapped,
+      debug: {
+        mode: 'cj_links_catalog',
+        counts: {
+          links: Array.isArray(linksResult.links) ? linksResult.links.length : 0,
+        },
+        sources: {
+          links: { baseUrl: linksResult.sourceBaseUrl, path: linksResult.sourcePath },
+        },
+        errors: [],
+      },
+    }
+  }
+
   async function healthCheck(params = {}) {
     try {
       const startedAt = Date.now()
@@ -478,6 +503,7 @@ export function createCjConnector(options = {}) {
     listProducts,
     listLinks,
     listOffers,
+    fetchLinksCatalog,
     fetchOffers,
     healthCheck
   }

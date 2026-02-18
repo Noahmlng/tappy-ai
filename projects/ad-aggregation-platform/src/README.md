@@ -12,12 +12,12 @@
 
 3. `connectors/partnerstack/`
 - PartnerStack API connector（Bearer 认证）。
-- 能力：`listPartnerships`、`listLinksByPartnership`、`listOffers`、`fetchOffers`、`healthCheck`。
+- 能力：`listPartnerships`、`listLinksByPartnership`、`listOffers`、`fetchOffers`、`fetchLinksCatalog`、`healthCheck`。
 - 内置：基础超时控制 + 429/5xx 重试 + links fallback。
 
 4. `connectors/cj/`
 - CJ API connector（Bearer 认证）。
-- 能力：`listOffers`、`listProducts`、`listLinks`、`fetchOffers`、`healthCheck`。
+- 能力：`listOffers`、`listProducts`、`listLinks`、`fetchOffers`、`fetchLinksCatalog`、`healthCheck`。
 - 内置：多 endpoint fallback、基础超时控制、429/5xx 重试、products/links/offers 合并去重。
 
 5. `offers/`
@@ -30,7 +30,8 @@
 - Runtime 检索链路（`query/answerText -> LLM-NER -> 多网络检索 -> 合并 -> ads[]`）。
 - 入口：`runtime/index.js` -> `runAdsRetrievalPipeline(adRequest, options)`。
 - `testAllOffers=true` 时走旁路：跳过匹配过滤与排序截断，仅保留 URL/ID/状态合法性校验。
-- 当前 `adResponse.placementId` 固定返回 `attach.post_answer_render`。
+- 对 `next_step.intent_card`：默认使用 Affiliate links catalog（PartnerStack `listLinksByPartnership` + CJ `listLinks`）作为商品库来源。
+- `adResponse.placementId` 与输入 placement 对齐返回（例如 `attach.post_answer_render` / `next_step.intent_card`）。
 - 当前 `ads[]` 输出顺序按网络分组：默认 `partnerstack -> cj -> 其他`。
 - 非 `testAllOffers` 模式下基础排序：相关性优先，其次可用性，再次新鲜度。
 - 最小可观测日志事件：`ads_pipeline_result`（字段：`requestId`、`entities`、`networkHits`、`adCount`、`errorCodes`）。
