@@ -324,6 +324,33 @@
                   </template>
 
                   <div
+                    v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.attachAdSlot?.ads?.length"
+                    class="mt-3 rounded-xl border border-[#dbe3ff] bg-[#f7f9ff] p-3"
+                  >
+                    <div class="mb-2 flex items-center justify-between">
+                      <span class="text-[11px] font-semibold uppercase tracking-wide text-[#5b6acb]">Sponsored Links</span>
+                      <span class="text-[10px] text-[#7d87b7]">{{ msg.attachAdSlot.placementId || 'chat_inline_v1' }}</span>
+                    </div>
+                    <ul class="space-y-2">
+                      <li
+                        v-for="ad in msg.attachAdSlot.ads"
+                        :key="ad.adId"
+                        class="rounded-lg border border-[#dfe5ff] bg-white p-2"
+                      >
+                        <a
+                          :href="resolveAdHref(ad)"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="text-sm font-medium text-[#1d4ed8] underline"
+                          @click="handleSponsoredAdClick(msg, ad)"
+                        >
+                          {{ ad.entityText || ad.title || 'Open sponsored link' }}
+                        </a>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div
                     v-if="msg.kind !== 'tool' && msg.role === 'assistant' && msg.status === 'done' && msg.sourceUserContent"
                     class="mt-2 flex items-center gap-2"
                   >
@@ -1672,6 +1699,30 @@ function resolveMessageContentForRendering(message) {
   return `${content}\n\n${lines.join('\n')}`
 }
 
+function forceAppendAttachLinksMarkdown(message) {
+  if (!message || typeof message !== 'object') return
+  if (typeof message.content !== 'string') return
+
+  const offers = resolveInlineOffersForMessage(message)
+  if (offers.length === 0) return
+
+  const marker = '\n<!-- attach-links-force-rendered -->\n'
+  if (message.content.includes(marker)) return
+
+  const lines = ['Sponsored links:']
+  for (const offer of offers.slice(0, 3)) {
+    const href = pickAttachOfferHref(offer)
+    if (!href) continue
+    const label = String(offer.entityText || offer.title || href).trim()
+    lines.push(`- [${label}](${href})`)
+  }
+
+  if (lines.length <= 1) return
+  // Temporary brute-force fallback:
+  // directly mutate assistant markdown content to guarantee visible sponsored links.
+  message.content = `${message.content}${marker}${lines.join('\n')}`
+}
+
 async function runAttachAdsFlow({ session, userContent, assistantMessageId, turnTrace, sdkConfig = null }) {
   const currentMessage = findMessageById(session.id, assistantMessageId)
   if (!currentMessage) return
@@ -1744,6 +1795,7 @@ async function runAttachAdsFlow({ session, userContent, assistantMessageId, turn
     ads: result?.ads,
     reportPayload,
   })
+  forceAppendAttachLinksMarkdown(targetMessage)
   targetMessage.inlineMarkerCount = 0
   touchActiveSession()
   scheduleSaveSessions()
