@@ -99,7 +99,8 @@ interface MessageAdSlot {
   }>
   decision: {
     result: 'served' | 'blocked' | 'no_fill' | 'error'
-    reason: string
+    reason: 'served' | 'blocked' | 'no_fill' | 'error'
+    reasonDetail?: string
     intentScore: number
   }
 }
@@ -167,7 +168,8 @@ sequenceDiagram
   "placementId": "chat_inline_v1",
   "decision": {
     "result": "served",
-    "reason": "eligible",
+    "reason": "served",
+    "reasonDetail": "runtime_eligible",
     "intentScore": 0.72
   },
   "ads": [
@@ -252,7 +254,8 @@ Dashboard 的核心职责：
 3. `event`
 4. `intentScore`
 5. `decision.result`
-6. `decision.reason`
+6. `decision.reason`（枚举：`served/no_fill/blocked/error`）
+7. `decision.reasonDetail`（可选，排障使用）
 
 ## 11. 容错与降级
 

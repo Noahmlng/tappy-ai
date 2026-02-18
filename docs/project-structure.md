@@ -11,7 +11,7 @@
 用途：
 - 面向 AI Native App 提供标准化广告拉取与配置能力。
 
-## B. 模拟与测试模块
+## B. 模拟与测试模块（用户视角）
 路径：`projects/simulator-chatbot`
 
 包含：
@@ -21,6 +21,19 @@
 
 用途：
 - 作为 SDK 接入前后的验证容器，观察参数变化与用户体验。
+
+## C. 模拟与测试模块（开发者视角）
+路径：`projects/simulator-dashboard`
+
+包含：
+- Vue Developer Dashboard 容器（接入方管理后台）
+- 收益与表现概览（Revenue / CTR / Fill Rate）
+- Placement 参数管理（enabled / priority / frequency cap）
+- Trigger 参数管理（intent threshold / cooldown / minExpectedRevenue）
+- Decision Logs 查看与筛选
+
+用途：
+- 作为 SDK 接入方的管理后台模拟器，用于验证配置管理与运营可观测性。
 
 ## 已清理内容
 

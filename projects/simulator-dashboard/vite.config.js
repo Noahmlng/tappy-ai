@@ -5,7 +5,6 @@ import vue from '@vitejs/plugin-vue'
 import vueJsx from '@vitejs/plugin-vue-jsx'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
-// https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const proxyTarget = env.SIMULATOR_API_PROXY_TARGET || 'http://127.0.0.1:3100'
@@ -19,7 +18,7 @@ export default defineConfig(({ mode }) => {
       extensions: ['.mjs', '.js', '.jsx', '.json', '.vue'],
     },
     server: {
-      port: 3001,
+      port: 3002,
       proxy: {
         '/api': {
           target: proxyTarget,

@@ -26,6 +26,8 @@ npm run dev
 
 - `VITE_DEEPSEEK_API_KEY`
 - `VITE_DEEPSEEK_MODEL`（默认：`deepseek-reasoner`）
+- `SIMULATOR_API_PROXY_TARGET`（开发代理目标，默认：`http://127.0.0.1:3100`）
+- `VITE_SIMULATOR_API_BASE_URL`（浏览器 API base，默认：`/api`）
 
 ## Tool Call 说明
 
@@ -36,3 +38,7 @@ npm run dev
 - Assistant 回复完成后会展示可点击追问项。
 - Sidebar 内置 Turn Trace 面板，可按轮查看链路事件。
 - Sidebar 内置 System Prompt 面板，可实时编辑当前会话提示词。
+
+## SDK 接入设计
+
+- `docs/sdk-integration-design.md`：Chatbot Simulator 接入广告 SDK 的完整设计（架构、触发点、数据模型、分阶段计划）

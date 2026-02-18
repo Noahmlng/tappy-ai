@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "workspaces": [
     "projects/simulator-chatbot",
+    "projects/simulator-dashboard",
     "projects/ad-aggregation-platform"
   ],
   "scripts": {
@@ -11,6 +12,10 @@
     "build": "npm run build --workspace @ai-network/simulator-chatbot",
     "lint": "npm run lint --workspace @ai-network/simulator-chatbot",
     "dev:chatbot": "npm run dev --workspace @ai-network/simulator-chatbot",
-    "build:chatbot": "npm run build --workspace @ai-network/simulator-chatbot"
+    "build:chatbot": "npm run build --workspace @ai-network/simulator-chatbot",
+    "dev:gateway": "npm run dev:gateway --workspace @ai-network/ad-aggregation-platform",
+    "dev:dashboard": "npm run dev --workspace @ai-network/simulator-dashboard",
+    "build:dashboard": "npm run build --workspace @ai-network/simulator-dashboard",
+    "dev:local": "node ./scripts/dev-local.js"
   }
 }
