@@ -22,6 +22,7 @@ const STATE_FILE = path.join(STATE_DIR, 'simulator-gateway-state.json')
 const PORT = Number(process.env.SIMULATOR_GATEWAY_PORT || 3100)
 const HOST = process.env.SIMULATOR_GATEWAY_HOST || '127.0.0.1'
 const MAX_DECISION_LOGS = 500
+const MAX_EVENT_LOGS = 500
 const MAX_PLACEMENT_AUDIT_LOGS = 500
 const MAX_NETWORK_FLOW_LOGS = 300
 const DECISION_REASON_ENUM = new Set(['served', 'no_fill', 'blocked', 'error'])
@@ -79,6 +80,7 @@ const NEXT_STEP_SENSITIVE_TOPICS = [
   '成人',
 ]
 const ATTACH_MVP_ALLOWED_FIELDS = new Set([
+  'requestId',
   'appId',
   'sessionId',
   'turnId',
@@ -88,6 +90,7 @@ const ATTACH_MVP_ALLOWED_FIELDS = new Set([
   'locale',
 ])
 const NEXT_STEP_INTENT_CARD_ALLOWED_FIELDS = new Set([
+  'requestId',
   'appId',
   'sessionId',
   'turnId',
@@ -247,6 +250,7 @@ function normalizeAttachMvpPayload(payload, routeName) {
   const input = payload && typeof payload === 'object' ? payload : {}
   validateNoExtraFields(input, ATTACH_MVP_ALLOWED_FIELDS, routeName)
 
+  const requestId = String(input.requestId || '').trim()
   const appId = requiredNonEmptyString(input.appId, 'appId')
   const sessionId = requiredNonEmptyString(input.sessionId, 'sessionId')
   const turnId = requiredNonEmptyString(input.turnId, 'turnId')
@@ -260,6 +264,7 @@ function normalizeAttachMvpPayload(payload, routeName) {
   }
 
   return {
+    requestId,
     appId,
     sessionId,
     turnId,
@@ -346,6 +351,7 @@ function normalizeNextStepIntentCardPayload(payload, routeName) {
   const input = payload && typeof payload === 'object' ? payload : {}
   validateNoExtraFields(input, NEXT_STEP_INTENT_CARD_ALLOWED_FIELDS, routeName)
 
+  const requestId = String(input.requestId || '').trim()
   const appId = requiredNonEmptyString(input.appId, 'appId')
   const sessionId = requiredNonEmptyString(input.sessionId, 'sessionId')
   const turnId = requiredNonEmptyString(input.turnId, 'turnId')
@@ -379,6 +385,7 @@ function normalizeNextStepIntentCardPayload(payload, routeName) {
   const expectedRevenue = clampNumber(rawContext.expected_revenue, 0, Number.MAX_SAFE_INTEGER, NaN)
 
   return {
+    requestId,
     appId,
     sessionId,
     turnId,
@@ -776,7 +783,7 @@ function loadState() {
         ? parsed.networkFlowLogs.slice(0, MAX_NETWORK_FLOW_LOGS)
         : [],
       decisionLogs: Array.isArray(parsed.decisionLogs) ? parsed.decisionLogs.slice(0, MAX_DECISION_LOGS) : [],
-      eventLogs: Array.isArray(parsed.eventLogs) ? parsed.eventLogs.slice(0, MAX_DECISION_LOGS) : [],
+      eventLogs: Array.isArray(parsed.eventLogs) ? parsed.eventLogs.slice(0, MAX_EVENT_LOGS) : [],
       globalStats: {
         requests: toPositiveInteger(parsed?.globalStats?.requests, 0),
         served: toPositiveInteger(parsed?.globalStats?.served, 0),
@@ -888,6 +895,17 @@ function recordDecision(payload) {
     },
     ...state.decisionLogs,
   ].slice(0, MAX_DECISION_LOGS)
+}
+
+function recordEvent(payload) {
+  state.eventLogs = [
+    {
+      id: createId('event'),
+      createdAt: nowIso(),
+      ...payload,
+    },
+    ...state.eventLogs,
+  ].slice(0, MAX_EVENT_LOGS)
 }
 
 function recordPlacementAudit(payload) {
@@ -1244,6 +1262,8 @@ function summarizeAdsForDecisionLog(ads) {
 }
 
 function recordDecisionForRequest({ request, placement, requestId, decision, runtime, ads }) {
+  const result = DECISION_REASON_ENUM.has(decision?.result) ? decision.result : 'error'
+  const reason = DECISION_REASON_ENUM.has(decision?.reason) ? decision.reason : 'error'
   const payload = {
     requestId,
     appId: request?.appId || '',
@@ -1251,8 +1271,9 @@ function recordDecisionForRequest({ request, placement, requestId, decision, run
     turnId: request?.turnId || '',
     event: request?.event || '',
     placementId: placement?.placementId || '',
-    result: decision?.result || 'error',
-    reason: decision?.reason || 'error',
+    placementKey: placement?.placementKey || request?.placementKey || '',
+    result,
+    reason,
     reasonDetail: decision?.reasonDetail || '',
     intentScore: Number.isFinite(decision?.intentScore) ? decision.intentScore : 0,
     input: buildDecisionInputSnapshot(request, placement, decision?.intentScore),
@@ -1264,6 +1285,19 @@ function recordDecisionForRequest({ request, placement, requestId, decision, run
   }
 
   recordDecision(payload)
+  recordEvent({
+    eventType: 'decision',
+    requestId: payload.requestId || '',
+    appId: payload.appId || '',
+    sessionId: payload.sessionId || '',
+    turnId: payload.turnId || '',
+    placementId: payload.placementId || '',
+    placementKey: payload.placementKey || '',
+    event: payload.event || '',
+    result,
+    reason,
+    reasonDetail: payload.reasonDetail || '',
+  })
 }
 
 async function evaluateRequest(payload) {
@@ -1277,6 +1311,14 @@ async function evaluateRequest(payload) {
 
   if (!placement) {
     const decision = createDecision('blocked', 'placement_not_configured', intentScore)
+    recordDecisionForRequest({
+      request,
+      placement: null,
+      requestId,
+      decision,
+      ads: [],
+    })
+    persistState(state)
     return {
       requestId,
       placementId: '',
@@ -1600,6 +1642,7 @@ function getDashboardStatePayload() {
     networkFlowStats: state.networkFlowStats,
     networkFlowLogs: state.networkFlowLogs,
     decisionLogs: state.decisionLogs,
+    eventLogs: state.eventLogs,
   }
 }
 
@@ -1704,6 +1747,7 @@ async function requestHandler(req, res) {
   if (pathname === '/api/v1/dashboard/decisions' && req.method === 'GET') {
     const result = requestUrl.searchParams.get('result')
     const placementId = requestUrl.searchParams.get('placementId')
+    const requestId = requestUrl.searchParams.get('requestId')
 
     let rows = [...state.decisionLogs]
 
@@ -1713,6 +1757,34 @@ async function requestHandler(req, res) {
 
     if (placementId) {
       rows = rows.filter((row) => row.placementId === placementId)
+    }
+    if (requestId) {
+      rows = rows.filter((row) => row.requestId === requestId)
+    }
+
+    sendJson(res, 200, { items: rows })
+    return
+  }
+
+  if (pathname === '/api/v1/dashboard/events' && req.method === 'GET') {
+    const result = requestUrl.searchParams.get('result')
+    const placementId = requestUrl.searchParams.get('placementId')
+    const requestId = requestUrl.searchParams.get('requestId')
+    const eventType = requestUrl.searchParams.get('eventType')
+
+    let rows = [...state.eventLogs]
+
+    if (result) {
+      rows = rows.filter((row) => String(row?.result || '') === result)
+    }
+    if (placementId) {
+      rows = rows.filter((row) => String(row?.placementId || '') === placementId)
+    }
+    if (requestId) {
+      rows = rows.filter((row) => String(row?.requestId || '') === requestId)
+    }
+    if (eventType) {
+      rows = rows.filter((row) => String(row?.eventType || '') === eventType)
     }
 
     sendJson(res, 200, { items: rows })
@@ -1869,45 +1941,39 @@ async function requestHandler(req, res) {
           request.context.intentHints?.preference_facets,
         )
 
-        state.eventLogs = [
-          {
-            id: createId('event'),
-            createdAt: nowIso(),
-            appId: request.appId,
-            sessionId: request.sessionId,
-            turnId: request.turnId,
-            userId: request.userId,
-            query: request.context.query,
-            answerText: request.context.answerText,
-            intentClass: inferredIntentClass || '',
-            intentScore: Number.isFinite(inferredIntentScore) ? inferredIntentScore : 0,
-            preferenceFacets: inferredPreferenceFacets,
-            locale: request.context.locale,
-            event: request.event,
-            placementId: request.placementId,
-            placementKey: request.placementKey,
-          },
-          ...state.eventLogs,
-        ].slice(0, MAX_DECISION_LOGS)
+        recordEvent({
+          eventType: 'sdk_event',
+          requestId: request.requestId || '',
+          appId: request.appId,
+          sessionId: request.sessionId,
+          turnId: request.turnId,
+          userId: request.userId,
+          query: request.context.query,
+          answerText: request.context.answerText,
+          intentClass: inferredIntentClass || '',
+          intentScore: Number.isFinite(inferredIntentScore) ? inferredIntentScore : 0,
+          preferenceFacets: inferredPreferenceFacets,
+          locale: request.context.locale,
+          event: request.event,
+          placementId: request.placementId,
+          placementKey: request.placementKey,
+        })
       } else {
         const request = normalizeAttachMvpPayload(payload, 'sdk/events')
 
-        state.eventLogs = [
-          {
-            id: createId('event'),
-            createdAt: nowIso(),
-            appId: request.appId,
-            sessionId: request.sessionId,
-            turnId: request.turnId,
-            query: request.query,
-            answerText: request.answerText,
-            intentScore: request.intentScore,
-            locale: request.locale,
-            event: ATTACH_MVP_EVENT,
-            placementKey: ATTACH_MVP_PLACEMENT_KEY,
-          },
-          ...state.eventLogs,
-        ].slice(0, MAX_DECISION_LOGS)
+        recordEvent({
+          eventType: 'sdk_event',
+          requestId: request.requestId || '',
+          appId: request.appId,
+          sessionId: request.sessionId,
+          turnId: request.turnId,
+          query: request.query,
+          answerText: request.answerText,
+          intentScore: request.intentScore,
+          locale: request.locale,
+          event: ATTACH_MVP_EVENT,
+          placementKey: ATTACH_MVP_PLACEMENT_KEY,
+        })
       }
 
       persistState(state)

@@ -650,6 +650,7 @@ function normalizeAttachAdSlot(raw) {
     ads,
     reportPayload: raw.reportPayload && typeof raw.reportPayload === 'object'
       ? {
+          requestId: String(raw.reportPayload.requestId || ''),
           appId: String(raw.reportPayload.appId || ''),
           sessionId: String(raw.reportPayload.sessionId || ''),
           turnId: String(raw.reportPayload.turnId || ''),
@@ -1644,6 +1645,7 @@ async function runAttachAdsFlow({ session, userContent, assistantMessageId, turn
   const targetMessage = findMessageById(session.id, assistantMessageId)
   if (!targetMessage) return
 
+  reportPayload.requestId = String(result?.requestId || '')
   targetMessage.attachAdSlot = normalizeAttachAdSlot({
     requestId: result?.requestId,
     placementId: result?.placementId,
@@ -1787,6 +1789,7 @@ async function runNextStepIntentCardFlow({ session, userContent, assistantMessag
   const targetMessage = findMessageById(session.id, assistantMessageId)
   if (!targetMessage) return
 
+  reportPayload.requestId = String(result?.requestId || '')
   targetMessage.nextStepAdSlot = normalizeNextStepAdSlot({
     ...result,
     reportPayload,

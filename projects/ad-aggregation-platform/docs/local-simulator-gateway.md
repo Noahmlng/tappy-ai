@@ -30,12 +30,13 @@ Default address:
 4. `PUT /api/v1/dashboard/placements/:placementId`
 5. `GET /api/v1/dashboard/metrics/summary`
 6. `GET /api/v1/dashboard/decisions`
-7. `GET /api/v1/dashboard/placement-audits`
-8. `GET /api/v1/dashboard/network-health`
-9. `GET /api/v1/sdk/config`
-10. `POST /api/v1/sdk/evaluate`
-11. `POST /api/v1/sdk/events`
-12. `POST /api/v1/intent-card/retrieve`
+7. `GET /api/v1/dashboard/events`
+8. `GET /api/v1/dashboard/placement-audits`
+9. `GET /api/v1/dashboard/network-health`
+10. `GET /api/v1/sdk/config`
+11. `POST /api/v1/sdk/evaluate`
+12. `POST /api/v1/sdk/events`
+13. `POST /api/v1/intent-card/retrieve`
 
 ## Placement Config Versioning
 
@@ -56,6 +57,18 @@ Default address:
    - `before`
    - `after`
 3. 审计查询接口：`GET /api/v1/dashboard/placement-audits?placementId=...`
+
+## Decision/Event Logs
+
+1. Decision logs (`/api/v1/dashboard/decisions`) 包含：
+   - `result` (`served|no_fill|blocked|error`)
+   - `reason` / `reasonDetail`
+   - `requestId`
+   - 支持按 `result/placementId/requestId` 过滤
+2. Event logs (`/api/v1/dashboard/events`) 会记录：
+   - `eventType=decision`（决策事件，含 `result` + `requestId`）
+   - `eventType=sdk_event`（SDK 上报事件，支持携带 `requestId`）
+3. `GET /api/v1/dashboard/events` 支持按 `result/placementId/requestId/eventType` 过滤。
 
 ## Network Health & Circuit Visualization
 

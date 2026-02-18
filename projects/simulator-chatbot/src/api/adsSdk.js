@@ -47,6 +47,7 @@ export async function fetchSdkConfig(appId) {
 
 function normalizeAttachPayload(payload = {}) {
   return {
+    requestId: String(payload.requestId || '').trim(),
     appId: String(payload.appId || '').trim(),
     sessionId: String(payload.sessionId || '').trim(),
     turnId: String(payload.turnId || '').trim(),
@@ -79,6 +80,7 @@ function normalizeNextStepIntentCardPayload(payload = {}) {
   }
 
   return {
+    requestId: String(payload.requestId || '').trim(),
     appId: String(payload.appId || '').trim(),
     sessionId: String(payload.sessionId || '').trim(),
     turnId: String(payload.turnId || '').trim(),
