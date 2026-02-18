@@ -312,7 +312,7 @@
                   <template v-if="msg.kind !== 'tool' && msg.content">
                     <MarkdownRenderer
                       :key="`${msg.id}:${msg.attachAdSlot?.requestId || ''}:${msg.attachAdSlot?.ads?.length || 0}`"
-                      :content="msg.content"
+                      :content="resolveMessageContentForRendering(msg)"
                       :inline-offers="resolveInlineOffersForMessage(msg)"
                       @ad-click="(ad) => handleInlineOfferClick(msg, ad)"
                       @inline-marker-count="(count) => handleInlineMarkerCount(msg, count)"
@@ -1580,6 +1580,96 @@ function resolveInlineOffersForMessage(message) {
   if (decisionResult !== 'served') return []
 
   return Array.isArray(slot.ads) ? slot.ads : []
+}
+
+function escapeRegExp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function pickAttachOfferHref(ad) {
+  if (!ad || typeof ad !== 'object') return ''
+  return pickFirstNonEmptyString(ad.clickUrl, ad.targetUrl)
+}
+
+function buildAttachOfferKeywords(ad) {
+  if (!ad || typeof ad !== 'object') return []
+
+  const terms = new Set()
+  const addTerm = (value) => {
+    const text = String(value || '').trim()
+    if (!text) return
+    if (text.length < 3) return
+    terms.add(text)
+  }
+
+  addTerm(ad.entityText)
+  addTerm(ad.title)
+
+  const href = pickAttachOfferHref(ad)
+  if (href) {
+    try {
+      const host = new URL(href).hostname.replace(/^www\./i, '')
+      const hostParts = host.split('.').filter(Boolean)
+      if (hostParts.length >= 2) {
+        addTerm(hostParts[hostParts.length - 2])
+      }
+    } catch {
+      // Ignore invalid URL for fallback keyword extraction.
+    }
+  }
+
+  return Array.from(terms).sort((a, b) => b.length - a.length)
+}
+
+function replaceFirstMatchedKeywordWithMarkdownLink(content, keywords, href) {
+  let nextContent = String(content || '')
+  let replaced = false
+
+  for (const keyword of keywords) {
+    const escaped = escapeRegExp(keyword)
+    if (!escaped) continue
+    const pattern = new RegExp(escaped, 'i')
+    if (!pattern.test(nextContent)) continue
+    // Temporary brute-force fallback:
+    // rewrite plain text once to markdown link so we can guarantee visible link rendering.
+    nextContent = nextContent.replace(pattern, (matched) => `[${matched}](${href})`)
+    replaced = true
+    break
+  }
+
+  return { content: nextContent, replaced }
+}
+
+function resolveMessageContentForRendering(message) {
+  const original = typeof message?.content === 'string' ? message.content : ''
+  const offers = resolveInlineOffersForMessage(message)
+  if (!original || offers.length === 0) return original
+
+  let content = original
+  const unmatchedOffers = []
+
+  for (const offer of offers) {
+    const href = pickAttachOfferHref(offer)
+    if (!href) continue
+
+    const keywords = buildAttachOfferKeywords(offer)
+    const result = replaceFirstMatchedKeywordWithMarkdownLink(content, keywords, href)
+    content = result.content
+    if (!result.replaced) {
+      unmatchedOffers.push({
+        label: String(offer.entityText || offer.title || href).trim(),
+        href,
+      })
+    }
+  }
+
+  if (unmatchedOffers.length === 0) return content
+
+  const lines = ['Sponsored links:']
+  for (const item of unmatchedOffers.slice(0, 3)) {
+    lines.push(`- [${item.label}](${item.href})`)
+  }
+  return `${content}\n\n${lines.join('\n')}`
 }
 
 async function runAttachAdsFlow({ session, userContent, assistantMessageId, turnTrace, sdkConfig = null }) {
