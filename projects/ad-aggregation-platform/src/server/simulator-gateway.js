@@ -7,6 +7,11 @@ import defaultPlacements from '../../config/default-placements.json' with { type
 import { runAdsRetrievalPipeline } from '../runtime/index.js'
 import { getAllNetworkHealth } from '../runtime/network-health-state.js'
 import { inferIntentWithLlm } from '../intent/index.js'
+import {
+  createIntentCardVectorIndex,
+  normalizeIntentCardCatalogItems,
+  retrieveIntentCardTopK,
+} from '../intent-card/index.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -104,6 +109,13 @@ const NEXT_STEP_INTENT_CARD_CONTEXT_ALLOWED_FIELDS = new Set([
   'blocked_topics',
   'expected_revenue',
   'debug',
+])
+const INTENT_CARD_RETRIEVE_ALLOWED_FIELDS = new Set([
+  'query',
+  'facets',
+  'topK',
+  'minScore',
+  'catalog',
 ])
 
 const runtimeMemory = {
@@ -396,6 +408,32 @@ function normalizeNextStepIntentCardPayload(payload, routeName) {
       blockedTopics: normalizeStringList(rawContext.blocked_topics),
       expectedRevenue: Number.isFinite(expectedRevenue) ? expectedRevenue : undefined,
     },
+  }
+}
+
+function normalizeIntentCardRetrievePayload(payload, routeName) {
+  const input = payload && typeof payload === 'object' ? payload : {}
+  validateNoExtraFields(input, INTENT_CARD_RETRIEVE_ALLOWED_FIELDS, routeName)
+
+  const query = requiredNonEmptyString(input.query, 'query')
+  const facets = normalizeNextStepPreferenceFacets(input.facets)
+  const topK = toPositiveInteger(input.topK, 3) || 3
+  const minScore = clampNumber(input.minScore, 0, 1, 0)
+  const catalog = normalizeIntentCardCatalogItems(input.catalog)
+
+  if (!Array.isArray(input.catalog)) {
+    throw new Error('catalog must be an array.')
+  }
+  if (catalog.length === 0) {
+    throw new Error('catalog must contain at least one valid item.')
+  }
+
+  return {
+    query,
+    facets,
+    topK: Math.min(20, topK),
+    minScore,
+    catalog,
   }
 }
 
@@ -1709,6 +1747,48 @@ async function requestHandler(req, res) {
       placements: state.placements,
     })
     return
+  }
+
+  if (pathname === '/api/v1/intent-card/retrieve' && req.method === 'POST') {
+    try {
+      const payload = await readJsonBody(req)
+      const request = normalizeIntentCardRetrievePayload(payload, 'intent-card/retrieve')
+      const startedAt = Date.now()
+      const vectorIndex = createIntentCardVectorIndex(request.catalog)
+      const retrieval = retrieveIntentCardTopK(vectorIndex, {
+        query: request.query,
+        facets: request.facets.map((facet) => ({
+          facet_key: facet.facetKey,
+          facet_value: facet.facetValue,
+          confidence: Number.isFinite(facet.confidence) ? facet.confidence : undefined,
+        })),
+        topK: request.topK,
+        minScore: request.minScore,
+      })
+
+      sendJson(res, 200, {
+        requestId: createId('intent_retr'),
+        items: retrieval.items,
+        meta: {
+          retrieval_ms: Date.now() - startedAt,
+          index_item_count: vectorIndex.items.length,
+          index_vocabulary_size: vectorIndex.vocabularySize,
+          candidate_count: retrieval.meta.candidateCount,
+          top_k: retrieval.meta.topK,
+          min_score: retrieval.meta.minScore,
+          index_version: retrieval.meta.indexVersion,
+        },
+      })
+      return
+    } catch (error) {
+      sendJson(res, 400, {
+        error: {
+          code: 'INVALID_REQUEST',
+          message: error instanceof Error ? error.message : 'Invalid request',
+        },
+      })
+      return
+    }
   }
 
   if (pathname === '/api/v1/sdk/evaluate' && req.method === 'POST') {

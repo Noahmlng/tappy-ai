@@ -35,6 +35,7 @@ Default address:
 9. `GET /api/v1/sdk/config`
 10. `POST /api/v1/sdk/evaluate`
 11. `POST /api/v1/sdk/events`
+12. `POST /api/v1/intent-card/retrieve`
 
 ## Placement Config Versioning
 
@@ -66,6 +67,39 @@ Default address:
    - `networkFlowLogs`
 3. 专用接口：`GET /api/v1/dashboard/network-health`
 4. 目标：单网失败时可观察到降级与熔断，但总返回仍可由其余网络或快照兜底。
+
+## Intent Card Retrieval API
+
+Endpoint:
+- `POST /api/v1/intent-card/retrieve`
+
+Request body:
+
+```json
+{
+  "query": "gift for girlfriend colorful",
+  "facets": [
+    { "facet_key": "recipient", "facet_value": "girlfriend", "confidence": 0.9 },
+    { "facet_key": "style", "facet_value": "colorful", "confidence": 0.8 }
+  ],
+  "topK": 3,
+  "minScore": 0,
+  "catalog": [
+    {
+      "item_id": "cj:link:1001",
+      "title": "Color Bloom Gift Set",
+      "url": "https://merchant.example.com/bloom",
+      "network": "cj",
+      "category": "fashion",
+      "tags": ["gift", "colorful", "girlfriend"]
+    }
+  ]
+}
+```
+
+Response contains:
+1. `items[]` with `item_id/title/url/network/category/tags/score/match_reasons`
+2. `meta` with `retrieval_ms/index_item_count/index_vocabulary_size/candidate_count/top_k`
 
 ## Local Persistence
 

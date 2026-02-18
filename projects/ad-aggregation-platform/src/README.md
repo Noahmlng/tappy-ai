@@ -54,3 +54,4 @@
 - IntentCardCatalog 归一化模块（面向 `next_step.intent_card`）。
 - 入口：`intent-card/index.js`。
 - 能力：`normalizeIntentCardCatalog`、`enrichOffersWithIntentCardCatalog`、`summarizeIntentCardCatalog`。
+- 向量检索：`createIntentCardVectorIndex(catalog)` + `retrieveIntentCardTopK(index, { query, facets, topK })`。
