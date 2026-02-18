@@ -313,7 +313,8 @@
                     <MarkdownRenderer
                       :key="`${msg.id}:${msg.attachAdSlot?.requestId || ''}:${msg.attachAdSlot?.ads?.length || 0}`"
                       :content="msg.content"
-                      :inline-offers="[]"
+                      :inline-offers="resolveInlineOffersForMessage(msg)"
+                      @ad-click="(ad) => handleInlineOfferClick(msg, ad)"
                       @inline-marker-count="(count) => handleInlineMarkerCount(msg, count)"
                     />
                     <span
@@ -512,6 +513,7 @@ const MAX_TURN_LOGS = 400
 const TOOL_STATES = ['planning', 'running', 'done', 'error']
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant. Be accurate, concise, and explicit about uncertainty.'
 const SDK_APP_ID = import.meta.env.VITE_SIMULATOR_APP_ID || 'simulator-chatbot'
+const ATTACH_LINK_PLACEMENT_KEY = 'attach.post_answer_render'
 const ENABLE_NEXT_STEP_FLOW = false
 
 const input = ref('')
@@ -667,6 +669,7 @@ function normalizeAttachAdSlot(raw) {
   return {
     requestId: typeof raw.requestId === 'string' ? raw.requestId : '',
     placementId: typeof raw.placementId === 'string' ? raw.placementId : '',
+    placementKey: typeof raw.placementKey === 'string' ? raw.placementKey : ATTACH_LINK_PLACEMENT_KEY,
     decision,
     ads,
     reportPayload: raw.reportPayload && typeof raw.reportPayload === 'object'
@@ -1583,6 +1586,20 @@ function isPlacementEnabledInConfig(config, placementKey) {
   return placement.enabled !== false
 }
 
+function resolveInlineOffersForMessage(message) {
+  if (!message || message.role !== 'assistant' || message.kind === 'tool') return []
+  const slot = message.attachAdSlot
+  if (!slot || typeof slot !== 'object') return []
+
+  const placementKey = String(slot.placementKey || '').trim()
+  if (placementKey && placementKey !== ATTACH_LINK_PLACEMENT_KEY) return []
+
+  const decisionResult = String(slot?.decision?.result || '').trim().toLowerCase()
+  if (decisionResult !== 'served') return []
+
+  return Array.isArray(slot.ads) ? slot.ads : []
+}
+
 async function runAttachAdsFlow({ session, userContent, assistantMessageId, turnTrace, sdkConfig = null }) {
   const currentMessage = findMessageById(session.id, assistantMessageId)
   if (!currentMessage) return
@@ -1649,6 +1666,7 @@ async function runAttachAdsFlow({ session, userContent, assistantMessageId, turn
   targetMessage.attachAdSlot = normalizeAttachAdSlot({
     requestId: result?.requestId,
     placementId: result?.placementId,
+    placementKey: ATTACH_LINK_PLACEMENT_KEY,
     decision: result?.decision,
     ads: result?.ads,
     reportPayload,
