@@ -1,0 +1,4 @@
+interface:
+  display_name: "LinkedIn Daily Poster"
+  short_description: "Automate daily LinkedIn post drafting/publishing"
+  default_prompt: "Create and publish today's LinkedIn post using the daily workflow."
