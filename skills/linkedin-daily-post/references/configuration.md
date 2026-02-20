@@ -23,6 +23,12 @@
 - Run metadata: `skills/linkedin-daily-post/runs/YYYY-MM-DD.result.json`
 - Logs: `skills/linkedin-daily-post/runs/logs/daily.log`
 
+## Quick Start Commands
+
+- Copy env template: `cp skills/linkedin-daily-post/.env.example skills/linkedin-daily-post/.env`
+- Run once now: `./skills/linkedin-daily-post/scripts/run_daily_job.sh`
+- Install macOS daily schedule (09:00): `./skills/linkedin-daily-post/scripts/install_daily_launchd.sh 09:00`
+
 ## Scheduler Expectations
 
 - Scheduler should run once every day.
