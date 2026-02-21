@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.32）
+
+1. 在 `Module C` 输出合同新增 `adDecisionLite`，冻结 `allowAd + decisionSemantic(serve_ad/no_ad) + noAdReasonCode`，显式固化 `allow=false -> no-ad` 语义。
+2. 在 C 的分流与消费约束中绑定 `isRoutable + allowAd`，避免仅靠 C->E 文本分流理解 `no-ad` 来源。
+3. 在 `Module C` 的 `constraintsLite` 补齐 `sourceConstraints`（`sourceSelectionMode/allowedSourceIds/blockedSourceIds`）并冻结冲突优先级。
+4. 在 `Module D` 输入合同、`request adapt` 子合同、`D -> E` 输出合同透传 `sourceConstraints`，支持策略层细粒度控制“哪些 source 可请求”。
+5. 在 D 路由执行中补齐 source 过滤规则与审计快照 `sourceFilterSnapshot`，可回放“某需求方为何未被请求”。
+
 ### 2026-02-21（v4.31）
 
 1. 在 `Module C` 输出合同冻结 `constraintsLite` 必填对象，明确 `allow=true + constraints` 的标准表达（`bcat/badv/nonPersonalizedOnly/disallowRenderModes`）。

@@ -19,7 +19,7 @@
 1. `routable opportunity` 或 `policy-blocked result`。
 2. 策略命中轨迹（用于审计与回放）。
 3. 接口语义对齐：`evaluate(opportunity_v1, policy_snapshot) -> governor_decision`。
-4. `governor_decision` 必须包含标准 `constraintsLite`，用于表达 `allow=true + constraints`（含 `bcat/badv/nonPersonalizedOnly/disallowRenderModes`）。
+4. `governor_decision` 必须包含标准 `constraintsLite`，用于表达 `allow=true + constraints`（含 `bcat/badv/nonPersonalizedOnly/disallowRenderModes/sourceConstraints`）。
 
 #### 3.5.4 C 输入合同（B -> C，MVP 冻结）
 
@@ -173,6 +173,7 @@ optional：
 2. `winningGate`
 3. `winningRuleId`
 4. `policyConflictReasonCode`
+5. `allowAd`（bool，`false` 表示本次机会语义为 `no-ad`）
 
 #### 3.5.11 MVP 验收基线（执行顺序与短路机制）
 
@@ -202,8 +203,12 @@ optional：
 13. `policySnapshotId`
 14. `policySnapshotVersion`
 15. `constraintsLite`（结构见下方“constraintsLite 最小结构”）
-16. `stateUpdate`（`fromState`, `toState`, `stateReasonCode`）
-17. `policyAuditSnapshotLite`（结构见 `3.5.18`）
+16. `adDecisionLite`
+   - `allowAd`（bool）
+   - `decisionSemantic`（`serve_ad` / `no_ad`）
+   - `noAdReasonCode`（`allowAd=false` 时 required）
+17. `stateUpdate`（`fromState`, `toState`, `stateReasonCode`）
+18. `policyAuditSnapshotLite`（结构见 `3.5.18`）
 
 `constraintsLite` 最小结构（MVP 冻结）：
 1. `constraintSetVersion`
@@ -214,18 +219,24 @@ optional：
    - `nonPersonalizedOnly`（bool）
 4. `renderConstraints`
    - `disallowRenderModes`（数组，最小支持：`webview` / `video_vast_container`）
-5. `constraintReasonCodes`（数组，用于解释约束来源；可为空）
+5. `sourceConstraints`
+   - `sourceSelectionMode`（`all_except_blocked` / `allowlist_only`）
+   - `allowedSourceIds`（数组；`allowlist_only` 下 required 非空）
+   - `blockedSourceIds`（数组，可为空）
+6. `constraintReasonCodes`（数组，用于解释约束来源；可为空）
 
 输出一致性约束（`constraintsLite`）：
 1. 即使 `finalPolicyAction=allow` 且无额外限制，也必须输出 `constraintsLite`（空数组 + `nonPersonalizedOnly=false`），禁止省略对象。
 2. `degrade` 产生的限制必须落在 `constraintsLite`，不得仅写文本 warning。
 3. `block` 路径可输出空约束，但 `constraintSetVersion` 与键结构必须完整。
+4. `sourceConstraints` 冲突裁决固定：`blockedSourceIds` 优先于 `allowedSourceIds`；同一 source 同时命中时按 blocked 处理。
+5. `allowAd=false` 必须固定语义为 `decisionSemantic=no_ad`，且必须携带 `noAdReasonCode`。
 
 输出路径：
 1. `isRoutable=true`：
-   - 输出 `routableOpportunityLite` 给 D（包含可路由机会对象、策略降级标记与 `constraintsLite`）。
+   - 输出 `routableOpportunityLite` 给 D（包含可路由机会对象、策略降级标记、`constraintsLite` 与 `adDecisionLite.allowAd=true`）。
 2. `isRoutable=false`：
-   - 输出 `policyBlockedResultLite` 给 E（包含阻断摘要、返回原因与 `constraintsLite` 快照）。
+   - 输出 `policyBlockedResultLite` 给 E（包含阻断摘要、返回原因、`constraintsLite` 快照与 `adDecisionLite.decisionSemantic=no_ad`）。
 
 optional：
 1. `policyWarnings`
@@ -237,6 +248,10 @@ optional：
 1. `finalPolicyAction=allow/degrade` 且未命中硬阻断时，`isRoutable=true`。
 2. `finalPolicyAction=block` 或命中 `short_circuit_block` 时，`isRoutable=false`。
 
+`adDecisionLite` 冻结规则：
+1. `isRoutable=true` -> `allowAd=true`，`decisionSemantic=serve_ad`，`noAdReasonCode` 置空。
+2. `isRoutable=false` -> `allowAd=false`，`decisionSemantic=no_ad`，`noAdReasonCode=policyDecisionReasonCode`。
+
 `stateUpdate` 冻结规则：
 1. 路由路径（`isRoutable=true`）：
    - `fromState=received`，`toState=routed`，`stateReasonCode=policy_passed` 或 `policy_degraded_pass`。
@@ -244,9 +259,9 @@ optional：
    - `fromState=received`，`toState=error`，`stateReasonCode=policy_blocked`。
 
 消费约束：
-1. D 仅消费 `isRoutable=true` 输出，禁止接收阻断对象。
-2. E 必须可消费 `isRoutable=false` 输出并返回标准错误语义。
-3. C 输出必须显式给出 `isRoutable`，禁止下游二次推断。
+1. D 仅消费 `isRoutable=true` 且 `allowAd=true` 输出，禁止接收阻断对象。
+2. E 必须可消费 `isRoutable=false` 且 `allowAd=false` 输出，并返回标准 `no-ad` 语义。
+3. C 输出必须显式给出 `isRoutable + allowAd`，禁止下游二次推断。
 
 #### 3.5.14 MVP 验收基线（C 输出合同）
 
@@ -257,6 +272,7 @@ optional：
 5. 同请求在同版本下输出字段、分流结果、状态更新均可复现。
 6. `policySnapshotId + policySnapshotVersion` 在 C 输出与审计快照中一致并可回放。
 7. `constraintsLite` 在 C 输出、下游消费与审计快照中一致可回放。
+8. `allowAd=false` 的请求在 C 输出中必须且仅能落到 `decisionSemantic=no_ad`。
 
 #### 3.5.15 Policy 原因码体系（MVP 冻结）
 
@@ -339,6 +355,7 @@ optional：
 9. `finalConclusion`
    - `finalPolicyAction`
    - `isRoutable`
+   - `adDecisionLite`（`allowAd`, `decisionSemantic`, `noAdReasonCode`）
    - `primaryPolicyReasonCode`
    - `winningGate`
    - `winningRuleId`

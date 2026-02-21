@@ -61,6 +61,7 @@ required：
      - `categoryConstraints`（`bcat`, `badv`）
      - `personalizationConstraints`（`nonPersonalizedOnly`）
      - `renderConstraints`（`disallowRenderModes`）
+     - `sourceConstraints`（`sourceSelectionMode`, `allowedSourceIds`, `blockedSourceIds`）
    - `stateUpdate`（`fromState=received`, `toState=routed`）
    - `policyPackVersion`
    - `policyRuleVersion`
@@ -130,6 +131,7 @@ optional：
 3. 版本锚点完整，可定位“按哪套路由规则执行”。
 4. 同请求在同版本下输入判定与处置动作可复现。
 5. 任一输入拒绝可通过 `traceKey + reasonCode` 分钟级定位。
+6. `sourceConstraints` 缺失或非法时不得进入正常路由执行。
 
 #### 3.6.9 Adapter 注册与能力声明（MVP 冻结）
 
@@ -202,6 +204,9 @@ optional：
    - `badv`
    - `nonPersonalizedOnly`
    - `disallowRenderModes`
+   - `sourceSelectionMode`
+   - `allowedSourceIds`
+   - `blockedSourceIds`
 13. `routeContext`（`routePath`, `routeHop`, `routingPolicyVersion`）
 14. `timeoutBudgetMs`
 15. `sentAt`
@@ -446,7 +451,7 @@ optional：
 
 触发条件冻结如下：
 1. `primary`：
-   - 条件：source 为 `active`，能力声明覆盖 placement，预算可分配（`timeoutBudgetMs > 0`）。
+   - 条件：source 为 `active`，能力声明覆盖 placement，通过 `sourceConstraints` 过滤，预算可分配（`timeoutBudgetMs > 0`）。
    - 进入动作：发起首路请求。
 2. `secondary`：
    - 条件：`primary` 返回 `no_fill`，或返回 `timeout/error + retryClass=non_retryable`，或 `primary` 预算耗尽。
@@ -458,6 +463,14 @@ optional：
 阻断条件：
 1. `policy` 指示不可路由（`isRoutable=false`）时，不生成 Route Plan。
 2. 无可用 source 且无 fallback 时，直接 `terminal`，原因码 `d_route_no_available_source`。
+
+source 过滤规则（MVP 冻结）：
+1. 先按 `sourceSelectionMode` 生成初始可用池：
+   - `all_except_blocked`：以 `active` source 集合作为初始池。
+   - `allowlist_only`：以 `allowedSourceIds` 与 `active` source 交集作为初始池。
+2. 再应用 `blockedSourceIds` 扣减（优先级高于 allowlist）。
+3. 过滤后为空：直接 `terminal`，原因码 `d_route_no_available_source`。
+4. 过滤决策必须写入 `routeAuditSnapshotLite.sourceFilterSnapshot`，用于回放“哪些 source 被策略剔除”。
 
 #### 3.6.26 同级 tie-break 规则（MVP，确定性）
 
@@ -518,6 +531,7 @@ Route Plan 仅允许三类短路动作：
    - `categoryConstraints`（`bcat`, `badv`）
    - `personalizationConstraints`（`nonPersonalizedOnly`）
    - `renderConstraints`（`disallowRenderModes`）
+   - `sourceConstraints`（`sourceSelectionMode`, `allowedSourceIds`, `blockedSourceIds`）
 9. `routeConclusion`
    - `routePlanId`
    - `routeOutcome`（`served_candidate` / `no_fill` / `error`）
@@ -587,25 +601,31 @@ required：
    - `hitRouteTier`（`primary` / `secondary` / `fallback`）
    - `hitSourceId`
    - `hitStepIndex`
-3. `routeSwitches`
+3. `sourceFilterSnapshot`
+   - `sourceSelectionMode`
+   - `inputAllowedSourceIds`
+   - `inputBlockedSourceIds`
+   - `filteredOutSourceIds`
+   - `effectiveSourcePoolIds`
+4. `routeSwitches`
    - `switchCount`
    - `switchEvents[]`（按时间顺序）
      - `fromSourceId`
      - `toSourceId`
      - `switchReasonCode`
      - `switchAt`
-4. `finalRouteDecision`
+5. `finalRouteDecision`
    - `finalSourceId`（允许 `none`）
    - `finalRouteTier`（`primary` / `secondary` / `fallback` / `none`）
    - `finalOutcome`（`served_candidate` / `no_fill` / `error`）
    - `finalReasonCode`
    - `selectedAt`
-5. `versionSnapshot`
+6. `versionSnapshot`
    - `routingPolicyVersion`
    - `fallbackProfileVersion`
    - `adapterRegistryVersion`
    - `routePlanRuleVersion`
-6. `snapshotMeta`
+7. `snapshotMeta`
    - `routeAuditSchemaVersion`
    - `generatedAt`
 
@@ -614,6 +634,7 @@ required：
 2. `traceKeys` 必须与 `dToEOutputLite` 主键一致。
 3. `switchEvents` 为空时，`switchCount` 必须为 `0`。
 4. 任一 `switchReasonCode` 必须来自标准原因码集合（不可自由文本）。
+5. `sourceFilterSnapshot.effectiveSourcePoolIds` 必须等于 Route Plan 实际参与选路 source 集。
 
 #### 3.6.33 MVP 验收基线（路由审计快照）
 
@@ -622,3 +643,4 @@ required：
 3. 快照必须携带可定位的版本快照与 trace 键。
 4. 同请求同版本下快照内容可复现，不出现顺序漂移。
 5. E/G 可直接消费快照，无需额外拼接路由历史。
+6. 可从快照还原 `sourceConstraints` 对 source 池的过滤结果，支持“为何某需求方未被请求”的对账。
