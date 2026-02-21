@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.1）
+
+1. 更新 `Module F`，冻结 `POST /events` 输入合同（批量 envelope + `events[]` 规模约束）。
+2. 新增单事件输入合同（通用 required、事件类型条件必填、异常值处置）。
+3. 新增逐条 ACK 合同（`accepted/rejected/duplicate`）与 `ackItemLite` 字段定义。
+4. 新增 `partial_success` 判定与重试语义，明确部分成功下客户端重试范围。
+5. 补充 Module F 输入合同 MVP 验收基线，并纳入当前交付包。
+
 ### 2026-02-21（v4.0）
 
 1. 将原 `docs/mediation-module-design.md` 单文件重构为主入口 + 索引 + 子文件目录结构。
