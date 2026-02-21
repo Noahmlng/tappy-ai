@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.20
+- 文档版本：v3.21
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -969,6 +969,8 @@ optional：
 1. 默认 fail-open。
 2. 强策略场景允许 fail-closed。
 
+详细执行合同见 `3.6.24` ~ `3.6.27`（Route Plan 冻结）。
+
 #### 3.6.4 输出合同
 
 1. 标准候选结果集合或空结果。
@@ -1338,6 +1340,88 @@ optional：
 4. 原始错误与 canonical 结果可审计回放（含原因码与规则版本）。
 5. `error normalize` 输出可被路由层直接消费，不需再做二次猜测。
 
+#### 3.6.24 路由执行计划（Route Plan，MVP 冻结）
+
+`routePlanLite` 作为 D 层执行计划对象，冻结为：
+1. `routePlanId`
+2. `opportunityKey`
+3. `traceKey`
+4. `requestKey`
+5. `attemptKey`
+6. `routingPolicyVersion`
+7. `fallbackProfileVersion`
+8. `routeSteps`（按执行顺序）
+9. `routePlanStatus`（`planned` / `executing` / `completed` / `terminated`）
+10. `plannedAt`
+
+`routeSteps` 每项 required：
+1. `stepIndex`
+2. `routeTier`（`primary` / `secondary` / `fallback`）
+3. `sourceId`
+4. `entryCondition`
+5. `timeoutBudgetMs`
+6. `maxRetryCount`
+7. `stepStatus`（`pending` / `running` / `skipped` / `finished`）
+
+#### 3.6.25 主/次/fallback 触发条件（MVP）
+
+触发条件冻结如下：
+1. `primary`：
+   - 条件：source 为 `active`，能力声明覆盖 placement，预算可分配（`timeoutBudgetMs > 0`）。
+   - 进入动作：发起首路请求。
+2. `secondary`：
+   - 条件：`primary` 返回 `no_fill`，或返回 `timeout/error + retryClass=non_retryable`，或 `primary` 预算耗尽。
+   - 进入动作：切换到下一优先级 source。
+3. `fallback`：
+   - 条件：`primary + secondary` 均未产生可交付候选，且 fallback 池存在可用 source。
+   - 进入动作：按 fallback 顺序逐个尝试，直到命中可交付候选或预算耗尽。
+
+阻断条件：
+1. `policy` 指示不可路由（`isRoutable=false`）时，不生成 Route Plan。
+2. 无可用 source 且无 fallback 时，直接 `terminal`，原因码 `d_route_no_available_source`。
+
+#### 3.6.26 同级 tie-break 规则（MVP，确定性）
+
+当同一 `routeTier` 内有多个候选 source 时，按固定规则链路裁决：
+1. `sourcePriorityScore`（高优先）。
+2. `historicalSuccessRate`（高优先，窗口固定）。
+3. `p95LatencyMs`（低优先）。
+4. `costWeight`（低优先）。
+5. `sourceId` 字典序（最终稳定 tie-break）。
+
+裁决约束：
+1. 每次 tie-break 必须记录命中规则与比较值快照。
+2. 同请求同版本下，同级 source 的选中结果必须一致。
+3. 任何随机因子不得参与 MVP tie-break。
+
+#### 3.6.27 短路规则（MVP）
+
+Route Plan 仅允许三类短路动作：
+1. `short_circuit_served`：一旦产出可交付候选，立即终止后续 route step。
+2. `short_circuit_terminal`：命中不可恢复终态（如 `policy_block` 或全局预算耗尽），立即停止。
+3. `short_circuit_exhausted`：所有 step 已执行且无可交付结果，结束为 `no_fill`。
+
+短路判定优先级（固定）：
+1. `served` 优先于一切后续路由。
+2. `terminal` 优先于继续重试/切路由。
+3. `exhausted` 仅在无更高优先级短路命中时触发。
+
+短路审计最小字段：
+1. `routePlanId`
+2. `triggerStepIndex`
+3. `shortCircuitAction`
+4. `shortCircuitReasonCode`
+5. `budgetSnapshotBeforeAfter`
+6. `ruleVersion`
+
+#### 3.6.28 MVP 验收基线（Route Plan）
+
+1. 任一请求都能生成或拒绝生成确定性的 `routePlanLite`（含原因码）。
+2. 主/次/fallback 触发行为在同请求同版本下可复现。
+3. 同级 tie-break 决策可审计回放，不出现随机漂移。
+4. 任一短路动作都可定位到触发 step、原因码与版本快照。
+5. Route Plan 输出可被 E/F/G 直接消费，不需要二次推断路由过程。
+
 ### 3.7 Module E: Delivery Composer
 
 #### 3.7.1 Delivery Schema 职责
@@ -1491,7 +1575,7 @@ optional：
 1. 模块化主链框架（A-H）与边界说明。
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
 3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照 + D 输入合同 + Adapter 注册与能力声明 + request adapt 子合同 + candidate normalize 子合同 + error normalize 体系）。
-4. 两类供给源最小适配合同（adapter 四件事）与编排基线。
+4. 两类供给源最小适配合同（adapter 四件事）与编排基线（含 Route Plan 触发/裁决/短路口径）。
 5. Delivery / Event Schema 分离与 `responseReference` 关联口径。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
 7. 可观测与审计最小模型（单机会对象 + 四段决策点）。
@@ -1551,6 +1635,15 @@ optional：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.21）
+
+1. 新增 `3.6.24`，冻结 D 层 `Route Plan` 执行对象（`routePlanLite`）。
+2. 新增 `3.6.25`，明确主/次/fallback 三层触发条件与阻断条件。
+3. 新增 `3.6.26`，冻结同级 source 的确定性 tie-break 规则链路。
+4. 新增 `3.6.27`，冻结 Route Plan 短路动作、优先级与审计字段。
+5. 新增 `3.6.28`，补充 Route Plan 的 MVP 验收基线。
+6. 更新第 4 章交付项，纳入 Route Plan 交付口径。
 
 ### 2026-02-21（v3.20）
 
