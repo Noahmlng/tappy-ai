@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v2.6
+- 文档版本：v2.7
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -476,6 +476,102 @@ Ingress 校验分三层，按顺序执行：
 3. 去重策略异常时不会无痕放大重复流量。
 4. 幂等结果在同策略版本下可复现。
 
+#### 3.3.22 Opportunity Trigger Taxonomy（机会触发类型字典，当前版本冻结）
+
+范围边界：
+1. 本字典只定义 Mediation Ingress 如何识别“机会触发”。
+2. 不定义 DSP/SSP 的投放策略，不替代下游竞价逻辑。
+3. 目标是统一“什么算一次机会”，避免不同 SDK/应用各自解释。
+
+字典目标：
+1. 统一触发语义与命名，保障跨应用、跨 SDK 一致性。
+2. 为去重、策略门禁、路由提供稳定前置标签。
+3. 让机会识别结果可审计、可比较、可复现。
+
+#### 3.3.23 触发类型分层（冻结）
+
+当前版本冻结两级结构：`triggerCategory` + `triggerType`。
+
+`triggerCategory`（一级）：
+1. `explicit_intent`：用户/agent 明确表达商业探索意图。
+2. `workflow_transition`：工作流阶段切换产生可触达窗口。
+3. `contextual_opportunity`：上下文信号触发机会（非明确意图）。
+4. `system_scheduled`：系统按规则定时/定点触发（如 checkpoint）。
+5. `policy_forced`：策略侧强制触发或强制抑制后的替代触发。
+
+`triggerType`（二级最小集）：
+1. `explicit_query_commercial`
+2. `task_stage_entry`
+3. `task_stage_exit`
+4. `result_summary_checkpoint`
+5. `agent_handoff_point`
+6. `context_affinity_hit`
+7. `time_or_frequency_slot`
+8. `policy_override_trigger`
+
+约束：
+1. 每个请求必须命中一个主 `triggerType`。
+2. 可附加次级 trigger 列表，但主 trigger 只能唯一。
+3. 未识别类型统一映射 `unknown_trigger` 并进入受控降级。
+
+#### 3.3.24 机会成立判定（What Counts as Opportunity）
+
+机会成立条件（同时满足）：
+1. `triggerType` 合法且可解释。
+2. placement 与触发类型在兼容矩阵中允许组合。
+3. 当前会话处于可触达窗口（不命中硬抑制策略）。
+4. 去重状态允许新机会产生（非 `inflight_duplicate/reused_result` 主路径）。
+
+机会不成立条件（任一命中）：
+1. 触发类型非法或不在冻结字典。
+2. placement-触发组合不兼容。
+3. 命中强抑制策略（如频控硬阈值、高风险来源封禁）。
+4. 命中重复请求复用路径且不应新建机会对象。
+
+输出结论：
+1. `opportunity_eligible`
+2. `opportunity_ineligible`
+3. `opportunity_blocked_by_policy`
+
+#### 3.3.25 Trigger Metadata 合同（A 层输出）
+
+`Module A` 增补 `triggerSnapshot`：
+1. `triggerCategory`
+2. `triggerType`
+3. `triggerSource`（user/agent/system/policy）
+4. `triggerEvidence`（最小证据摘要）
+5. `triggerConfidenceBand`（high/medium/low）
+6. `triggerDecision`（eligible/ineligible/blocked）
+7. `triggerPolicyVersion`
+8. `triggerTaxonomyVersion`
+
+下游消费约束：
+1. `Module B` 仅承载并映射，不改写主 trigger 决策。
+2. `Module C` 可基于 `triggerDecision` 与 `triggerConfidenceBand` 做策略加强。
+3. `Module D` 仅对 `eligible` 机会进入正常路由；其他状态走受控路径。
+
+#### 3.3.26 版本治理与兼容规则（Trigger Taxonomy）
+
+1. 字典独立版本线：`triggerTaxonomyVersion`。
+2. 新增触发类型优先“追加”，避免重定义已有语义。
+3. 删除或重命名触发类型属于破坏性变更，需主版本升级。
+4. 任一请求都必须记录 `triggerTaxonomyVersion` 以支持回放复现。
+
+#### 3.3.27 观测指标与验收基线（Trigger Taxonomy）
+
+核心指标：
+1. `trigger_coverage_rate`
+2. `unknown_trigger_rate`
+3. `eligible_trigger_rate`
+4. `trigger_to_delivery_conversion_rate`
+5. `cross_sdk_trigger_consistency_rate`
+
+验收基线：
+1. 不同 SDK/应用对同类场景应命中一致 trigger 类型。
+2. `unknown_trigger_rate` 受控并可持续下降。
+3. 触发判定与去重/策略结果无冲突（无同请求多判定）。
+4. 单请求可回放“触发 -> 判定 -> 下游处理”完整链路。
+
 ### 3.4 Module B: Schema Translation & Signal Normalization
 
 #### 3.4.1 统一 Opportunity Schema（共同语言）
@@ -762,6 +858,7 @@ Ingress 校验分三层，按顺序执行：
 16. Module A Ingress Request Envelope 合同与校验规则说明。
 17. Module A Auth + Source Trust 鉴权与可信分级说明（Mediation 范围）。
 18. Module A Idempotency / De-dup 幂等与去重规则说明（Mediation 范围）。
+19. Module A Opportunity Trigger Taxonomy 机会触发类型字典说明（Mediation 范围）。
 
 ## 5. 优化项与 SSP 过渡（Plan）
 
@@ -930,6 +1027,14 @@ Ingress 校验分三层，按顺序执行：
    - 未来：实现对账自动化与争议回放自动化。
 
 ## 6. 变更记录
+
+### 2026-02-21（v2.7）
+
+1. 在 `3.3` 新增 Opportunity Trigger Taxonomy 设计，冻结“什么算机会”的触发字典边界（Mediation 范围）。
+2. 新增两级触发结构（`triggerCategory` + `triggerType`）与最小触发类型集。
+3. 定义机会成立/不成立条件与标准输出结论（eligible/ineligible/blocked）。
+4. 新增 `triggerSnapshot` 输出合同及 A->B/C/D 消费约束。
+5. 增加 `triggerTaxonomyVersion` 版本治理规则、核心指标与验收基线，并更新交付包条目。
 
 ### 2026-02-21（v2.6）
 
