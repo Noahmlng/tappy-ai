@@ -236,20 +236,21 @@ required：
 required：
 1. `requestId`
 2. `operatorId`
-3. `environment`（`prod` / `staging`）
-4. `actionType`（`publish` / `rollback`）
-5. `targetScope`（`global` / `app` / `placement`）
-6. `targetKey`
+3. `authContextLite`
+4. `environment`（`prod` / `staging`）
+5. `actionType`（`publish` / `rollback`）
+6. `targetScope`（`global` / `app` / `placement`）
+7. `targetKey`
    - `global`：`environment`
    - `app`：`appId + environment`
    - `placement`：`appId + placementId + environment`
-7. `changeSetId`
-8. `baseVersionSnapshot`
+8. `changeSetId`
+9. `baseVersionSnapshot`
    - `schemaVersion`
    - `routingStrategyVersion`
    - `placementConfigVersion`
-9. `publishAt`
-10. `publishContractVersion`
+10. `publishAt`
+11. `publishContractVersion`
 
 conditional required：
 1. `actionType=publish` 时：`targetVersionSnapshot`（本次要发布的版本快照）
@@ -259,6 +260,29 @@ optional：
 1. `dryRun`（默认 `false`）
 2. `reason`
 3. `extensions`
+
+`authContextLite` 合同（P0，MVP 冻结）：
+1. `actorId`
+2. `role`（`config_admin` / `app_operator` / `placement_operator` / `read_only`）
+3. `authMethod`（`token` / `mTLS` / `signature`）
+4. `issuedAt`
+5. `expiresAt`
+6. `scopeBindings`
+   - `allowedEnvironments[]`
+   - `allowedAppIdsOrWildcard`
+   - `allowedPlacementIdsOrWildcard`
+7. `authContextVersion`
+
+鉴权与权限校验规则（P0，MVP 冻结）：
+1. `operatorId` 必须与 `authContextLite.actorId` 一致；不一致直接拒绝（`h_publish_auth_operator_mismatch`）。
+2. `publishAt` 必须落在 `issuedAt..expiresAt` 有效期内；超期直接拒绝（`h_publish_auth_context_invalid`）。
+3. 角色-目标范围最小权限矩阵：
+   - `targetScope=global`：仅 `config_admin` 可执行 `publish/rollback`。
+   - `targetScope=app`：`config_admin/app_operator` 可执行；`placement_operator/read_only` 拒绝。
+   - `targetScope=placement`：`config_admin/app_operator/placement_operator` 可执行；`read_only` 拒绝。
+4. `scopeBindings` 必须覆盖 `environment + targetKey`；否则拒绝（`h_publish_authz_denied_scope`）。
+5. 角色命中但动作不被允许（如 `read_only` 或超出矩阵）-> 拒绝（`h_publish_authz_denied`）。
+6. 任一鉴权失败请求不得进入 `draft/validated` 流程，直接返回 `publishState=failed`。
 
 响应对象：`hConfigPublishResponseLite`
 
@@ -293,8 +317,9 @@ required：
 
 约束：
 1. 禁止 `draft -> published` 直跳。
-2. `published` 之后不得再次 `publish` 同一 `changeSetId`。
-3. 任一 `failed` 必须带 `ackReasonCode` 与 `retryable`。
+2. 鉴权/权限失败不得进入 `draft`，必须直接 `failed`。
+3. `published` 之后不得再次 `publish` 同一 `changeSetId`。
+4. 任一 `failed` 必须带 `ackReasonCode` 与 `retryable`。
 
 #### 3.10.17 原子性边界（P0，MVP 冻结）
 
@@ -338,6 +363,10 @@ required：
 4. `h_publish_compensation_triggered`
 5. `h_publish_compensation_failed`
 6. `h_publish_rollback_target_not_found`
+7. `h_publish_auth_context_invalid`
+8. `h_publish_auth_operator_mismatch`
+9. `h_publish_authz_denied`
+10. `h_publish_authz_denied_scope`
 
 #### 3.10.20 MVP 验收基线（POST /config/publish）
 
@@ -345,6 +374,7 @@ required：
 2. 任一回滚请求都遵循 `published -> rollback -> rolled_back/failed` 的确定性状态迁移。
 3. 同一 `releaseUnit` 不会出现“部分线已生效、部分线未生效”的外部可见状态。
 4. 任一失败都可通过 `publishOperationId + changeSetId + ackReasonCode` 分钟级定位。
+5. 鉴权/权限失败请求可稳定落 `h_publish_auth_*` 原因码，且不会进入发布主状态机。
 
 #### 3.10.21 版本兼容门禁合同（sdk/adapter/schema，P0，MVP 冻结）
 

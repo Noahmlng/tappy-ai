@@ -1,5 +1,12 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.46）
+
+1. 在 `Module H` 的 `POST /config/publish` 请求合同新增 `authContextLite`（actor/role/scope/authMethod/有效期）。
+2. 冻结发布鉴权与权限边界：角色-`targetScope` 权限矩阵 + `scopeBindings` 覆盖校验。
+3. 新增鉴权拒绝原因码：`h_publish_auth_context_invalid`、`h_publish_auth_operator_mismatch`、`h_publish_authz_denied`、`h_publish_authz_denied_scope`。
+4. 明确鉴权失败请求不得进入 `draft/validated`，必须直接 `publishState=failed`。
+
 ### 2026-02-21（v4.45）
 
 1. 在 `Module H` 的 `effectiveConfig` 与版本门禁输入中新增 `missingMinVersionPolicy`（`reject` / `degrade_block_adapter`）。
