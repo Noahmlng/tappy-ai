@@ -312,3 +312,74 @@ ACK 映射：
 3. `idempotencyKey/eventId/computedKey` 选键优先级在同请求同版本下可复现。
 4. 去重窗口边界行为稳定（窗口内重复必去重，超窗按规则拒绝或新周期处理）。
 5. 任一去重冲突可通过 `batchId + eventId + canonicalDedupKey + ackReasonCode` 分钟级定位。
+
+#### 3.8.17 终态闭环键与可闭环事件（P0，MVP 冻结）
+
+闭环主键（冻结）：
+1. `closureKey = responseReference + \"|\" + renderAttemptId`
+2. `responseReference` 与 `renderAttemptId` 缺一不可；缺失时事件不得进入终态闭环口径。
+
+闭环状态：
+1. `open`
+2. `closed_success`（终态：`impression`）
+3. `closed_failure`（终态：`failure`）
+
+可闭环事件（仅以下可驱动终态）：
+1. `impression`（直接闭环为 `closed_success`）
+2. `failure`（F 归一终态事件，直接闭环为 `closed_failure`）
+3. `error`（仅当 `errorClass=terminal` 且键完整时，归一为 `failure` 后闭环）
+
+不可闭环事件（只做过程/诊断）：
+1. `opportunity_created`
+2. `auction_started`
+3. `ad_filled`
+4. `click`
+5. `interaction`
+6. `postback`
+7. 非终态 `error`
+
+#### 3.8.18 超时补写条件（P0，MVP 冻结）
+
+终态等待窗口（固定）：
+1. `terminalWaitWindow = 120s`
+
+补写触发条件（全部满足）：
+1. 同一 `closureKey` 已进入 `open`（至少收到 `ad_filled` 或可渲染启动信号）。
+2. 在 `terminalWaitWindow` 内未收到 `impression/failure` 终态事件。
+3. 该 `closureKey` 未被标记为 `closed_success/closed_failure`。
+
+补写动作：
+1. 系统生成 `failure` 事件（`terminalSource=system_timeout_synthesized`）。
+2. 原因码固定：`f_terminal_timeout_autofill`。
+3. 该补写事件参与标准幂等与去重流程，且只能生效一次。
+
+补写约束：
+1. 若补写后又到达真实 `failure`，按 duplicate 处理。
+2. 若补写后到达 `impression`，按终态优先级规则裁决（见 `3.8.19`）。
+
+#### 3.8.19 impression / failure 互斥与优先级（P0，MVP 冻结）
+
+互斥规则（冻结）：
+1. 同一 `closureKey` 只允许一个终态结果生效。
+2. 终态一旦写入，闭环状态从 `open` 转为 `closed_*`，不得回退。
+
+优先级规则（高 -> 低）：
+1. `impression`
+2. `failure`（包含 timeout 补写与 terminal error 归一 failure）
+
+冲突处理：
+1. 已有 `impression` 后再到达任意 `failure`：
+   - `ackStatus=duplicate`
+   - `ackReasonCode=f_terminal_conflict_failure_after_impression`
+2. 已有 `failure` 后到达 `impression`：
+   - 若 `failure` 来源为 `system_timeout_synthesized`，允许 `impression` 覆盖终态为 `closed_success`，原 timeout failure 标记 `superseded`
+   - 若 `failure` 来源为真实终态事件，`impression` 记为冲突事件并隔离，`ackStatus=duplicate`，`ackReasonCode=f_terminal_conflict_impression_after_failure`
+3. 同批次同时出现 `impression` 与 `failure`：
+   - 按优先级先处理 `impression`，`failure` 按 duplicate 处理
+
+#### 3.8.20 MVP 验收基线（终态闭环规则）
+
+1. 每个 `closureKey` 最终都能落在唯一终态（`closed_success` 或 `closed_failure`）。
+2. 超时补写条件可复现，不会对同一 `closureKey` 重复补写。
+3. `impression/failure` 冲突时裁决结果在同请求同版本下确定性一致。
+4. 终态冲突与补写行为可通过 `responseReference + renderAttemptId + ackReasonCode` 分钟级回放定位。

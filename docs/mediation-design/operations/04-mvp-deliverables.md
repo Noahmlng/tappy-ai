@@ -12,4 +12,4 @@
 8. 配置与版本治理基线（三线分离：schema/route/placement）。
 9. 最小接入指南 + 最小链路清单 + 联调检查清单。
 10. Module A MVP 裁剪结论（必要模块已实现边界 + 延后模块索引）。
-11. Module F 输入合同（`POST /events` 批量 envelope + 单事件必填字段 + 逐条 ACK + 部分成功语义）、事件类型字典分层（`billing/diagnostics` + unknown 处理）与幂等去重基线（幂等键公式 + 优先级 + 去重窗口 + 状态机）。
+11. Module F 输入合同（`POST /events` 批量 envelope + 单事件必填字段 + 逐条 ACK + 部分成功语义）、事件类型字典分层（`billing/diagnostics` + unknown 处理）、幂等去重基线（幂等键公式 + 优先级 + 去重窗口 + 状态机）与终态闭环规则（`responseReference + renderAttemptId`、超时补写、`impression/failure` 互斥优先级）。

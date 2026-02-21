@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.4）
+
+1. 在 `Module F` 新增终态闭环主键定义，冻结 `closureKey = responseReference + renderAttemptId`。
+2. 新增可闭环事件与不可闭环事件边界，明确 `error` 仅在 terminal 场景可归一为 `failure`。
+3. 冻结超时补写条件（`terminalWaitWindow=120s`）与补写原因码 `f_terminal_timeout_autofill`。
+4. 冻结 `impression/failure` 互斥与优先级裁决，补充冲突 ACK 原因码与 supersede 语义。
+5. 更新闭环模型与 MVP 交付项，将终态闭环规则纳入当前版本交付。
+
 ### 2026-02-21（v4.3）
 
 1. 在 `Module F` 新增幂等键生成公式（`f_dedup_v1`），冻结 `canonicalDedupKey` 结构与 `computedKey` 计算输入。
