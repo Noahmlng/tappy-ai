@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（M1 版）
 
-- 文档版本：v0.9
+- 文档版本：v1.0
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：M1（接入与适配基线）
@@ -249,17 +249,35 @@ M1 先冻结跨模块通用优先级，避免不同接入方各自解释。
 2. 供给私有追踪字段与平台统一追踪字段冲突。
 3. 返回时序与事件时序不一致造成关联困难。
 
-### 3.4.5 冲突解决（Fundamental Design）
+### 3.4.5 Delivery / Event 分离设计（Fundamental Design）
+
+重要性：
+1. 当前核心冲突就来自“返回”和“回传”耦合，不分离会导致语义错位。
+2. 结算与归因依赖事件链路，若与返回混用会导致口径不一致。
+3. 分离后可保证主链路稳定返回，异步链路独立演进。
 
 M1 采用“两个 Schema + 一个关联引用”：
-1. `Delivery Schema`：仅表达本次返回内容。
-2. `Event Callback Schema`：仅表达后续行为事件。
-3. `Response Reference`：用于请求-响应-事件闭环关联。
+1. `Delivery Schema`：只表达本次返回结果，不承载后续行为语义。
+2. `Event Callback Schema`：只表达后续行为事件，不重复承载完整返回内容。
+3. `responseReference`：请求-返回-事件的统一关联主键。
 
-设计约束：
-1. Delivery 不承载事件语义。
-2. Event Callback 不重复承载完整广告返回内容。
-3. 供给私有字段先标准化，再决定是否作为扩展保留。
+职责边界：
+1. Delivery 负责“本次给了什么、给谁、处于什么返回状态”。
+2. Event 负责“后续发生了什么行为、发生时间、行为结果”。
+3. Delivery 与 Event 必须通过同一个 `responseReference` 关联到同一机会记录。
+4. 私有字段若需保留，进入 `extensions`，不得改变主语义职责边界。
+
+### 3.4.6 responseReference 与事件最小集（M1 冻结）
+
+1. `responseReference` 是 Delivery/Event 关联必填项，缺失时事件不得进入标准闭环口径。
+2. Event 最小集先冻结为：`impression` / `click` / `failure`。
+3. 所有最小事件都必须携带：事件类型、事件时间、`responseReference`、标准状态与原因码（如适用）。
+4. 新增事件类型采用版本化扩展，不得破坏最小集语义。
+
+M1 验收基线：
+1. Delivery 在不依赖事件回传成功的情况下可独立完成返回。
+2. Event 在不重复 Delivery 负载的情况下可独立完成行为上报。
+3. 任一 `impression`/`click`/`failure` 事件都能通过 `responseReference` 回溯到单次返回记录。
 
 ## 3.5 数据闭环实现（Data Loop）
 
@@ -363,6 +381,12 @@ M1 采用“两个 Schema + 一个关联引用”：
 2. 将流量质量、机会分析、意图识别、用户建模逐步升级到 SSP 能力。
 
 ## 6. 变更记录
+
+### 2026-02-21（v1.0）
+
+1. 强化 `3.4.5`：将“回传冲突解决”升级为 Delivery/Event 职责分离设计，并补充重要性说明。
+2. 新增 `3.4.6`：冻结 `responseReference` 关联规则与事件最小集（`impression`/`click`/`failure`）。
+3. 增加 M1 验收基线，确保“返回链路”和“事件链路”解耦且可闭环。
 
 ### 2026-02-21（v0.9）
 
