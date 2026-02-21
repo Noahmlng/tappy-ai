@@ -341,3 +341,110 @@ required：
 2. 任一回滚请求都遵循 `published -> rollback -> rolled_back/failed` 的确定性状态迁移。
 3. 同一 `releaseUnit` 不会出现“部分线已生效、部分线未生效”的外部可见状态。
 4. 任一失败都可通过 `publishOperationId + changeSetId + ackReasonCode` 分钟级定位。
+
+#### 3.10.21 版本兼容门禁合同（sdk/adapter/schema，P0，MVP 冻结）
+
+门禁接口语义：`evaluateVersionGate(gateInput, resolvedConfigSnapshot) -> versionGateDecision`。
+
+输入对象：`hVersionGateInputLite`
+
+required：
+1. `requestKey`
+2. `traceKey`
+3. `schemaVersion`（请求声明）
+4. `sdkVersion`（SDK 实际版本）
+5. `adapterVersionMap`（`adapterId -> adapterVersion`）
+6. `sdkMinVersion`（来自 `effectiveConfig`）
+7. `adapterMinVersionMap`（来自 `effectiveConfig`）
+8. `schemaCompatibilityPolicyRef`（包含支持矩阵）
+9. `gateAt`
+10. `versionGateContractVersion`
+
+optional：
+1. `gracePolicyRef`
+2. `extensions`
+
+输出对象：`hVersionGateDecisionLite`
+
+required：
+1. `requestKey`
+2. `traceKey`
+3. `gateAction`（`allow` / `degrade` / `reject`）
+4. `gateStageResult`
+   - `schemaGate`（`pass` / `degrade` / `reject`）
+   - `sdkGate`（`pass` / `degrade` / `reject`）
+   - `adapterGate`（`pass` / `degrade` / `reject`）
+5. `compatibleAdapters[]`
+6. `blockedAdapters[]`
+7. `reasonCodes[]`
+8. `gateAt`
+9. `versionGateContractVersion`
+
+#### 3.10.22 校验顺序（P0，MVP 冻结）
+
+固定校验顺序（不得调整）：
+1. `schema gate`
+2. `sdk gate`
+3. `adapter gate`
+
+顺序约束：
+1. 前一门禁 `reject` 时立即短路，后续门禁不再执行。
+2. 前一门禁 `degrade` 时继续执行后续门禁，并累计降级信息。
+3. 最终动作按优先级聚合：`reject > degrade > allow`。
+
+#### 3.10.23 动作判定规则（allow/degrade/reject，P0，MVP 冻结）
+
+`schema gate`：
+1. `schemaVersion` 在兼容矩阵中“完全支持” -> `pass`。
+2. `schemaVersion` 在兼容矩阵中“可兼容但需降级映射” -> `degrade`，原因码 `h_gate_schema_compatible_degrade`。
+3. 不在兼容矩阵/主版本不兼容 -> `reject`，原因码 `h_gate_schema_incompatible_reject`。
+
+`sdk gate`：
+1. `sdkVersion >= sdkMinVersion` -> `pass`。
+2. `sdkVersion < sdkMinVersion` 且命中灰度宽限策略 -> `degrade`，原因码 `h_gate_sdk_below_min_degrade`。
+3. `sdkVersion < sdkMinVersion` 且不在宽限策略 -> `reject`，原因码 `h_gate_sdk_below_min_reject`。
+
+`adapter gate`：
+1. 对每个 `adapterId` 执行 `adapterVersion >= adapterMinVersionMap[adapterId]`。
+2. 全部适配器通过 -> `pass`。
+3. 部分适配器不通过，但存在至少一个可用适配器 -> `degrade`（剔除不兼容适配器），原因码 `h_gate_adapter_partial_degrade`。
+4. 所有适配器不通过 -> `reject`，原因码 `h_gate_adapter_all_blocked_reject`。
+
+#### 3.10.24 版本比较与聚合规则（P0，MVP 冻结）
+
+版本比较规则：
+1. 使用 SemVer 比较：`major.minor.patch`。
+2. 仅允许数字三段；非法版本串 -> `reject`，原因码 `h_gate_invalid_version_format`。
+3. 预发布标记（如 `-beta`）在 MVP 视为低于同号正式版。
+
+聚合规则：
+1. `gateAction=reject` 时，必须返回首个触发 `reject` 的阶段与原因码。
+2. `gateAction=degrade` 时，必须返回所有降级来源（schema/sdk/adapter）与被剔除 adapter 列表。
+3. `gateAction=allow` 时，`reasonCodes` 允许为空或仅记录 `h_gate_all_pass`。
+
+#### 3.10.25 版本门禁原因码（P0，MVP 冻结）
+
+1. `h_gate_all_pass`
+2. `h_gate_schema_compatible_degrade`
+3. `h_gate_schema_incompatible_reject`
+4. `h_gate_sdk_below_min_degrade`
+5. `h_gate_sdk_below_min_reject`
+6. `h_gate_adapter_partial_degrade`
+7. `h_gate_adapter_all_blocked_reject`
+8. `h_gate_invalid_version_format`
+9. `h_gate_missing_required_version`
+10. `h_gate_policy_not_found`
+
+#### 3.10.26 门禁结果下游动作约束（P0，MVP 冻结）
+
+1. `allow`：请求进入标准主链路（A -> B -> C -> D -> E）。
+2. `degrade`：请求进入降级主链路，必须带 `versionGateDecision`；D 仅使用 `compatibleAdapters[]`。
+3. `reject`：请求不得进入 D/E，直接生成可审计失败结果（不触发竞价）。
+4. 任一动作都必须写入审计快照，保证 F/G 可回放。
+
+#### 3.10.27 MVP 验收基线（版本兼容门禁）
+
+1. 同一输入版本集在同策略版本下产出确定性一致的 `gateAction`。
+2. `schema/sdk/adapter` 顺序校验稳定，不会出现跨环境判定顺序漂移。
+3. `degrade` 场景下被剔除 adapter 在 D 层不会被再次启用。
+4. `reject` 场景不会进入竞价与渲染主链路，可通过 `requestKey + reasonCodes` 分钟级定位。

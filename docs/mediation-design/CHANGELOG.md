@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.15）
+
+1. 在 `Module H` 新增版本兼容门禁合同（sdk/adapter/schema），冻结门禁输入输出与审计字段。
+2. 冻结校验顺序为 `schema -> sdk -> adapter`，并明确 `reject` 短路与 `reject > degrade > allow` 聚合优先级。
+3. 新增 `allow/degrade/reject` 动作判定规则，覆盖 `sdk_min_version/adapter_min_version/schema_version` 三类校验。
+4. 冻结 SemVer 比较规则、非法版本处理与标准原因码体系，确保可回放与可排障。
+5. 新增门禁结果下游动作约束与 MVP 验收基线，并将版本兼容门禁纳入当前版本交付项。
+
 ### 2026-02-21（v4.14）
 
 1. 在 `Module H` 新增 `POST /config/publish` 接口合同，冻结发布/回滚请求与响应最小字段。
