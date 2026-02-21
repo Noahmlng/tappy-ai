@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-02-21T15:29:00.890Z",
+  "generatedAt": "2026-02-21T15:39:17.850Z",
   "suite": "qa-p0-matrix",
   "summary": {
     "total": 24,
@@ -240,7 +240,7 @@
         "audit"
       ],
       "status": "PASS",
-      "durationMs": 0
+      "durationMs": 1
     },
     {
       "id": "G-P0-001",
@@ -272,7 +272,7 @@
         "audit"
       ],
       "status": "PASS",
-      "durationMs": 0
+      "durationMs": 1
     },
     {
       "id": "H-P0-001",
