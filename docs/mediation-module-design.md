@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.10
+- 文档版本：v3.11
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -639,6 +639,79 @@ optional：
 1. `routable opportunity` 或 `policy-blocked result`。
 2. 策略命中轨迹（用于审计与回放）。
 
+#### 3.5.4 C 输入合同（B -> C，MVP 冻结）
+
+`Module B -> Module C` 标准输入对象冻结为 `cPolicyInputLite`（承接 `bNormalizedOpportunityLite`）。
+
+required：
+1. `opportunityKey`
+2. `schemaVersion`
+3. `state=received`（仅 `received` 进入正常策略评估）
+4. 六块对象且满足 `3.4.21` required 矩阵：
+   - `RequestMeta`
+   - `PlacementMeta`
+   - `UserContext`
+   - `OpportunityContext`
+   - `PolicyContext`
+   - `TraceContext`
+5. `normalizationSummary`
+   - `mappingProfileVersion`
+   - `enumDictVersion`
+   - `conflictPolicyVersion`
+6. `mappingAuditSnapshotLite`
+
+optional：
+1. `mappingWarnings`
+2. `extensions`
+
+版本锚点（输入必须可定位版本）：
+1. `cInputContractVersion`
+2. `schemaVersion`
+3. `mappingProfileVersion`
+4. `enumDictVersion`
+5. `conflictPolicyVersion`
+
+#### 3.5.5 缺失字段处置（MVP）
+
+缺失处置动作只允许：`continue` / `degrade` / `reject`。
+
+1. required 缺失：
+   - 动作：`reject`。
+   - 原因码：`c_missing_required_field`。
+2. optional 缺失：
+   - 动作：`continue`（必要时记录 warning）。
+   - 原因码：`c_optional_missing_ignored`。
+3. `state != received` 进入 C：
+   - 动作：`reject`（视为非法输入状态）。
+   - 原因码：`c_invalid_input_state`。
+
+一致性约束：
+1. 同请求同版本下，缺失处置动作必须一致。
+2. C 不得静默补齐 required 字段。
+
+#### 3.5.6 非法值处置（MVP）
+
+1. 结构非法（对象类型错误、关键对象非对象）：
+   - 动作：`reject`。
+   - 原因码：`c_invalid_structure`。
+2. 枚举非法（`channelType/placementType/actorType/triggerDecision/decisionOutcome/hitType` 非 canonical）：
+   - 动作：`reject`。
+   - 原因码：`c_invalid_required_enum`。
+3. 版本锚点缺失或格式非法（`schemaVersion/enumDictVersion/...`）：
+   - 动作：`reject`。
+   - 原因码：`c_invalid_version_anchor`。
+
+审计要求：
+1. 记录 `traceKey`、字段路径、原值、处置动作、原因码、规则版本。
+
+#### 3.5.7 MVP 验收基线（C 输入合同）
+
+1. C 层对输入 required/optional 判定无歧义，不依赖隐式补齐。
+2. required 缺失或非法值不会进入 D 正常路由。
+3. 版本锚点完整，可在审计中定位“按哪套规则评估”。
+4. 同请求在同版本下输入判定结果可复现。
+5. 任一输入拒绝可通过 `traceKey + reasonCode` 分钟级定位。
+
 ### 3.6 Module D: Supply Orchestrator & Adapter Layer
 
 #### 3.6.1 供给范围（当前最小）
@@ -831,7 +904,7 @@ optional：
 
 1. 模块化主链框架（A-H）与边界说明。
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
-3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照）。
+3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线。
 5. Delivery / Event Schema 分离与 `responseReference` 关联口径。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
@@ -892,6 +965,14 @@ optional：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.11）
+
+1. 新增 `3.5.4`，冻结 Module C 的 `B -> C` 输入合同（required/optional + 版本锚点）。
+2. 新增 `3.5.5`，明确 C 输入缺失字段的处置动作与标准原因码。
+3. 新增 `3.5.6`，明确 C 输入非法值与版本锚点异常的拒绝规则。
+4. 新增 `3.5.7`，补充 C 输入合同的 MVP 验收基线。
+5. 更新第 4 章交付项，纳入 C 输入合同交付口径。
 
 ### 2026-02-21（v3.10）
 
