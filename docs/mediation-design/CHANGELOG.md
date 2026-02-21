@@ -1,5 +1,12 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.49）
+
+1. 新增 `operations/06-production-readiness-and-infra.md`，冻结“可上线”所需最小生产基线（`PostgreSQL + Redis + MQ`、安全、SLO、发布回滚、对账与 Go/No-Go 阻断清单）。
+2. 在 `operations/04-mvp-deliverables.md` 补充“生产化上线基线（P0 阻断项）”，明确基础设施和运维治理不再是可选项。
+3. 在 `INDEX.md`、`README.md`、主入口 `mediation-module-design.md` 同步加入 `operations/06` 导航，纳入正式阅读路径。
+4. 在 `operations/03-agent-plan-split.md` 增加 `Plan-I: Infrastructure & Production Readiness`，明确执行顺序需先满足上线基础设施。
+
 ### 2026-02-21（v4.48）
 
 1. 在 `Module H` 的 `GET /config` 请求约束中明确：`sdkVersion` 不参与 `configKey` 与 `resolvedConfigSnapshot` 选择。

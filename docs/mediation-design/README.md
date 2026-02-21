@@ -11,12 +11,14 @@
 4. `modules/module-a-sdk-ingress-opportunity-sensing.md` to `modules/module-h-config-version-governance.md`
 5. `operations/01-closed-loop-model.md` and `operations/02-sdk-integration-guide-and-minimal-checklist.md`
 6. `operations/04-mvp-deliverables.md` and `operations/05-optimization-and-ssp-transition.md`
-7. `CHANGELOG.md`
+7. `operations/06-production-readiness-and-infra.md`
+8. `CHANGELOG.md`
 
 ## Folder Layout
 - `core/`: positioning, strategy context, end-to-end graph.
 - `modules/`: A-H module contracts and MVP boundaries.
 - `operations/`: closed loop, integration guide, deliverables, optimization roadmap.
+- `operations/`: closed loop, integration guide, deliverables, optimization roadmap, production-readiness.
 - `CHANGELOG.md`: full historical version record migrated from monolithic doc.
 - `INDEX.md`: quick navigation + editing map.
 - `AGENT_GUIDE.md`: how to modify docs safely and consistently.

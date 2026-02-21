@@ -25,6 +25,7 @@
 - Agent plan split: `docs/mediation-design/operations/03-agent-plan-split.md`
 - MVP deliverables: `docs/mediation-design/operations/04-mvp-deliverables.md`
 - Optimization and SSP transition: `docs/mediation-design/operations/05-optimization-and-ssp-transition.md`
+- Production readiness and infra: `docs/mediation-design/operations/06-production-readiness-and-infra.md`
 
 ## Fast Edit Map (Agent-Friendly)
 - Change request envelope / sensing behavior: update Module A.
@@ -35,6 +36,7 @@
 - Change event ingest, dedup, attribution, billing facts: update Module F.
 - Change replay / auditing format: update Module G.
 - Change version lines / rollback policy: update Module H.
+- Change production infra / security / SLO / release gate: update `operations/06-production-readiness-and-infra.md`.
 - Any cross-cutting status or response linkage: update both involved modules + `operations/01-closed-loop-model.md`.
 
 ## Versioning Rule

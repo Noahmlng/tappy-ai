@@ -13,3 +13,9 @@
 9. 最小接入指南 + 最小链路清单 + 联调检查清单。
 10. Module A MVP 裁剪结论（必要模块已实现边界 + 延后模块索引 + `trigger(placement_id, app_context)` 合同：required/optional、同步返回、错误码动作映射 + `createOpportunity(opportunity_v1)` 合同：`requestKey/opportunityKey/impSeed[]/timestamps/traceInit` 最小必填 + `opportunity_created` 事件合同：事件主键、幂等键、触发时机、ACK/重发语义 + Trigger Taxonomy 冻结：`triggerTaxonomyLite` 字典与 `triggerType -> decisionOutcome/hitType/reasonCode` 映射表 + 映射冲突处理规则 + A 层去重窗口冻结：`dedupWindowSec=120` 与 `aDedupSnapshotLite` 输出约束 + A 层 trace 规则冻结：`traceKey/requestKey/attemptKey` 初始化与继承规则 + A 层执行约束：显式遵循 H 失效矩阵 `3.10.47~3.10.53`）。
 11. Module F 输入合同（`POST /events` 批量 envelope + 单事件必填字段 + 逐条 ACK + 部分成功语义）、事件类型字典分层（`billing/diagnostics` + unknown 处理）、幂等去重基线（幂等键公式 + 优先级 + 去重窗口 + 状态机）、终态闭环规则（`responseReference + renderAttemptId`、超时补写、`impression/failure` 互斥优先级）、归因计费映射合同（`billableFacts/attributionFacts` 映射 + 单尝试唯一计费 + 冲突裁决）、F 输出合同（`fToGArchiveRecordLite` 字段 + 状态 + 版本锚点 + 关联键）、F->G->Archive 写入一致性合同（`recordKey` 幂等写入语义 + 写入顺序 + 部分失败补偿 + 最终一致状态）、G append 接口合同（请求体 + 幂等键 + 异步 ACK + 可重试原因码 + AuditRecord 字段级 required 矩阵）与 G replay 合同（查询参数 + 过滤器 + `summary/full` + 分页排序 + 空结果语义 + 回放确定性规则）。
+12. 生产化上线基线（P0，阻断项）：
+    - 基础服务：`PostgreSQL + Redis + MQ`（缺一不可）
+    - 运维治理：监控告警、发布门禁、回滚演练、故障 runbook
+    - 安全合规：鉴权、权限、密钥托管、审计追踪
+    - 对账能力：归档事实唯一计费与差异回放
+    - 详细定义见 `operations/06-production-readiness-and-infra.md`

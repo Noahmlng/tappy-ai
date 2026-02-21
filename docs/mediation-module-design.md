@@ -34,6 +34,7 @@
    - `docs/mediation-design/operations/03-agent-plan-split.md`
    - `docs/mediation-design/operations/04-mvp-deliverables.md`
    - `docs/mediation-design/operations/05-optimization-and-ssp-transition.md`
+   - `docs/mediation-design/operations/06-production-readiness-and-infra.md`
 5. 历史变更：`docs/mediation-design/CHANGELOG.md`
 
 ## 3. Agent-Friendly 治理规则

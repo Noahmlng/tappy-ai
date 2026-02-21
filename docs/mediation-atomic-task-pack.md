@@ -19,6 +19,214 @@
 
 ---
 
+## 0.5 Infrastructure（INFRA）
+
+### INFRA-001：产出生产拓扑与容量基线文档
+
+1. 目标：
+   - 冻结 MVP 生产拓扑与容量估算口径。
+2. 前置依赖：
+   - 无
+3. 必读 context：
+   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/operations/06-production-readiness-and-infra.md`
+4. 允许改动：
+   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/implementation/infra-topology-and-capacity.md`
+5. 执行步骤：
+   - 定义服务拓扑、数据流、峰值 QPS、事件 TPS、存储增长模型。
+6. 验收标准：
+   - 明确给出单日容量与扩容阈值。
+7. 验证命令：
+   - `rg -n "QPS|TPS|容量|扩容|拓扑" docs/implementation/infra-topology-and-capacity.md`
+8. 输出物：
+   - infra topology & capacity doc
+
+### INFRA-002：落地本地/集成环境基础服务编排
+
+1. 目标：
+   - 提供可重复启动的 PostgreSQL/Redis/MQ 环境。
+2. 前置依赖：
+   - INFRA-001
+3. 必读 context：
+   - 根目录现有运行脚本与 workspace 结构
+4. 允许改动：
+   - 新增 `infra/docker-compose.mediation.yml`
+   - 新增 `scripts/dev-mediation-infra.sh`（或等价脚本）
+5. 执行步骤：
+   - 启动并校验三类服务连通性。
+6. 验收标准：
+   - 一条命令可启动基础依赖并健康检查通过。
+7. 验证命令：
+   - `docker compose -f infra/docker-compose.mediation.yml up -d`
+   - `docker compose -f infra/docker-compose.mediation.yml ps`
+8. 输出物：
+   - infra compose baseline
+
+### INFRA-003：建立数据库 migration 基线
+
+1. 目标：
+   - 落地最小核心表 migration（配置/事件/归档/审计/幂等）。
+2. 前置依赖：
+   - INFRA-002
+3. 必读 context：
+   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/operations/06-production-readiness-and-infra.md`
+4. 允许改动：
+   - 新增 `projects/ad-aggregation-platform/migrations/*`
+   - 新增 migration runner 脚本
+5. 执行步骤：
+   - 创建核心表与索引。
+   - 提供 up/down 与版本记录。
+6. 验收标准：
+   - 新库可一键迁移到最新版本。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run db:migrate`
+8. 输出物：
+   - migration baseline
+
+### INFRA-004：定义 Redis 键空间与 TTL 策略
+
+1. 目标：
+   - 固化幂等、去重、缓存、熔断键模型。
+2. 前置依赖：
+   - INFRA-002
+3. 必读 context：
+   - A/B/F/G/H 幂等与缓存合同小节
+4. 允许改动：
+   - 新增 `docs/implementation/redis-keyspace-policy.md`
+   - 新增 `src/infra/redis-keyspace.*`（常量与 helper）
+5. 执行步骤：
+   - 统一 key 命名、TTL、淘汰策略、冲突策略。
+6. 验收标准：
+   - 不同模块不会产生键冲突。
+7. 验证命令：
+   - `rg -n "idempotency|dedup|cache|circuit" docs/implementation/redis-keyspace-policy.md`
+8. 输出物：
+   - redis keyspace policy
+
+### INFRA-005：定义 MQ topic 与重试/死信策略
+
+1. 目标：
+   - 固化 E->F、F->G、发布补偿链路 topic 与消费语义。
+2. 前置依赖：
+   - INFRA-002
+3. 必读 context：
+   - F/G/H 异步语义与 ACK/重试合同小节
+4. 允许改动：
+   - 新增 `docs/implementation/mq-topology-and-retry-policy.md`
+   - 新增 `src/infra/mq-topics.*`
+5. 执行步骤：
+   - 定义 topic、consumer group、retry backoff、DLQ。
+6. 验收标准：
+   - 任一消息链路均可追踪重试与最终落点。
+7. 验证命令：
+   - `rg -n "DLQ|retry|backoff|consumer group|topic" docs/implementation/mq-topology-and-retry-policy.md`
+8. 输出物：
+   - MQ policy baseline
+
+### INFRA-006：建立 Secrets 与鉴权基线
+
+1. 目标：
+   - 落地最小安全基线（密钥托管 + 接口鉴权 + 服务间鉴权）。
+2. 前置依赖：
+   - INFRA-001
+3. 必读 context：
+   - module-h 发布鉴权相关小节
+   - operations/06 安全章节
+4. 允许改动：
+   - 新增 `docs/implementation/security-baseline.md`
+   - 新增 `src/infra/auth/*`（如已有目录按现状调整）
+5. 执行步骤：
+   - 定义 token 生命周期、密钥轮转、最小权限模型。
+6. 验收标准：
+   - 未授权请求可稳定拒绝并审计。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- auth`
+8. 输出物：
+   - security baseline
+
+### INFRA-007：建立可观测与告警基线
+
+1. 目标：
+   - 定义并落地 SLI/SLO/告警。
+2. 前置依赖：
+   - INFRA-001
+3. 必读 context：
+   - operations/06 的 SLO 章节
+4. 允许改动：
+   - 新增 `docs/implementation/observability-slo.md`
+   - 新增 `src/infra/observability/*`
+5. 执行步骤：
+   - 接入结构化日志、metrics、trace。
+   - 定义告警分级与阈值。
+6. 验收标准：
+   - 核心链路指标可被查询且有告警策略。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- observability`
+8. 输出物：
+   - observability baseline
+
+### INFRA-008：建立发布流水线与回滚基线
+
+1. 目标：
+   - 落地 dev/staging/preprod/prod 流水线与回滚策略。
+2. 前置依赖：
+   - INFRA-003
+   - INFRA-007
+3. 必读 context：
+   - operations/06 发布章节
+4. 允许改动：
+   - CI/CD 配置文件
+   - 新增 `docs/implementation/release-and-rollback-playbook.md`
+5. 执行步骤：
+   - 增加灰度门禁、冻结窗口、回滚流程。
+6. 验收标准：
+   - 有可执行回滚演练记录模板。
+7. 验证命令：
+   - CI dry-run / release checklist 演练
+8. 输出物：
+   - release/rollback baseline
+
+### INFRA-009：建立对账与争议回放基线
+
+1. 目标：
+   - 补齐财务对账与争议处理流程。
+2. 前置依赖：
+   - INFRA-003
+   - G-002
+3. 必读 context：
+   - F/G 合同 + operations/06 对账章节
+4. 允许改动：
+   - 新增 `docs/implementation/reconciliation-and-dispute.md`
+   - 新增对账导出脚本（如 `scripts/reconcile-*`）
+5. 执行步骤：
+   - 定义日级对账、差异检测、差异重跑流程。
+6. 验收标准：
+   - 差异可定位到 `recordKey` 与版本锚点。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- reconcile`
+8. 输出物：
+   - reconciliation baseline
+
+### INFRA-010：产出上线 Go/No-Go 清单
+
+1. 目标：
+   - 给出上线审批的一页式阻断清单。
+2. 前置依赖：
+   - INFRA-001~INFRA-009
+3. 必读 context：
+   - operations/06 的 `6.11`
+4. 允许改动：
+   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/implementation/go-no-go-checklist.md`
+5. 执行步骤：
+   - 把服务、测试、安全、运维、业务就绪项转为可勾选清单。
+6. 验收标准：
+   - 任一阻断项失败即 No-Go。
+7. 验证命令：
+   - `rg -n "Go|No-Go|阻断|必须全部满足" docs/implementation/go-no-go-checklist.md`
+8. 输出物：
+   - go/no-go checklist
+
+---
+
 ## 1. Foundation（FND）
 
 ### FND-001：建立 Mediation 合同目录索引
@@ -881,19 +1089,21 @@
 
 ## 12. 推荐执行批次（降低上下文负载）
 
-1. Batch-A（基础）：
+1. Batch-0（基础设施）：
+   - INFRA-001~INFRA-010
+2. Batch-A（基础）：
    - FND-001~FND-006
-2. Batch-B（横切 H）：
+3. Batch-B（横切 H）：
    - H-001~H-005
-3. Batch-C（主链上半）：
+4. Batch-C（主链上半）：
    - A-001~A-003, B-001~B-004, C-001~C-002
-4. Batch-D（主链下半）：
+5. Batch-D（主链下半）：
    - D-001~D-003, E-001~E-003
-5. Batch-E（闭环）：
+6. Batch-E（闭环）：
    - F-001~F-003, G-001~G-002
-6. Batch-F（质量门禁）：
+7. Batch-F（质量门禁）：
    - QA-001~QA-004
-7. Batch-G（文档交付）：
+8. Batch-G（文档交付）：
    - SDK-001~SDK-003
 
 只允许按批次前后顺序推进，不跳批次。
