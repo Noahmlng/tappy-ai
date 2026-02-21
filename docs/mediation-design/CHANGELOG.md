@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.34）
+
+1. 在 `Module D` 输入合同新增独立 `configSnapshotLite`，冻结 `configSnapshotId/resolvedConfigRef/configHash/effectiveAt` 四个必填锚点。
+2. 在 D 的缺失/非法处置中新增 `d_config_snapshot_missing` 与 `d_invalid_config_snapshot`，并要求快照异常时拒绝进入 Route Plan。
+3. 在 `request adapt` 子合同中新增 `configSnapshot` 透传对象，确保 source 请求可携带同一配置证据。
+4. 在 `routePlanLite`、`routeConclusion`、`versionAnchors` 与 `routeAuditSnapshotLite.versionSnapshot` 补齐 `configSnapshot` 关联字段，固化“按哪份配置执行”的回放链路。
+5. 在 D 输出与审计一致性规则新增 `configSnapshotId` 对齐约束，避免配置证据在 D -> E -> G 断链。
+
 ### 2026-02-21（v4.33）
 
 1. 在 `Module D` 新增一等执行策略合同 `executionStrategyLite`，冻结 `strategyType/parallelFanout/strategyTimeoutMs/fallbackPolicy/executionStrategyVersion`。

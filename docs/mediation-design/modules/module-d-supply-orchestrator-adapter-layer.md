@@ -92,6 +92,11 @@ required：
      - `strategyTimeoutMs`
      - `fallbackPolicy`
      - `executionStrategyVersion`
+5. `configSnapshotLite`
+   - `configSnapshotId`
+   - `resolvedConfigRef`
+   - `configHash`
+   - `effectiveAt`
 
 optional：
 1. `policyWarnings`
@@ -107,6 +112,9 @@ optional：
 7. `policySnapshotVersion`
 8. `constraintSetVersion`
 9. `executionStrategyVersion`
+10. `configSnapshotId`
+11. `resolvedConfigRef`
+12. `configHash`
 
 #### 3.6.6 缺失字段处置（MVP）
 
@@ -121,6 +129,9 @@ optional：
 3. `isRoutable != true` 或 `stateUpdate.toState != routed`：
    - 动作：`reject`（输入路径非法）。
    - 原因码：`d_invalid_route_input_state`。
+4. `configSnapshotLite` 缺失：
+   - 动作：`reject`。
+   - 原因码：`d_config_snapshot_missing`。
 
 一致性约束：
 1. 同请求同版本下，缺失处置动作必须一致。
@@ -143,6 +154,9 @@ optional：
 5. 执行策略合同非法（`strategyType` 非法、`parallelFanout` 与策略不匹配、`strategyTimeoutMs <= 0`）：
    - 动作：`reject`。
    - 原因码：`d_invalid_execution_strategy_contract`。
+6. `configSnapshotLite` 非法（缺失关键键、`configHash` 非法、`effectiveAt` 非法）：
+   - 动作：`reject`。
+   - 原因码：`d_invalid_config_snapshot`。
 
 审计要求：
 1. 记录 `traceKey`、字段路径、原值、处置动作、原因码、规则版本。
@@ -156,6 +170,7 @@ optional：
 5. 任一输入拒绝可通过 `traceKey + reasonCode` 分钟级定位。
 6. `sourceConstraints` 缺失或非法时不得进入正常路由执行。
 7. `executionStrategyLite` 缺失或非法时不得进入 Route Plan 生成。
+8. `configSnapshotLite` 缺失或非法时不得进入 Route Plan 生成。
 
 #### 3.6.9 Adapter 注册与能力声明（MVP 冻结）
 
@@ -223,7 +238,12 @@ optional：
 9. `actorType`
 10. `policyDecision`（`finalPolicyAction`, `policyDecisionReasonCode`）
 11. `policySnapshot`（`policySnapshotId`, `policySnapshotVersion`）
-12. `policyConstraints`
+12. `configSnapshot`
+   - `configSnapshotId`
+   - `resolvedConfigRef`
+   - `configHash`
+   - `effectiveAt`
+13. `policyConstraints`
    - `bcat`
    - `badv`
    - `nonPersonalizedOnly`
@@ -231,10 +251,10 @@ optional：
    - `sourceSelectionMode`
    - `allowedSourceIds`
    - `blockedSourceIds`
-13. `routeContext`（`routePath`, `routeHop`, `routingPolicyVersion`, `strategyType`, `dispatchMode`）
-14. `timeoutBudgetMs`
-15. `sentAt`
-16. `adapterContractVersion`
+14. `routeContext`（`routePath`, `routeHop`, `routingPolicyVersion`, `strategyType`, `dispatchMode`）
+15. `timeoutBudgetMs`
+16. `sentAt`
+17. `adapterContractVersion`
 
 optional：
 1. `sourceHints`
@@ -270,6 +290,7 @@ optional：
 3. `extensions` 不会污染主语义字段。
 4. 同请求同版本下 `sourceRequestLite` 可稳定复现。
 5. `request adapt` 失败不会造成主链路状态断裂，且可通过 `traceKey + reasonCode` 定位。
+6. `configSnapshotLite` 在 D 输入与 `sourceRequestLite` 透传字段一致。
 
 #### 3.6.16 candidate normalize 子合同（MVP 冻结）
 
@@ -458,15 +479,20 @@ optional：
 5. `attemptKey`
 6. `routingPolicyVersion`
 7. `fallbackProfileVersion`
-8. `executionStrategyLite`
+8. `configSnapshotLite`
+   - `configSnapshotId`
+   - `resolvedConfigRef`
+   - `configHash`
+   - `effectiveAt`
+9. `executionStrategyLite`
    - `strategyType`
    - `parallelFanout`
    - `strategyTimeoutMs`
    - `fallbackPolicy`
    - `executionStrategyVersion`
-9. `routeSteps`（按执行顺序）
-10. `routePlanStatus`（`planned` / `executing` / `completed` / `terminated`）
-11. `plannedAt`
+10. `routeSteps`（按执行顺序）
+11. `routePlanStatus`（`planned` / `executing` / `completed` / `terminated`）
+12. `plannedAt`
 
 `routeSteps` 每项 required：
 1. `stepIndex`
@@ -548,6 +574,7 @@ Route Plan 仅允许三类短路动作：
 4. 任一短路动作都可定位到触发 step、原因码与版本快照。
 5. Route Plan 输出可被 E/F/G 直接消费，不需要二次推断路由过程。
 6. `routePlanLite.executionStrategyLite.strategyType` 与实际执行行为一致且可回放。
+7. `routePlanLite.configSnapshotLite` 可唯一标识执行时配置快照。
 
 #### 3.6.29 D 输出合同（D -> E，MVP 冻结）
 
@@ -569,6 +596,7 @@ Route Plan 仅允许三类短路动作：
    - `sourceConstraints`（`sourceSelectionMode`, `allowedSourceIds`, `blockedSourceIds`）
 9. `routeConclusion`
    - `routePlanId`
+   - `configSnapshotId`
    - `strategyType`
    - `routeOutcome`（`served_candidate` / `no_fill` / `error`）
    - `finalRouteTier`（`primary` / `secondary` / `fallback` / `none`）
@@ -589,6 +617,7 @@ Route Plan 仅允许三类短路动作：
    - `errorNormalizeVersion`
    - `constraintSetVersion`
    - `executionStrategyVersion`
+   - `configSnapshotId`
 
 optional：
 1. `winningCandidateRef`
@@ -608,6 +637,7 @@ optional：
 3. `routeOutcome=error` -> `finalAction=terminal_error`，并携带标准化错误原因码。
 4. 任一输出都必须附带唯一 `finalReasonCode`（不可空）。
 5. `routeConclusion.strategyType` 必须与 `routePlanLite.executionStrategyLite.strategyType` 一致。
+6. `routeConclusion.configSnapshotId` 必须与 `routePlanLite.configSnapshotLite.configSnapshotId` 一致。
 
 状态更新约束：
 1. `hasCandidate=true` 必须映射为 `stateUpdate.toState=served`。
@@ -624,6 +654,7 @@ optional：
 5. 任一 `D -> E` 输出可通过 `traceKey + requestKey + attemptKey` 分钟级定位。
 6. `policyConstraintsLite` 在 C 输入、source request 与 D 输出间逐字段一致（允许仅透传，不允许重写语义）。
 7. `strategyType` 在 D 输入、Route Plan、D 输出、审计快照之间一致。
+8. `configSnapshotId` 在 D 输入、Route Plan、D 输出、审计快照之间一致。
 
 #### 3.6.32 路由审计快照（`routeAuditSnapshotLite`，MVP 冻结）
 
@@ -666,6 +697,10 @@ required：
    - `adapterRegistryVersion`
    - `routePlanRuleVersion`
    - `executionStrategyVersion`
+   - `configSnapshotId`
+   - `resolvedConfigRef`
+   - `configHash`
+   - `effectiveAt`
 7. `snapshotMeta`
    - `routeAuditSchemaVersion`
    - `generatedAt`
@@ -677,6 +712,7 @@ required：
 4. 任一 `switchReasonCode` 必须来自标准原因码集合（不可自由文本）。
 5. `sourceFilterSnapshot.effectiveSourcePoolIds` 必须等于 Route Plan 实际参与选路 source 集。
 6. `routingHitSnapshot.strategyType` 必须与 `routeConclusion.strategyType` 一致。
+7. `versionSnapshot.configSnapshotId` 必须与 `routeConclusion.configSnapshotId` 一致。
 
 #### 3.6.33 MVP 验收基线（路由审计快照）
 
@@ -687,3 +723,4 @@ required：
 5. E/G 可直接消费快照，无需额外拼接路由历史。
 6. 可从快照还原 `sourceConstraints` 对 source 池的过滤结果，支持“为何某需求方未被请求”的对账。
 7. 可从快照还原“按哪种 strategyType 执行、何时触发 fallback”的全过程。
+8. 可从快照还原“按哪份 configSnapshot 执行”的完整证据链。
