@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.15
+- 文档版本：v3.16
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -975,6 +975,87 @@ optional：
 2. 路由轨迹与降级轨迹。
 3. 状态更新（进入 `routed` 并最终走向终态）。
 
+#### 3.6.5 D 输入合同（C -> D，MVP 冻结）
+
+`Module C -> Module D` 标准输入对象冻结为 `dOrchestrationInputLite`。
+
+required：
+1. `cPolicyDecisionLite`
+   - `opportunityKey`
+   - `traceKey`
+   - `requestKey`
+   - `attemptKey`
+   - `finalPolicyAction`
+   - `isRoutable=true`（D 仅消费可路由路径）
+   - `policyDecisionReasonCode`
+   - `stateUpdate`（`fromState=received`, `toState=routed`）
+   - `policyPackVersion`
+   - `policyRuleVersion`
+2. `routableOpportunityLite`
+   - 可路由机会对象（供 adapter 请求改写）
+   - 策略降级标记（若有）
+3. `policyAuditSnapshotLite`
+4. `routingContextLite`
+   - `routingPolicyVersion`
+   - `routeBudgetMs`
+   - `fallbackProfileVersion`
+
+optional：
+1. `policyWarnings`
+2. `extensions`
+
+版本锚点（输入必须可定位版本）：
+1. `dInputContractVersion`
+2. `schemaVersion`（来自上游对象）
+3. `policyPackVersion`
+4. `policyRuleVersion`
+5. `routingPolicyVersion`
+6. `fallbackProfileVersion`
+
+#### 3.6.6 缺失字段处置（MVP）
+
+缺失处置动作只允许：`continue` / `degrade` / `reject`。
+
+1. required 缺失：
+   - 动作：`reject`。
+   - 原因码：`d_missing_required_field`。
+2. optional 缺失：
+   - 动作：`continue`（记录 warning，不阻断主链）。
+   - 原因码：`d_optional_missing_ignored`。
+3. `isRoutable != true` 或 `stateUpdate.toState != routed`：
+   - 动作：`reject`（输入路径非法）。
+   - 原因码：`d_invalid_route_input_state`。
+
+一致性约束：
+1. 同请求同版本下，缺失处置动作必须一致。
+2. D 不得静默补齐 required 字段。
+
+#### 3.6.7 非法值处置（MVP）
+
+1. 结构非法（关键对象非对象、trace 主键缺失）：
+   - 动作：`reject`。
+   - 原因码：`d_invalid_structure`。
+2. 版本锚点非法或缺失（`routingPolicyVersion` 等）：
+   - 动作：`reject`。
+   - 原因码：`d_invalid_version_anchor`。
+3. 路由预算非法（`routeBudgetMs <= 0` 或非数值）：
+   - 动作：`degrade` 到默认预算并继续。
+   - 原因码：`d_invalid_route_budget_corrected`。
+4. 供给上下文非法（source 列表为空且无 fallback）：
+   - 动作：`reject`。
+   - 原因码：`d_invalid_supply_context`。
+
+审计要求：
+1. 记录 `traceKey`、字段路径、原值、处置动作、原因码、规则版本。
+
+#### 3.6.8 MVP 验收基线（D 输入合同）
+
+1. D 仅接收 `isRoutable=true` 的 C 输出，不接收阻断路径对象。
+2. required 缺失或非法输入不会触发 adapter 调用。
+3. 版本锚点完整，可定位“按哪套路由规则执行”。
+4. 同请求在同版本下输入判定与处置动作可复现。
+5. 任一输入拒绝可通过 `traceKey + reasonCode` 分钟级定位。
+
 ### 3.7 Module E: Delivery Composer
 
 #### 3.7.1 Delivery Schema 职责
@@ -1127,7 +1208,7 @@ optional：
 
 1. 模块化主链框架（A-H）与边界说明。
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
-3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照）。
+3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照 + D 输入合同）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线。
 5. Delivery / Event Schema 分离与 `responseReference` 关联口径。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
@@ -1188,6 +1269,14 @@ optional：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.16）
+
+1. 新增 `3.6.5`，冻结 Module D 的 `C -> D` 输入合同（required/optional + 版本锚点）。
+2. 新增 `3.6.6`，明确 D 输入缺失字段处置动作与标准原因码。
+3. 新增 `3.6.7`，明确 D 输入非法值和预算异常的处置规则。
+4. 新增 `3.6.8`，补充 D 输入合同的 MVP 验收基线。
+5. 更新第 4 章交付项，纳入 D 输入合同交付口径。
 
 ### 2026-02-21（v3.15）
 
