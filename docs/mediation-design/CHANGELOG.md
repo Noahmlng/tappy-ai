@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.5）
+
+1. 在 `Module F` 新增归因与计费输出对象合同，冻结 `billableFactLite/attributionFactLite/factDecisionAuditLite`。
+2. 冻结事件到 facts 的映射表，明确哪些事件进入 billable、哪些只进入 attribution。
+3. 新增单尝试唯一计费约束，冻结 `billingKey = responseReference|renderAttemptId|billableType`。
+4. 新增冲突裁决规则，覆盖重复 impression、click 早到、terminal failure 后 click 等场景。
+5. 补充归因与计费映射的 MVP 验收基线，并纳入当前版本交付项。
+
 ### 2026-02-21（v4.4）
 
 1. 在 `Module F` 新增终态闭环主键定义，冻结 `closureKey = responseReference + renderAttemptId`。

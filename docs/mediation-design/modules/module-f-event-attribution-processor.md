@@ -32,8 +32,9 @@ F 层区分两层事件口径：
 
 #### 3.8.3 输出合同
 
-1. 事件归一记录与关联结果。
-2. 闭环终态更新信号。
+1. `billableFacts[]`：可结算事实流（计费口径）。
+2. `attributionFacts[]`：归因与实验事实流（分析口径）。
+3. `factDecisionAuditLite`：映射与冲突裁决快照（用于回放与审计）。
 
 #### 3.8.4 F 输入合同（`POST /events`，P0，MVP 冻结）
 
@@ -383,3 +384,122 @@ ACK 映射：
 2. 超时补写条件可复现，不会对同一 `closureKey` 重复补写。
 3. `impression/failure` 冲突时裁决结果在同请求同版本下确定性一致。
 4. 终态冲突与补写行为可通过 `responseReference + renderAttemptId + ackReasonCode` 分钟级回放定位。
+
+#### 3.8.21 归因与计费输出对象（P0，MVP 冻结）
+
+F 层标准输出对象：
+1. `billableFactLite`
+2. `attributionFactLite`
+3. `factDecisionAuditLite`
+
+`billableFactLite` required：
+1. `factId`
+2. `billableType`（`billable_impression` / `billable_click`）
+3. `sourceEventId`
+4. `responseReference`
+5. `renderAttemptId`
+6. `opportunityKey`
+7. `traceKey`
+8. `billingKey`（`responseReference + \"|\" + renderAttemptId + \"|\" + billableType`）
+9. `factAt`
+10. `factVersion`
+
+`attributionFactLite` required：
+1. `factId`
+2. `attributionType`
+3. `sourceEventId`
+4. `eventType`
+5. `responseReferenceOrNA`
+6. `renderAttemptIdOrNA`
+7. `opportunityKey`
+8. `traceKey`
+9. `attributionKey`
+10. `factAt`
+11. `factVersion`
+
+`factDecisionAuditLite` required：
+1. `sourceEventId`
+2. `mappingRuleVersion`
+3. `decisionAction`（`billable_emit` / `attribution_emit` / `both_emit` / `drop`）
+4. `decisionReasonCode`
+5. `conflictDecision`
+6. `decidedAt`
+
+#### 3.8.22 事件到 Facts 映射合同（P0，MVP 冻结）
+
+MVP 映射表：
+1. `opportunity_created` ->
+   - `billable`: 无
+   - `attribution`: `attr_opportunity_created`
+2. `auction_started` ->
+   - `billable`: 无
+   - `attribution`: `attr_auction_started`
+3. `ad_filled` ->
+   - `billable`: 无
+   - `attribution`: `attr_ad_filled`
+4. `impression` ->
+   - `billable`: `billable_impression`
+   - `attribution`: `attr_impression`
+5. `click` ->
+   - `billable`: `billable_click`（满足计费资格约束时）
+   - `attribution`: `attr_click`
+6. `interaction` ->
+   - `billable`: 无
+   - `attribution`: `attr_interaction`
+7. `postback` ->
+   - `billable`: 无（MVP 不直接计费）
+   - `attribution`: `attr_postback`
+8. `error` ->
+   - `billable`: 无
+   - `attribution`: `attr_error`
+9. `failure`（F 归一终态事件） ->
+   - `billable`: 无
+   - `attribution`: `attr_failure_terminal`
+
+计费资格约束（MVP）：
+1. `billable_impression`：需满足终态 `closed_success` 且未命中去重冲突。
+2. `billable_click`：需同 `closureKey` 已存在有效 `billable_impression`，且未命中去重冲突。
+3. 资格不满足时仅输出 attribution fact，不输出 billable fact。
+
+#### 3.8.23 单尝试唯一计费约束（P0，MVP 冻结）
+
+唯一键约束：
+1. `billingKey` 在全局范围必须唯一。
+2. 同一 `closureKey`：
+   - 最多 1 条 `billable_impression`
+   - 最多 1 条 `billable_click`
+
+写入约束：
+1. 首次写入成功的 billable fact 为有效计费事实。
+2. 后续同 `billingKey` 输入一律标记 duplicate，不可重复计费。
+3. 计费事实一旦写入不得被覆盖或删除；仅允许追加 `adjustmentFlag`（后置流程，不在 MVP 展开）。
+
+#### 3.8.24 冲突裁决规则（P0，MVP 冻结）
+
+裁决优先级（高 -> 低）：
+1. 终态一致性规则（`3.8.19`）
+2. 计费唯一键约束（`3.8.23`）
+3. 事件时间顺序（`eventAt`）
+4. 入站时间顺序（`receivedAt`）
+5. 事件主键字典序（最终 tie-break）
+
+典型冲突：
+1. 同一 `closureKey` 出现多条 impression：
+   - 保留最早有效一条作为 `billable_impression`
+   - 其余为 duplicate attribution，原因码 `f_billing_conflict_duplicate_impression`
+2. click 先于 impression 到达：
+   - 先输出 `attr_click_pending`
+   - 若 `terminalWaitWindow(120s)` 内补齐有效 impression，则升级生成 `billable_click`
+   - 超窗未补齐 impression，保持非计费 attribution，原因码 `f_billing_click_without_impression`
+3. 终态为 `closed_failure` 后到达 click：
+   - 只保留 attribution，不得生成 billable，原因码 `f_billing_ineligible_terminal_failure`
+4. postback 与终态冲突：
+   - 仅写 attribution 冲突记录，不影响已生效 billable fact
+
+#### 3.8.25 MVP 验收基线（归因与计费映射合同）
+
+1. 八类输入事件都能稳定映射为可审计的 billable/attribution 输出决策。
+2. 同一 `closureKey` 不会产生重复计费事实（impression/click 各最多一次）。
+3. 冲突裁决在同请求同版本下确定性一致，可回放。
+4. `billableFacts` 可直接供结算口径消费，`attributionFacts` 可直接供实验评估消费。
+5. 任一计费争议可通过 `billingKey + sourceEventId + decisionReasonCode` 分钟级定位。
