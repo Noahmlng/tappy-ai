@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v2.4
+- 文档版本：v2.5
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -270,6 +270,107 @@ Ingress 校验分三层，按顺序执行：
 3. optional 缺失不会造成主链路不可用。
 4. 同类异常可命中稳定错误码并在分钟级检索。
 5. Ingress 输出可被 `Module B` 直接消费，无需二次补齐。
+
+#### 3.3.10 Auth + Source Trust（仅 Mediation 层，当前版本冻结）
+
+范围边界（避免越界）：
+1. 本设计只定义 Mediation Ingress 的“请求鉴权 + 来源可信分级 + 风险处置”。
+2. 不定义 DSP/SSP 内部竞价风控细节，不替代 Ads Network 的反作弊系统。
+3. 本层目标是“先挡伪流量、再标可信度、再把结果结构化传给下游”。
+
+目标：
+1. 在冷启动阶段降低伪流量进入机会识别主链路的概率。
+2. 统一来源可信口径，避免同来源在不同链路得到不同处理结果。
+3. 给 `Module B/C/D` 输出可消费的可信快照，而非仅日志。
+
+#### 3.3.11 鉴权模型（Ingress Auth Model）
+
+鉴权对象：
+1. `app_identity`：应用身份。
+2. `sdk_identity`：SDK 发行身份与版本声明。
+3. `channel_identity`：接入通道身份。
+4. `request_integrity`：请求完整性与签名一致性。
+
+鉴权结果分级：
+1. `auth_pass_strong`：强通过（身份与完整性均可信）。
+2. `auth_pass_basic`：基础通过（身份可信但完整性能力有限）。
+3. `auth_soft_fail`：软失败（可疑但可受控放行）。
+4. `auth_hard_fail`：硬失败（拒绝进入主链路）。
+
+约束：
+1. 鉴权结果必须落到结构化字段，不允许仅文本备注。
+2. `auth_hard_fail` 默认 fail-closed，禁止进入机会识别。
+3. `auth_soft_fail` 需绑定风险标记和降级策略后才可继续。
+
+#### 3.3.12 来源可信分级（Source Trust Tier）
+
+当前版本冻结四级可信分层：
+1. `T0 Trusted`
+   - 已验证应用/渠道，历史行为稳定。
+   - 处理动作：正常放行。
+2. `T1 Provisionally Trusted`
+   - 新接入或样本不足，但鉴权通过。
+   - 处理动作：放行 + 强审计 + 可选限流。
+3. `T2 Suspect`
+   - 命中异常模式、重放风险或身份不一致。
+   - 处理动作：默认降级（限流/降权/受控 no-fill），保留人工复核入口。
+4. `T3 Blocked`
+   - 明确伪造或高风险来源。
+   - 处理动作：直接拦截并返回标准拒绝结果。
+
+分级原则：
+1. 同请求在同规则版本下分级必须确定性一致。
+2. 分级决策必须记录原因码与证据摘要。
+3. `T2/T3` 不得静默处理，必须可审计可检索。
+
+#### 3.3.13 风险处置矩阵（Mediation 行为）
+
+按“鉴权结果 + 信任等级”执行统一动作：
+1. `auth_pass_strong + T0/T1`
+   - 动作：进入主链路。
+2. `auth_pass_basic + T1`
+   - 动作：进入主链路但附加风险标签与速率控制。
+3. `auth_soft_fail + T2`
+   - 动作：进入受控降级路径（限制触发频率、限制供给路由、强化审计）。
+4. `auth_hard_fail` 或 `T3`
+   - 动作：立即拒绝，不进入 `Module B`。
+
+最小原因码集（当前版本）：
+1. `auth_token_invalid`
+2. `auth_signature_mismatch`
+3. `auth_expired_or_replayed`
+4. `source_identity_mismatch`
+5. `source_trust_blocked`
+
+#### 3.3.14 输出合同与下游消费（A -> B/C/D）
+
+`Module A` 额外输出 `authTrustSnapshot`：
+1. `authResult`（strong/basic/soft/hard）
+2. `trustTier`（T0/T1/T2/T3）
+3. `riskFlags`（重放、身份不一致、异常频率等）
+4. `authReasonCode`（最小原因码）
+5. `authPolicyVersion`（鉴权策略版本）
+
+下游消费约束：
+1. `Module B`：只做映射承载，不改写鉴权结论。
+2. `Module C`：可根据 `authTrustSnapshot` 执行策略加强。
+3. `Module D`：可根据信任等级执行路由降级，但不得放行 `T3`。
+
+#### 3.3.15 观测与验收基线（Auth + Trust）
+
+核心指标：
+1. `auth_pass_rate`
+2. `hard_fail_rate`
+3. `soft_fail_to_block_rate`
+4. `suspect_source_repeat_rate`
+5. `false_block_review_overturn_rate`
+
+验收基线：
+1. 伪造/重放请求可在 Ingress 层稳定拦截。
+2. 来源可信分级可在分钟级检索并回放。
+3. `T2/T3` 请求不会误入正常主链路。
+4. 鉴权模块故障时默认 fail-safe（不放大风险流量）。
+5. Auth/Trust 结果可被下游稳定消费，不引入字段歧义。
 
 ### 3.4 Module B: Schema Translation & Signal Normalization
 
@@ -555,6 +656,7 @@ Ingress 校验分三层，按顺序执行：
 14. 模块化链路说明（SDK 接入与机会识别 -> SSP-like 关键信息构建）。
 15. Mediation 与 Ads Network 交互边界与流程图说明。
 16. Module A Ingress Request Envelope 合同与校验规则说明。
+17. Module A Auth + Source Trust 鉴权与可信分级说明（Mediation 范围）。
 
 ## 5. 优化项与 SSP 过渡（Plan）
 
@@ -723,6 +825,14 @@ Ingress 校验分三层，按顺序执行：
    - 未来：实现对账自动化与争议回放自动化。
 
 ## 6. 变更记录
+
+### 2026-02-21（v2.5）
+
+1. 在 `3.3` 新增 Auth + Source Trust 设计，明确仅覆盖 Mediation Ingress 范围。
+2. 冻结 Ingress 鉴权结果分级（strong/basic/soft/hard）与来源可信分层（T0/T1/T2/T3）。
+3. 新增“鉴权结果 + 信任等级”处置矩阵，明确放行、降级、拦截边界。
+4. 新增 `authTrustSnapshot` 下游输出合同，约束 A->B/C/D 消费方式。
+5. 增加 Auth/Trust 的核心观测指标与验收基线，并更新交付包条目。
 
 ### 2026-02-21（v2.4）
 
