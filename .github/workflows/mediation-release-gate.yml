@@ -1,0 +1,85 @@
+name: Mediation Release Gate
+
+on:
+  pull_request:
+    paths:
+      - 'projects/ad-aggregation-platform/**'
+      - 'docs/implementation/**'
+      - '.github/workflows/mediation-release-gate.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'projects/ad-aggregation-platform/**'
+      - '.github/workflows/mediation-release-gate.yml'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'release or rollback'
+        required: true
+        default: 'release'
+      target_env:
+        description: 'dev/staging/preprod/prod'
+        required: true
+        default: 'staging'
+      release_tag:
+        description: 'candidate tag or commit sha'
+        required: false
+        default: ''
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Migration dry run
+        run: npm --prefix ./projects/ad-aggregation-platform run db:migrate:dry-run
+
+      - name: Functional integration gate (all)
+        run: npm --prefix ./projects/ad-aggregation-platform run test:integration
+
+  release-checklist:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'release' }}
+    runs-on: ubuntu-latest
+    needs:
+      - gate
+    steps:
+      - name: Print release checklist location
+        run: |
+          echo "Use docs/implementation/release-and-rollback-playbook.md"
+          echo "Target env: ${{ github.event.inputs.target_env }}"
+          echo "Release tag: ${{ github.event.inputs.release_tag }}"
+
+  rollback-drill:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'rollback' }}
+    runs-on: ubuntu-latest
+    needs:
+      - gate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate rollback drill record
+        run: |
+          mkdir -p artifacts
+          cp docs/implementation/templates/rollback-drill-record.md artifacts/rollback-drill-record.md
+          echo "target_env=${{ github.event.inputs.target_env }}" >> artifacts/rollback-context.txt
+          echo "release_tag=${{ github.event.inputs.release_tag }}" >> artifacts/rollback-context.txt
+
+      - name: Upload rollback drill artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rollback-drill-template
+          path: artifacts/
