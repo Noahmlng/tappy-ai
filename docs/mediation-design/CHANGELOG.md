@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.7）
+
+1. 在 `Module G` 新增 `append(AuditRecord)` 接口合同，冻结请求体与异步 ACK 语义（`accepted/queued/rejected`）。
+2. 冻结 `gAuditRecordLite` 最小字段集合，覆盖机会输入快照、adapter 响应/延迟/过滤原因、winner、渲染结果、关键事件摘要。
+3. 新增 append 幂等键优先级与去重窗口（`7d`），明确重复请求幂等 no-op 语义。
+4. 新增失败可重试原因码体系（`retryable=true/false`），统一调用方重试策略入口。
+5. 更新 MVP 交付项，将 G append 接口合同纳入当前版本交付。
+
 ### 2026-02-21（v4.6）
 
 1. 在 `Module F` 新增 `F -> G/Archive` 标准输出合同，冻结 `fToGArchiveRecordLite` 字段集合。

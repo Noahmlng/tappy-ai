@@ -64,3 +64,116 @@ required（G 接收门槛）：
 2. 同 `recordKey` 重放不会导致重复归档或重复结算。
 3. F 输出的状态、版本锚点、关联键在 G/Archive 侧完整保留。
 4. 任一归档失败可通过 `recordKey + archiveWriteStatus + traceKey` 分钟级定位。
+
+#### 3.9.7 append(AuditRecord) 接口合同（P0，MVP 冻结）
+
+接口定义：
+1. `append(AuditRecord)`
+2. 语义：异步写入审计日志，不阻塞主链路。
+3. 返回：异步 ACK（`accepted` / `queued` / `rejected`）。
+
+请求对象：`gAppendRequestLite`
+
+required：
+1. `requestId`
+2. `auditRecord`
+3. `appendAt`
+4. `appendContractVersion`
+
+optional：
+1. `idempotencyKey`
+2. `extensions`
+
+#### 3.9.8 AuditRecord 请求体合同（P0，MVP 冻结）
+
+`auditRecord`（`gAuditRecordLite`）required：
+1. `auditRecordId`
+2. `opportunityKey`
+3. `traceKey`
+4. `requestKey`
+5. `attemptKey`
+6. `responseReferenceOrNA`
+7. `opportunityInputSnapshot`
+8. `adapterParticipation[]`
+   - `adapterId`
+   - `requestSentAt`
+   - `responseStatus`（`responded` / `timeout` / `error` / `no_bid`）
+   - `responseLatencyMs`
+   - `filterReasonCodeOrNA`
+9. `winnerSnapshot`
+   - `winnerAdapterIdOrNA`
+   - `winnerCandidateRefOrNA`
+   - `winnerReasonCode`
+10. `renderResultSnapshot`
+    - `renderStatus`（`rendered` / `failed` / `not_rendered`）
+    - `renderReasonCodeOrNA`
+11. `keyEventSummary`
+    - `impressionCount`
+    - `clickCount`
+    - `failureCount`
+12. `auditRecordVersion`
+
+optional：
+1. `closureKeyOrNA`
+2. `billingKeyOrNA`
+3. `attributionKeyOrNA`
+4. `timeRangeTag`
+
+#### 3.9.9 幂等键与去重规则（append，P0）
+
+幂等键优先级（高 -> 低）：
+1. `idempotencyKey`（请求层）
+2. `auditRecord.auditRecordId`
+3. `computedAppendKey = sha256(opportunityKey + \"|\" + traceKey + \"|\" + appendAt + \"|\" + auditRecordVersion)`
+
+去重窗口：
+1. `appendDedupWindow = 7d`
+
+去重结果：
+1. 窗口内同键重复 -> ACK `accepted`，`ackReasonCode=g_append_duplicate_accepted_noop`（幂等成功，不重复写入）。
+2. 同键但 payload 摘要冲突 -> ACK `rejected`，`ackReasonCode=g_append_payload_conflict`。
+
+#### 3.9.10 异步 ACK 语义（P0，MVP 冻结）
+
+ACK 对象：`gAppendAckLite`
+
+required：
+1. `requestId`
+2. `ackStatus`（`accepted` / `queued` / `rejected`）
+3. `ackReasonCode`
+4. `retryable`（`true` / `false`）
+5. `ackAt`
+
+optional：
+1. `appendToken`
+
+语义：
+1. `accepted`：G 已完成基本校验并确认幂等写入（包含幂等 no-op）。
+2. `queued`：G 已接收并排队异步持久化，最终结果由内部写入状态机追踪。
+3. `rejected`：请求未进入标准写入轨道。
+
+状态约束：
+1. `accepted/queued` 必须返回 `appendToken`。
+2. `rejected` 必须返回可定位 `ackReasonCode`。
+
+#### 3.9.11 失败可重试原因码（P0，MVP 冻结）
+
+`rejected` 原因码（最小集）：
+1. `g_append_missing_required`：`retryable=true`
+2. `g_append_invalid_schema_version`：`retryable=false`
+3. `g_append_payload_too_large`：`retryable=true`
+4. `g_append_payload_conflict`：`retryable=false`
+5. `g_append_rate_limited`：`retryable=true`
+6. `g_append_internal_unavailable`：`retryable=true`
+7. `g_append_auth_failed`：`retryable=false`
+
+`queued` 原因码（最小集）：
+1. `g_append_async_buffered`
+2. `g_append_async_retry_scheduled`
+
+#### 3.9.12 MVP 验收基线（append 接口合同）
+
+1. `append(AuditRecord)` 在同请求同版本下返回确定性 ACK 语义。
+2. F 重试同一请求不会导致重复审计写入或语义分叉。
+3. `accepted/queued/rejected` 与 `retryable` 组合可直接驱动调用方重试策略。
+4. 任一拒绝都可通过 `requestId + ackReasonCode + appendTokenOrNA` 分钟级定位。
