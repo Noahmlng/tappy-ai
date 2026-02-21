@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.11
+- 文档版本：v3.12
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -633,6 +633,7 @@ optional：
 1. 强约束命中时允许 fail-closed。
 2. 弱约束命中时标记风险并进入受控降级。
 3. 所有拦截与放行动作必须输出标准原因码。
+4. 固定执行顺序、短路条件与冲突优先级见 `3.5.8` ~ `3.5.10`。
 
 #### 3.5.3 输出合同
 
@@ -711,6 +712,63 @@ optional：
 3. 版本锚点完整，可在审计中定位“按哪套规则评估”。
 4. 同请求在同版本下输入判定结果可复现。
 5. 任一输入拒绝可通过 `traceKey + reasonCode` 分钟级定位。
+
+#### 3.5.8 规则执行先验顺序（MVP 冻结）
+
+`Module C` 对单请求固定执行四段策略链路（禁止重排）：
+1. `compliance gate`（合规硬约束）
+2. `consent/auth gate`（授权范围与可用性）
+3. `frequency cap gate`（频控）
+4. `category gate`（敏感类目/限制类目）
+
+顺序约束：
+1. 前一段给出 `block` 时，后续段不再执行（短路）。
+2. 前一段给出 `degrade` 时，后续段仍执行，但降级标记必须继承。
+3. 同请求同版本下，执行顺序不可因输入来源而变化。
+
+#### 3.5.9 短路条件（MVP 冻结）
+
+短路动作仅两类：`short_circuit_block` / `short_circuit_allow`。
+
+`short_circuit_block` 条件（任一命中即终止）：
+1. 合规硬违规（例如禁投场景、强约束不满足）。
+2. 授权硬拒绝（`consentScope` 不允许）。
+3. 高频硬超限（超过硬阈值且策略定义为阻断）。
+4. 限制类目硬阻断（命中不可放行类目）。
+
+`short_circuit_allow` 条件（当前版本最小）：
+1. 无命中任何强约束，且所有 gate 至少返回 `allow` 或 `degrade`。
+2. 进入 allow 后直接输出 `routable opportunity`，不再做额外策略扫描。
+
+短路审计要求：
+1. 必填 `shortCircuitGate`、`shortCircuitAction`、`shortCircuitReasonCode`。
+2. 必填 `policyPackVersion` 与 `policyRuleVersion`。
+
+#### 3.5.10 冲突优先级（MVP 冻结）
+
+当多个 gate 给出不同动作时，按固定优先级裁决最终动作：
+1. `block`（最高）
+2. `degrade`
+3. `allow`（最低）
+
+同级冲突（tie-break）规则：
+1. 同为 `block`：优先前序 gate（执行顺序更靠前者胜出）。
+2. 同为 `degrade`：按风险等级高者胜出（`high > medium > low`）。
+3. 同级且风险等级一致：按规则 ID 字典序最小值胜出，保证确定性。
+
+冲突输出最小字段：
+1. `finalPolicyAction`（allow/degrade/block）
+2. `winningGate`
+3. `winningRuleId`
+4. `policyConflictReasonCode`
+
+#### 3.5.11 MVP 验收基线（执行顺序与短路机制）
+
+1. 同请求在同版本下策略执行轨迹顺序一致、结果一致。
+2. 命中短路后不会继续执行后续 gate（可在审计中验证）。
+3. 多 gate 冲突时最终动作可按优先级规则完全解释。
+4. `block` 结论不会进入 D 正常路由。
+5. 任一最终动作都可通过 `traceKey + winningGate + reasonCode` 快速回放。
 
 ### 3.6 Module D: Supply Orchestrator & Adapter Layer
 
@@ -904,7 +962,7 @@ optional：
 
 1. 模块化主链框架（A-H）与边界说明。
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
-3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同）。
+3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线。
 5. Delivery / Event Schema 分离与 `responseReference` 关联口径。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
@@ -965,6 +1023,14 @@ optional：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.12）
+
+1. 新增 `3.5.8`，冻结 Module C 的规则执行先验顺序（合规 -> 授权 -> 频控 -> 类目）。
+2. 新增 `3.5.9`，明确短路条件与短路审计字段（block/allow）。
+3. 新增 `3.5.10`，冻结多 gate 冲突时的动作优先级与 tie-break 规则。
+4. 新增 `3.5.11`，补充执行顺序与短路机制的 MVP 验收基线。
+5. 更新第 4 章交付项，纳入 C 执行顺序/短路机制交付口径。
 
 ### 2026-02-21（v3.11）
 
