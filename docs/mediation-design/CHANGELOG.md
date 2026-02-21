@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.13）
+
+1. 在 `Module H` 新增 `GET /config` 接口合同，冻结请求必填键与最小配置定位键。
+2. 冻结 `200/304` 响应语义与最小字段，明确 `304` 仅刷新缓存有效期、不携带业务 body。
+3. 新增 `ETag/If-None-Match` 规则，明确命中判定与版本变更触发条件。
+4. 冻结 `TTL`、`expireAt`、`stale_grace` 状态与缓存过期后的重验证动作（含 fail-closed 边界）。
+5. 新增缓存原因码与 MVP 验收基线，并将 GET `/config` 缓存合同纳入当前版本交付项。
+
 ### 2026-02-21（v4.12）
 
 1. 在 `Module H` 新增 `Config Resolution Contract`（P0），冻结配置解析输入合同与版本锚点。

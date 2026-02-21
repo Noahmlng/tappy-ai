@@ -129,3 +129,96 @@ optional：
 2. A/B/C/D/E 消费同一 `resolveId` 时，关键配置字段与版本锚点完全一致。
 3. 高层非法值不会污染结果：要么字段级回退，要么按 required 规则明确拒绝。
 4. 任一解析结果都可通过 `resolveId + configHash + reasonCodes` 分钟级定位。
+
+#### 3.10.9 GET /config 合同（含缓存语义，P0，MVP 冻结）
+
+接口：`GET /config`
+
+请求对象：`hGetConfigRequestLite`
+
+required：
+1. `appId`
+2. `placementId`
+3. `environment`（`prod` / `staging`）
+4. `schemaVersion`
+5. `sdkVersion`
+6. `requestAt`
+
+optional：
+1. Header `If-None-Match`
+2. `adapterVersionMapOrNA`
+3. `expectedConfigVersionOrNA`
+4. `traceKeyOrNA`
+5. `extensions`
+
+请求约束：
+1. `appId + placementId + environment + schemaVersion` 组成最小配置定位键。
+2. `If-None-Match` 仅接受强 ETag；非法格式视为未携带。
+
+#### 3.10.10 响应最小字段与状态语义（P0，MVP 冻结）
+
+`200 OK` 响应对象：`hGetConfigResponseLite`
+
+required：
+1. `status`（固定 `ok`）
+2. `configKey`（`appId|placementId|environment|schemaVersion`）
+3. `etag`
+4. `ttlSec`
+5. `expireAt`
+6. `resolvedConfigSnapshot`（引用 `3.10.7`）
+7. `configVersionSnapshot`
+   - `globalConfigVersion`
+   - `appConfigVersionOrNA`
+   - `placementSourceVersionOrNA`
+   - `routingStrategyVersion`
+   - `placementConfigVersion`
+8. `cacheDecision`（`miss` / `revalidated_changed` / `revalidated_not_modified`）
+9. `responseAt`
+10. `getConfigContractVersion`
+
+`304 Not Modified` 语义（无业务 body）：
+1. 必须返回 Header：`ETag`（与请求命中值一致）和 `Cache-Control: max-age=<ttlSec>`。
+2. `304` 不改变 `resolvedConfigSnapshot` 内容，仅刷新客户端本地过期时间。
+3. 若 `If-None-Match` 缺失则不得返回 `304`。
+
+#### 3.10.11 ETag / If-None-Match 规则（P0，MVP 冻结）
+
+1. `etag` 生成规则：`etag = sha256(configHash + "|" + placementConfigVersion + "|" + routingStrategyVersion)`。
+2. 命中规则：
+   - `If-None-Match == current etag` -> `304 Not Modified`。
+   - 不相等或未携带 -> 返回 `200` + 最新 `resolvedConfigSnapshot`。
+3. 同一 `configHash + version snapshot` 必须生成同一 `etag`。
+4. 任一版本锚点变化必须导致 `etag` 变化。
+
+#### 3.10.12 TTL 与缓存过期动作（P0，MVP 冻结）
+
+本地缓存状态：
+1. `fresh`：当前时间 `< expireAt`。
+2. `expired`：当前时间 `>= expireAt`。
+3. `stale_grace`：`expired` 且处于 `staleGraceWindowSec=60` 内。
+
+动作规则：
+1. `fresh`：直接使用本地配置，不发网络请求。
+2. `expired`：必须发起 `GET /config`，并携带 `If-None-Match`。
+3. `expired + 304`：刷新 `expireAt = now + ttlSec`，继续使用本地配置。
+4. `expired + 200`：替换本地配置为新快照并重置 TTL。
+5. `expired + 网络失败`：
+   - 若在 `stale_grace` 内 -> 允许降级使用过期配置，标记 `cacheDecision=stale_served`，原因码 `h_cfg_cache_stale_grace_served`。
+   - 超出 `stale_grace` -> fail-closed，返回 `h_cfg_cache_expired_revalidate_failed`。
+
+#### 3.10.13 缓存原因码（P0，MVP 冻结）
+
+1. `h_cfg_cache_hit_fresh`
+2. `h_cfg_cache_miss`
+3. `h_cfg_cache_revalidated_not_modified`
+4. `h_cfg_cache_revalidated_changed`
+5. `h_cfg_cache_stale_grace_served`
+6. `h_cfg_cache_expired_revalidate_failed`
+7. `h_cfg_cache_invalid_etag_format`
+
+#### 3.10.14 MVP 验收基线（GET /config）
+
+1. SDK 在 `fresh/expired/stale_grace` 三种状态下行为确定性一致。
+2. `If-None-Match` 命中时稳定返回 `304`，且不会触发配置内容漂移。
+3. `ttlSec + expireAt` 可直接驱动 SDK 缓存更新，不依赖隐式时钟逻辑。
+4. 过期重验证失败时，`stale_grace` 与 fail-closed 行为可通过原因码稳定区分。
