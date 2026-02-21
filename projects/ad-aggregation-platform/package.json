@@ -9,6 +9,7 @@
     "db:migrate:dry-run": "node --env-file-if-exists=.env ./scripts/db-migrate.js --dry-run",
     "db:migrate:status": "node --env-file-if-exists=.env ./scripts/db-migrate.js --status",
     "check:env": "node --env-file-if-exists=.env ./src/config/check-env.js",
+    "test:integration": "node ./scripts/run-integration-tests.js",
     "smoke:ads": "node ./scripts/smoke-ads-runtime.js --mode=mock",
     "smoke:ads:live": "node --env-file-if-exists=.env ./scripts/smoke-ads-runtime.js --mode=live",
     "e2e:next-step": "node ./scripts/e2e-next-step-scenarios.js",
