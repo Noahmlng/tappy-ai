@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v1.9
+- 文档版本：v2.0
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -61,544 +61,332 @@ Mediation 当前不负责：
 4. 双链路：请求同步、事件异步，主链路 fail-open。
 5. 可演进：结构必须可平滑升级到 SSP 能力。
 
-## 3. 当前版本具体设计
+## 3. 当前版本具体设计（按 Agent Plan 可拆分结构）
 
-## 3.1 标准接入框架（Standard Integration Framework）
+### 3.1 本章目标与阅读方式
 
-当前版本接入框架分四个接口面：
-1. `Input Interface`：请求接入面。
-2. `Delivery Interface`：响应输出面。
-3. `Event Interface`：事件回传面。
-4. `Control Interface`：运行控制面（开关/降级/回滚）。
+本章按“可拆分 agent plan 模块”重排，不再按散点能力堆叠。每个模块都用同一结构表达：
+1. 职责边界（负责什么，不负责什么）。
+2. 输入合同（最小必填语义）。
+3. 处理规则（必须冻结的决策逻辑）。
+4. 输出合同（下一模块可直接消费）。
+5. 审计与版本锚点（可回放、可治理）。
 
-当前版本最小流程：
-1. 应用同步请求进入统一入口。
-2. Mediation 规范化 + 映射 + 编排 + 路由。
-3. 返回统一响应（Delivery）。
-4. 应用异步回传事件（Event Callback）。
-5. 平台完成关联归档与审计。
+### 3.2 模块链路总览（Execution Graph）
 
-## 3.2 统一机会建模的数据标准 Schema
+当前版本执行链路固定为：
+1. `Module A: SDK Ingress & Opportunity Sensing`
+2. `Module B: Schema Translation & Signal Normalization`
+3. `Module C: Policy & Safety Governor`
+4. `Module D: Supply Orchestrator & Adapter Layer`
+5. `Module E: Delivery Composer`
+6. `Module F: Event & Attribution Processor`
+7. `Module G: Audit & Replay Controller`
+8. `Module H: Config & Version Governance`（横切，不在单一节点执行）
 
-这是当前版本的核心标准，不追求一次定义全部字段，而是先冻结稳定“语义骨架”。
+链路原则：
+1. 同步主链只保证 `Request -> Delivery`。
+2. 异步侧链负责 `Event -> Archive`。
+3. 主链与侧链通过 `responseReference` 关联。
+4. 所有关键决策点必须可审计、可回放、可版本定位。
 
-### 3.2.1 Schema 目标与重要性
+### 3.3 Module A: SDK Ingress & Opportunity Sensing
 
-1. 统一“机会对象”定义，跨供给源语义一致。
-2. 兼容旧 SSP 必要输入语义。
-3. 支持 AI Native 增量语义。
-4. 可版本化与可演进。
-5. 作为 Mediation 的共同语言，保证后续路由、回传、闭环不发散。
+#### 3.3.1 职责边界
 
-### 3.2.2 六块 Schema 骨架
+1. 承接 SDK 请求入口并做基础规范化。
+2. 识别当前对话/任务中是否存在广告机会（opportunity sensing）。
+3. 生成机会种子对象，交给下游做标准化翻译。
 
-1. `RequestMeta`：请求级元信息。
-2. `PlacementMeta`：广告位与触发信息。
-3. `UserContext`：用户与会话上下文。
-4. `OpportunityContext`：当前机会语义（任务阶段/触发意图/交互状态）。
-5. `PolicyContext`：策略与约束上下文。
-6. `TraceContext`：追踪与排查上下文。
+不负责：
+1. 交易级路由决策。
+2. 最终 Delivery 组装。
+3. 事件归因与结算逻辑。
 
-### 3.2.3 当前版本冻结范围：每块 required/optional
+#### 3.3.2 输入合同（最小）
 
-当前版本不追求字段完备，而是先冻结六块结构和每块的 required/optional 边界。
+1. 应用与会话基础信息。
+2. placement 触发信息（与 `/Users/zeming/Documents/chat-ads-main/docs/ai-assistant-placement-framework.md` 对齐）。
+3. 请求时间与接入通道。
+4. 最小追踪上下文（trace key 初始化所需）。
 
+#### 3.3.3 处理规则
+
+1. 统一入口接收后先做输入校验，再进入机会识别。
+2. 缺失非关键字段时受控降级，不阻断主链路。
+3. 机会识别结果必须给出确定状态：命中机会 / 未命中机会 / 受策略阻断。
+
+#### 3.3.4 输出合同
+
+1. 机会种子对象（状态初始为 `received`）。
+2. 机会触发解释摘要（用于审计与排障）。
+3. 追踪主键与请求级时间戳。
+
+### 3.4 Module B: Schema Translation & Signal Normalization
+
+#### 3.4.1 统一 Opportunity Schema（共同语言）
+
+当前版本冻结六块骨架：
 1. `RequestMeta`
-   - required：请求身份、应用来源、接入时间、接入通道。
-   - optional：SDK 能力声明、调试标记、请求补充标签。
 2. `PlacementMeta`
-   - required：placement 身份、触发位置、触发时机。
-   - optional：展示偏好、格式偏好、实验分桶信息。
 3. `UserContext`
-   - required：会话维度的最小主体信息（匿名可接受）。
-   - optional：历史偏好、细分画像、跨会话补充上下文。
 4. `OpportunityContext`
-   - required：当前机会类型、链路阶段、触发意图快照。
-   - optional：任务细粒度阶段、上下游依赖信号、扩展语义标签。
 5. `PolicyContext`
-   - required：合规约束、频控约束、业务硬约束。
-   - optional：策略实验参数、柔性优先级、供给偏好规则。
 6. `TraceContext`
-   - required：请求追踪主键、链路追踪信息、关联引用。
-   - optional：诊断扩展、灰度标记、问题复现上下文。
 
-### 3.2.4 当前版本最小语义统一范围
+冻结方式：
+1. 每块区分 required / optional。
+2. 新能力优先放 optional，不破坏主语义。
+3. 顶层冻结 `schemaVersion` 与 `state`。
 
-1. 请求与会话是谁、在何时何处发生。
-2. placement 在什么应用链路阶段触发。
-3. 当前交互主体与机会上下文是什么。
-4. 这次机会受哪些策略约束。
-5. 如何被追踪、回放与审计。
+#### 3.4.2 状态机（冻结）
 
-### 3.2.5 版本与状态机（当前版本冻结）
+`state` 固定枚举：
+1. `received`
+2. `routed`
+3. `served`
+4. `no_fill`
+5. `error`
 
-当前版本在机会对象顶层冻结两个控制语义：`schemaVersion` 与 `state`。
+迁移约束：
+1. 起始必须 `received`。
+2. 终态必须为 `served/no_fill/error` 之一。
+3. 任一迁移必须记录时间戳、原因码、规则版本。
 
-1. `schemaVersion`
-   - required，表示对象遵循的标准版本。
-   - 当前版本规则：新能力先走 optional；破坏兼容时才升级主版本。
-2. `state`
-   - 枚举固定为：`received` / `routed` / `served` / `no_fill` / `error`。
-   - 语义：
-     - `received`：请求已接收并完成基础规范化。
-     - `routed`：已完成路由决策并进入供给调用。
-     - `served`：已有有效返回并输出给应用。
-     - `no_fill`：流程正常结束但无可返回候选。
-     - `error`：流程异常结束（可重试或不可重试）。
-   - 状态迁移约束：
-     - 起始状态固定 `received`。
-     - 终态固定 `served` / `no_fill` / `error`。
-     - 任一迁移都必须记录时间戳与原因码，用于闭环审计。
+#### 3.4.3 外部输入映射与冲突优先级
 
-## 3.3 外部输入到内部统一模型的映射规则
+映射原则：
+1. 先映射后决策。
+2. 枚举必须归一后才可进入内部模型。
+3. 同请求同规则版本下结果必须确定性一致。
 
-### 3.3.1 外部输入分层
+冲突优先级（高 -> 低）：
+1. `App Explicit`
+2. `Placement Config`
+3. `Default Policy`
 
-外部输入拆分为五类：
-1. 应用与会话信息。
-2. placement 与触发信息。
-3. 用户与内容上下文。
-4. 策略与限制信息。
-5. 追踪与诊断信息。
+冲突记录要求（每个语义位点）：
+1. 原值（raw value）。
+2. 归一值（normalized value）。
+3. 冲突动作与原因码。
+4. 生效规则版本。
 
-### 3.3.2 映射原则与重要性
+#### 3.4.4 旧 SSP 与新增 AI 信号对齐
 
-1. 先映射后决策：先进入统一模型再路由。
-2. 缺失关键输入时走受控降级，不阻断主链路。
-3. 枚举归一：外部枚举映射到内部标准枚举。
-4. 冲突归一：多来源冲突按优先级归一。
-5. 结果可回放：映射结果可复现、可审计。
-6. 同请求同结果：同一输入条件下映射结果必须确定性一致。
+1. 必兼容旧 SSP 基础语义：请求、placement、环境、响应/回传基础口径。
+2. 当前增量 AI 信号：workflow 阶段、human/agent 主体、意图快照、任务上下文。
+3. 对外不支持的新信号先内部沉淀，不破坏现有兼容性。
 
-重要性：
-1. 外部输入来源多且异构，不先定义冲突优先级会出现同请求多结果。
-2. 映射链路不可回放会导致问题无法定位，也无法支撑后续优化。
-3. 映射不稳定会直接污染路由、回传和闭环统计口径。
+#### 3.4.5 输出合同
 
-### 3.3.3 来源优先级与冲突处理（当前版本冻结）
+1. 可交易的统一机会对象（SSP-like request profile 基底）。
+2. 映射审计记录（支持回放）。
+3. 下游可直接消费的标准枚举与状态。
 
-当前版本先冻结跨模块通用优先级，避免不同接入方各自解释。
+### 3.5 Module C: Policy & Safety Governor
 
-统一优先级（高 -> 低）：
-1. 应用显式输入（App Explicit）。
-2. placement 配置（Placement Config）。
-3. 平台默认策略（Default Policy）。
+#### 3.5.1 职责边界
 
-冲突处理约束：
-1. 同一语义位点只允许一个最终生效值。
-2. 低优先级来源不得覆盖高优先级来源。
-3. 若同级来源冲突，按稳定决策键（如规则版本 + 来源顺序）做确定性裁决。
-4. 冲突裁决必须输出标准原因码，供审计与复现。
+1. 对统一机会对象做合规、频控、敏感类目与授权范围审查。
+2. 给出“可路由”或“受控拦截”结论。
+3. 作为路由前置门禁，防止不合规请求进入供给层。
 
-### 3.3.4 枚举归一规范（当前版本最小集）
+#### 3.5.2 处理规则
 
-1. 建立统一枚举字典，外部枚举必须先映射再进入内部模型。
-2. 不认识的外部枚举进入受控兜底值（如 `unknown`），禁止直接透传污染内部语义。
-3. 枚举升级通过版本化管理，确保新旧接入兼容。
-4. 归一规则由适配层吸收，内部模型只消费标准枚举。
+1. 强约束命中时允许 fail-closed。
+2. 弱约束命中时标记风险并进入受控降级。
+3. 所有拦截与放行动作必须输出标准原因码。
 
-### 3.3.5 映射审计记录（可回放）
+#### 3.5.3 输出合同
 
-每次映射都必须沉淀最小审计记录，至少包含：
-1. 原始来源与原始值（raw source + raw value）。
-2. 归一后的标准值（normalized value）。
-3. 冲突处理动作与原因码（resolution action + reason code）。
-4. 生效规则版本（mapping rule version）。
-5. 处理时间与追踪关联（timestamp + trace reference）。
+1. `routable opportunity` 或 `policy-blocked result`。
+2. 策略命中轨迹（用于审计与回放）。
 
-### 3.3.6 映射治理
+### 3.6 Module D: Supply Orchestrator & Adapter Layer
 
-1. 映射规则版本化。
-2. 映射失败与冲突处理语义标准化。
-3. 外部协议变化通过适配层吸收，不直接污染内部模型。
-
-## 3.4 两种供给源最小适配与回传 Schema
-
-### 3.4.1 两类供给源（当前版本）
+#### 3.6.1 供给范围（当前最小）
 
 1. 广告联盟供给源。
 2. 模拟广告库供给源。
 
-### 3.4.2 Supply Adapter 标准合同（当前版本冻结）
+#### 3.6.2 Supply Adapter 标准合同（冻结）
 
-重要性：
-1. 没有统一 Adapter 合同，就无法低成本接入更多供给源。
-2. 不同 Adapter 若各自实现，会导致质量不可控、行为不可复现。
-3. 合同先统一，后续扩供给只需“按合同接入”，不改主链路语义。
+每个 adapter 至少实现四件事：
+1. `request adapt`
+2. `candidate normalize`
+3. `error normalize`
+4. `source trace`
 
-每个 Adapter 至少实现四件事：
-1. `request adapt`：外部请求语义 -> 内部统一请求语义。
-2. `candidate normalize`：外部返回候选 -> 内部统一候选语义。
-3. `error normalize`：外部失败/超时/空返回 -> 平台统一错误与状态语义。
-4. `source trace`：保留来源标识、调用轨迹、诊断上下文，支撑审计与排障。
+边界约束：
+1. 私有字段只能进 `extensions`。
+2. `extensions` 不得污染主语义与核心口径。
 
-合同边界约束：
-1. 主语义字段只能写入统一模型定义的标准位点。
-2. 外部私有字段统一进入 `extensions`，不得污染主语义。
-3. `extensions` 只做补充信息承载，不参与核心路由判定与闭环口径定义。
-4. 同类输入在同规则版本下必须得到确定性一致输出。
+#### 3.6.3 路由与降级模型（规则 DAG）
 
-### 3.4.3 Adapter 最小交付检查（当前版本）
+1. 当前版本固定规则 DAG，不引入复杂优化器。
+2. 路由顺序固定：`Primary -> Secondary -> Fallback`。
+3. 每次切换必须记录原因：`no_fill/timeout/error/policy_block`。
 
-1. 能完成请求适配并通过标准模型校验。
-2. 能输出统一候选并通过候选语义校验。
-3. 能把外部错误映射为标准状态与原因码。
-4. 能输出最小追踪信息并与 `TraceContext` 关联。
-5. 私有字段仅出现在 `extensions`，无主语义污染。
+超时与状态：
+1. 超时触发下一路由，不阻塞主链路。
+2. `no_fill` 为正常无候选。
+3. `error` 为处理异常（可重试/不可重试分类）。
 
-### 3.4.4 回传 Schema 冲突（你指出的核心问题）
+可用性边界：
+1. 默认 fail-open。
+2. 强策略场景允许 fail-closed。
 
-冲突主要来自：
-1. 响应 Schema 与事件回传 Schema 混用。
-2. 供给私有追踪字段与平台统一追踪字段冲突。
-3. 返回时序与事件时序不一致造成关联困难。
+#### 3.6.4 输出合同
 
-### 3.4.5 Delivery / Event 分离设计（Fundamental Design）
+1. 标准候选结果集合或空结果。
+2. 路由轨迹与降级轨迹。
+3. 状态更新（进入 `routed` 并最终走向终态）。
 
-重要性：
-1. 当前核心冲突就来自“返回”和“回传”耦合，不分离会导致语义错位。
-2. 结算与归因依赖事件链路，若与返回混用会导致口径不一致。
-3. 分离后可保证主链路稳定返回，异步链路独立演进。
+### 3.7 Module E: Delivery Composer
 
-当前版本采用“两个 Schema + 一个关联引用”：
-1. `Delivery Schema`：只表达本次返回结果，不承载后续行为语义。
-2. `Event Callback Schema`：只表达后续行为事件，不重复承载完整返回内容。
-3. `responseReference`：请求-返回-事件的统一关联主键。
+#### 3.7.1 Delivery Schema 职责
 
-职责边界：
-1. Delivery 负责“本次给了什么、给谁、处于什么返回状态”。
-2. Event 负责“后续发生了什么行为、发生时间、行为结果”。
-3. Delivery 与 Event 必须通过同一个 `responseReference` 关联到同一机会记录。
-4. 私有字段若需保留，进入 `extensions`，不得改变主语义职责边界。
+1. 只描述“本次返回”。
+2. 不承载后续行为事件语义。
+3. 输出必须对齐 placement 展示约束与 fail-open 策略。
 
-### 3.4.6 responseReference 与事件最小集（当前版本冻结）
+#### 3.7.2 Delivery / Event 分离（核心冻结）
 
-1. `responseReference` 是 Delivery/Event 关联必填项，缺失时事件不得进入标准闭环口径。
-2. Event 最小集先冻结为：`impression` / `click` / `failure`。
-3. 所有最小事件都必须携带：事件类型、事件时间、`responseReference`、标准状态与原因码（如适用）。
-4. 新增事件类型采用版本化扩展，不得破坏最小集语义。
+1. `Delivery Schema`：同步返回对象。
+2. `Event Callback Schema`：异步行为对象。
+3. 两者只通过 `responseReference` 关联，不相互复制负载。
 
-验收基线：
-1. Delivery 在不依赖事件回传成功的情况下可独立完成返回。
-2. Event 在不重复 Delivery 负载的情况下可独立完成行为上报。
-3. 任一 `impression`/`click`/`failure` 事件都能通过 `responseReference` 回溯到单次返回记录。
+#### 3.7.3 输出合同
 
-## 3.5 数据闭环实现（Data Loop）
+1. 返回状态：`served` / `no_fill` / `error`。
+2. `responseReference`（必填）。
+3. 可被下游事件与审计直接关联的最小返回快照。
 
-### 3.5.1 闭环目标与重要性
+### 3.8 Module F: Event & Attribution Processor
 
-1. 形成 `Request -> Delivery -> Event -> Archive` 的最小闭环。
-2. 为优化策略、质量评估、SSP 过渡提供稳定数据基础。
-3. 没有闭环就无法形成可验证、可迭代的系统能力。
+#### 3.8.1 事件合同（当前最小集）
 
-### 3.5.2 闭环标准模型（当前版本）
+事件最小集冻结：
+1. `impression`
+2. `click`
+3. `failure`
 
-1. `Request`：请求进入后完成规范化、映射与追踪标识初始化。
-2. `Delivery`：记录本次返回快照、返回状态、`responseReference`。
-3. `Event`：接收并归一后续行为事件（`impression` / `click` / `failure`）。
-4. `Archive`：按关联键汇聚为单机会记录，沉淀时间线与审计信息。
+必填语义：
+1. `responseReference`
+2. 事件类型
+3. 事件时间
+4. 状态与原因码（适用时）
 
-### 3.5.3 机会对象可追溯约束（当前版本冻结）
+#### 3.8.2 处理规则
 
-1. 每个机会对象必须具备可关联的追踪主键与 `responseReference`。
-2. 每个链路节点都必须记录时间戳、状态、原因码。
-3. 映射与路由决策必须记录规则版本，确保可复现。
-4. 缺失关键关联键的数据进入隔离轨道，不进入标准闭环口径。
+1. 事件必须先归一再归因。
+2. 无 `responseReference` 事件进入隔离轨道，不进标准口径。
+3. 事件窗口超时时系统补写 `failure` 终态，保证闭环可完成。
 
-### 3.5.4 闭环完成条件（当前版本冻结）
+#### 3.8.3 输出合同
 
-1. 存在有效 Delivery 记录（返回状态为 `served` / `no_fill` / `error` 之一）。
-2. 存在终态 Event（当前最小终态集合：`impression` / `click` / `failure`）。
-3. Delivery 与终态 Event 必须由同一个 `responseReference` 关联。
-4. 事件窗口超时仍无终态 Event 时，系统写入 `failure` 终态（超时原因）完成闭环。
+1. 事件归一记录与关联结果。
+2. 闭环终态更新信号。
 
-### 3.5.5 单请求全链路回放（当前版本基线）
+### 3.9 Module G: Audit & Replay Controller
 
-1. 以 `responseReference` 或追踪主键可回放单请求全链路。
-2. 回放输出至少覆盖：请求输入、映射结果、路由决策、Delivery、Event、Archive。
-3. 回放结果必须可解释同请求为何得到当前结果。
-4. 回放能力优先服务排障、对账与策略迭代，不影响线上主链路可用性。
+#### 3.9.1 审计单元
 
-## 3.6 旧 SSP 内容与新增 AI 内容（Old vs New）
+最小审计单元固定为“单机会对象”，必须贯穿全生命周期。
 
-这是当前版本对接设计中必须显式说明的边界。
+#### 3.9.2 四段关键决策点（冻结）
 
-### 3.6.1 旧 SSP 必含内容（必须兼容）
+1. `Mapping`
+2. `Routing`
+3. `Delivery`
+4. `Event`
 
-1. 基础请求语义（应用/会话/请求上下文）。
-2. placement 与展示语义。
-3. 基础环境与内容语义。
-4. 基础响应与基础回传语义。
+每段最小字段：
+1. 决策类型
+2. 时间戳与耗时
+3. 输入摘要与输出摘要
+4. 状态与原因码
+5. 规则版本
+6. 关联键（trace key + `responseReference`）
 
-### 3.6.2 新增 AI 内容（当前版本增量）
+#### 3.9.3 回放基线
 
-1. Workflow 阶段语义。
-2. 交互主体语义（人类/Agent）。
-3. 机会意图快照语义。
-4. 任务上下文最小语义。
+1. 支持按 `responseReference` 或 trace key 回放单请求全链路。
+2. 回放覆盖 `Request -> Mapping -> Routing -> Delivery -> Event -> Archive`。
+3. 审计写入失败不得阻塞主链路，走异步补偿。
 
-### 3.6.3 对接策略
+### 3.10 Module H: Config & Version Governance（横切模块）
 
-1. 先保证旧语义可完整对接。
-2. 新语义采用“增强不破坏”策略逐步附加。
-3. 外部网络不支持的新语义由 Mediation 内部沉淀并用于后续升级。
-
-## 3.7 最小输入接入指南与最小链路清单
-
-### 3.7.1 最小输入接入指南（SDK 风格）
-
-1. 注册应用与 placement 基础信息。
-2. 接入同步请求入口。
-3. 接入统一响应处理与 fail-open。
-4. 接入异步事件回传入口。
-5. 完成联调与发布前检查。
-
-### 3.7.2 最小链路清单（当前版本）
-
-请求链路（同步）：
-1. 请求进入统一入口。
-2. 输入规范化与模型映射。
-3. placement 编排与供给路由。
-4. 适配器调用与结果归一。
-5. 输出统一响应并记录追踪上下文。
-
-事件链路（异步）：
-1. 曝光/点击/失败事件上报。
-2. 事件规范化与关联。
-3. 归档与审计写入。
-4. 返回事件处理状态。
-
-## 3.8 路由与降级策略模型（当前版本）
-
-### 3.8.1 目标与重要性
-
-1. 这是当前版本真实可用性的核心，不先定策略线上行为会不稳定。
-2. 在供给不稳定、延迟波动、冷启动样本少的阶段，路由与降级必须优先可控。
-3. 当前版本先保证确定性与可运维，再考虑复杂优化器。
-
-### 3.8.2 路由引擎形态：规则 DAG（当前版本冻结）
-
-1. 当前版本使用规则 DAG，不引入复杂优化器。
-2. 每个节点只做单一判定：准入、约束过滤、路由选择、降级决策。
-3. DAG 节点结果必须可解释，并记录规则版本与命中原因。
-4. 任一请求在同输入与同规则版本下必须得到确定性一致路由结果。
-
-### 3.8.3 主路由 / 次路由 / fallback 顺序（当前版本冻结）
-
-1. 主路由（Primary）：优先尝试首选供给源。
-2. 次路由（Secondary）：主路由失败或不满足约束后按顺序尝试备选供给源。
-3. fallback（兜底）：当主/次路由均不可用时进入兜底供给（如模拟广告库）。
-4. 顺序约束：`Primary -> Secondary -> Fallback`，不得跳级逆序执行。
-5. 每次路由切换都必须记录切换原因（no-fill、timeout、error、policy block）。
-
-### 3.8.4 超时阈值与 no-fill 处理（当前版本冻结）
-
-1. 为每条供给调用定义超时阈值（按 placement 类别配置）。
-2. 超时即视为标准错误并触发下一路由，不阻塞主链路。
-3. `no_fill` 定义为流程正常结束但无可返回候选，不等同于系统错误。
-4. `error` 定义为调用或处理异常，可按可重试/不可重试分类。
-5. `no_fill` 与 `error` 都必须进入统一状态机与闭环归档口径。
-
-### 3.8.5 降级策略与可用性边界（当前版本）
-
-1. 主链路默认 fail-open：路由失败时优先返回可接受兜底结果。
-2. 当命中强合规/强策略约束时允许 fail-closed，直接返回受控空结果。
-3. 降级动作分层：降路由复杂度 -> 切备源 -> 走兜底源 -> 受控 no-fill。
-4. 每次降级必须记录触发条件、执行路径、最终状态，支撑回放与审计。
-
-### 3.8.6 验收基线
-
-1. 能在规则 DAG 下稳定执行主次路由并输出确定性结果。
-2. 超时、no-fill、error 三类场景都能触发预期 fallback 顺序。
-3. fail-open 与 fail-closed 边界明确且可配置。
-4. 任一路由决策都可通过追踪信息回放到规则节点级别。
-
-## 3.9 可观测与审计模型（当前版本）
-
-### 3.9.1 目标与重要性
-
-1. 可观测与审计是排障效率和运营可控性的基础能力。
-2. 没有标准审计模型，线上异常无法快速定位，策略效果也无法复盘。
-3. 当前版本先保证“看得见、查得到、能复放”，再扩展更复杂分析能力。
-
-### 3.9.2 最小审计单元：单机会对象（当前版本冻结）
-
-1. 审计最小粒度固定为“单机会对象（single opportunity object）”。
-2. 单机会对象必须通过追踪主键与 `responseReference` 唯一关联。
-3. 审计记录必须覆盖对象全生命周期，不允许只记录局部片段。
-4. 缺失关键关联键的记录进入隔离区，不进入标准统计口径。
-
-### 3.9.3 四段关键决策点（当前版本冻结）
-
-单机会对象必须沉淀四段关键决策点：
-
-1. `Mapping`（映射决策点）：
-   - 记录输入来源、归一结果、冲突裁决、规则版本。
-2. `Routing`（路由决策点）：
-   - 记录命中节点、主次路由选择、fallback 原因、超时信息。
-3. `Delivery`（返回决策点）：
-   - 记录返回状态（`served`/`no_fill`/`error`）、返回快照、输出时间。
-4. `Event`（回传决策点）：
-   - 记录事件类型（最小集 `impression`/`click`/`failure`）、事件状态、关联结果。
-
-### 3.9.4 审计记录最小字段集（当前版本）
-
-每个决策点都必须至少记录：
-
-1. 决策点类型（mapping/routing/delivery/event）。
-2. 决策时间戳与处理耗时。
-3. 输入摘要与输出摘要。
-4. 状态与原因码。
-5. 生效规则版本。
-6. 关联键（trace key + `responseReference`）。
-
-### 3.9.5 可观测视图与运维闭环（当前版本）
-
-1. 请求级视图：单请求全链路时间线（mapping -> routing -> delivery -> event -> archive）。
-2. 状态级视图：`served`/`no_fill`/`error` 分布与变化趋势。
-3. 原因级视图：超时、策略拦截、无候选、适配失败等原因码聚合。
-4. 供给级视图：按供给源统计延迟、成功率、no-fill 率、error 率。
-
-### 3.9.6 验收基线
-
-1. 任一线上请求都能按单机会对象回放四段关键决策点。
-2. 关键状态与原因码可在分钟级检索并用于排障。
-3. 运营可按 placement、供给源、状态进行稳定对账。
-4. 审计写入不得阻塞主链路，失败时走异步补偿。
-
-## 3.10 配置与版本治理（当前版本）
-
-### 3.10.1 目标与重要性
-
-1. 没有版本治理，迭代会频繁破坏接入方稳定性。
-2. 当前版本需要在“快速迭代”和“兼容稳定”之间建立可执行边界。
-3. 版本治理是跨团队协同、灰度发布、回滚止损的前置能力。
-
-### 3.10.2 三条版本线分离管理（当前版本冻结）
-
-当前版本固定三条版本线，禁止混用：
+#### 3.10.1 三条版本线分离（冻结）
 
 1. `Schema Version`
-   - 管理统一机会模型结构与语义（六块模型、状态机、Delivery/Event 语义）。
 2. `Routing Strategy Version`
-   - 管理规则 DAG、路由顺序、超时阈值、降级与 fallback 策略。
 3. `Placement Config Version`
-   - 管理 placement 级触发条件、频控/冷却、展示约束、策略参数。
 
-治理约束：
-1. 三条版本线独立发布、独立回滚、独立审计。
+治理规则：
+1. 三线独立发布、独立回滚、独立审计。
 2. 任一线升级不得隐式修改其他两线行为。
-3. 单请求必须记录三线生效版本，保证可复现。
+3. 单请求必须记录三线版本快照。
 
-### 3.10.3 兼容性与发布规则（当前版本）
+#### 3.10.2 兼容与回滚
 
-1. `Schema Version`：
-   - 向后兼容变更优先走 optional 扩展。
-   - 破坏兼容才允许主版本升级，并提供迁移窗口。
-2. `Routing Strategy Version`：
-   - 变更需先灰度到受控流量，再逐步放量。
-   - 放量过程必须监控 `served/no_fill/error` 与延迟指标。
-3. `Placement Config Version`：
-   - 以 placement 为粒度灰度，不做全量硬切。
-   - 配置发布必须附带默认值与回退值。
+1. schema 变更优先 optional 扩展，破坏兼容才升主版本。
+2. 路由策略先灰度再放量，监控 `served/no_fill/error` 与延迟。
+3. 回滚顺序按最小影响面：placement -> routing -> schema。
 
-### 3.10.4 版本绑定与回滚策略（当前版本冻结）
+### 3.11 数据闭环模型（Request -> Delivery -> Event -> Archive）
 
-1. 每次线上请求都必须写入版本快照：
-   - `schemaVersion`
-   - `routingStrategyVersion`
-   - `placementConfigVersion`
-2. 问题处置优先按“最小影响面”回滚：
-   - 先回滚 placement 配置。
-   - 再回滚路由策略。
-   - 最后才回滚 schema 版本。
-3. 回滚必须保留前后版本对比与原因码，纳入审计。
+#### 3.11.1 闭环完成条件（冻结）
 
-### 3.10.5 验收基线
+1. 存在有效 Delivery（`served/no_fill/error`）。
+2. 存在终态 Event（当前最小集：`impression/click/failure`）。
+3. 二者通过同一 `responseReference` 关联。
+4. 窗口超时时系统补写 `failure` 完成闭环。
 
-1. 三条版本线可独立升级与独立回滚，不互相阻塞。
-2. 任一异常请求可定位到三条线具体生效版本。
-3. 接入方在 schema 不破坏兼容时无需改造即可继续运行。
-4. 发布失败可在可控时间内完成降级或回滚。
+#### 3.11.2 闭环价值
 
-## 3.11 Media Agents 层核心模块
+1. 支撑优化策略验证与质量评估。
+2. 支撑对账、审计与争议回放。
+3. 作为向 SSP 过渡的数据资产底座。
 
-### 3.11.1 模块定位
+### 3.12 最小输入接入指南与最小链路清单
 
-1. Media Agents 层负责把“机会识别 -> 交易决策 -> 用户触达 -> 闭环学习”串成可执行链路。
-2. 其核心价值是把多源信号和多步骤动作转成稳定、可审计、可优化的 agent 化执行单元。
+#### 3.12.1 SDK 最小接入指南
 
-### 3.11.2 核心模块清单（当前建议）
+1. 注册应用与 placement 基础信息。
+2. 接入同步请求入口（Delivery）。
+3. 接入异步事件回传入口（Event Callback）。
+4. 完成联调检查（状态机、追踪、回传关联）。
+5. 完成发布检查（灰度配置、回滚预案、审计可见性）。
 
-1. `Agent Context Manager`
-   - 汇聚会话、任务、用户与环境上下文，输出统一上下文快照。
-2. `Intent & Opportunity Interpreter`
-   - 识别任务意图、交易机会和可触达窗口，生成机会候选。
-3. `Policy & Safety Governor`
-   - 对机会候选执行合规、频控、敏感类目、授权范围等策略约束。
-4. `Supply Orchestrator`
-   - 负责主路由/次路由/fallback 编排与供给调用生命周期管理。
-5. `Delivery Composer`
-   - 生成符合 placement 约束的返回结构，确保 Delivery 与 Event 语义分离。
-6. `Event & Attribution Processor`
-   - 处理 `impression/click/failure` 最小事件与扩展事件，并完成归因关联。
-7. `Audit & Replay Controller`
-   - 以单机会对象为单位沉淀四段关键决策点，支持排障与回放。
-8. `Optimization Loop Manager`
-   - 基于质量、收益、稳定性指标持续更新规则参数和配置版本。
+#### 3.12.2 当前版本最小链路清单
 
-### 3.11.3 当前版本优先落地建议
+请求链路（同步）：
+1. 统一入口接收。
+2. 机会识别。
+3. schema 翻译与映射归一。
+4. 策略门禁。
+5. 供给路由与候选归一。
+6. Delivery 返回。
 
-1. 先稳定 `Intent & Opportunity Interpreter` + `Supply Orchestrator` + `Event & Attribution Processor` 三条主链。
-2. 再增强 `Policy & Safety Governor` 与 `Audit & Replay Controller` 的覆盖深度。
-3. `Optimization Loop Manager` 在保证可追溯前提下逐步从规则驱动演进到模型驱动。
+事件链路（异步）：
+1. impression/click/failure 上报。
+2. 事件归一与归因关联。
+3. 归档写入与审计回放。
+4. 闭环终态确认。
 
-### 3.11.4 核心模块运作方式（模块化整理）
+### 3.13 Agent Plan 拆分建议（直接可执行）
 
-1. `SDK Ingress & Opportunity Sensing`（SDK 接入与机会识别）
-   - 输入：SDK 请求、会话上下文、placement 注册信息、策略快照。
-   - 关键动作：上下文拼装、广告位机会识别、初步可触达判定。
-   - 输出：机会种子对象（含 trace key、placement 语义、初始状态 `received`）。
-2. `Schema Translation & Signal Normalization`（Schema 翻译与信号内容）
-   - 输入：机会种子对象与原始信号。
-   - 关键动作：六块模型映射、枚举归一、冲突裁决（`app > placement > default`）。
-   - 输出：统一机会对象（含 `schemaVersion`、标准状态、映射审计记录）。
-3. `Policy & Safety Governor`
-   - 输入：统一机会对象、策略与合规规则。
-   - 关键动作：合规审查、频控与敏感类目约束、授权范围校验。
-   - 输出：可路由机会或受控拦截结果（含原因码）。
-4. `Supply Orchestrator`
-   - 输入：可路由机会、供给源能力、路由策略版本。
-   - 关键动作：主路由/次路由/fallback 执行、超时与 no-fill/error 处理。
-   - 输出：候选结果与路由决策轨迹。
-5. `Delivery Composer`
-   - 输入：候选结果、placement 展示约束。
-   - 关键动作：Delivery 结构化输出、状态确定（`served/no_fill/error`）。
-   - 输出：当前返回对象（不承载后续行为事件）。
-6. `Event & Attribution Processor`
-   - 输入：事件回传（最小集 `impression/click/failure`）与 `responseReference`。
-   - 关键动作：事件归一、关联、归因与闭环补全。
-   - 输出：事件轨迹与闭环状态更新。
-7. `Audit & Replay Controller`
-   - 输入：映射/路由/返回/回传四段决策记录。
-   - 关键动作：单机会对象审计、全链路回放、异常定位。
-   - 输出：排障报告、审计证据、对账依据。
-8. `Optimization Loop Manager`
-   - 输入：质量、收益、稳定性、审计反馈。
-   - 关键动作：规则参数优化、配置灰度、版本治理与回滚。
-   - 输出：新版本策略与优化建议。
+为后续拆分具体 agent plan，建议以模块为单位立项，每个 plan 至少包含：目标、输入合同、输出合同、规则版本、审计点、验收标准。
 
-### 3.11.5 链路视角：如何服务两项核心目标
-
-1. 目标一：`SDK 接入与机会识别`
-   - 由 `SDK Ingress & Opportunity Sensing` 主导，`Policy & Safety Governor` 做首层约束。
-   - 关注“是否有机会、机会在哪里、是否可安全触达”。
-2. 目标二：`构建 SSP-like bid request key information`
-   - 由 `Schema Translation & Signal Normalization` 主导，`Supply Orchestrator` 与 `Audit & Replay Controller` 补全交易与可追溯信息。
-   - 关注“机会对象是否可交易、信号是否标准、是否可被外部稳定消费”。
-3. 两者衔接方式：
-   - 机会识别先产出“可解释机会种子”，再进入 schema 翻译形成“可交易标准对象”。
-   - 标准对象继续经过路由、返回、回传，最终沉淀成可优化闭环。
+1. Plan-A：`SDK Ingress & Opportunity Sensing`
+2. Plan-B：`Schema Translation & Signal Normalization`
+3. Plan-C：`Policy & Safety Governor`
+4. Plan-D：`Supply Orchestrator & Adapter Layer`
+5. Plan-E：`Delivery Composer`
+6. Plan-F：`Event & Attribution Processor`
+7. Plan-G：`Audit & Replay Controller`
+8. Plan-H：`Config & Version Governance`
 
 ## 4. 当前版本交付包（Deliverables）
 
@@ -614,7 +402,7 @@ Mediation 当前不负责：
 10. 路由与降级策略模型说明（规则 DAG + fallback 顺序 + 阈值策略）。
 11. 可观测与审计模型说明（单机会对象 + 四段关键决策点）。
 12. 配置与版本治理说明（三线分离：schema/route/placement）。
-13. Media Agents 层核心模块说明。
+13. Agent Plan 模块框架说明（A-H 模块链路）。
 14. 模块化链路说明（SDK 接入与机会识别 -> SSP-like 关键信息构建）。
 
 ## 5. 优化项与 SSP 过渡（Plan）
@@ -784,6 +572,13 @@ Mediation 当前不负责：
    - 未来：实现对账自动化与争议回放自动化。
 
 ## 6. 变更记录
+
+### 2026-02-21（v2.0）
+
+1. 将第 3 章重排为“按 Agent Plan 可拆分结构”，统一模块表达模板（职责/输入/规则/输出/审计版本）。
+2. 以 A-H 模块重建执行顺序，替代原先按能力散点展开的阅读顺序。
+3. 将统一 schema、映射优先级、adapter 合同、Delivery/Event 分离、闭环、路由、审计、版本治理挂接到对应模块。
+4. 新增 `3.13` 模块级 plan 拆分建议，便于下一步直接分配子模块设计任务。
 
 ### 2026-02-21（v1.9）
 
