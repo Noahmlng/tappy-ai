@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.24
+- 文档版本：v3.25
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -1557,6 +1557,7 @@ required：
 1. 返回状态：`served` / `no_fill` / `error`。
 2. `responseReference`（必填）。
 3. 可被下游事件与审计直接关联的最小返回快照。
+4. `render_plan` 详细字段合同见 `3.7.9` ~ `3.7.13`（P0 冻结）。
 
 #### 3.7.4 compose 输入合同（P0，MVP 冻结）
 
@@ -1663,6 +1664,112 @@ optional：
 3. 输入版本锚点完整时，compose 前置判断结果在同请求同版本下一致。
 4. 输入校验失败不会污染 `Delivery/Event` 口径。
 5. 任一 compose 输入失败可通过 `traceKey + reasonCode` 分钟级定位。
+
+#### 3.7.9 render_plan 输出合同（P0，MVP 冻结）
+
+`compose(...)` 输出对象冻结为 `renderPlanLite`。
+
+`renderPlanLite` required：
+1. `opportunityKey`
+2. `traceKey`
+3. `requestKey`
+4. `attemptKey`
+5. `responseReference`
+6. `deliveryStatus`（`served` / `no_fill` / `error`）
+7. `renderMode`（`native_card` / `webview` / `mraid_container` / `video_vast_container` / `none`）
+8. `renderContainer`
+   - `containerType`
+   - `containerParams`
+9. `creativeBinding`
+   - `creativeId`
+   - `assetRefs`
+   - `destinationRef`
+10. `trackingInjection`
+    - `onRenderStart`
+    - `onRenderSuccess`
+    - `onRenderFailure`
+    - `onClick`
+11. `uiConstraints`
+    - `layoutConstraint`
+    - `disclosureConstraint`
+    - `interactionConstraint`
+12. `ttl`
+    - `renderTtlMs`
+    - `expireAt`
+13. `versionAnchors`
+    - `renderPlanContractVersion`
+    - `renderPolicyVersion`
+    - `placementConfigVersion`
+    - `trackingInjectionVersion`
+    - `uiConstraintProfileVersion`
+
+optional：
+1. `fallbackReasonCode`
+2. `warnings`
+3. `extensions`
+
+#### 3.7.10 renderMode 与容器参数矩阵（P0）
+
+模式与容器参数最小合同：
+1. `native_card`
+   - `containerType=native_card`
+   - `containerParams`: `slotId`, `templateId`, `maxCardCount`
+2. `webview`
+   - `containerType=webview`
+   - `containerParams`: `url`, `sandboxFlags`, `allowedDomains`
+3. `mraid_container`
+   - `containerType=mraid_container`
+   - `containerParams`: `htmlSnippetRef`, `mraidVersion`, `expandPolicy`
+4. `video_vast_container`（MVP 先做占位）
+   - `containerType=video_vast_container`
+   - `containerParams`: `vastTagUrl`, `videoSlotSpec`, `autoplayPolicy`
+5. `none`
+   - `containerType=none`
+   - `containerParams={}`（仅用于 `no_fill/error`）
+
+一致性约束：
+1. `deliveryStatus=served` 时 `renderMode` 不得为 `none`。
+2. `deliveryStatus=no_fill/error` 时 `renderMode` 必须为 `none`。
+3. `renderMode` 必须同时在 `placementSpecLite.allowedRenderModes` 与 `deviceCapabilitiesLite.supportedRenderModes` 交集中；否则降级或拒绝，原因码 `e_render_mode_not_supported`。
+
+#### 3.7.11 追踪注入位（P0）
+
+追踪注入位冻结为四类：
+1. `onRenderStart`：触发 `ad_render_started`
+2. `onRenderSuccess`：触发 `ad_rendered`
+3. `onRenderFailure`：触发 `ad_render_failed`
+4. `onClick`：触发点击事件（并与现有 `click` 回传对齐）
+
+注入约束：
+1. 四类注入位都必须携带 `responseReference` 与 `traceKey`。
+2. 注入配置缺失时：
+   - `served` 路径：`reject`，原因码 `e_tracking_injection_missing`。
+   - `no_fill/error` 路径：允许最小失败注入并 `continue`。
+3. 追踪注入字段不得被 `extensions` 覆盖。
+
+#### 3.7.12 UI 约束与 TTL 规则（P0）
+
+`uiConstraints` 最小字段：
+1. `layoutConstraint`：`maxHeightPx`, `maxWidthPx`, `safeAreaRequired`
+2. `disclosureConstraint`：`disclosureLabel`, `labelPosition`, `mustBeVisible`
+3. `interactionConstraint`：`clickGuardEnabled`, `closeable`, `frequencyCapHint`
+
+`ttl` 规则：
+1. `renderTtlMs` 必须 `> 0`。
+2. `expireAt = composeRequestAt + renderTtlMs`（同请求同版本可复现）。
+3. TTL 过期后 SDK 必须拒绝渲染并触发 `ad_render_failed`，原因码 `e_render_ttl_expired`。
+
+约束处置：
+1. UI 约束缺失或非法 -> `reject`，原因码 `e_ui_constraint_invalid`。
+2. TTL 非法 -> `degrade` 到默认 TTL（`5000ms`）并记录 `e_ttl_corrected_default`。
+
+#### 3.7.13 MVP 验收基线（render_plan 输出合同）
+
+1. SDK 可仅依据 `renderPlanLite` 稳定完成跨端渲染，不依赖隐式字段。
+2. 四类 `renderMode`（含视频占位）与容器参数映射可判定、可复现。
+3. 追踪注入位完整，`ad_render_started/ad_rendered/ad_render_failed` 可按同一 `responseReference` 关联。
+4. UI 约束与 TTL 在同请求同版本下执行一致，不出现端侧漂移。
+5. 任一渲染失败可通过 `traceKey + responseReference + reasonCode` 分钟级定位。
 
 ### 3.8 Module F: Event & Attribution Processor
 
@@ -1798,7 +1905,7 @@ optional：
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
 3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照 + D 输入合同 + Adapter 注册与能力声明 + request adapt 子合同 + candidate normalize 子合同 + error normalize 体系）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线（含 Route Plan 触发/裁决/短路口径 + D 输出合同 + 路由审计快照）。
-5. Delivery / Event Schema 分离与 `responseReference` 关联口径（含 E 层 compose 输入合同）。
+5. Delivery / Event Schema 分离与 `responseReference` 关联口径（含 E 层 compose 输入合同 + render_plan 输出合同）。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
 7. 可观测与审计最小模型（单机会对象 + 四段决策点）。
 8. 配置与版本治理基线（三线分离：schema/route/placement）。
@@ -1857,6 +1964,15 @@ optional：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.25）
+
+1. 新增 `3.7.9`，冻结 `renderPlanLite` 输出合同（含 renderMode、容器参数、素材引用、追踪注入、UI 约束、TTL）。
+2. 新增 `3.7.10`，明确 renderMode 与容器参数矩阵（native/webview/mraid/视频占位）。
+3. 新增 `3.7.11`，冻结追踪注入位与 `ad_render_started/ad_rendered/ad_render_failed` 触发对齐规则。
+4. 新增 `3.7.12`，冻结 UI 约束与 TTL 规则及异常处置。
+5. 新增 `3.7.13`，补充 render_plan 输出合同的 MVP 验收基线。
+6. 更新第 4 章交付项，将 E 层 render_plan 输出合同纳入当前版本交付口径。
 
 ### 2026-02-21（v3.24）
 
