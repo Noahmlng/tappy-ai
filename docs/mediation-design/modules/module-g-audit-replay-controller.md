@@ -48,22 +48,42 @@ required（G 接收门槛）：
 
 #### 3.9.5 Archive 写入与状态对齐（P0）
 
-1. G 对每条记录维护 `archiveWriteStatus`：
-   - `pending`
-   - `written`
-   - `write_failed`
-2. `recordStatus` 与 `archiveWriteStatus` 必须组合一致：
-   - `committed` -> `written`
-   - `duplicate/conflicted/rejected/superseded` -> `written`（审计轨）
-   - `new` -> `pending`
-3. `write_failed` 走异步补偿，且补偿过程不改变原始 `recordStatus` 语义。
+1. G 对每条记录维护 `archiveWriteStatus`（冻结）：
+   - `pending`（已接收，待写入）
+   - `writing`（正在执行写入）
+   - `written`（写入成功）
+   - `write_failed_retryable`（可重试失败）
+   - `write_failed_terminal`（不可恢复失败）
+2. `recordKey` 幂等写入语义（冻结）：
+   - 主索引为 `recordKey`，并保存 `payloadDigest`。
+   - 同 `recordKey + payloadDigest` 重放 -> 幂等 no-op，返回已写结果，不新增记录。
+   - 同 `recordKey` 但 `payloadDigest` 不一致 -> 拒绝覆盖，标记 `g_archive_recordkey_payload_conflict`。
+3. 写入顺序（冻结）：
+   - 同一 `closureKeyOrNA + traceKey` 分组内，G 必须先确认 `decision_audit` 达到 `written`，再允许 `billable_fact/attribution_fact` 写入。
+   - 若事实记录先到，则进入 `pending` 等待前置审计，原因码 `g_archive_waiting_decision_audit`。
+   - 同级写入按 `outputAt` 升序，冲突时按 `recordKey` 字典序稳定裁决。
+4. 部分失败补偿（冻结）：
+   - `write_failed_retryable` 进入异步补偿队列，重试键固定为 `recordKey`。
+   - 与 F 对齐的最小可重试原因码：`g_archive_write_timeout/g_archive_temporarily_unavailable/g_archive_rate_limited`。
+   - 重试超过 `15m` 或命中不可重试错误，转 `write_failed_terminal`，并输出 `g_archive_compensation_exhausted`。
+5. `recordStatus` 与 `archiveWriteStatus` 组合约束（冻结）：
+   - `recordStatus=committed` -> `archiveWriteStatus` 最终必须为 `written` 或 `write_failed_terminal`。
+   - `recordStatus in {duplicate,conflicted,rejected,superseded}` -> 必须至少写入审计轨，最终应达 `written` 或 `write_failed_terminal`。
+   - `recordStatus=new` -> 只允许 `pending/writing/write_failed_retryable`。
+6. 闭环聚合最终一致状态（`fgArchiveConsistencyState`，冻结）：
+   - `consistent_committed`：应写记录全部 `written`，且包含 `decision_audit`。
+   - `consistent_non_billable`：仅审计轨写入成功，无有效计费事实。
+   - `partial_pending`：存在 `pending/writing/write_failed_retryable` 且仍在补偿窗口。
+   - `partial_timeout`：存在 `write_failed_terminal` 或补偿窗口耗尽未收敛。
 
 #### 3.9.6 MVP 验收基线（G 接收 F 输出）
 
 1. G 能稳定消费 `fToGArchiveRecordLite`，不依赖隐式字段推断。
 2. 同 `recordKey` 重放不会导致重复归档或重复结算。
 3. F 输出的状态、版本锚点、关联键在 G/Archive 侧完整保留。
-4. 任一归档失败可通过 `recordKey + archiveWriteStatus + traceKey` 分钟级定位。
+4. 写入顺序始终满足 `decision_audit` 在前、事实记录在后，且可稳定回放。
+5. 部分失败可通过同 `recordKey` 补偿收敛；超过窗口进入 `partial_timeout`。
+6. 任一归档失败可通过 `recordKey + archiveWriteStatus + traceKey` 分钟级定位。
 
 #### 3.9.7 append(AuditRecord) 接口合同（P0，MVP 冻结）
 

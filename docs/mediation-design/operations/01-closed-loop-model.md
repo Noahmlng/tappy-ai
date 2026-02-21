@@ -9,6 +9,7 @@
 5. 终态等待窗口 `120s` 内无终态事件时，系统补写 `failure`（见 `3.8.18`）。
 6. 同一闭环主键下 `impression/failure` 互斥，按优先级裁决（见 `3.8.19`）。
 7. Archive 标准写入对象冻结为 `fToGArchiveRecordLite`（见 `3.8.26` / `3.9.4`）。
+8. 闭环归档一致性状态冻结为 `consistent_committed/consistent_non_billable/partial_pending/partial_timeout`（见 `3.8.29` / `3.9.5`）。
 
 #### 3.11.2 闭环价值
 

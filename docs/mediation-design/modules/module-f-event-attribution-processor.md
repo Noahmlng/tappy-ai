@@ -580,13 +580,24 @@ optional：
 
 #### 3.8.29 F -> G/Archive 交付规则（P0）
 
-1. F 必须按 `recordKey` 幂等输出；同 `recordKey` 重发不产生新业务语义。
-2. G 接收成功后，F 记录 `recordStatus=committed`；接收失败走重试，不阻塞主链路。
-3. F 对 `duplicate/conflicted/rejected/superseded` 记录仍需输出到 G（用于审计与回放），但不得进入计费事实结算口径。
-4. Archive 写入顺序要求：
-   - 先 `decision_audit`
-   - 后 `billable_fact/attribution_fact`
-   - 保证回放时可先还原裁决再还原事实
+1. `recordKey` 幂等语义（冻结）：
+   - `recordKey` 必须由 F 按确定性规则生成：`sha256(recordType + "|" + payloadRef.payloadKey + "|" + relationKeys.canonicalDedupKey + "|" + versionAnchors.archiveContractVersion)`。
+   - 同一业务语义记录重发必须复用同一 `recordKey`；不同业务语义记录不得复用同一 `recordKey`。
+   - 同 `recordKey` 且 payload 摘要一致 -> 幂等 no-op；同 `recordKey` 且 payload 摘要不一致 -> `recordStatus=conflicted`，原因码 `f_output_recordkey_payload_mismatch`。
+2. 写入顺序（冻结）：
+   - 同一 `closureKeyOrNA + traceKey` 分组内，写入顺序固定为：`decision_audit` -> `billable_fact` -> `attribution_fact`。
+   - 同级排序使用 `outputAt` 升序，若仍冲突则按 `recordKey` 字典序稳定裁决。
+   - `billable_fact/attribution_fact` 在其前置 `decision_audit` 未确认 `written` 前不得进入 Archive 最终写入位。
+3. 部分失败补偿（冻结）：
+   - G 返回可重试失败（`g_archive_write_timeout/g_archive_temporarily_unavailable/g_archive_rate_limited`）时，F 必须以同一 `recordKey` 重试，不得派生新键。
+   - 重试节奏：指数退避（`1s -> 5s -> 30s -> 120s` 循环），最大补偿窗口 `15m`。
+   - 超出补偿窗口仍未写入时，记录进入 `recordStatus=conflicted`，原因码 `f_output_archive_compensation_exhausted`，并保留审计轨迹。
+4. 最终一致状态（冻结，闭环聚合态）：
+   - `consistent_committed`：该闭环下应写记录全部 `written`，且包含 `decision_audit`。
+   - `consistent_non_billable`：仅审计轨记录 `written`（如 `duplicate/rejected/conflicted/superseded`），无有效计费事实写入。
+   - `partial_pending`：存在可重试失败且仍在补偿窗口内。
+   - `partial_timeout`：补偿窗口耗尽仍存在未写记录。
+5. F 对 `duplicate/conflicted/rejected/superseded` 记录仍需输出到 G（用于审计与回放），但不得进入计费事实结算口径。
 
 #### 3.8.30 MVP 验收基线（F 输出合同）
 
@@ -594,4 +605,6 @@ optional：
 2. 任一输出记录都具备完整状态、版本锚点与关联键，可追溯到源事件。
 3. `E -> F -> G -> Archive` 在同请求同版本下可完整回放且语义一致。
 4. 非 `committed` 记录不会污染计费结算口径，但可用于审计与实验分析。
-5. 任一断链可通过 `recordKey + sourceEventId + traceKey` 分钟级定位。
+5. `recordKey` 重试幂等、写入顺序、补偿策略在同请求同版本下确定性一致。
+6. 闭环聚合态只能落在 `consistent_committed/consistent_non_billable/partial_pending/partial_timeout` 之一。
+7. 任一断链可通过 `recordKey + sourceEventId + traceKey` 分钟级定位。

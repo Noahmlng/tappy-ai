@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.11）
+
+1. 在 `Module F` 完善 `F -> G/Archive` 写入一致性合同，冻结 `recordKey` 确定性生成与幂等冲突语义。
+2. 在 `Module F` 冻结归档写入顺序（`decision_audit -> billable_fact -> attribution_fact`）与稳定 tie-break 规则。
+3. 在 `Module F` 新增部分失败补偿窗口与重试节奏，明确补偿耗尽后的终态原因码。
+4. 在 `Module G` 升级归档写入状态机，补齐幂等写入索引语义、顺序门禁、补偿失败终态与闭环聚合一致状态。
+5. 更新闭环模型与 MVP 交付项，将 `F -> G -> Archive` 写入一致性纳入当前版本交付口径。
+
 ### 2026-02-21（v4.10）
 
 1. 在 `Module G` 新增回放执行模式定义，冻结 `snapshot_replay` 与 `rule_recompute` 语义边界。
