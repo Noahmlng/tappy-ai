@@ -258,8 +258,9 @@ conditional required：
 
 optional：
 1. `dryRun`（默认 `false`）
-2. `reason`
-3. `extensions`
+2. `publishIdempotencyKeyOrNA`
+3. `reason`
+4. `extensions`
 
 `authContextLite` 合同（P0，MVP 冻结）：
 1. `actorId`
@@ -283,6 +284,22 @@ optional：
 4. `scopeBindings` 必须覆盖 `environment + targetKey`；否则拒绝（`h_publish_authz_denied_scope`）。
 5. 角色命中但动作不被允许（如 `read_only` 或超出矩阵）-> 拒绝（`h_publish_authz_denied`）。
 6. 任一鉴权失败请求不得进入 `draft/validated` 流程，直接返回 `publishState=failed`。
+
+幂等与去重合同（P1，MVP 冻结）：
+1. `publishIdempotencyKey` 取值规则（按优先级）：
+   - 客户端显式提供 `publishIdempotencyKeyOrNA`。
+   - 未提供时，服务端生成 `computedPublishIdempotencyKey = sha256(environment + "|" + actionType + "|" + targetScope + "|" + targetKey + "|" + changeSetId + "|" + baseVersionSnapshot + "|" + targetVersionOrRollbackSnapshot)`。
+   - `baseVersionSnapshot/targetVersionOrRollbackSnapshot` 必须按固定 canonical 序列化后参与哈希，避免跨实现键漂移。
+2. `publishDedupWindow = 24h`（按 `publishIdempotencyKey` 计算）。
+3. 窗口内重复请求（同键且 payload 摘要一致）：
+   - 必须返回与首次请求相同 `publishOperationId`。
+   - `ackReasonCode=h_publish_duplicate_reused_operation`
+   - `retryable=false`。
+4. 窗口内同键但 payload 摘要不一致：
+   - 直接拒绝，`publishState=failed`
+   - `ackReasonCode=h_publish_idempotency_payload_conflict`
+   - `retryable=false`。
+5. 超出去重窗口后按新请求处理，可生成新 `publishOperationId`。
 
 响应对象：`hConfigPublishResponseLite`
 
@@ -318,8 +335,9 @@ required：
 约束：
 1. 禁止 `draft -> published` 直跳。
 2. 鉴权/权限失败不得进入 `draft`，必须直接 `failed`。
-3. `published` 之后不得再次 `publish` 同一 `changeSetId`。
-4. 任一 `failed` 必须带 `ackReasonCode` 与 `retryable`。
+3. 非幂等重复路径下，`published` 之后不得再次 `publish` 同一 `changeSetId`。
+4. 幂等重复请求（同 `publishIdempotencyKey` 且 payload 一致）必须复用历史 `publishOperationId`，不得创建新发布语义。
+5. 任一 `failed` 必须带 `ackReasonCode` 与 `retryable`。
 
 #### 3.10.17 原子性边界（P0，MVP 冻结）
 
@@ -367,6 +385,8 @@ required：
 8. `h_publish_auth_operator_mismatch`
 9. `h_publish_authz_denied`
 10. `h_publish_authz_denied_scope`
+11. `h_publish_duplicate_reused_operation`
+12. `h_publish_idempotency_payload_conflict`
 
 #### 3.10.20 MVP 验收基线（POST /config/publish）
 
@@ -375,6 +395,7 @@ required：
 3. 同一 `releaseUnit` 不会出现“部分线已生效、部分线未生效”的外部可见状态。
 4. 任一失败都可通过 `publishOperationId + changeSetId + ackReasonCode` 分钟级定位。
 5. 鉴权/权限失败请求可稳定落 `h_publish_auth_*` 原因码，且不会进入发布主状态机。
+6. 幂等重试在 `publishDedupWindow` 内必须复用同一 `publishOperationId`，duplicate 与 payload conflict 语义可稳定区分。
 
 #### 3.10.21 版本兼容门禁合同（sdk/adapter/schema，P0，MVP 冻结）
 

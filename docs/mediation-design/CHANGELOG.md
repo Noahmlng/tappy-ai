@@ -1,5 +1,12 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.47）
+
+1. 在 `Module H` 的 `POST /config/publish` 合同新增 `publishIdempotencyKeyOrNA`，并冻结服务端 `computedPublishIdempotencyKey` 回退公式。
+2. 新增 `publishDedupWindow=24h` 去重窗口，明确窗口内 duplicate 必须复用同一 `publishOperationId`。
+3. 冻结 duplicate ACK 语义与冲突语义：`h_publish_duplicate_reused_operation` 与 `h_publish_idempotency_payload_conflict`。
+4. 更新发布状态机约束：幂等重复请求不得创建新发布语义。
+
 ### 2026-02-21（v4.46）
 
 1. 在 `Module H` 的 `POST /config/publish` 请求合同新增 `authContextLite`（actor/role/scope/authMethod/有效期）。
