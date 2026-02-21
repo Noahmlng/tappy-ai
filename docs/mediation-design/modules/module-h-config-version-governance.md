@@ -108,6 +108,7 @@ optional：
    - `blackWhiteListRef`
    - `sdkMinVersion`
    - `adapterMinVersionMap`
+   - `missingMinVersionPolicy`（`reject` / `degrade_block_adapter`）
    - `ttlSec`
 7. `fieldProvenance[]`
    - `fieldPath`
@@ -359,9 +360,10 @@ required：
 5. `adapterVersionMap`（`adapterId -> adapterVersion`）
 6. `sdkMinVersion`（来自 `effectiveConfig`）
 7. `adapterMinVersionMap`（来自 `effectiveConfig`）
-8. `schemaCompatibilityPolicyRef`（包含支持矩阵）
-9. `gateAt`
-10. `versionGateContractVersion`
+8. `missingMinVersionPolicy`（来自 `effectiveConfig`，`reject` / `degrade_block_adapter`）
+9. `schemaCompatibilityPolicyRef`（包含支持矩阵）
+10. `gateAt`
+11. `versionGateContractVersion`
 
 optional：
 1. `gracePolicyRef`
@@ -408,10 +410,15 @@ required：
 3. `sdkVersion < sdkMinVersion` 且不在宽限策略 -> `reject`，原因码 `h_gate_sdk_below_min_reject`。
 
 `adapter gate`：
-1. 对每个 `adapterId` 执行 `adapterVersion >= adapterMinVersionMap[adapterId]`。
-2. 全部适配器通过 -> `pass`。
-3. 部分适配器不通过，但存在至少一个可用适配器 -> `degrade`（剔除不兼容适配器），原因码 `h_gate_adapter_partial_degrade`。
-4. 所有适配器不通过 -> `reject`，原因码 `h_gate_adapter_all_blocked_reject`。
+1. `unknown adapter` 在 MVP 定义为：`adapterId` 存在于 `adapterVersionMap` 但 `adapterMinVersionMap` 缺键（即缺失最小版本定义）。
+2. 对每个 `adapterId` 执行：
+   - 若命中 `unknown adapter`：
+     - `missingMinVersionPolicy=reject` -> 立即 `reject`，原因码 `h_gate_adapter_min_version_missing_reject`。
+     - `missingMinVersionPolicy=degrade_block_adapter` -> 将该 adapter 加入 `blockedAdapters[]`，原因码 `h_gate_adapter_min_version_missing_blocked`，继续评估其他 adapter。
+   - 若最小版本定义存在，则执行 `adapterVersion >= adapterMinVersionMap[adapterId]`。
+3. 全部适配器通过 -> `pass`。
+4. 部分适配器不通过或被策略阻断，但存在至少一个可用适配器 -> `degrade`（剔除不兼容/未定义 adapter），原因码 `h_gate_adapter_partial_degrade`。
+5. 所有适配器不通过或被阻断 -> `reject`，原因码 `h_gate_adapter_all_blocked_reject`。
 
 #### 3.10.24 版本比较与聚合规则（P0，MVP 冻结）
 
@@ -422,7 +429,7 @@ required：
 
 聚合规则：
 1. `gateAction=reject` 时，必须返回首个触发 `reject` 的阶段与原因码。
-2. `gateAction=degrade` 时，必须返回所有降级来源（schema/sdk/adapter）与被剔除 adapter 列表。
+2. `gateAction=degrade` 时，必须返回所有降级来源（schema/sdk/adapter）与被剔除 adapter 列表（含 `missingMinVersionPolicy=degrade_block_adapter` 触发项）。
 3. `gateAction=allow` 时，`reasonCodes` 允许为空或仅记录 `h_gate_all_pass`。
 
 #### 3.10.25 版本门禁原因码（P0，MVP 冻结）
@@ -434,9 +441,11 @@ required：
 5. `h_gate_sdk_below_min_reject`
 6. `h_gate_adapter_partial_degrade`
 7. `h_gate_adapter_all_blocked_reject`
-8. `h_gate_invalid_version_format`
-9. `h_gate_missing_required_version`
-10. `h_gate_policy_not_found`
+8. `h_gate_adapter_min_version_missing_reject`
+9. `h_gate_adapter_min_version_missing_blocked`
+10. `h_gate_invalid_version_format`
+11. `h_gate_missing_required_version`
+12. `h_gate_policy_not_found`
 
 #### 3.10.26 门禁结果下游动作约束（P0，MVP 冻结）
 
@@ -451,6 +460,7 @@ required：
 2. `schema/sdk/adapter` 顺序校验稳定，不会出现跨环境判定顺序漂移。
 3. `degrade` 场景下被剔除 adapter 在 D 层不会被再次启用。
 4. `reject` 场景不会进入竞价与渲染主链路，可通过 `requestKey + reasonCodes` 分钟级定位。
+5. `adapterMinVersionMap` 缺键（unknown adapter）在同一 `missingMinVersionPolicy` 下产出确定性一致动作，不出现实现分叉。
 
 #### 3.10.28 版本锚点注入合同（P0，MVP 冻结）
 

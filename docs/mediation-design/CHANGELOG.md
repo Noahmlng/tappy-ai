@@ -1,5 +1,12 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.45）
+
+1. 在 `Module H` 的 `effectiveConfig` 与版本门禁输入中新增 `missingMinVersionPolicy`（`reject` / `degrade_block_adapter`）。
+2. 冻结 `adapter gate` 对“缺失最小版本定义/unknown adapter”的处理：按 `missingMinVersionPolicy` 执行 `reject` 或 `degrade_block_adapter`。
+3. 新增标准原因码：`h_gate_adapter_min_version_missing_reject`、`h_gate_adapter_min_version_missing_blocked`。
+4. 补充聚合与验收约束：缺键场景在同策略下必须产生确定性一致的门禁动作，避免实现分叉。
+
 ### 2026-02-21（v4.44）
 
 1. 在 `Module H` 将 ETag 规则冻结为 `etagV2`，由 `configHash + 完整 versionSnapshotForEtag` 计算，消除旧公式与锚点规则冲突。
