@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.17
+- 文档版本：v3.18
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -1104,6 +1104,63 @@ optional：
 4. 单请求可回放“所选 source 的注册快照 + 能力快照 + 状态快照”。
 5. 同 `sourceId` 在同版本下能力声明不可漂移，变更必须版本化。
 
+#### 3.6.12 request adapt 子合同（MVP 冻结）
+
+`request adapt` 输入输出冻结为：
+1. 输入：`dOrchestrationInputLite + adapterRegistryEntryLite`
+2. 输出：`sourceRequestLite`
+
+`sourceRequestLite` required：
+1. `sourceId`
+2. `sourceRequestId`
+3. `opportunityKey`
+4. `traceKey`
+5. `requestKey`
+6. `attemptKey`
+7. `placementType`
+8. `channelType`
+9. `actorType`
+10. `policyDecision`（`finalPolicyAction`, `policyDecisionReasonCode`）
+11. `routeContext`（`routePath`, `routeHop`, `routingPolicyVersion`）
+12. `timeoutBudgetMs`
+13. `sentAt`
+14. `adapterContractVersion`
+
+optional：
+1. `sourceHints`
+2. `extensions`
+
+#### 3.6.13 超时预算传递规则（MVP）
+
+预算传递采用“全局预算 -> source 预算”的单向扣减模型：
+1. 输入预算：`routeBudgetMs`（来自 `routingContextLite`）。
+2. source 默认预算：`timeoutPolicyMs`（来自 `adapterRegistryEntryLite`）。
+3. 实际 `timeoutBudgetMs = min(remainingRouteBudgetMs, timeoutPolicyMs)`。
+4. 若 `timeoutBudgetMs <= 0`，本路不发请求，直接进入下一路由并记录原因码 `d_route_budget_exhausted`。
+
+预算一致性约束：
+1. 每次 route hop 都必须记录预算快照（before/after）。
+2. budget 计算必须可复现，禁止 source 自行改写预算。
+
+#### 3.6.14 扩展字段边界（MVP）
+
+1. source 私有字段仅允许写入 `extensions`，不得进入主语义 required 字段。
+2. `extensions` 禁止覆盖或改写 canonical 字段（如 `placementType`, `policyDecision`, `timeoutBudgetMs`）。
+3. `extensions` 的 key 必须命名空间化：`x_<sourceId>_*`。
+4. `extensions` 超过体积上限时执行截断并记录 `d_extensions_truncated`。
+
+违规处置：
+1. 主语义污染 -> `reject`，原因码 `d_extension_pollution_detected`。
+2. 非法命名或超限 -> `degrade` 并保留最小主语义。
+
+#### 3.6.15 MVP 验收基线（request adapt）
+
+1. 任一 source request 都包含最小 required 字段且可被下游 source 消费。
+2. 超时预算传递在多 hop 路由下可审计回放且结果一致。
+3. `extensions` 不会污染主语义字段。
+4. 同请求同版本下 `sourceRequestLite` 可稳定复现。
+5. `request adapt` 失败不会造成主链路状态断裂，且可通过 `traceKey + reasonCode` 定位。
+
 ### 3.7 Module E: Delivery Composer
 
 #### 3.7.1 Delivery Schema 职责
@@ -1256,7 +1313,7 @@ optional：
 
 1. 模块化主链框架（A-H）与边界说明。
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
-3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照 + D 输入合同 + Adapter 注册与能力声明）。
+3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照 + D 输入合同 + Adapter 注册与能力声明 + request adapt 子合同）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线。
 5. Delivery / Event Schema 分离与 `responseReference` 关联口径。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
@@ -1317,6 +1374,14 @@ optional：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.18）
+
+1. 新增 `3.6.12`，冻结 `request adapt` 子合同（统一输入到 `sourceRequestLite` 的最小字段）。
+2. 新增 `3.6.13`，明确超时预算传递规则（全局预算到 source 预算扣减）。
+3. 新增 `3.6.14`，明确 `extensions` 边界与污染处置规则。
+4. 新增 `3.6.15`，补充 `request adapt` 的 MVP 验收基线。
+5. 更新第 4 章交付项，纳入 `request adapt` 子合同交付口径。
 
 ### 2026-02-21（v3.17）
 
