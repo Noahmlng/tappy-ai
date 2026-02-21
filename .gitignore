@@ -17,6 +17,7 @@ dist-ssr
 coverage
 *.local
 /projects/ad-aggregation-platform/.local/
+/projects/ad-aggregation-platform/.secrets/
 
 # Editor directories and files
 .vscode/*
