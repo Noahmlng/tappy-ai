@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.30
+- 文档版本：v3.31
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -1557,7 +1557,8 @@ required：
 1. 返回状态：`served` / `no_fill` / `error`。
 2. `responseReference`（必填）。
 3. 可被下游事件与审计直接关联的最小返回快照。
-4. `render_plan` 详细字段合同见 `3.7.9` ~ `3.7.36`（P0 冻结）。
+4. `render_plan` 详细字段合同见 `3.7.9` ~ `3.7.40`（P0 冻结）。
+5. E 对 App 最终 Delivery 对象见 `3.7.37`，E 对 F 事件输出见 `3.7.38`。
 
 #### 3.7.4 compose 输入合同（P0，MVP 冻结）
 
@@ -2254,6 +2255,111 @@ E 层最终失败语义只允许两类终态：`no_fill` 与 `error`。
 4. `eErrorDegradeDecisionSnapshotLite` 可还原从原始失败到终态判定的完整过程。
 5. 任一线上失败可通过 `traceKey + responseReference + finalCanonicalReasonCode` 分钟级定位。
 
+#### 3.7.37 E 对 App 最终 Delivery 对象（P0，MVP 冻结）
+
+E 层对 App 的最终返回对象冻结为 `eDeliveryResponseLite`。
+
+`eDeliveryResponseLite` required：
+1. `opportunityKey`
+2. `traceKey`
+3. `requestKey`
+4. `attemptKey`
+5. `responseReference`
+6. `deliveryStatus`（`served` / `no_fill` / `error`）
+7. `finalReasonCode`
+8. `renderPlanLite`（结构见 `3.7.9`）
+9. `stateTransitionLite`
+   - `fromState`（固定 `routed`）
+   - `toState`（`served` / `no_fill` / `error`）
+   - `stateReasonCode`
+   - `stateRuleVersion`
+   - `transitionAt`
+10. `routeDeliveryConsistencyLite`
+   - `routeOutcome`（来自 D：`served_candidate` / `no_fill` / `error`）
+   - `routeFinalReasonCode`
+   - `consistencyAction`（`pass_through` / `override_by_e`）
+   - `consistencyReasonCode`
+11. `versionAnchors`
+   - `eDeliveryContractVersion`
+   - `renderPlanContractVersion`
+   - `routingPolicyVersion`
+   - `decisionRuleVersion`
+
+optional：
+1. `warnings`
+2. `extensions`
+
+一致性约束：
+1. `deliveryStatus` 必须与 `renderPlanLite.deliveryStatus` 一致。
+2. `stateTransitionLite.toState` 必须与 `deliveryStatus` 一致。
+3. `deliveryStatus=no_fill/error` 时，`finalReasonCode` 必须与 `3.7.32` 的标准原因码口径一致。
+4. `consistencyAction=override_by_e` 时，必须携带可审计 `consistencyReasonCode`（如 capability/policy/disclosure/runtime）。
+
+#### 3.7.38 E -> F 事件输出合同（P0，MVP 冻结）
+
+E 层输出到 F 的标准事件对象冻结为 `eToFEventLite`。
+
+`eToFEventLite` required：
+1. `eventId`
+2. `eventType`（`impression` / `click` / `failure`）
+3. `sourceRenderEventType`（`ad_render_started` / `ad_rendered` / `ad_render_failed` / `on_click`）
+4. `responseReference`
+5. `traceKey`
+6. `requestKey`
+7. `attemptKey`
+8. `opportunityKey`
+9. `renderAttemptId`
+10. `idempotencyKey`
+11. `deliveryStatusSnapshot`（`served` / `no_fill` / `error`）
+12. `eventReasonCode`
+13. `eventAt`
+14. `eventContractVersion`
+
+映射规则（冻结）：
+1. `ad_rendered` -> `impression`
+2. `on_click` -> `click`
+3. `ad_render_failed` -> `failure`
+4. `ad_render_started` 不直接进入 F 计费口径，仅保留在 E 审计侧
+
+约束：
+1. 同一 `renderAttemptId` 只允许一个终态事件（`impression` 或 `failure`）。
+2. `deliveryStatusSnapshot=no_fill/error` 时不得生成 `impression`。
+3. 任一发往 F 的事件必须携带有效 `responseReference`；缺失则进入隔离轨道，不计入标准口径。
+
+#### 3.7.39 状态迁移一致性（`routed -> served/no_fill/error`，P0）
+
+E 层是 Delivery 终态的统一落锤层；D 的状态是“路由结论输入”，E 输出“最终交付终态”。
+
+状态一致性矩阵（最小）：
+1. D `routeOutcome=served_candidate` 且 E 验证/门禁通过：
+   - E 终态：`served`
+   - `consistencyAction=pass_through`
+2. D `routeOutcome=served_candidate` 但 E 触发 capability/policy/disclosure/material 拦截：
+   - E 终态：`no_fill`
+   - `consistencyAction=override_by_e`
+3. D `routeOutcome=no_fill`：
+   - E 终态：`no_fill`
+   - `consistencyAction=pass_through`
+4. D `routeOutcome=error`：
+   - E 终态：`error`
+   - `consistencyAction=pass_through`
+5. D `routeOutcome=served_candidate` 但 E compose 运行异常/超时：
+   - E 终态：`error`
+   - `consistencyAction=override_by_e`
+
+禁止迁移：
+1. `no_fill/error -> served`（E 不允许把上游终态失败提升为成功）。
+2. `deliveryStatus`、`renderPlanLite.deliveryStatus`、`stateTransitionLite.toState` 三者不一致。
+3. 无 `responseReference` 的终态进入 F 标准口径。
+
+#### 3.7.40 MVP 验收基线（E 输出合同与状态更新）
+
+1. App 可仅依据 `eDeliveryResponseLite` 完成稳定消费，不依赖隐式上下文。
+2. F 可仅依据 `eToFEventLite` 完成 `impression/click/failure` 归因处理。
+3. 同请求同版本下，`routed -> served/no_fill/error` 迁移结论可复现、可回放。
+4. `deliveryStatus` 与事件口径一致，不出现“Delivery 成功但事件终态失败”语义断层。
+5. 任一 D -> E -> F 断链可通过 `traceKey + responseReference + eventId` 分钟级定位。
+
 ### 3.8 Module F: Event & Attribution Processor
 
 #### 3.8.1 事件合同（当前最小集）
@@ -2389,7 +2495,7 @@ E 层最终失败语义只允许两类终态：`no_fill` 与 `error`。
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
 3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照 + D 输入合同 + Adapter 注册与能力声明 + request adapt 子合同 + candidate normalize 子合同 + error normalize 体系）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线（含 Route Plan 触发/裁决/短路口径 + D 输出合同 + 路由审计快照）。
-5. Delivery / Event Schema 分离与 `responseReference` 关联口径（含 E 层 compose 输入合同 + render_plan 输出合同 + 候选消费与最终渲染决策规则 + 渲染能力门禁矩阵 + 追踪注入与事件合同 + E 层验证与拦截规则 + E 层错误码与降级矩阵）。
+5. Delivery / Event Schema 分离与 `responseReference` 关联口径（含 E 层 compose 输入合同 + render_plan 输出合同 + 候选消费与最终渲染决策规则 + 渲染能力门禁矩阵 + 追踪注入与事件合同 + E 层验证与拦截规则 + E 层错误码与降级矩阵 + E 输出合同与状态更新）。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
 7. 可观测与审计最小模型（单机会对象 + 四段决策点）。
 8. 配置与版本治理基线（三线分离：schema/route/placement）。
@@ -2448,6 +2554,15 @@ E 层最终失败语义只允许两类终态：`no_fill` 与 `error`。
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.31）
+
+1. 更新 `3.7.3`，将 E 层输出合同范围扩展至 `3.7.40`，并显式链接 E->App / E->F 合同。
+2. 新增 `3.7.37`，冻结 E 对 App 的最终 Delivery 对象 `eDeliveryResponseLite`。
+3. 新增 `3.7.38`，冻结 E -> F 事件输出对象 `eToFEventLite`。
+4. 新增 `3.7.39`，冻结 `routed -> served/no_fill/error` 状态迁移一致性矩阵。
+5. 新增 `3.7.40`，补充 E 输出合同与状态更新的 MVP 验收基线。
+6. 更新第 4 章交付项，将 E 输出合同与状态更新纳入当前版本交付口径。
 
 ### 2026-02-21（v3.30）
 
