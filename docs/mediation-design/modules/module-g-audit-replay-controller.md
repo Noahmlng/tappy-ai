@@ -248,12 +248,12 @@ optional：
 3. winner 与 adapter 列表、render 结果、终态事件在同记录内交叉一致。
 4. 任一 dispute 可通过 `auditRecordId + traceKey + responseReferenceOrNA` 分钟级提取证据链。
 
-#### 3.9.14 replay(opportunity_id | time_range) 接口合同（P0，MVP 冻结）
+#### 3.9.14 replay(opportunity_key | time_range) 接口合同（P0，MVP 冻结）
 
 接口定义：
-1. `replay(opportunity_id | time_range)`
+1. `replay(opportunity_key | time_range)`
 2. 语义：按机会或时间范围回放审计事实，用于 debug、争议对账、模型训练抽样。
-3. 输入方式：二选一（`opportunity_id` 模式或 `time_range` 模式）。
+3. 输入方式：二选一（`opportunity_key` 模式或 `time_range` 模式）。
 
 请求对象：`gReplayQueryLite`
 
@@ -266,7 +266,7 @@ required（全局）：
 
 模式 required：
 1. `queryMode=by_opportunity`：
-   - `opportunityId`
+   - `opportunityKey`
 2. `queryMode=by_time_range`：
    - `timeRange.startAt`
    - `timeRange.endAt`
@@ -276,7 +276,13 @@ optional：
 2. `includeRawPayload`
 3. `cursor`
 4. `replayAsOfAt`（可选；未提供时默认服务端接收该回放请求时刻）
-5. `extensions`
+5. `opportunityId`（兼容 alias，仅 `queryMode=by_opportunity` 可用）
+6. `extensions`
+
+`opportunityId` alias 兼容规则（P0，MVP 冻结）：
+1. 主键统一为 `opportunityKey`，`opportunityId` 仅作兼容输入 alias，不作为新实现主字段。
+2. 当同时提供 `opportunityKey + opportunityId` 时，服务端必须先归一并校验同一性。
+3. 若同一性校验失败，拒绝请求并返回 `g_replay_opportunity_alias_conflict`。
 
 #### 3.9.15 查询参数与过滤器（P0，MVP 冻结）
 
@@ -293,7 +299,7 @@ optional：
 
 过滤约束：
 1. `queryMode=by_opportunity` 时，`timeRange` 不允许出现。
-2. `queryMode=by_time_range` 时，`opportunityId` 不允许出现。
+2. `queryMode=by_time_range` 时，`opportunityKey/opportunityId` 都不允许出现。
 3. `timeRange.endAt` 必须 `>= timeRange.startAt`。
 4. `timeRange` 最大跨度：`7d`（超出拒绝）。
 5. `replayAsOfAt` 若提供，必须 `<= requestReceivedAt`，否则拒绝（`g_replay_invalid_as_of_time`）。
@@ -371,6 +377,7 @@ required：
 语义约束：
 1. 空结果不是错误：返回成功响应，`items=[]`。
 2. 仅请求非法时返回 `rejected`（非空结果语义）：如 `g_replay_invalid_query_mode`、`g_replay_invalid_time_range`。
+   - `opportunityKey/opportunityId` 冲突时返回 `g_replay_opportunity_alias_conflict`。
 3. `emptyReasonCode` 必须稳定可用于调用方 UI/自动化处理。
 
 #### 3.9.19 MVP 验收基线（replay 合同）

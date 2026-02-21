@@ -1,5 +1,12 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.43）
+
+1. 在 `Module G` 的 replay 合同中统一主键命名为 `opportunityKey`，替换原 `opportunityId` 主字段口径。
+2. 保留 `opportunityId` 作为兼容 alias（仅 `by_opportunity` 可用），并冻结 alias 同一性校验规则。
+3. 新增 alias 冲突拒绝原因码：`g_replay_opportunity_alias_conflict`。
+4. 更新 `by_time_range` 约束：禁止同时携带 `opportunityKey/opportunityId`，避免查询语义分叉。
+
 ### 2026-02-21（v4.42）
 
 1. 在 `Module G` 的 `gReplayQueryLite` 新增可选 `replayAsOfAt`，未提供时默认服务端接收时刻。
