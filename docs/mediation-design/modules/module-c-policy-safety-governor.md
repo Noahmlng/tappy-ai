@@ -5,6 +5,7 @@
 1. 对统一机会对象做合规、频控、敏感类目与授权范围审查。
 2. 给出“可路由”或“受控拦截”结论。
 3. 作为路由前置门禁，防止不合规请求进入供给层。
+4. 策略评估必须基于下发快照本地执行，避免在主路径引入额外网络依赖。
 
 #### 3.5.2 处理规则
 
@@ -17,6 +18,7 @@
 
 1. `routable opportunity` 或 `policy-blocked result`。
 2. 策略命中轨迹（用于审计与回放）。
+3. 接口语义对齐：`evaluate(opportunity_v1, policy_snapshot) -> governor_decision`。
 
 #### 3.5.4 C 输入合同（B -> C，MVP 冻结）
 
@@ -38,6 +40,18 @@ required：
    - `enumDictVersion`
    - `conflictPolicyVersion`
 6. `mappingAuditSnapshotLite`
+7. `policySnapshotLite`
+   - `policySnapshotId`
+   - `policySnapshotVersion`
+   - `policyPackVersion`
+   - `policyRuleVersion`
+   - `snapshotSource`（固定 `resolvedConfigSnapshot`）
+   - `resolvedConfigRef`（`resolveId`）
+   - `configHash`
+   - `effectiveAt`
+   - `expireAtOrNA`
+   - `failureMode`（`fail_open` / `fail_closed`）
+   - `policyConstraintsLite`（本次评估使用的门禁规则子集）
 
 optional：
 1. `mappingWarnings`
@@ -49,6 +63,14 @@ optional：
 3. `mappingProfileVersion`
 4. `enumDictVersion`
 5. `conflictPolicyVersion`
+6. `policySnapshotVersion`
+7. `policySnapshotId`
+8. `resolvedConfigRef`
+9. `configHash`
+
+执行约束（本地快照）：
+1. C 评估仅允许消费 `policySnapshotLite`，禁止在评估流程内访问远端策略服务。
+2. `policySnapshotLite` 缺失、过期或不可解析时，必须按 `failureMode` 输出确定性动作与原因码。
 
 #### 3.5.5 缺失字段处置（MVP）
 
@@ -63,6 +85,12 @@ optional：
 3. `state != received` 进入 C：
    - 动作：`reject`（视为非法输入状态）。
    - 原因码：`c_invalid_input_state`。
+4. `policySnapshotLite` 缺失：
+   - 动作：`reject`。
+   - 原因码：`c_policy_snapshot_missing`。
+5. `policySnapshotLite` 超时（`now > expireAtOrNA` 且无本地稳定快照）：
+   - 动作：按 `failureMode` 执行（默认 `reject`）。
+   - 原因码：`c_policy_snapshot_expired`。
 
 一致性约束：
 1. 同请求同版本下，缺失处置动作必须一致。
@@ -79,9 +107,13 @@ optional：
 3. 版本锚点缺失或格式非法（`schemaVersion/enumDictVersion/...`）：
    - 动作：`reject`。
    - 原因码：`c_invalid_version_anchor`。
+4. `policySnapshotLite` 非法（版本不匹配、缺失关键字段、`configHash` 无效）：
+   - 动作：`reject`。
+   - 原因码：`c_policy_snapshot_invalid`。
 
 审计要求：
 1. 记录 `traceKey`、字段路径、原值、处置动作、原因码、规则版本。
+2. 必须记录 `policySnapshotId + policySnapshotVersion + resolvedConfigRef + configHash`。
 
 #### 3.5.7 MVP 验收基线（C 输入合同）
 
@@ -90,6 +122,7 @@ optional：
 3. 版本锚点完整，可在审计中定位“按哪套规则评估”。
 4. 同请求在同版本下输入判定结果可复现。
 5. 任一输入拒绝可通过 `traceKey + reasonCode` 分钟级定位。
+6. C 评估可被证明为“本地快照执行”（不依赖运行时外部策略请求）。
 
 #### 3.5.8 规则执行先验顺序（MVP 冻结）
 
@@ -165,8 +198,10 @@ optional：
 10. `decisionTimestamp`
 11. `policyPackVersion`
 12. `policyRuleVersion`
-13. `stateUpdate`（`fromState`, `toState`, `stateReasonCode`）
-14. `policyAuditSnapshotLite`（结构见 `3.5.18`）
+13. `policySnapshotId`
+14. `policySnapshotVersion`
+15. `stateUpdate`（`fromState`, `toState`, `stateReasonCode`）
+16. `policyAuditSnapshotLite`（结构见 `3.5.18`）
 
 输出路径：
 1. `isRoutable=true`：
@@ -202,6 +237,7 @@ optional：
 3. `block` 结论一定走 E，且状态更新为 `error`。
 4. `allow/degrade` 结论一定走 D，且状态更新为 `routed`。
 5. 同请求在同版本下输出字段、分流结果、状态更新均可复现。
+6. `policySnapshotId + policySnapshotVersion` 在 C 输出与审计快照中一致并可回放。
 
 #### 3.5.15 Policy 原因码体系（MVP 冻结）
 
@@ -225,8 +261,11 @@ optional：
 10. `c_missing_required_field`
 11. `c_invalid_required_enum`
 12. `c_invalid_version_anchor`
-13. `c_policy_conflict_resolved`
-14. `c_policy_engine_error`
+13. `c_policy_snapshot_missing`
+14. `c_policy_snapshot_expired`
+15. `c_policy_snapshot_invalid`
+16. `c_policy_conflict_resolved`
+17. `c_policy_engine_error`
 
 #### 3.5.16 原因码与动作映射（MVP 冻结）
 
@@ -245,8 +284,11 @@ optional：
 10. `c_missing_required_field` -> `reject`
 11. `c_invalid_required_enum` -> `reject`
 12. `c_invalid_version_anchor` -> `reject`
-13. `c_policy_conflict_resolved` -> 以 `finalPolicyAction` 为准（不得独立决定动作）
-14. `c_policy_engine_error` -> 默认 `reject`（可配置降级为 `degrade`，需显式版本化）
+13. `c_policy_snapshot_missing` -> `reject`
+14. `c_policy_snapshot_expired` -> 默认 `reject`（可按 `failureMode=fail_open` 降级为 `degrade`，需版本化）
+15. `c_policy_snapshot_invalid` -> `reject`
+16. `c_policy_conflict_resolved` -> 以 `finalPolicyAction` 为准（不得独立决定动作）
+17. `c_policy_engine_error` -> 默认 `reject`（可配置降级为 `degrade`，需显式版本化）
 
 一致性约束：
 1. 一个请求只能有一个 `primaryPolicyReasonCode`。
@@ -284,6 +326,10 @@ optional：
 10. `versionSnapshot`
    - `policyPackVersion`
    - `policyRuleVersion`
+   - `policySnapshotId`
+   - `policySnapshotVersion`
+   - `resolvedConfigRef`
+   - `configHash`
    - `cInputContractVersion`
    - `schemaVersion`
    - `enumDictVersion`
@@ -312,4 +358,3 @@ optional：
 3. `traceKey/requestKey/attemptKey` 在 C 输出与审计快照中一致。
 4. 审计快照缺失 required 字段时，视为不合格输出，不得进入 D/E 主链路。
 5. 同请求在同版本下审计快照结构与结论可复现。
-

@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.30）
+
+1. 在 `Module C` 输入合同新增显式 `policySnapshotLite`，对齐接口语义 `evaluate(opportunity_v1, policy_snapshot)`。
+2. 冻结 `policySnapshotLite` 最小字段（`policySnapshotId/policySnapshotVersion/resolvedConfigRef/configHash/failureMode` 等）与版本锚点透传规则。
+3. 新增 C 层“仅本地快照评估”执行约束，禁止评估流程内运行时访问远端策略服务。
+4. 补齐 `policySnapshot` 缺失/过期/非法处置与标准原因码，并将 `policySnapshotId/version` 纳入 C 输出与审计快照。
+5. 更新 MVP 交付项，将 C 的显式 `policySnapshot` 合同纳入当前版本交付口径。
+
 ### 2026-02-21（v4.29）
 
 1. 在 `Module B` 新增 `signal_normalized` 事件合同，冻结 `eventKey/eventIdempotencyKey/samplingDecision/samplingRuleVersion` 最小字段。

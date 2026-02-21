@@ -54,6 +54,8 @@ required：
    - `finalPolicyAction`
    - `isRoutable=true`（D 仅消费可路由路径）
    - `policyDecisionReasonCode`
+   - `policySnapshotId`
+   - `policySnapshotVersion`
    - `stateUpdate`（`fromState=received`, `toState=routed`）
    - `policyPackVersion`
    - `policyRuleVersion`
@@ -77,6 +79,7 @@ optional：
 4. `policyRuleVersion`
 5. `routingPolicyVersion`
 6. `fallbackProfileVersion`
+7. `policySnapshotVersion`
 
 #### 3.6.6 缺失字段处置（MVP）
 
@@ -187,10 +190,11 @@ optional：
 8. `channelType`
 9. `actorType`
 10. `policyDecision`（`finalPolicyAction`, `policyDecisionReasonCode`）
-11. `routeContext`（`routePath`, `routeHop`, `routingPolicyVersion`）
-12. `timeoutBudgetMs`
-13. `sentAt`
-14. `adapterContractVersion`
+11. `policySnapshot`（`policySnapshotId`, `policySnapshotVersion`）
+12. `routeContext`（`routePath`, `routeHop`, `routingPolicyVersion`）
+13. `timeoutBudgetMs`
+14. `sentAt`
+15. `adapterContractVersion`
 
 optional：
 1. `sourceHints`
@@ -600,4 +604,3 @@ required：
 3. 快照必须携带可定位的版本快照与 trace 键。
 4. 同请求同版本下快照内容可复现，不出现顺序漂移。
 5. E/G 可直接消费快照，无需额外拼接路由历史。
-
