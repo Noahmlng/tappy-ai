@@ -84,7 +84,7 @@ envelope 级约束：
 1. `opportunity_created`：`placementKey`
 2. `auction_started`：`auctionChannel`
 3. `ad_filled`：`responseReference`, `creativeId`
-4. `impression`：`responseReference`, `renderAttemptId`
+4. `impression`：`responseReference`, `renderAttemptId`, `creativeId`
 5. `click`：`responseReference`, `renderAttemptId`, `clickTarget`
 6. `interaction`：`responseReference`, `renderAttemptId`, `interactionType`
 7. `postback`：`responseReference`, `postbackType`, `postbackStatus`
@@ -141,3 +141,75 @@ ACK 约束：
 3. `partial_success` 下客户端可精确重试失败项，不会整批重复提交。
 4. 任一拒绝都可通过 `batchId + eventId + ackReasonCode` 分钟级定位。
 5. `POST /events` 输入合同与 E 输出事件键（`responseReference` 等）可稳定对齐，不发生语义断链。
+
+#### 3.8.9 事件类型 Canonical 字典与分层（billing vs diagnostics，P0，MVP 冻结）
+
+分层定义（冻结）：
+1. `billing`：会进入计费/结算/对账口径的事实事件。
+2. `diagnostics`：用于归因分析、实验评估、排障与质量观测的事件。
+
+Canonical 字典（最小）：
+1. `opportunity_created`
+   - 定义：机会对象在 Mediation 主链创建完成。
+   - 层级：`diagnostics`
+   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `placementKey`, `idempotencyKey`
+2. `auction_started`
+   - 定义：供给编排开始执行（首个 route step 启动）。
+   - 层级：`diagnostics`
+   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `auctionChannel`, `idempotencyKey`
+3. `ad_filled`
+   - 定义：本次机会已形成可交付填充结果（不代表已计费）。
+   - 层级：`diagnostics`
+   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `responseReference`, `creativeId`, `idempotencyKey`
+4. `impression`
+   - 定义：渲染成功后产生的有效曝光事实。
+   - 层级：`billing`
+   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `responseReference`, `renderAttemptId`, `creativeId`, `idempotencyKey`
+5. `click`
+   - 定义：有效点击事实（同一渲染尝试下可归因）。
+   - 层级：`billing`
+   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `responseReference`, `renderAttemptId`, `clickTarget`, `idempotencyKey`
+6. `interaction`
+   - 定义：非计费互动行为（如展开、停留、关闭）。
+   - 层级：`diagnostics`
+   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `responseReference`, `renderAttemptId`, `interactionType`, `idempotencyKey`
+7. `postback`
+   - 定义：外部网络/归因回执事件（用于计费回执与结果归因）。
+   - 层级：`billing`
+   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `responseReference`, `postbackType`, `postbackStatus`, `idempotencyKey`
+8. `error`
+   - 定义：链路异常事实（客户端或服务端阶段错误）。
+   - 层级：`diagnostics`
+   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `errorStage`, `errorCode`, `idempotencyKey`
+
+分层约束：
+1. `billing` 事件必须携带 `responseReference`。
+2. `diagnostics` 事件允许部分前置事件无 `responseReference`（如 `opportunity_created/auction_started`）。
+3. 单事件只能属于一个层级，不允许双写双层。
+
+#### 3.8.10 unknown 处理规则（P0，MVP 冻结）
+
+1. 未知 `eventType`：
+   - 处理：`rejected`
+   - 原因码：`f_event_type_unsupported`
+   - `retryable=false`
+2. 已知 `eventType` 但子枚举未知（如 `interactionType/postbackStatus/auctionChannel/errorStage`）：
+   - 处理：归一到 `unknown` 枚举并 `accepted`（进入原层级）。
+   - 审计：记录 `rawValue + canonicalValue=unknown + fieldPath`
+3. 已知 `eventType` 但 required 缺失：
+   - 处理：`rejected`
+   - 原因码：`f_event_missing_required`
+4. 扩展字段未知：
+   - 处理：保留在 `extensions`，不参与 canonical 判定、不影响分层。
+
+一致性约束：
+1. unknown 归一不得改变事件层级（`billing/diagnostics`）。
+2. 同请求同版本下，unknown 判定与结果必须可复现。
+
+#### 3.8.11 MVP 验收基线（事件字典与分层）
+
+1. 八类事件都可映射到唯一 canonical 定义与唯一层级。
+2. `billing` 与 `diagnostics` 口径互不混淆，不出现跨层重复入账。
+3. 任一事件都可校验其 required 字段完整性并给出稳定 ACK 结果。
+4. `unknown eventType` 被稳定拒绝，`unknown 子枚举` 被稳定归一。
+5. 任一分层或归一冲突可通过 `batchId + eventId + ackReasonCode` 分钟级定位。

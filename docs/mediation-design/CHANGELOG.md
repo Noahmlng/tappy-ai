@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.2）
+
+1. 在 `Module F` 新增事件类型 canonical 字典，覆盖 `opportunity_created/auction_started/ad_filled/impression/click/interaction/postback/error` 八类事件。
+2. 冻结 `billing` 与 `diagnostics` 分层口径，并明确每类事件唯一层级归属。
+3. 补齐八类事件的 canonical required 字段集合，避免归因与实验语义分叉。
+4. 新增 unknown 处理规则：`unknown eventType` 拒绝、`unknown 子枚举` 归一到 `unknown`。
+5. 更新 MVP 交付项，将 Module F 事件字典分层与 unknown 处理纳入当前版本交付。
+
 ### 2026-02-21（v4.1）
 
 1. 更新 `Module F`，冻结 `POST /events` 输入合同（批量 envelope + `events[]` 规模约束）。
