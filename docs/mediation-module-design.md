@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.25
+- 文档版本：v3.26
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -1557,7 +1557,7 @@ required：
 1. 返回状态：`served` / `no_fill` / `error`。
 2. `responseReference`（必填）。
 3. 可被下游事件与审计直接关联的最小返回快照。
-4. `render_plan` 详细字段合同见 `3.7.9` ~ `3.7.13`（P0 冻结）。
+4. `render_plan` 详细字段合同见 `3.7.9` ~ `3.7.17`（P0 冻结）。
 
 #### 3.7.4 compose 输入合同（P0，MVP 冻结）
 
@@ -1702,6 +1702,12 @@ optional：
     - `placementConfigVersion`
     - `trackingInjectionVersion`
     - `uiConstraintProfileVersion`
+14. `candidateConsumptionDecision`
+    - `selectionMode`（`top1_strict` / `topN_fill`）
+    - `scannedCandidateCount`
+    - `selectedCandidateRefs`（按渲染顺序）
+    - `droppedCandidateRefs`（含 `dropReasonCode`）
+    - `consumptionReasonCode`
 
 optional：
 1. `fallbackReasonCode`
@@ -1770,6 +1776,84 @@ optional：
 3. 追踪注入位完整，`ad_render_started/ad_rendered/ad_render_failed` 可按同一 `responseReference` 关联。
 4. UI 约束与 TTL 在同请求同版本下执行一致，不出现端侧漂移。
 5. 任一渲染失败可通过 `traceKey + responseReference + reasonCode` 分钟级定位。
+
+#### 3.7.14 候选消费规则（P0，MVP 冻结）
+
+E 层消费 `normalizedCandidates` 的规则冻结为：
+1. 输入候选顺序以 D 层排序结果为准，E 不得重排。
+2. 先做可渲染性筛选（render mode 能力、素材完整性、UI 约束兼容、TTL 可用）。
+3. 再按 `selectionMode` 产出最终候选集。
+
+`selectionMode` 规则：
+1. `top1_strict`（默认）：
+   - 选择首个“可渲染候选”。
+   - 若无可渲染候选，进入 no-fill 路径。
+2. `topN_fill`：
+   - 从前向后选择前 N 个“可渲染候选”。
+   - N 计算见 `3.7.16`。
+
+审计约束：
+1. 每个被丢弃候选都必须写 `dropReasonCode`。
+2. `scannedCandidateCount` 必须等于实际扫描候选数量。
+3. 同请求同版本下 `selectedCandidateRefs` 必须确定性一致。
+
+#### 3.7.15 无候选路径（P0）
+
+无候选触发条件：
+1. 输入即无候选：`hasCandidate=false` 或 `candidateCount=0`。
+2. 输入有候选但全部不可渲染（筛选后为空）。
+
+输出约束：
+1. `deliveryStatus=no_fill`
+2. `renderMode=none`
+3. `renderContainer.containerType=none`
+4. `candidateConsumptionDecision.selectedCandidateRefs=[]`
+5. `candidateConsumptionDecision.consumptionReasonCode` 必须为标准原因码：
+   - `e_no_candidate_input`
+   - `e_candidate_all_rejected`
+
+一致性约束：
+1. no-fill 不允许返回可渲染容器参数。
+2. no-fill 结论必须可由候选消费快照回放复现。
+
+#### 3.7.16 多卡策略（P0）
+
+多卡仅在满足全部条件时启用：
+1. `selectionMode=topN_fill`
+2. `renderMode=native_card`
+3. `placementSpecLite.maxRenderCount > 1`
+4. `deviceCapabilitiesLite.maxRenderSlotCount > 1`
+5. `renderContainer.containerParams.maxCardCount > 1`
+
+N 计算公式（固定）：
+1. `N = min(placementSpecLite.maxRenderCount, deviceCapabilitiesLite.maxRenderSlotCount, renderContainer.containerParams.maxCardCount)`
+
+多卡约束：
+1. 仅允许前 N 个可渲染候选进入 `selectedCandidateRefs`。
+2. 候选去重键：`creativeId + destinationRef`。
+3. 非 `native_card` 模式强制退化为单卡（`top1_strict`），原因码 `e_multicard_mode_not_allowed`。
+4. 去重后为空时走 no-fill。
+
+#### 3.7.17 最终渲染决策规则（P0）
+
+最终渲染决策矩阵：
+1. `selectedCandidateRefs.size >= 1`：
+   - `deliveryStatus=served`
+   - `renderMode != none`
+   - `consumptionReasonCode=e_render_candidate_selected`
+2. `selectedCandidateRefs.size = 0` 且可解释为候选不足：
+   - `deliveryStatus=no_fill`
+   - `renderMode=none`
+   - `consumptionReasonCode` 为 no-fill 原因码
+3. compose 执行异常（非候选不足）：
+   - `deliveryStatus=error`
+   - `renderMode=none`
+   - 原因码 `e_render_compose_error`
+
+与上游一致性：
+1. 若 D 层 `routeConclusion.routeOutcome=served_candidate` 但 E 层无可渲染候选，必须显式降级为 `no_fill` 并记录 `e_candidate_not_renderable_after_compose`。
+2. E 的最终状态必须与 `candidateConsumptionDecision` 一致，不得出现 “有候选却 no_fill” 的无因结果。
+3. 同请求同版本下，最终渲染决策必须可复现。
 
 ### 3.8 Module F: Event & Attribution Processor
 
@@ -1905,7 +1989,7 @@ optional：
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
 3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照 + D 输入合同 + Adapter 注册与能力声明 + request adapt 子合同 + candidate normalize 子合同 + error normalize 体系）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线（含 Route Plan 触发/裁决/短路口径 + D 输出合同 + 路由审计快照）。
-5. Delivery / Event Schema 分离与 `responseReference` 关联口径（含 E 层 compose 输入合同 + render_plan 输出合同）。
+5. Delivery / Event Schema 分离与 `responseReference` 关联口径（含 E 层 compose 输入合同 + render_plan 输出合同 + 候选消费与最终渲染决策规则）。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
 7. 可观测与审计最小模型（单机会对象 + 四段决策点）。
 8. 配置与版本治理基线（三线分离：schema/route/placement）。
@@ -1964,6 +2048,15 @@ optional：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.26）
+
+1. 更新 `3.7.9`，将 `candidateConsumptionDecision` 升级为 `renderPlanLite` 必填字段。
+2. 新增 `3.7.14`，冻结 E 层候选消费规则（`top1_strict/topN_fill`）。
+3. 新增 `3.7.15`，冻结无候选路径与 no-fill 输出约束。
+4. 新增 `3.7.16`，冻结多卡启用条件、N 计算、去重与降级规则。
+5. 新增 `3.7.17`，冻结最终渲染决策矩阵与上下游一致性约束。
+6. 更新第 4 章交付项，将候选消费与最终渲染决策规则纳入当前版本交付口径。
 
 ### 2026-02-21（v3.25）
 
