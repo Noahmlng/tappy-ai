@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（M1 版）
 
-- 文档版本：v0.6
+- 文档版本：v0.7
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：M1（接入与适配基线）
@@ -78,12 +78,13 @@ M1 最小流程：
 
 这是 M1 的核心标准，不追求一次定义全部字段，而是先冻结稳定“语义骨架”。
 
-### 3.2.1 Schema 目标
+### 3.2.1 Schema 目标与重要性
 
 1. 统一“机会对象”定义，跨供给源语义一致。
 2. 兼容旧 SSP 必要输入语义。
 3. 支持 AI Native 增量语义。
 4. 可版本化与可演进。
+5. 作为 Mediation 的共同语言，保证后续路由、回传、闭环不发散。
 
 ### 3.2.2 六块 Schema 骨架
 
@@ -94,13 +95,56 @@ M1 最小流程：
 5. `PolicyContext`：策略与约束上下文。
 6. `TraceContext`：追踪与排查上下文。
 
-### 3.2.3 M1 最小语义统一范围
+### 3.2.3 M1 冻结范围：每块 required/optional
+
+M1 不追求字段完备，而是先冻结六块结构和每块的 required/optional 边界。
+
+1. `RequestMeta`
+   - required：请求身份、应用来源、接入时间、接入通道。
+   - optional：SDK 能力声明、调试标记、请求补充标签。
+2. `PlacementMeta`
+   - required：placement 身份、触发位置、触发时机。
+   - optional：展示偏好、格式偏好、实验分桶信息。
+3. `UserContext`
+   - required：会话维度的最小主体信息（匿名可接受）。
+   - optional：历史偏好、细分画像、跨会话补充上下文。
+4. `OpportunityContext`
+   - required：当前机会类型、链路阶段、触发意图快照。
+   - optional：任务细粒度阶段、上下游依赖信号、扩展语义标签。
+5. `PolicyContext`
+   - required：合规约束、频控约束、业务硬约束。
+   - optional：策略实验参数、柔性优先级、供给偏好规则。
+6. `TraceContext`
+   - required：请求追踪主键、链路追踪信息、关联引用。
+   - optional：诊断扩展、灰度标记、问题复现上下文。
+
+### 3.2.4 M1 最小语义统一范围
 
 1. 请求与会话是谁、在何时何处发生。
 2. placement 在什么应用链路阶段触发。
 3. 当前交互主体与机会上下文是什么。
 4. 这次机会受哪些策略约束。
 5. 如何被追踪、回放与审计。
+
+### 3.2.5 版本与状态机（M1 冻结）
+
+M1 在机会对象顶层冻结两个控制语义：`schemaVersion` 与 `state`。
+
+1. `schemaVersion`
+   - required，表示对象遵循的标准版本。
+   - M1 规则：新能力先走 optional；破坏兼容时才升级主版本。
+2. `state`
+   - 枚举固定为：`received` / `routed` / `served` / `no_fill` / `error`。
+   - 语义：
+     - `received`：请求已接收并完成基础规范化。
+     - `routed`：已完成路由决策并进入供给调用。
+     - `served`：已有有效返回并输出给应用。
+     - `no_fill`：流程正常结束但无可返回候选。
+     - `error`：流程异常结束（可重试或不可重试）。
+   - 状态迁移约束：
+     - 起始状态固定 `received`。
+     - 终态固定 `served` / `no_fill` / `error`。
+     - 任一迁移都必须记录时间戳与原因码，用于闭环审计。
 
 ## 3.3 外部输入到内部统一模型的映射规则
 
@@ -263,6 +307,12 @@ M1 采用“两个 Schema + 一个关联引用”：
 2. 将流量质量、机会分析、意图识别、用户建模逐步升级到 SSP 能力。
 
 ## 6. 变更记录
+
+### 2026-02-21（v0.7）
+
+1. 在 `3.2` 明确“统一 Opportunity Schema”的重要性定位（共同语言，避免路由/回传/闭环语义发散）。
+2. 冻结六块骨架在 M1 的 required/optional 边界，保持概念层定义。
+3. 新增 `schemaVersion` 与 `state`（received/routed/served/no_fill/error）及状态迁移约束。
 
 ### 2026-02-21（v0.6）
 
