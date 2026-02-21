@@ -264,6 +264,7 @@ E 层消费 `normalizedCandidates` 的规则冻结为：
 2. 当 `auctionResultLite.served=true` 时，必须先绑定并校验 `auctionResultLite.winner` 指向候选（`sourceId + candidateId`）。
 3. 先做可渲染性筛选（render mode 能力、素材完整性、UI 约束兼容、TTL 可用）。
 4. 再按 `selectionMode` 产出最终候选集。
+5. 禁止在 `auctionResultLite.served=true` 时渲染非 winner 候选；唯一允许偏离路径是 `override_by_e` 并降级为 `no_fill/error`。
 
 `selectionMode` 规则：
 1. `top1_strict`（默认）：
@@ -336,6 +337,7 @@ N 计算公式（固定）：
 1. 若 D 层 `routeConclusion.routeOutcome=served_candidate` 且 winner 候选不可渲染，必须显式降级为 `no_fill` 并记录 `e_candidate_not_renderable_after_compose`。
 2. E 的最终状态必须与 `candidateConsumptionDecision` 一致，不得出现 “有候选却 no_fill” 的无因结果。
 3. 同请求同版本下，最终渲染决策必须可复现。
+4. 当命中 winner 不可渲染的 `override_by_e` 时，`consistencyReasonCode` 必须固定为 `e_candidate_not_renderable_after_compose`。
 
 #### 3.7.18 渲染能力门禁矩阵（P0，MVP 冻结）
 
@@ -842,6 +844,7 @@ E 层是 Delivery 终态的统一落锤层；D 的状态是“路由结论输入
 1. `no_fill/error -> served`（E 不允许把上游终态失败提升为成功）。
 2. `deliveryStatus`、`renderPlanLite.deliveryStatus`、`stateTransitionLite.toState` 三者不一致。
 3. 无 `responseReference` 的终态进入 F 标准口径。
+4. D `routeOutcome=served_candidate` 时，禁止“渲染非 winner 仍标记 pass_through”。
 
 #### 3.7.40 MVP 验收基线（E 输出合同与状态更新）
 

@@ -1,5 +1,12 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.37）
+
+1. 在 `Module E` 候选消费规则补充强约束：`served=true` 时禁止渲染非 winner 候选。
+2. 明确 winner 不可渲染的唯一偏离路径：`override_by_e` 且降级为 `no_fill/error`。
+3. 在最终渲染决策一致性中绑定 `override_by_e` 的标准原因码：`e_candidate_not_renderable_after_compose`。
+4. 在状态迁移“禁止迁移”中新增约束：D `served_candidate` 时禁止“渲染非 winner 仍标记 pass_through”。
+
 ### 2026-02-21（v4.36）
 
 1. 在 `Module E` compose 输入合同中消除命名歧义：外层统一为 `dToEOutputLite`，其内承载 D 输出的 `auctionResultLite`。
