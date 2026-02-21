@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.19
+- 文档版本：v3.20
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -1237,6 +1237,107 @@ canonical 映射规则：
 4. canonical 映射全程可审计回放（raw -> normalized -> action -> version）。
 5. D 层可基于归一候选直接进入后续 Delivery 组装，不需二次猜字段。
 
+#### 3.6.20 error normalize 子合同（MVP 冻结）
+
+`error normalize` 输入输出冻结为：
+1. 输入：`sourceOutcomeRawLite`（承接 source 的 `no_fill` / `timeout` / `error` 原始结果）
+2. 输出：`normalizedSourceOutcomeLite`
+
+`normalizedSourceOutcomeLite` required：
+1. `sourceId`
+2. `opportunityKey`
+3. `traceKey`
+4. `requestKey`
+5. `attemptKey`
+6. `outcomeType`（`no_fill` / `timeout` / `error`）
+7. `retryClass`（`retryable` / `non_retryable`）
+8. `reasonCode`（canonical 原因码）
+9. `routeAction`（`retry_same_source` / `fallback_next_source` / `terminal`）
+10. `normalizeMeta`
+   - `errorNormalizeVersion`
+   - `mappingProfileVersion`
+   - `normalizedAt`
+
+optional：
+1. `rawCode`
+2. `rawMessage`
+3. `httpStatus`
+4. `networkPhase`
+5. `elapsedMs`
+6. `extensions`
+
+#### 3.6.21 标准化状态与重试语义（MVP）
+
+标准化语义：
+1. `no_fill`：
+   - `retryClass=non_retryable`（同 source 不重试）
+   - 默认 `routeAction=fallback_next_source`
+2. `timeout`：
+   - 默认 `retryClass=retryable`
+   - 若预算耗尽或达到重试上限，降级为 `retryClass=non_retryable` 且 `routeAction=fallback_next_source`
+3. `error`：
+   - 必须归一到 `retryable` 或 `non_retryable`
+   - `retryable` 仅限瞬时故障；`non_retryable` 为请求/合同/授权等确定性故障
+
+判定顺序（固定）：
+1. 先判定 `timeout`（传输/连接/读超时）
+2. 再判定 `error`（协议/鉴权/请求结构/上游异常）
+3. 最后判定 `no_fill`（业务无候选）
+4. 均不命中时归入 `error + non_retryable`，原因码 `d_en_unknown`
+
+一致性约束：
+1. 同请求同版本下，`outcomeType/retryClass/routeAction` 必须确定性一致。
+2. 禁止用自由文本直接驱动重试动作，必须落到 canonical 字段。
+
+#### 3.6.22 原因码体系与映射规则（MVP）
+
+原因码前缀约定：
+1. `d_nf_*`：`no_fill`
+2. `d_to_*`：`timeout`
+3. `d_er_*`：`error + retryable`
+4. `d_en_*`：`error + non_retryable`
+
+最小原因码集合：
+1. `no_fill`：
+   - `d_nf_inventory_unavailable`
+   - `d_nf_targeting_unmatched`
+   - `d_nf_policy_filtered`
+   - `d_nf_budget_exhausted`
+   - `d_nf_frequency_capped`
+   - `d_nf_unknown`
+2. `timeout`：
+   - `d_to_connect_timeout`
+   - `d_to_read_timeout`
+   - `d_to_source_deadline_exceeded`
+   - `d_to_route_budget_exhausted`
+3. `error + retryable`：
+   - `d_er_upstream_5xx`
+   - `d_er_rate_limited`
+   - `d_er_transient_network`
+   - `d_er_dependency_unavailable`
+4. `error + non_retryable`：
+   - `d_en_auth_failed`
+   - `d_en_invalid_request`
+   - `d_en_contract_mismatch`
+   - `d_en_unsupported_placement`
+   - `d_en_malformed_response`
+   - `d_en_policy_rejected`
+   - `d_en_unknown`
+
+映射规则：
+1. 每条原始结果必须映射到唯一 `outcomeType + retryClass + reasonCode`。
+2. 映射必须记录 `rawCode/rawMessage + normalized + mappingAction + ruleVersion`。
+3. 若 source 返回原因与本地判定冲突，以本地判定优先并记录 `d_error_mapping_conflict_resolved`。
+4. 未识别原始错误统一落 `d_en_unknown`，避免重试风暴。
+
+#### 3.6.23 MVP 验收基线（error normalize）
+
+1. 任一 source 异常结果可稳定归一到 `no_fill/timeout/error` 之一。
+2. `error` 均可被稳定判定为 `retryable` 或 `non_retryable`，不出现未分类状态。
+3. 同请求同版本下，归一结果与 `routeAction` 可复现。
+4. 原始错误与 canonical 结果可审计回放（含原因码与规则版本）。
+5. `error normalize` 输出可被路由层直接消费，不需再做二次猜测。
+
 ### 3.7 Module E: Delivery Composer
 
 #### 3.7.1 Delivery Schema 职责
@@ -1389,7 +1490,7 @@ canonical 映射规则：
 
 1. 模块化主链框架（A-H）与边界说明。
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
-3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照 + D 输入合同 + Adapter 注册与能力声明 + request adapt 子合同 + candidate normalize 子合同）。
+3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照 + D 输入合同 + Adapter 注册与能力声明 + request adapt 子合同 + candidate normalize 子合同 + error normalize 体系）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线。
 5. Delivery / Event Schema 分离与 `responseReference` 关联口径。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
@@ -1450,6 +1551,14 @@ canonical 映射规则：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.20）
+
+1. 新增 `3.6.20`，冻结 `error normalize` 子合同（`sourceOutcomeRawLite` -> `normalizedSourceOutcomeLite`）。
+2. 新增 `3.6.21`，明确 `no_fill/timeout/error` 标准化与 `retryable/non_retryable` 语义。
+3. 新增 `3.6.22`，冻结原因码前缀与最小原因码集合，并定义冲突映射规则。
+4. 新增 `3.6.23`，补充 `error normalize` 的 MVP 验收基线。
+5. 更新第 4 章交付项，纳入 `error normalize` 交付口径。
 
 ### 2026-02-21（v3.19）
 
