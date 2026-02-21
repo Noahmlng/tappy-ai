@@ -182,3 +182,88 @@ optional：
 2. required/optional 边界清晰，非法输入不会进入后续创建流程。
 3. 错误码与动作映射在同请求同版本下确定性一致。
 4. `triggerAction=create_opportunity/no_op/reject` 三种结果均可被审计与回放复原。
+
+#### 3.3.14 `createOpportunity(opportunity_v1)` 输入合同（P0，MVP 冻结）
+
+调用语义：A 内部同步调用；仅负责机会对象创建与最小必填校验，不做收益或路由决策。
+
+输入对象：`opportunity_v1`
+
+required：
+1. `requestKey`
+2. `opportunityKey`
+3. `impSeed[]`（至少 1 个）
+   - `impKey`
+   - `placementId`
+   - `placementType`
+   - `slotIndex`
+4. `timestamps`
+   - `requestAt`
+   - `triggerAt`
+   - `opportunityCreatedAt`
+5. `traceInit`
+   - `traceKey`
+   - `requestKey`（必须与顶层一致）
+   - `attemptKey`
+6. `schemaVersion`
+7. `state`（固定初始值 `received`）
+8. `createOpportunityContractVersion`
+
+optional：
+1. `experimentTagsOrNA`
+2. `triggerSnapshotLiteOrNA`
+3. `sensingDecisionLiteOrNA`
+4. `extensions`
+
+输入约束：
+1. `requestKey/opportunityKey` 必须为全局唯一可追踪键；空值或非法格式直接拒绝。
+2. `impSeed[]` 不能为空；空数组视为合同错误。
+3. `timestamps` 必须单调合理：`requestAt <= triggerAt <= opportunityCreatedAt`。
+4. `traceInit.requestKey` 与顶层 `requestKey` 必须一致，否则拒绝。
+
+#### 3.3.15 createOpportunity 同步返回合同（P0，MVP 冻结）
+
+返回对象：`aCreateOpportunityResultLite`
+
+required：
+1. `createAccepted`（`true/false`）
+2. `createAction`（`created` / `duplicate_noop` / `rejected`）
+3. `opportunityRefOrNA`
+4. `resultState`（`received` / `error`）
+5. `reasonCode`
+6. `errorAction`（`allow` / `degrade` / `reject`）
+7. `traceInit`
+8. `returnedAt`
+9. `createOpportunityContractVersion`
+
+optional：
+1. `createdEventRefOrNA`（`opportunity_created` 事件引用）
+2. `debugHints`
+
+返回约束：
+1. `createAction=created` 时，`opportunityRefOrNA` 必须存在且状态为 `received`。
+2. `createAction=duplicate_noop` 时，不得创建新 `opportunityKey`。
+3. `createAction=rejected` 时，`errorAction` 必须为 `reject`。
+
+#### 3.3.16 createOpportunity 错误码与动作映射（P0，MVP 冻结）
+
+最小原因码与动作：
+1. `a_cop_missing_required_field` -> `errorAction=reject`, `createAction=rejected`
+2. `a_cop_invalid_key_format` -> `errorAction=reject`, `createAction=rejected`
+3. `a_cop_imp_seed_empty` -> `errorAction=reject`, `createAction=rejected`
+4. `a_cop_timestamp_order_invalid` -> `errorAction=reject`, `createAction=rejected`
+5. `a_cop_trace_request_mismatch` -> `errorAction=reject`, `createAction=rejected`
+6. `a_cop_duplicate_opportunity_key` -> `errorAction=allow`, `createAction=duplicate_noop`
+7. `a_cop_internal_unavailable` -> `errorAction=reject`, `createAction=rejected`, `retryable=true`
+
+一致性约束：
+1. 同 `opportunityKey + createOpportunityContractVersion` 下，返回动作必须一致。
+2. `duplicate_noop` 不得改变既有对象状态与关键时间戳。
+3. `retryable=true` 仅允许内部可恢复错误，不允许合同类错误。
+
+#### 3.3.17 MVP 验收基线（createOpportunity 合同）
+
+1. `requestKey/opportunityKey/impSeed[]/timestamps/traceInit` 五类必填在字段级可判定。
+2. 无 `impSeed` 或关键键不一致的请求不会进入 B。
+3. 成功创建的机会对象都以 `state=received` 进入后续链路。
+4. 任一创建失败都可通过 `traceKey + opportunityKey + reasonCode` 分钟级定位。

@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.21）
+
+1. 在 `Module A` 新增 `createOpportunity(opportunity_v1)` 输入合同，冻结 `requestKey/opportunityKey/impSeed[]/timestamps/traceInit` 最小必填集。
+2. 新增 `aCreateOpportunityResultLite` 同步返回合同，冻结 `created/duplicate_noop/rejected` 三类结果语义。
+3. 冻结 createOpportunity 错误码与动作映射，明确幂等重复与合同错误的处置边界。
+4. 新增 createOpportunity 合同的 MVP 验收基线，确保机会对象创建可判定、可追溯。
+5. 更新 MVP 交付项，将 Module A createOpportunity 合同纳入当前版本交付口径。
+
 ### 2026-02-21（v4.20）
 
 1. 在 `Module A` 新增 `trigger(placement_id, app_context)` 输入合同，冻结 required/optional 边界与输入校验约束。
