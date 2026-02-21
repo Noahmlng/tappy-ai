@@ -14,7 +14,14 @@
     "smoke:ads:live": "node --env-file-if-exists=.env ./scripts/smoke-ads-runtime.js --mode=live",
     "e2e:next-step": "node ./scripts/e2e-next-step-scenarios.js",
     "dev:gateway": "node --env-file-if-exists=.env ./src/server/simulator-gateway.js",
-    "dev:gateway:watch": "node --env-file-if-exists=.env --watch ./src/server/simulator-gateway.js"
+    "dev:gateway:watch": "node --env-file-if-exists=.env --watch ./src/server/simulator-gateway.js",
+    "house-ads:build-search-jobs": "node ./scripts/house-ads/build-search-jobs.js",
+    "house-ads:merge-search-results": "node ./scripts/house-ads/merge-search-results.js",
+    "house-ads:verify-brand-domain": "node ./scripts/house-ads/verify-brand-domain.js",
+    "house-ads:crawl-brand-pages": "node ./scripts/house-ads/crawl-brand-pages.js",
+    "house-ads:generate-creatives": "node ./scripts/house-ads/generate-creatives.js",
+    "house-ads:qa-and-publish": "node ./scripts/house-ads/qa-and-publish.js",
+    "house-ads:bootstrap-500": "npm run house-ads:build-search-jobs && npm run house-ads:merge-search-results && npm run house-ads:verify-brand-domain -- --max-brands=500 --skip-network=true && npm run house-ads:crawl-brand-pages -- --max-brands=500 --max-pages-per-brand=2 && npm run house-ads:generate-creatives -- --max-brands=500 && npm run house-ads:qa-and-publish -- --min-brands=500"
   },
   "dependencies": {
     "pg": "^8.16.3"

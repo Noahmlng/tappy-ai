@@ -1,0 +1,10 @@
+{
+  "generatedAt": "2026-02-21T12:32:28.603Z",
+  "inspectedSeeds": 1200,
+  "candidateBrands": 1200,
+  "selectedBrands": 500,
+  "maxBrands": 500,
+  "skipNetwork": true,
+  "strictReachable": false,
+  "output": "data/house-ads/curated/brands.jsonl"
+}
