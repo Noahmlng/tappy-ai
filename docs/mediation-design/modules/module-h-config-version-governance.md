@@ -222,3 +222,122 @@ required：
 2. `If-None-Match` 命中时稳定返回 `304`，且不会触发配置内容漂移。
 3. `ttlSec + expireAt` 可直接驱动 SDK 缓存更新，不依赖隐式时钟逻辑。
 4. 过期重验证失败时，`stale_grace` 与 fail-closed 行为可通过原因码稳定区分。
+
+#### 3.10.15 POST /config/publish 合同（P0，MVP 冻结）
+
+接口：`POST /config/publish`
+
+请求对象：`hConfigPublishRequestLite`
+
+required：
+1. `requestId`
+2. `operatorId`
+3. `environment`（`prod` / `staging`）
+4. `actionType`（`publish` / `rollback`）
+5. `targetScope`（`global` / `app` / `placement`）
+6. `targetKey`
+   - `global`：`environment`
+   - `app`：`appId + environment`
+   - `placement`：`appId + placementId + environment`
+7. `changeSetId`
+8. `baseVersionSnapshot`
+   - `schemaVersion`
+   - `routingStrategyVersion`
+   - `placementConfigVersion`
+9. `publishAt`
+10. `publishContractVersion`
+
+conditional required：
+1. `actionType=publish` 时：`targetVersionSnapshot`（本次要发布的版本快照）
+2. `actionType=rollback` 时：`rollbackToVersionSnapshot`（回滚目标版本快照）
+
+optional：
+1. `dryRun`（默认 `false`）
+2. `reason`
+3. `extensions`
+
+响应对象：`hConfigPublishResponseLite`
+
+required：
+1. `requestId`
+2. `changeSetId`
+3. `actionType`
+4. `publishState`
+5. `ackReasonCode`
+6. `retryable`
+7. `publishOperationId`
+8. `responseAt`
+9. `publishContractVersion`
+
+#### 3.10.16 发布状态机（draft/validated/published/rollback，P0，MVP 冻结）
+
+状态集合（最小）：
+1. `draft`
+2. `validated`
+3. `published`
+4. `rollback`
+5. `rolled_back`
+6. `failed`
+
+迁移规则：
+1. `draft -> validated`：完成 schema/兼容/冲突校验。
+2. `validated -> published`：原子提交成功。
+3. `validated -> failed`：提交前校验失败。
+4. `published -> rollback`：触发回滚动作。
+5. `rollback -> rolled_back`：回滚提交成功。
+6. `rollback -> failed`：回滚提交失败（需补偿或人工介入）。
+
+约束：
+1. 禁止 `draft -> published` 直跳。
+2. `published` 之后不得再次 `publish` 同一 `changeSetId`。
+3. 任一 `failed` 必须带 `ackReasonCode` 与 `retryable`。
+
+#### 3.10.17 原子性边界（P0，MVP 冻结）
+
+原子发布单元：`releaseUnit = environment + targetScope + targetKey`。
+
+原子性规则：
+1. 同一 `releaseUnit` 内，`targetVersionSnapshot` 三条线（schema/routing/placement）必须一次性提交成功或全部不生效。
+2. 对外可见状态只允许 `old snapshot` 或 `new snapshot`，不允许中间态被读取。
+3. `dryRun=true` 只执行校验，不写入任何可见版本。
+4. 并发发布冲突以 `baseVersionSnapshot` 比对判定；不匹配直接拒绝（防止覆盖写）。
+
+#### 3.10.18 回滚粒度（P0，MVP 冻结）
+
+支持粒度（最小）：
+1. `placement` 粒度回滚（默认，最小影响面）
+2. `app` 粒度回滚
+3. `global` 粒度回滚
+
+回滚对象：
+1. 允许整快照回滚（`schema + routing + placement` 一起回退）。
+2. 允许单线回滚（仅 `routing` 或仅 `placement`），但必须生成新的完整快照并重新发布。
+
+粒度约束：
+1. 同一回滚请求只能选择一种 `targetScope`。
+2. 回滚优先级建议：`placement -> app -> global`。
+
+#### 3.10.19 失败补偿（P0，MVP 冻结）
+
+补偿目标：避免“部分发布成功”的语义断层。
+
+补偿规则：
+1. 若原子提交中任一步骤失败，系统必须自动触发补偿事务，将 `releaseUnit` 恢复到 `baseVersionSnapshot`。
+2. 自动补偿失败时，状态保持 `failed`，并标记 `h_publish_compensation_failed`，进入人工介入队列。
+3. 可重试失败使用同一 `publishOperationId` 重试，不得创建新操作语义。
+4. 补偿过程不对外暴露中间态；对外仍仅可见稳定快照。
+
+最小原因码：
+1. `h_publish_validation_failed`
+2. `h_publish_base_version_conflict`
+3. `h_publish_atomic_commit_failed`
+4. `h_publish_compensation_triggered`
+5. `h_publish_compensation_failed`
+6. `h_publish_rollback_target_not_found`
+
+#### 3.10.20 MVP 验收基线（POST /config/publish）
+
+1. 任一发布请求都遵循 `draft -> validated -> published/failed` 的确定性状态迁移。
+2. 任一回滚请求都遵循 `published -> rollback -> rolled_back/failed` 的确定性状态迁移。
+3. 同一 `releaseUnit` 不会出现“部分线已生效、部分线未生效”的外部可见状态。
+4. 任一失败都可通过 `publishOperationId + changeSetId + ackReasonCode` 分钟级定位。

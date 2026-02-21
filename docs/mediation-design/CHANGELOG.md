@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.14）
+
+1. 在 `Module H` 新增 `POST /config/publish` 接口合同，冻结发布/回滚请求与响应最小字段。
+2. 冻结发布状态机（`draft/validated/published/rollback` 主链路）及失败迁移约束。
+3. 新增原子性边界定义，明确以 `releaseUnit` 为单位一次性提交三条版本线，禁止对外暴露中间态。
+4. 冻结回滚粒度（placement/app/global）与单线回滚规则，并明确最小影响面优先顺序。
+5. 新增失败补偿规则与最小原因码体系，并将 `POST /config/publish` 合同纳入当前版本交付项。
+
 ### 2026-02-21（v4.13）
 
 1. 在 `Module H` 新增 `GET /config` 接口合同，冻结请求必填键与最小配置定位键。
