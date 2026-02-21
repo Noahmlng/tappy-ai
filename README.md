@@ -14,6 +14,7 @@
 - [输出方式（按形态）](#readme-output-modes)
 - [框架设计（控制面/决策面/检索面/体验面）](#readme-architecture)
 - [整体构思逻辑（端到端链路）](#readme-logic)
+- [Mediation 设计文档入口（最新）](#readme-mediation)
 - [项目资产总览（代码 + 文档）](#readme-assets)
 - [本地联调与运行](#readme-run)
 
@@ -167,6 +168,27 @@
 
 这套结构的关键目标是：主对话稳定、商业化可插拔、策略可运营、链路可审计。
 
+<a id="readme-mediation"></a>
+## Mediation 设计文档入口（最新）
+
+当前 Mediation 设计已切到结构化文档体系，主入口和索引如下：
+
+1. 主入口（Main Doc）：`docs/mediation-module-design.md`（当前版本 `v4.48`）
+2. 结构化索引：`docs/mediation-design/INDEX.md`
+3. 结构化说明：`docs/mediation-design/README.md`
+4. 变更历史：`docs/mediation-design/CHANGELOG.md`
+
+模块合同文件（A-H）：
+
+1. `docs/mediation-design/modules/module-a-sdk-ingress-opportunity-sensing.md`
+2. `docs/mediation-design/modules/module-b-schema-translation-signal-normalization.md`
+3. `docs/mediation-design/modules/module-c-policy-safety-governor.md`
+4. `docs/mediation-design/modules/module-d-supply-orchestrator-adapter-layer.md`
+5. `docs/mediation-design/modules/module-e-delivery-composer.md`
+6. `docs/mediation-design/modules/module-f-event-attribution-processor.md`
+7. `docs/mediation-design/modules/module-g-audit-replay-controller.md`
+8. `docs/mediation-design/modules/module-h-config-version-governance.md`
+
 <a id="readme-assets"></a>
 ## 项目资产总览（代码 + 文档）
 
@@ -180,6 +202,9 @@
 ### 关键文档目录
 
 - 路线图：`docs/ai-network-development-plan.md`
+- Mediation 主入口：`docs/mediation-module-design.md`
+- Mediation 索引：`docs/mediation-design/INDEX.md`
+- Mediation 变更记录：`docs/mediation-design/CHANGELOG.md`
 - 项目结构：`docs/project-structure.md`
 - Placement 框架：`docs/ai-assistant-placement-framework.md`
 - Gateway 设计：`projects/ad-aggregation-platform/docs/local-simulator-gateway.md`
