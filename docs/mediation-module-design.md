@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.9
+- 文档版本：v3.10
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -277,6 +277,7 @@ MVP 必做：
 1. 每块区分 required / optional。
 2. 新能力优先放 optional，不破坏主语义。
 3. 顶层冻结 `schemaVersion` 与 `state`。
+4. 六块最小必填字段矩阵见 `3.4.21`，作为 B 输出合格性门槛。
 
 #### 3.4.2 状态机（冻结）
 
@@ -548,6 +549,7 @@ required：
    - `enumDictVersion`
    - `conflictPolicyVersion`
 6. `mappingAuditSnapshotLite`
+7. 六块对象均满足 `3.4.21` 的 required 矩阵
 
 optional：
 1. `mappingWarnings`（仅告警，不改变主语义）
@@ -590,6 +592,33 @@ optional：
 3. 同请求在同版本下 `bNormalizedOpportunityLite` 与 `mappingAuditSnapshotLite` 均可复现。
 4. 任一策略或路由结果都可回溯到具体审计记录和规则版本。
 5. B 输出缺失 `mappingAuditSnapshotLite` 时视为不合格输出，不得进入主链路。
+
+#### 3.4.21 六块 Schema 最小 required 矩阵（MVP 冻结）
+
+该矩阵是 `Module B` 到 `Module C/D` 的最小消费合同；缺失任一 required 字段即视为“残缺对象”。
+
+| Block | required fields (MVP) | 缺失处置 |
+|---|---|---|
+| `RequestMeta` | `requestKey`, `requestTimestamp`, `channelType` | `reject`（`b_required_matrix_violation`） |
+| `PlacementMeta` | `placementKey`, `placementType`, `placementSurface` | `reject`（`b_required_matrix_violation`） |
+| `UserContext` | `sessionKey`, `actorType` | `reject`（`b_required_matrix_violation`） |
+| `OpportunityContext` | `triggerDecision`, `decisionOutcome`, `hitType` | `reject`（`b_required_matrix_violation`） |
+| `PolicyContext` | `consentScope`, `policyGateHint`, `restrictedCategoryFlags` | `reject`（`b_required_matrix_violation`） |
+| `TraceContext` | `traceKey`, `requestKey`, `attemptKey` | `reject`（`b_required_matrix_violation`） |
+
+矩阵约束：
+1. required 字段只接受 canonical 值，不允许 raw 值落地。
+2. `restrictedCategoryFlags` 可为空数组，但字段必须存在。
+3. `requestKey` 在 `RequestMeta` 与 `TraceContext` 必须一致；不一致按 `reject`。
+4. `channelType`、`placementType`、`actorType`、`triggerDecision`、`decisionOutcome`、`hitType` 必须来自 `enumDictVersion`。
+
+#### 3.4.22 MVP 验收基线（六块 required 矩阵）
+
+1. C/D 不需要对六块对象做字段补齐或兜底推断。
+2. 任一 required 字段缺失都能被 B 层稳定拦截并产出标准原因码。
+3. 同请求在同版本下 required 字段集稳定一致，不出现“有时有、有时无”。
+4. 任一策略/路由结果都能反查到六块 required 字段快照。
+5. 六块矩阵变更必须伴随版本发布（`schemaVersion` 或对应策略版本）并可回滚。
 
 ### 3.5 Module C: Policy & Safety Governor
 
@@ -802,7 +831,7 @@ optional：
 
 1. 模块化主链框架（A-H）与边界说明。
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
-3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照）。
+3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线。
 5. Delivery / Event Schema 分离与 `responseReference` 关联口径。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
@@ -863,6 +892,13 @@ optional：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.10）
+
+1. 新增 `3.4.21`，冻结六块 Schema 的最小 required 字段矩阵（Request/Placement/User/Opportunity/Policy/Trace）。
+2. 新增 `3.4.22`，补充 required 矩阵的 MVP 验收基线与稳定性要求。
+3. 在 `3.4.1` 与 `3.4.18` 增加 required 矩阵引用，明确其为 B 输出合格门槛。
+4. 更新第 4 章交付项，纳入六块 required 矩阵交付口径。
 
 ### 2026-02-21（v3.9）
 
