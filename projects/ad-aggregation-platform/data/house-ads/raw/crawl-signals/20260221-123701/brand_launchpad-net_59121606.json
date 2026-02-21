@@ -1,0 +1,35 @@
+{
+  "brand_id": "brand_launchpad-net_59121606",
+  "official_domain": "launchpad.net",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "Launchpad"
+  ],
+  "descriptions": [],
+  "keywords": [
+    "launchpad",
+    "register",
+    "search",
+    "nbsp",
+    "projects",
+    "bugs",
+    "branches",
+    "repositories",
+    "translations",
+    "answers",
+    "blueprints",
+    "counting",
+    "software",
+    "collaboration",
+    "platform",
+    "that",
+    "provides",
+    "tracking"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://launchpad.net/"
+  ],
+  "updated_at": "2026-02-21T12:37:04.843Z"
+}

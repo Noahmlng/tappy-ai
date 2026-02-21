@@ -1,0 +1,39 @@
+{
+  "brand_id": "brand_pc-karuma-net_76a09019",
+  "official_domain": "pc-karuma.net",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "PC設定のカルマ - Windows、Mac、スマホの設定や使い方を紹介！"
+  ],
+  "descriptions": [
+    "PC設定のカルマは、Windows、Mac、スマホに関する設定や使い方をまとめています。また、Excel、Word、アプリの解説もしています。"
+  ],
+  "keywords": [
+    "windows",
+    "excel",
+    "word",
+    "menu",
+    "iphone",
+    "android",
+    "apple",
+    "watch",
+    "airpods",
+    "gmail",
+    "youtube",
+    "twitter",
+    "instagram",
+    "discord",
+    "outlook",
+    "microsoft",
+    "edge",
+    "google",
+    "chrome",
+    "amazo"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://pc-karuma.net/"
+  ],
+  "updated_at": "2026-02-21T12:37:04.672Z"
+}

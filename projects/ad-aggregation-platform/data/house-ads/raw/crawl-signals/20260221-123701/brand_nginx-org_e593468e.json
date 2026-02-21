@@ -1,0 +1,40 @@
+{
+  "brand_id": "brand_nginx-org_e593468e",
+  "official_domain": "nginx.org",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "nginx"
+  ],
+  "descriptions": [],
+  "keywords": [
+    "nginx",
+    "confused",
+    "between",
+    "ingress",
+    "controller",
+    "learn",
+    "about",
+    "long",
+    "term",
+    "commitment",
+    "gateway",
+    "implementation",
+    "read",
+    "blog",
+    "english",
+    "news",
+    "download",
+    "security",
+    "documentation",
+    "books",
+    "community",
+    "enterprise",
+    "forum"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://nginx.org/"
+  ],
+  "updated_at": "2026-02-21T12:37:03.750Z"
+}

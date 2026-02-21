@@ -1,0 +1,48 @@
+{
+  "brand_id": "brand_ovhcloud-com_7728f4e7",
+  "official_domain": "ovhcloud.com",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "Cloud Computing &amp; Web Hosting | OVHcloud Worldwide"
+  ],
+  "descriptions": [
+    "OVHcloud offers more than 80 open and reversible services with the best price-performance ratio, including domain names, VPS, dedicated servers, IaaS and PaaS cloud"
+  ],
+  "keywords": [
+    "cloud",
+    "computing",
+    "hosting",
+    "ovhcloud",
+    "worldwide",
+    "customer",
+    "offers",
+    "more",
+    "than",
+    "open",
+    "reversible",
+    "services",
+    "with",
+    "best",
+    "price",
+    "performance",
+    "ratio",
+    "including",
+    "domain",
+    "names",
+    "dedicated",
+    "servers",
+    "iaas",
+    "paas"
+  ],
+  "price_hints": [
+    "$67",
+    "$9.20",
+    "$17.99",
+    "$62.99"
+  ],
+  "landing_pages": [
+    "https://ovhcloud.com/"
+  ],
+  "updated_at": "2026-02-21T12:37:34.999Z"
+}

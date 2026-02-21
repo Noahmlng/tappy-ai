@@ -1,0 +1,43 @@
+{
+  "brand_id": "brand_baidu-com_c33382c0",
+  "official_domain": "baidu.com",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "百度一下，你就知道"
+  ],
+  "descriptions": [
+    "全球领先的中文搜索引擎、致力于让网民更便捷地获取信息，找到所求。百度超过千亿的中文网页数据库，可以瞬间找到相关的搜索结果。"
+  ],
+  "keywords": [
+    "style",
+    "data",
+    "quot",
+    "result",
+    "type",
+    "text",
+    "html",
+    "font",
+    "size",
+    "100px",
+    "body",
+    "14rem",
+    "14px",
+    "color",
+    "background",
+    "padding",
+    "margin",
+    "position",
+    "relative",
+    "family",
+    "arial",
+    "form",
+    "list",
+    "none"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://baidu.com/"
+  ],
+  "updated_at": "2026-02-21T12:37:03.746Z"
+}

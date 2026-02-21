@@ -1,0 +1,47 @@
+{
+  "brand_id": "brand_investopedia-com_d10a5aa5",
+  "official_domain": "investopedia.com",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "Investopedia"
+  ],
+  "descriptions": [
+    "Investopedia is the world&amp;#039;s leading source of financial content on the web, ranging from market news to retirement strategies, investing education to insights from advisors."
+  ],
+  "keywords": [
+    "investopedia",
+    "world",
+    "leading",
+    "source",
+    "financial",
+    "content",
+    "ranging",
+    "from",
+    "market",
+    "news",
+    "retirement",
+    "strategies",
+    "investing",
+    "education",
+    "insights",
+    "advisors",
+    "skip",
+    "trade",
+    "search",
+    "please",
+    "fill",
+    "this",
+    "field",
+    "newsletters"
+  ],
+  "price_hints": [
+    "$10",
+    "$25",
+    "$50"
+  ],
+  "landing_pages": [
+    "https://investopedia.com/"
+  ],
+  "updated_at": "2026-02-21T12:37:24.350Z"
+}

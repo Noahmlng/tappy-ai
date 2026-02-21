@@ -1,0 +1,33 @@
+{
+  "brand_id": "brand_microsoft-com_c79f86c1",
+  "official_domain": "microsoft.com",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "Microsoft——AI、云、生产力、计算、游戏和应用"
+  ],
+  "descriptions": [
+    "浏览适合家庭或企业的 Microsoft 产品、服务和支持。购买 Microsoft 365、Copilot、Teams、Xbox、Windows、Azure、Surface 等产品/服务。"
+  ],
+  "keywords": [
+    "microsoft",
+    "surface",
+    "windows",
+    "copilot",
+    "teams",
+    "xbox",
+    "azure",
+    "trace",
+    "missing",
+    "global",
+    "onedrive",
+    "outlook",
+    "skype",
+    "onenote"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://microsoft.com/"
+  ],
+  "updated_at": "2026-02-21T12:37:03.426Z"
+}

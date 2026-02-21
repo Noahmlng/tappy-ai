@@ -1,0 +1,29 @@
+{
+  "brand_id": "brand_tophub-today_9c6e1190",
+  "official_domain": "tophub.today",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "今日热榜官网"
+  ],
+  "descriptions": [
+    "今日热榜提供各站热榜聚合：微信、今日头条、百度、知乎、V2EX、微博、贴吧、豆瓣、天涯、虎扑、Github、抖音...追踪全网热点、简单高效阅读。"
+  ],
+  "keywords": [
+    "v2ex",
+    "github",
+    "xe9c0",
+    "xe408",
+    "xe409",
+    "xe616",
+    "xe608",
+    "xe611",
+    "xe600",
+    "10000"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://tophub.today/"
+  ],
+  "updated_at": "2026-02-21T12:38:01.133Z"
+}

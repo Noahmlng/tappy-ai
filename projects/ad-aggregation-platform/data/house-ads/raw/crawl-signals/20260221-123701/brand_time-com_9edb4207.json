@@ -1,0 +1,43 @@
+{
+  "brand_id": "brand_time-com_9edb4207",
+  "official_domain": "time.com",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "TIME | Current &amp; Breaking News | National &amp; World Updates"
+  ],
+  "descriptions": [
+    "Breaking news and analysis from time.com. Politics, world news, photos, video, tech reviews, health, science, and entertainment news."
+  ],
+  "keywords": [
+    "time",
+    "current",
+    "breaking",
+    "news",
+    "national",
+    "world",
+    "updates",
+    "analysis",
+    "from",
+    "politics",
+    "photos",
+    "video",
+    "tech",
+    "reviews",
+    "health",
+    "science",
+    "entertainment",
+    "skip",
+    "content",
+    "menu",
+    "close",
+    "subscribe",
+    "your",
+    "brief"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://time.com/"
+  ],
+  "updated_at": "2026-02-21T12:37:18.038Z"
+}

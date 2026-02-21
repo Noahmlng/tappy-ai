@@ -1,0 +1,43 @@
+{
+  "brand_id": "brand_umn-edu_c5425f68",
+  "official_domain": "umn.edu",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "University of Minnesota Twin Cities"
+  ],
+  "descriptions": [
+    "The University of Minnesota, Twin Cities is among the nation’s top public research universities offering a wide range of undergraduate and graduate programs."
+  ],
+  "keywords": [
+    "university",
+    "minnesota",
+    "twin",
+    "cities",
+    "campus",
+    "among",
+    "nation",
+    "public",
+    "research",
+    "universities",
+    "offering",
+    "wide",
+    "range",
+    "undergraduate",
+    "graduate",
+    "programs",
+    "skip",
+    "main",
+    "content",
+    "wordmark",
+    "crookston",
+    "duluth",
+    "morris",
+    "rochester"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://umn.edu/"
+  ],
+  "updated_at": "2026-02-21T12:37:42.275Z"
+}

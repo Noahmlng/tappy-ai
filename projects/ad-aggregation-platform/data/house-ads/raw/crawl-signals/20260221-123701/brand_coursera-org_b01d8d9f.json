@@ -1,0 +1,43 @@
+{
+  "brand_id": "brand_coursera-org_b01d8d9f",
+  "official_domain": "coursera.org",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "Coursera | Courses, Professional Certificates, and Degrees Online"
+  ],
+  "descriptions": [
+    "Learn in-demand skills with online courses and Professional Certificates from leading companies like Google, IBM, Meta, and Adobe. Explore flexible programs—from short courses to full degrees."
+  ],
+  "keywords": [
+    "coursera",
+    "courses",
+    "professional",
+    "certificates",
+    "degrees",
+    "online",
+    "learn",
+    "without",
+    "limits",
+    "demand",
+    "skills",
+    "with",
+    "from",
+    "leading",
+    "companies",
+    "like",
+    "google",
+    "meta",
+    "adobe",
+    "explore",
+    "flexible",
+    "programs",
+    "short",
+    "full"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://coursera.org/"
+  ],
+  "updated_at": "2026-02-21T12:37:43.970Z"
+}

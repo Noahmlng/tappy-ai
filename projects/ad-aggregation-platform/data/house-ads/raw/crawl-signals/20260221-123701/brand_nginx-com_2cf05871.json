@@ -1,0 +1,41 @@
+{
+  "brand_id": "brand_nginx-com_2cf05871",
+  "official_domain": "nginx.com",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "NGINX | F5"
+  ],
+  "descriptions": [],
+  "keywords": [
+    "nginx",
+    "products",
+    "application",
+    "migration",
+    "modernization",
+    "enterprise",
+    "delivery",
+    "security",
+    "hybrid",
+    "multicloud",
+    "post",
+    "quantum",
+    "cryptography",
+    "readiness",
+    "protection",
+    "zero",
+    "trust",
+    "architecture",
+    "banking",
+    "financial",
+    "services",
+    "commerce",
+    "healthcare",
+    "public"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://nginx.com/"
+  ],
+  "updated_at": "2026-02-21T12:37:06.758Z"
+}

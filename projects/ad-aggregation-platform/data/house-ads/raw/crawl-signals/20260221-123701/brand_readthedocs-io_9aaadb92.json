@@ -1,0 +1,45 @@
+{
+  "brand_id": "brand_readthedocs-io_9aaadb92",
+  "official_domain": "readthedocs.io",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "Full featured documentation deployment platform - Read the Docs"
+  ],
+  "descriptions": [
+    "Read the Docs is a documentation building and hosting platform aimed at helping developers creating documentation from code with versioned documentation, integrated search, pull request previews and more."
+  ],
+  "keywords": [
+    "full",
+    "featured",
+    "documentation",
+    "deployment",
+    "platform",
+    "read",
+    "docs",
+    "code",
+    "everyone",
+    "building",
+    "hosting",
+    "aimed",
+    "helping",
+    "developers",
+    "creating",
+    "from",
+    "with",
+    "versioned",
+    "integrated",
+    "search",
+    "pull",
+    "request",
+    "previews",
+    "more"
+  ],
+  "price_hints": [
+    "$50"
+  ],
+  "landing_pages": [
+    "https://readthedocs.io/"
+  ],
+  "updated_at": "2026-02-21T12:37:17.600Z"
+}

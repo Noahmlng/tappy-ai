@@ -1,0 +1,43 @@
+{
+  "brand_id": "brand_nodejs-org_d38e62e3",
+  "official_domain": "nodejs.org",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "Node.js — Run JavaScript Everywhere"
+  ],
+  "descriptions": [
+    "Node.js® is a free, open-source, cross-platform JavaScript runtime environment that lets developers create servers, web apps, command line tools and scripts."
+  ],
+  "keywords": [
+    "node",
+    "javascript",
+    "everywhere",
+    "free",
+    "open",
+    "source",
+    "cross",
+    "platform",
+    "runtime",
+    "environment",
+    "that",
+    "lets",
+    "developers",
+    "create",
+    "servers",
+    "apps",
+    "command",
+    "line",
+    "tools",
+    "scripts",
+    "skip",
+    "content",
+    "learn",
+    "about"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://nodejs.org/"
+  ],
+  "updated_at": "2026-02-21T12:38:10.256Z"
+}

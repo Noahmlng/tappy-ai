@@ -1,0 +1,46 @@
+{
+  "brand_id": "brand_apple-com_353d0d6e",
+  "official_domain": "apple.com",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "Apple"
+  ],
+  "descriptions": [
+    "Discover the innovative world of Apple and shop everything iPhone, iPad, Apple Watch, Mac, and Apple TV, plus explore accessories, entertainment, and expert device support."
+  ],
+  "keywords": [
+    "apple",
+    "discover",
+    "innovative",
+    "world",
+    "shop",
+    "everything",
+    "iphone",
+    "ipad",
+    "watch",
+    "plus",
+    "explore",
+    "accessories",
+    "entertainment",
+    "expert",
+    "device",
+    "support",
+    "store",
+    "vision",
+    "airpods",
+    "home",
+    "nbsp",
+    "hello",
+    "latest",
+    "generation"
+  ],
+  "price_hints": [
+    "$180",
+    "$650"
+  ],
+  "landing_pages": [
+    "https://apple.com/"
+  ],
+  "updated_at": "2026-02-21T12:37:03.556Z"
+}

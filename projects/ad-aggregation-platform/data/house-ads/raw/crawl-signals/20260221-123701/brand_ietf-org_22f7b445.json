@@ -1,0 +1,40 @@
+{
+  "brand_id": "brand_ietf-org_22f7b445",
+  "official_domain": "ietf.org",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "IETF | Internet Engineering Task Force"
+  ],
+  "descriptions": [],
+  "keywords": [
+    "ietf",
+    "internet",
+    "engineering",
+    "task",
+    "force",
+    "welcome",
+    "skip",
+    "main",
+    "content",
+    "search",
+    "about",
+    "introduction",
+    "participants",
+    "mission",
+    "principles",
+    "work",
+    "structure",
+    "steering",
+    "group",
+    "architecture",
+    "board",
+    "research",
+    "liaison"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://ietf.org/"
+  ],
+  "updated_at": "2026-02-21T12:37:08.205Z"
+}

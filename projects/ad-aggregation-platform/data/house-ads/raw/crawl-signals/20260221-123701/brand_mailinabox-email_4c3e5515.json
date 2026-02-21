@@ -1,0 +1,43 @@
+{
+  "brand_id": "brand_mailinabox-email_4c3e5515",
+  "official_domain": "mailinabox.email",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "Mail-in-a-Box"
+  ],
+  "descriptions": [
+    "Take back control of your email with this easy-to-deploy mail server in a box."
+  ],
+  "keywords": [
+    "mail",
+    "take",
+    "back",
+    "control",
+    "your",
+    "email",
+    "with",
+    "this",
+    "easy",
+    "deploy",
+    "server",
+    "quick",
+    "links",
+    "setup",
+    "guide",
+    "discussion",
+    "forum",
+    "chat",
+    "room",
+    "maintenance",
+    "advanced",
+    "tips",
+    "github",
+    "repository"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://mailinabox.email/"
+  ],
+  "updated_at": "2026-02-21T12:37:25.222Z"
+}

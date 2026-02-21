@@ -1,0 +1,41 @@
+{
+  "brand_id": "brand_apache-org_8375140b",
+  "official_domain": "apache.org",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "Welcome to The Apache Software Foundation | Apache Software Foundation"
+  ],
+  "descriptions": [],
+  "keywords": [
+    "welcome",
+    "apache",
+    "software",
+    "foundation",
+    "public",
+    "good",
+    "para",
+    "introducing",
+    "logo",
+    "read",
+    "toggle",
+    "navigation",
+    "community",
+    "nbsp",
+    "contributor",
+    "getting",
+    "started",
+    "becoming",
+    "committer",
+    "code",
+    "conduct",
+    "resources",
+    "over",
+    "events"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://apache.org/"
+  ],
+  "updated_at": "2026-02-21T14:54:51.307Z"
+}

@@ -1,0 +1,43 @@
+{
+  "brand_id": "brand_berkeley-edu_90878663",
+  "official_domain": "berkeley.edu",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "University of California, Berkeley: Home"
+  ],
+  "descriptions": [
+    "UC Berkeley pushes the boundaries of knowledge, challenges convention and expands opportunity to create the leaders of tomorrow."
+  ],
+  "keywords": [
+    "university",
+    "california",
+    "berkeley",
+    "home",
+    "pushes",
+    "boundaries",
+    "knowledge",
+    "challenges",
+    "convention",
+    "expands",
+    "opportunity",
+    "create",
+    "leaders",
+    "tomorrow",
+    "skip",
+    "content",
+    "main",
+    "menu",
+    "students",
+    "faculty",
+    "staff",
+    "parents",
+    "alumni",
+    "give"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://berkeley.edu/"
+  ],
+  "updated_at": "2026-02-21T12:37:41.880Z"
+}

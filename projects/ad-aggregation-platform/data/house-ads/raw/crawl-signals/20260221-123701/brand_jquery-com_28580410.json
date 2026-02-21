@@ -1,0 +1,43 @@
+{
+  "brand_id": "brand_jquery-com_28580410",
+  "official_domain": "jquery.com",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "jQuery"
+  ],
+  "descriptions": [
+    "jQuery: The Write Less, Do More, JavaScript Library"
+  ],
+  "keywords": [
+    "jquery",
+    "write",
+    "less",
+    "more",
+    "javascript",
+    "library",
+    "been",
+    "released",
+    "will",
+    "only",
+    "receive",
+    "critical",
+    "updates",
+    "find",
+    "support",
+    "earlier",
+    "versions",
+    "herodevs",
+    "mobile",
+    "sizzle",
+    "qunit",
+    "plugins",
+    "contribute",
+    "style"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://jquery.com/"
+  ],
+  "updated_at": "2026-02-21T12:37:55.852Z"
+}

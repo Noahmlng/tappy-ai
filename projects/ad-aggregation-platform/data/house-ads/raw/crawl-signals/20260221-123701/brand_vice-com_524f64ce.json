@@ -1,0 +1,43 @@
+{
+  "brand_id": "brand_vice-com_524f64ce",
+  "official_domain": "vice.com",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "VICE - VICE is the definitive guide to enlightening information."
+  ],
+  "descriptions": [
+    "VICE is a global media channel focusing on investigative journalism and enlightening videos about everything from world news, travel, art, drugs, politics, sports, fashion, sex, and super cute animals."
+  ],
+  "keywords": [
+    "vice",
+    "definitive",
+    "guide",
+    "enlightening",
+    "information",
+    "subscribe",
+    "global",
+    "media",
+    "channel",
+    "focusing",
+    "investigative",
+    "journalism",
+    "videos",
+    "about",
+    "everything",
+    "from",
+    "world",
+    "news",
+    "travel",
+    "drugs",
+    "politics",
+    "sports",
+    "fashion",
+    "super"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://vice.com/"
+  ],
+  "updated_at": "2026-02-21T12:37:34.181Z"
+}

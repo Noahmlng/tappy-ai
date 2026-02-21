@@ -1,0 +1,21 @@
+{
+  "brand_id": "brand_youku-com_82bb5f47",
+  "official_domain": "youku.com",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "优酷 - 为好内容全力以赴"
+  ],
+  "descriptions": [
+    "视频服务平台,提供视频播放,视频发布,视频搜索,视频分享"
+  ],
+  "keywords": [
+    "top1",
+    "8000"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://youku.com/"
+  ],
+  "updated_at": "2026-02-21T12:38:15.343Z"
+}

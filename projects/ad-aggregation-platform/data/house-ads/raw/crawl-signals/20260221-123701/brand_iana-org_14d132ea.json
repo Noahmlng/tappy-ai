@@ -1,0 +1,39 @@
+{
+  "brand_id": "brand_iana-org_14d132ea",
+  "official_domain": "iana.org",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "Internet Assigned Numbers Authority"
+  ],
+  "descriptions": [],
+  "keywords": [
+    "internet",
+    "assigned",
+    "numbers",
+    "authority",
+    "global",
+    "coordination",
+    "root",
+    "addressing",
+    "other",
+    "protocol",
+    "resources",
+    "performed",
+    "iana",
+    "functions",
+    "learn",
+    "more",
+    "domain",
+    "names",
+    "management",
+    "zone",
+    "assignments",
+    "cctlds"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://iana.org/"
+  ],
+  "updated_at": "2026-02-21T12:38:02.044Z"
+}

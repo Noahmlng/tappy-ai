@@ -1,0 +1,43 @@
+{
+  "brand_id": "brand_wordpress-org_28e723ea",
+  "official_domain": "wordpress.org",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "Blog Tool, Publishing Platform, and CMS &#8211; WordPress.org"
+  ],
+  "descriptions": [
+    "Open source software which you can use to easily create a beautiful website, blog, or app."
+  ],
+  "keywords": [
+    "blog",
+    "tool",
+    "publishing",
+    "platform",
+    "8211",
+    "wordpress",
+    "meet",
+    "open",
+    "source",
+    "software",
+    "which",
+    "easily",
+    "create",
+    "beautiful",
+    "website",
+    "skip",
+    "content",
+    "news",
+    "showcase",
+    "hosting",
+    "extend",
+    "themes",
+    "plugins",
+    "patterns"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://wordpress.org/"
+  ],
+  "updated_at": "2026-02-21T12:37:11.554Z"
+}

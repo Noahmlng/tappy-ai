@@ -1,0 +1,26 @@
+{
+  "brand_id": "brand_yahoo-co-jp_3a4a8b7c",
+  "official_domain": "yahoo.co.jp",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "Yahoo! JAPAN"
+  ],
+  "descriptions": [
+    "あなたの毎日をアップデートする情報ポータル。検索、ニュース、天気、スポーツ、メール、ショッピング、オークションなど便利なサービスを展開しています。"
+  ],
+  "keywords": [
+    "yahoo",
+    "japan",
+    "javascript",
+    "windows",
+    "edge",
+    "chrome",
+    "firefox"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://yahoo.co.jp/"
+  ],
+  "updated_at": "2026-02-21T12:37:56.802Z"
+}

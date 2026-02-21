@@ -1,0 +1,29 @@
+{
+  "brand_id": "brand_example-com_b0f58cbc",
+  "official_domain": "example.com",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "Example Domain"
+  ],
+  "descriptions": [],
+  "keywords": [
+    "example",
+    "domain",
+    "this",
+    "documentation",
+    "examples",
+    "without",
+    "needing",
+    "permission",
+    "avoid",
+    "operations",
+    "learn",
+    "more"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://example.com/"
+  ],
+  "updated_at": "2026-02-21T12:37:27.018Z"
+}

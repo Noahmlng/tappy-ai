@@ -1,0 +1,28 @@
+{
+  "brand_id": "brand_intel-com_54fbb058",
+  "official_domain": "intel.com",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "Intel Inside — 为 AI 打造"
+  ],
+  "descriptions": [
+    "利用我们全面的软硬件解决方案，在云端、数据中心、边缘和客户端大规模交付 AI。"
+  ],
+  "keywords": [
+    "intel",
+    "inside",
+    "toggle",
+    "navigation",
+    "ultra",
+    "vpro",
+    "gaudi",
+    "geti",
+    "flex"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://intel.com/"
+  ],
+  "updated_at": "2026-02-21T12:37:29.669Z"
+}

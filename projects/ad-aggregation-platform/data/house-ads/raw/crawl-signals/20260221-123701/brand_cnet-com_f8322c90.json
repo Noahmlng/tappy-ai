@@ -1,0 +1,48 @@
+{
+  "brand_id": "brand_cnet-com_f8322c90",
+  "official_domain": "cnet.com",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "CNET: Product reviews, advice, how-tos and the latest news"
+  ],
+  "descriptions": [
+    "Get full-length product reviews, the latest news, tech coverage, daily deals, and category deep dives from CNET experts worldwide."
+  ],
+  "keywords": [
+    "cnet",
+    "product",
+    "reviews",
+    "advice",
+    "latest",
+    "news",
+    "full",
+    "length",
+    "tech",
+    "coverage",
+    "daily",
+    "deals",
+    "category",
+    "deep",
+    "dives",
+    "from",
+    "experts",
+    "worldwide",
+    "your",
+    "guide",
+    "better",
+    "future",
+    "preferred",
+    "source"
+  ],
+  "price_hints": [
+    "$300",
+    "$100",
+    "$50",
+    "$13"
+  ],
+  "landing_pages": [
+    "https://cnet.com/"
+  ],
+  "updated_at": "2026-02-21T12:38:25.563Z"
+}

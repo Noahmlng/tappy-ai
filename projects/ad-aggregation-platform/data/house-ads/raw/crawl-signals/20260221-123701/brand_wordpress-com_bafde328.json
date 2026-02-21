@@ -1,0 +1,24 @@
+{
+  "brand_id": "brand_wordpress-com_bafde328",
+  "official_domain": "wordpress.com",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "WordPress.com：构建您网站所需的一切"
+  ],
+  "descriptions": [
+    "使用内置主机、高级套餐主题和强大的工具创建您的WordPress网站。无需技术设置。今天就开始构建——可用免费套餐。"
+  ],
+  "keywords": [
+    "wordpress",
+    "agencies",
+    "studio",
+    "nbsp",
+    "google"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://wordpress.com/"
+  ],
+  "updated_at": "2026-02-21T12:37:03.230Z"
+}

@@ -1,0 +1,45 @@
+{
+  "brand_id": "brand_apnews-com_3c04c358",
+  "official_domain": "apnews.com",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "Associated Press News: Breaking News, Latest Headlines and Videos"
+  ],
+  "descriptions": [
+    "Read the latest headlines, breaking news, and videos at APNews.com, the definitive source for independent journalism from every corner of the globe."
+  ],
+  "keywords": [
+    "associated",
+    "press",
+    "news",
+    "breaking",
+    "latest",
+    "headlines",
+    "videos",
+    "read",
+    "apnews",
+    "definitive",
+    "source",
+    "independent",
+    "journalism",
+    "from",
+    "every",
+    "corner",
+    "globe",
+    "menu",
+    "world",
+    "sections",
+    "israel",
+    "hamas",
+    "russia",
+    "ukraine"
+  ],
+  "price_hints": [
+    "$100"
+  ],
+  "landing_pages": [
+    "https://apnews.com/"
+  ],
+  "updated_at": "2026-02-21T12:37:22.854Z"
+}

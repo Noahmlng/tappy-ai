@@ -1,0 +1,43 @@
+{
+  "brand_id": "brand_python-org_d19d1adc",
+  "official_domain": "python.org",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "Welcome to Python.org"
+  ],
+  "descriptions": [
+    "The official home of the Python Programming Language"
+  ],
+  "keywords": [
+    "welcome",
+    "python",
+    "functions",
+    "defined",
+    "official",
+    "home",
+    "programming",
+    "language",
+    "notice",
+    "this",
+    "page",
+    "displays",
+    "fallback",
+    "because",
+    "interactive",
+    "scripts",
+    "possible",
+    "causes",
+    "include",
+    "disabled",
+    "javascript",
+    "failure",
+    "load",
+    "stylesheets"
+  ],
+  "price_hints": [],
+  "landing_pages": [
+    "https://python.org/"
+  ],
+  "updated_at": "2026-02-21T12:38:14.095Z"
+}

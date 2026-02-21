@@ -1,0 +1,45 @@
+{
+  "brand_id": "brand_cnn-com_c917ab8c",
+  "official_domain": "cnn.com",
+  "crawled_page_count": 1,
+  "unresolved": false,
+  "titles": [
+    "Breaking News, Latest News and Videos | CNN"
+  ],
+  "descriptions": [
+    "View the latest news and breaking news today for U.S., world, weather, entertainment, politics and health at CNN.com."
+  ],
+  "keywords": [
+    "breaking",
+    "news",
+    "latest",
+    "videos",
+    "null",
+    "call",
+    "compare",
+    "componentvariation",
+    "headline",
+    "underscored",
+    "name",
+    "hash",
+    "data",
+    "view",
+    "today",
+    "world",
+    "weather",
+    "entertainment",
+    "politics",
+    "health",
+    "values",
+    "your",
+    "feedback",
+    "relevant"
+  ],
+  "price_hints": [
+    "$35"
+  ],
+  "landing_pages": [
+    "https://cnn.com/"
+  ],
+  "updated_at": "2026-02-21T12:37:09.675Z"
+}
