@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（M1 版）
 
-- 文档版本：v1.5
+- 文档版本：v1.6
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：M1（接入与适配基线）
@@ -555,7 +555,111 @@ M1 固定三条版本线，禁止混用：
 1. 把 M1/M2/M3 稳定能力模块化产品化。
 2. 将流量质量、机会分析、意图识别、用户建模逐步升级到 SSP 能力。
 
+#### 5.3.1 标准化交易接口目标（SSP Transition）
+
+1. 将当前 Mediation 的“机会编排接口”升级为“可交易接口”。
+2. 对外提供可被 DSP/Ads Network 稳定消费的标准请求、标准回传、标准结算语义。
+3. 在兼容旧 SSP 输入标准的同时，输出 AI 场景增量信号，形成差异化质量资产。
+
+#### 5.3.2 交易接口分层（建议标准）
+
+向 SSP 过渡时，接口建议拆成六层并独立版本化：
+
+1. `Bid Opportunity Interface`（请求接口）：
+   - 表达可交易机会、上下文、策略约束、时延预算。
+2. `Bid Decision Interface`（响应接口）：
+   - 表达出价、素材候选、有效期、响应状态与拒绝原因。
+3. `Auction Result Interface`（结果通知接口）：
+   - 表达中标/未中标、价格结果、清算依据、结果时间。
+4. `Delivery Callback Interface`（交付回传接口）：
+   - 表达交付状态与展示确认，不承载行为转化语义。
+5. `Event Callback Interface`（行为事件接口）：
+   - 表达 `impression/click/failure` 最小闭环事件及扩展事件。
+6. `Settlement & Reconciliation Interface`（结算对账接口）：
+   - 表达账单口径、分润规则、对账批次、差异处理状态。
+
+#### 5.3.3 信息采集层面需要补充的关键项
+
+当前 M1 已有基础闭环，但向 SSP 过渡仍需补强以下采集维度：
+
+1. 交易上下文信号：
+   - `auction_type`、`pricing_model`、`currency`、`floor_policy_snapshot`、`timeout_budget`。
+2. 供给路径信号：
+   - `source_path`、`adapter_hop`、`fallback_path`、`path_latency_breakdown`。
+3. 质量与可见性信号：
+   - `view_opportunity_level`、`placement_quality_tier`、`traffic_quality_flags`。
+4. 交互与任务信号：
+   - `workflow_stage`、`agent_or_human_actor`、`intent_confidence_band`。
+5. 结算与对账信号：
+   - `settlement_reference`、`billing_scope`、`reconciliation_batch_id`、`dispute_reason`。
+6. 合规与授权信号：
+   - `consent_scope`、`policy_decision_code`、`restricted_category_flags`。
+
+#### 5.3.4 Schema 层面增补建议（按六块模型）
+
+保持六块统一模型不变，向 SSP 过渡时以“子结构扩展 + optional 字段”方式增强：
+
+1. `RequestMeta` 增补：
+   - `transactionContext`（auction/pricing/currency/timeout）。
+   - `requestSLA`（tmax、重试预算、降级预算）。
+2. `PlacementMeta` 增补：
+   - `placementQualityProfile`（quality tier、view opportunity、历史稳定性）。
+   - `commercialConstraintProfile`（频控档位、展示密度约束）。
+3. `UserContext` 增补：
+   - `interactionRole`（human/agent/agent-chain）。
+   - `sessionIntentWindow`（多轮意图窗口摘要与置信区间）。
+4. `OpportunityContext` 增补：
+   - `marketabilitySignals`（可交易性标签、推荐可解释信号）。
+   - `executionStageSignals`（任务执行阶段与转化窗口）。
+5. `PolicyContext` 增补：
+   - `complianceSnapshot`（授权范围、敏感类目策略快照）。
+   - `pricingGuardrail`（价格底线策略与策略命中原因）。
+6. `TraceContext` 增补：
+   - `auctionReference`、`settlementReference`、`reconciliationReference`。
+   - `decisionLineage`（映射/路由/拍卖/结算的版本链路）。
+
+#### 5.3.5 当前缺口识别（Collection + Schema）
+
+1. 缺少交易级上下文快照：
+   - 当前侧重机会与回传，交易参数采集不完整。
+2. 缺少供给路径可解释性：
+   - 现有 trace 可回放，但未标准化供给路径拆分指标。
+3. 缺少结算级关联键：
+   - 已有 `responseReference`，但结算/对账 reference 尚未纳入标准最小集。
+4. 缺少质量分层标准：
+   - 已有策略与路由，但缺统一的 `placement quality tier` 与 view-opportunity 档位。
+5. 缺少接口层分离：
+   - Delivery/Event 已分离，但交易结果通知与结算接口仍需单独标准化。
+
+#### 5.3.6 演进落地顺序（建议）
+
+1. Step A（M2）：
+   - 先补齐交易上下文采集与 schema optional 增量，不改变对外兼容。
+2. Step B（M2->M3）：
+   - 引入 `Auction Result Interface` 与 `Settlement/Reconciliation Interface` 草案并灰度。
+3. Step C（M3）：
+   - 建立质量分层标准与供给路径解释标准，形成可外部消费的质量信号包。
+4. Step D（SSP 阶段）：
+   - 将六层交易接口版本化发布，提供稳定 SLA 与兼容矩阵。
+
+#### 5.3.7 过渡验收基线
+
+1. 接口层：
+   - 六层交易接口都有独立版本与回滚策略。
+2. 采集层：
+   - 单机会对象可关联到交易、交付、行为、结算四类 reference。
+3. Schema 层：
+   - 增量字段全部以后向兼容方式引入，接入方无感升级可运行。
+4. 运营层：
+   - 可对账、可追责、可回放，且能按质量分层输出稳定报表。
+
 ## 6. 变更记录
+
+### 2026-02-21（v1.6）
+
+1. 细化 `5.3` 向 SSP 过渡准备，新增标准化交易接口分层蓝图（请求/响应/拍卖结果/回传/结算）。
+2. 增加信息采集补强清单，识别交易、供给路径、质量、结算、合规等关键缺口。
+3. 增加按六块模型的 schema 增补建议，并给出演进顺序与过渡验收基线。
 
 ### 2026-02-21（v1.5）
 
