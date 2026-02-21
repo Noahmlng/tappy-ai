@@ -25,3 +25,42 @@
 2. 回放覆盖 `Request -> Mapping -> Routing -> Delivery -> Event -> Archive`。
 3. 审计写入失败不得阻塞主链路，走异步补偿。
 
+#### 3.9.4 F -> G 输入合同（P0，MVP 冻结）
+
+G 层标准输入对象：
+1. `fToGArchiveRecordLite`（定义见 `3.8.26`）。
+
+required（G 接收门槛）：
+1. `recordKey`
+2. `recordType`
+3. `recordStatus`
+4. `payloadRef`
+5. `sourceKeys`
+6. `relationKeys`
+7. `versionAnchors`
+8. `decisionReasonCode`
+9. `outputAt`
+
+接收规则：
+1. 缺少任一 required -> 进入隔离轨道，标记 `g_ingest_invalid_record`。
+2. 同 `recordKey` 重复输入 -> 幂等接受，不重复写业务事实。
+3. `recordStatus=committed` 的 `billable_fact` 才可进入结算下游视图。
+
+#### 3.9.5 Archive 写入与状态对齐（P0）
+
+1. G 对每条记录维护 `archiveWriteStatus`：
+   - `pending`
+   - `written`
+   - `write_failed`
+2. `recordStatus` 与 `archiveWriteStatus` 必须组合一致：
+   - `committed` -> `written`
+   - `duplicate/conflicted/rejected/superseded` -> `written`（审计轨）
+   - `new` -> `pending`
+3. `write_failed` 走异步补偿，且补偿过程不改变原始 `recordStatus` 语义。
+
+#### 3.9.6 MVP 验收基线（G 接收 F 输出）
+
+1. G 能稳定消费 `fToGArchiveRecordLite`，不依赖隐式字段推断。
+2. 同 `recordKey` 重放不会导致重复归档或重复结算。
+3. F 输出的状态、版本锚点、关联键在 G/Archive 侧完整保留。
+4. 任一归档失败可通过 `recordKey + archiveWriteStatus + traceKey` 分钟级定位。

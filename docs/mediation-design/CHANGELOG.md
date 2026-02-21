@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.6）
+
+1. 在 `Module F` 新增 `F -> G/Archive` 标准输出合同，冻结 `fToGArchiveRecordLite` 字段集合。
+2. 冻结 F 输出状态机（`new/committed/duplicate/conflicted/rejected/superseded`）与状态迁移约束。
+3. 新增版本锚点与关联键约束，明确 `recordType` 对应的必填 key 语义。
+4. 新增 F -> G/Archive 交付规则，明确非 `committed` 记录仍需归档用于审计回放。
+5. 更新 `Module G` 输入合同与 Archive 写入状态对齐规则，并纳入 MVP 交付与闭环模型。
+
 ### 2026-02-21（v4.5）
 
 1. 在 `Module F` 新增归因与计费输出对象合同，冻结 `billableFactLite/attributionFactLite/factDecisionAuditLite`。

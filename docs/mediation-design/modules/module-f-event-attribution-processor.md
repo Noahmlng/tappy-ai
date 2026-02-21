@@ -503,3 +503,95 @@ MVP 映射表：
 3. 冲突裁决在同请求同版本下确定性一致，可回放。
 4. `billableFacts` 可直接供结算口径消费，`attributionFacts` 可直接供实验评估消费。
 5. 任一计费争议可通过 `billingKey + sourceEventId + decisionReasonCode` 分钟级定位。
+
+#### 3.8.26 F 输出合同（F -> G/Archive，P0，MVP 冻结）
+
+F 向 G/Archive 输出统一记录对象：`fToGArchiveRecordLite`。
+
+`fToGArchiveRecordLite` required：
+1. `recordKey`（F 侧输出主键）
+2. `recordType`（`billable_fact` / `attribution_fact` / `decision_audit`）
+3. `recordStatus`（`new` / `committed` / `duplicate` / `conflicted` / `rejected` / `superseded`）
+4. `payloadRef`
+   - `payloadType`（`billableFactLite` / `attributionFactLite` / `factDecisionAuditLite`）
+   - `payloadKey`
+5. `sourceKeys`
+   - `eventId`
+   - `sourceEventId`
+   - `traceKey`
+   - `requestKey`
+   - `attemptKey`
+   - `opportunityKey`
+   - `responseReferenceOrNA`
+   - `renderAttemptIdOrNA`
+6. `relationKeys`
+   - `closureKeyOrNA`
+   - `billingKeyOrNA`
+   - `attributionKeyOrNA`
+   - `canonicalDedupKey`
+7. `versionAnchors`
+   - `eventContractVersion`
+   - `mappingRuleVersion`
+   - `dedupFingerprintVersion`
+   - `closureRuleVersion`
+   - `billingRuleVersion`
+   - `archiveContractVersion`
+8. `decisionReasonCode`
+9. `outputAt`
+
+optional：
+1. `conflictWithRecordKey`
+2. `supersededRecordKey`
+3. `extensions`
+
+#### 3.8.27 F 输出状态机（P0，MVP 冻结）
+
+状态集合：
+1. `new`
+2. `committed`
+3. `duplicate`
+4. `conflicted`
+5. `rejected`
+6. `superseded`
+
+状态迁移（最小）：
+1. `new -> committed`（记录被 G 成功接收并写入 Archive）
+2. `new -> duplicate`（命中去重/唯一键冲突）
+3. `new -> conflicted`（终态或映射冲突，需保留冲突轨迹）
+4. `new -> rejected`（合同校验失败或不可恢复错误）
+5. `committed -> superseded`（仅允许 timeout failure 被后续 impression 覆盖的场景）
+
+约束：
+1. `duplicate/conflicted/rejected` 为终态，不得回迁到 `committed`。
+2. `superseded` 仅允许从 `committed` 迁入。
+3. 任一迁移必须附 `decisionReasonCode + decidedAt + ruleVersionSnapshot`。
+
+#### 3.8.28 版本锚点与关联键约束（P0）
+
+版本锚点约束：
+1. `versionAnchors` 任一关键字段缺失 -> `recordStatus=rejected`，原因码 `f_output_missing_version_anchor`。
+2. 同一 `recordKey` 的版本锚点不可在生命周期内变化。
+
+关联键约束：
+1. `recordType=billable_fact` 时 `billingKeyOrNA` 必填。
+2. `recordType=attribution_fact` 时 `attributionKeyOrNA` 必填。
+3. `closureKeyOrNA` 对终态相关记录必填（`impression/failure` 相关）。
+4. `traceKey + responseReferenceOrNA + renderAttemptIdOrNA` 必须可回放定位到单机会链路。
+
+#### 3.8.29 F -> G/Archive 交付规则（P0）
+
+1. F 必须按 `recordKey` 幂等输出；同 `recordKey` 重发不产生新业务语义。
+2. G 接收成功后，F 记录 `recordStatus=committed`；接收失败走重试，不阻塞主链路。
+3. F 对 `duplicate/conflicted/rejected/superseded` 记录仍需输出到 G（用于审计与回放），但不得进入计费事实结算口径。
+4. Archive 写入顺序要求：
+   - 先 `decision_audit`
+   - 后 `billable_fact/attribution_fact`
+   - 保证回放时可先还原裁决再还原事实
+
+#### 3.8.30 MVP 验收基线（F 输出合同）
+
+1. F 输出到 G/Archive 的记录对象结构稳定，三类记录均可独立消费。
+2. 任一输出记录都具备完整状态、版本锚点与关联键，可追溯到源事件。
+3. `E -> F -> G -> Archive` 在同请求同版本下可完整回放且语义一致。
+4. 非 `committed` 记录不会污染计费结算口径，但可用于审计与实验分析。
+5. 任一断链可通过 `recordKey + sourceEventId + traceKey` 分钟级定位。
