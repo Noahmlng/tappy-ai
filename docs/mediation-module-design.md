@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.14
+- 文档版本：v3.15
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -788,7 +788,7 @@ optional：
 11. `policyPackVersion`
 12. `policyRuleVersion`
 13. `stateUpdate`（`fromState`, `toState`, `stateReasonCode`）
-14. `policyAuditSnapshotLite`
+14. `policyAuditSnapshotLite`（结构见 `3.5.18`）
 
 输出路径：
 1. `isRoutable=true`：
@@ -883,6 +883,57 @@ optional：
 3. 相同输入与版本下，原因码和动作结果稳定一致。
 4. 分钟级检索可通过 `traceKey + primaryPolicyReasonCode` 定位请求。
 5. 变更原因码映射时必须携带 `policyRuleVersion` 并可回滚。
+
+#### 3.5.18 Policy 审计快照（`policyAuditSnapshotLite`，MVP 冻结）
+
+`policyAuditSnapshotLite` 是 C 层唯一权威策略审计对象，用于回放“如何得到最终结论”。
+
+快照 required 字段：
+1. `traceKey`
+2. `requestKey`
+3. `attemptKey`
+4. `opportunityKey`
+5. `policyEvaluationStartAt`
+6. `policyEvaluationEndAt`
+7. `hitRules`（命中规则列表，最小元素：`gate`, `ruleId`, `ruleAction`, `reasonCode`）
+8. `decisionActions`（裁决动作序列，最小元素：`step`, `action`, `sourceGate`, `reasonCode`）
+9. `finalConclusion`
+   - `finalPolicyAction`
+   - `isRoutable`
+   - `primaryPolicyReasonCode`
+   - `winningGate`
+   - `winningRuleId`
+10. `versionSnapshot`
+   - `policyPackVersion`
+   - `policyRuleVersion`
+   - `cInputContractVersion`
+   - `schemaVersion`
+   - `enumDictVersion`
+11. `stateUpdate`
+   - `fromState`
+   - `toState`
+   - `stateReasonCode`
+
+optional：
+1. `secondaryPolicyReasonCodes`
+2. `shortCircuitSnapshot`
+3. `policyWarnings`
+
+#### 3.5.19 审计快照生成规则（MVP）
+
+1. 每次 gate 评估都必须落一条 `decisionActions`，禁止仅记录最终结论。
+2. 命中短路时必须写入 `shortCircuitSnapshot`，并停止后续 gate 评估记录。
+3. `hitRules` 至少包含所有改变 `finalPolicyAction` 的规则。
+4. `finalConclusion` 必须与 `cPolicyDecisionLite` 完全一致（字段值不可偏离）。
+5. `versionSnapshot` 必须在单请求内保持固定，不得中途切换。
+
+#### 3.5.20 MVP 验收基线（Policy 审计快照）
+
+1. 单请求可通过 `policyAuditSnapshotLite` 回放“命中规则 -> 裁决动作 -> 最终结论”完整链路。
+2. 任一 `finalPolicyAction` 都能追溯到至少一条 `hitRules` 或显式 pass 记录。
+3. `traceKey/requestKey/attemptKey` 在 C 输出与审计快照中一致。
+4. 审计快照缺失 required 字段时，视为不合格输出，不得进入 D/E 主链路。
+5. 同请求在同版本下审计快照结构与结论可复现。
 
 ### 3.6 Module D: Supply Orchestrator & Adapter Layer
 
@@ -1076,7 +1127,7 @@ optional：
 
 1. 模块化主链框架（A-H）与边界说明。
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
-3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系）。
+3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线。
 5. Delivery / Event Schema 分离与 `responseReference` 关联口径。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
@@ -1137,6 +1188,14 @@ optional：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.15）
+
+1. 新增 `3.5.18`，冻结 Module C 的 `policyAuditSnapshotLite` 结构（命中规则、裁决动作、最终结论、版本快照、trace 键）。
+2. 新增 `3.5.19`，明确 Policy 审计快照的生成规则与一致性约束。
+3. 新增 `3.5.20`，补充 Policy 审计快照的 MVP 验收基线。
+4. 在 `3.5.12` 明确 `policyAuditSnapshotLite` 的结构引用。
+5. 更新第 4 章交付项，纳入 Policy 审计快照交付口径。
 
 ### 2026-02-21（v3.14）
 
