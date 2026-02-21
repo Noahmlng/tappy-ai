@@ -104,7 +104,7 @@
 - 关键代码：
   - `projects/simulator-chatbot/src/views/ChatView.vue`
   - `projects/simulator-chatbot/src/api/adsSdk.js`
-  - `projects/ad-aggregation-platform/src/server/simulator-gateway.js`
+  - `projects/ad-aggregation-platform/src/devtools/simulator/simulator-gateway.js`
 
 <a id="output-next-step-intent-card"></a>
 ### Next-Step 输出：Intent Card

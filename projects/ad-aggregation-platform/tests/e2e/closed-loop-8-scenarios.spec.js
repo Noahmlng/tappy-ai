@@ -7,23 +7,23 @@ import { fileURLToPath } from 'node:url'
 import {
   C_POLICY_ACTIONS,
   createPolicyEngine
-} from '../../src/mediation/c/policy-engine.js'
+} from '../../src/mediation/policy-safety/policy-engine.js'
 import {
   D_ROUTE_PLAN_REASON_CODES,
   createRoutePlanner
-} from '../../src/mediation/d/route-planner.js'
-import { createDeliveryOutputBuilder } from '../../src/mediation/e/delivery-output.js'
-import { createEventOutputBuilder } from '../../src/mediation/e/event-output.js'
-import { createIdempotencyEngine } from '../../src/mediation/f/idempotency.js'
+} from '../../src/mediation/supply-routing/route-planner.js'
+import { createDeliveryOutputBuilder } from '../../src/mediation/delivery-composer/delivery-output.js'
+import { createEventOutputBuilder } from '../../src/mediation/delivery-composer/event-output.js'
+import { createIdempotencyEngine } from '../../src/mediation/event-attribution/idempotency.js'
 import {
   F_TERMINAL_CLOSURE_REASON_CODES,
   createTerminalClosureEngine
-} from '../../src/mediation/f/terminal-closure.js'
-import { createFactsMapper } from '../../src/mediation/f/facts-mapper.js'
-import { createArchiveRecordBuilder } from '../../src/mediation/f/archive-record-builder.js'
-import { createAppendController } from '../../src/mediation/g/append-controller.js'
-import { createAuditStore } from '../../src/mediation/g/audit-store.js'
-import { createReplayController } from '../../src/mediation/g/replay-controller.js'
+} from '../../src/mediation/event-attribution/terminal-closure.js'
+import { createFactsMapper } from '../../src/mediation/event-attribution/facts-mapper.js'
+import { createArchiveRecordBuilder } from '../../src/mediation/event-attribution/archive-record-builder.js'
+import { createAppendController } from '../../src/mediation/audit-replay/append-controller.js'
+import { createAuditStore } from '../../src/mediation/audit-replay/audit-store.js'
+import { createReplayController } from '../../src/mediation/audit-replay/replay-controller.js'
 import {
   G_REPLAY_DETERMINISM_STATUSES,
   G_REPLAY_DIFF_STATUSES,
@@ -31,16 +31,16 @@ import {
   G_REPLAY_OUTPUT_MODES,
   G_REPLAY_QUERY_MODES,
   createReplayEngine
-} from '../../src/mediation/g/replay-engine.js'
+} from '../../src/mediation/audit-replay/replay-engine.js'
 import {
   H_CONFIG_FAILURE_REASON_CODES,
   H_CONFIG_FAILURE_SCENARIOS,
   evaluateFailureMatrix
-} from '../../src/mediation/h/failure-matrix.js'
+} from '../../src/mediation/config-governance/failure-matrix.js'
 import {
   H_VERSION_GATE_REASON_CODES,
   evaluateVersionGate
-} from '../../src/mediation/h/version-gate.js'
+} from '../../src/mediation/config-governance/version-gate.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)

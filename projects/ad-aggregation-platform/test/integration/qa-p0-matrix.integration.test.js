@@ -7,79 +7,79 @@ import { fileURLToPath } from 'node:url'
 import {
   A_TRIGGER_REASON_CODES,
   createTriggerHandler
-} from '../../src/mediation/a/trigger-handler.js'
-import { createCreateOpportunityService } from '../../src/mediation/a/create-opportunity.js'
+} from '../../src/mediation/ingress-opportunity/trigger-handler.js'
+import { createCreateOpportunityService } from '../../src/mediation/ingress-opportunity/create-opportunity.js'
 import {
   A_OPPORTUNITY_EVENT_REASON_CODES,
   createOpportunityEventEmitterService
-} from '../../src/mediation/a/opportunity-event-emitter.js'
+} from '../../src/mediation/ingress-opportunity/opportunity-event-emitter.js'
 
 import {
   B_INPUT_REASON_CODES,
   createInputNormalizerService
-} from '../../src/mediation/b/input-normalizer.js'
+} from '../../src/mediation/schema-normalization/input-normalizer.js'
 import {
   B_SIGNAL_EVENT_REASON_CODES,
   createSignalEventEmitterService
-} from '../../src/mediation/b/signal-event-emitter.js'
+} from '../../src/mediation/schema-normalization/signal-event-emitter.js'
 
 import {
   C_POLICY_ACTIONS,
   C_POLICY_REASON_CODES,
   createPolicyEngine
-} from '../../src/mediation/c/policy-engine.js'
-import { createPolicyAuditBuilder } from '../../src/mediation/c/policy-audit.js'
+} from '../../src/mediation/policy-safety/policy-engine.js'
+import { createPolicyAuditBuilder } from '../../src/mediation/policy-safety/policy-audit.js'
 
 import {
   D_ROUTE_PLAN_REASON_CODES,
   createRoutePlanner
-} from '../../src/mediation/d/route-planner.js'
+} from '../../src/mediation/supply-routing/route-planner.js'
 import {
   D_ROUTE_AUDIT_REASON_CODES,
   createRouteAuditBuilder
-} from '../../src/mediation/d/route-audit.js'
+} from '../../src/mediation/supply-routing/route-audit.js'
 
 import {
   E_COMPOSE_REASON_CODES,
   createComposeService
-} from '../../src/mediation/e/compose.js'
+} from '../../src/mediation/delivery-composer/compose.js'
 
 import {
   F_EVENTS_OVERALL_STATUSES,
   F_EVENTS_REASON_CODES,
   createEventsController
-} from '../../src/mediation/f/events-controller.js'
+} from '../../src/mediation/event-attribution/events-controller.js'
 import {
   F_IDEMPOTENCY_REASON_CODES,
   F_IDEMPOTENCY_STATES,
   createIdempotencyEngine
-} from '../../src/mediation/f/idempotency.js'
+} from '../../src/mediation/event-attribution/idempotency.js'
 
-import { createAppendController } from '../../src/mediation/g/append-controller.js'
-import { createAuditStore } from '../../src/mediation/g/audit-store.js'
-import { createReplayController } from '../../src/mediation/g/replay-controller.js'
+import { createAppendController } from '../../src/mediation/audit-replay/append-controller.js'
+import { createAuditStore } from '../../src/mediation/audit-replay/audit-store.js'
+import { createReplayController } from '../../src/mediation/audit-replay/replay-controller.js'
 import {
   G_REPLAY_EXECUTION_MODES,
   G_REPLAY_OUTPUT_MODES,
   G_REPLAY_QUERY_MODES,
   G_REPLAY_REASON_CODES,
   createReplayEngine
-} from '../../src/mediation/g/replay-engine.js'
+} from '../../src/mediation/audit-replay/replay-engine.js'
 
 import {
   H_CONFIG_RESOLUTION_REASON_CODES,
   H_CONFIG_RESOLUTION_STATUSES,
   resolveConfig
-} from '../../src/mediation/h/config-resolution.js'
+} from '../../src/mediation/config-governance/config-resolution.js'
 import {
   H_ROLLOUT_REASON_CODES,
   createRolloutEvaluator
-} from '../../src/mediation/h/rollout.js'
+} from '../../src/mediation/config-governance/rollout.js'
 import {
   H_CONFIG_FAILURE_REASON_CODES,
   H_CONFIG_FAILURE_SCENARIOS,
   evaluateFailureMatrix
-} from '../../src/mediation/h/failure-matrix.js'
+} from '../../src/mediation/config-governance/failure-matrix.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)

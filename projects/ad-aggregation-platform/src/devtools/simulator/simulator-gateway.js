@@ -3,19 +3,19 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import http from 'node:http'
 
-import defaultPlacements from '../../config/default-placements.json' with { type: 'json' }
-import { runAdsRetrievalPipeline } from '../runtime/index.js'
-import { getAllNetworkHealth } from '../runtime/network-health-state.js'
-import { inferIntentWithLlm } from '../intent/index.js'
+import defaultPlacements from '../../../config/default-placements.json' with { type: 'json' }
+import { runAdsRetrievalPipeline } from '../../runtime/index.js'
+import { getAllNetworkHealth } from '../../runtime/network-health-state.js'
+import { inferIntentWithLlm } from '../../providers/intent/index.js'
 import {
   createIntentCardVectorIndex,
   normalizeIntentCardCatalogItems,
   retrieveIntentCardTopK,
-} from '../intent-card/index.js'
+} from '../../providers/intent-card/index.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-const PROJECT_ROOT = path.resolve(__dirname, '../..')
+const PROJECT_ROOT = path.resolve(__dirname, '../../..')
 const STATE_DIR = path.join(PROJECT_ROOT, '.local')
 const STATE_FILE = path.join(STATE_DIR, 'simulator-gateway-state.json')
 

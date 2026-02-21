@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..')
-const GATEWAY_ENTRY = path.join(PROJECT_ROOT, 'src', 'server', 'simulator-gateway.js')
+const GATEWAY_ENTRY = path.join(PROJECT_ROOT, 'src', 'devtools', 'simulator', 'simulator-gateway.js')
 
 const HOST = '127.0.0.1'
 const HEALTH_TIMEOUT_MS = 15000

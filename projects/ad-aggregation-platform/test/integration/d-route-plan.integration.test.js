@@ -5,7 +5,7 @@ import {
   D_ROUTE_PLAN_REASON_CODES,
   D_SHORT_CIRCUIT_ACTIONS,
   createRoutePlanner
-} from '../../src/mediation/d/route-planner.js'
+} from '../../src/mediation/supply-routing/route-planner.js'
 
 function buildSource(overrides = {}) {
   return {

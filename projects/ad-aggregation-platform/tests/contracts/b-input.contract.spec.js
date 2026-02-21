@@ -5,7 +5,7 @@ import { assertErrorCode, assertRequiredFields } from '../utils/contract-runner.
 import {
   B_INPUT_REASON_CODES,
   createInputNormalizerService
-} from '../../src/mediation/b/input-normalizer.js'
+} from '../../src/mediation/schema-normalization/input-normalizer.js'
 
 function buildValidIngress(overrides = {}) {
   return {

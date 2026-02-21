@@ -5,11 +5,11 @@ import crypto from 'node:crypto'
 import {
   F_FACTS_REASON_CODES,
   createFactsMapper
-} from '../../src/mediation/f/facts-mapper.js'
+} from '../../src/mediation/event-attribution/facts-mapper.js'
 import {
   F_ARCHIVE_RECORD_REASON_CODES,
   createArchiveRecordBuilder
-} from '../../src/mediation/f/archive-record-builder.js'
+} from '../../src/mediation/event-attribution/archive-record-builder.js'
 
 function buildBaseEvent(overrides = {}) {
   return {

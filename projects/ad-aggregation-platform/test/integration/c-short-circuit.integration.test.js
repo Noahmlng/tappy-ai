@@ -6,7 +6,7 @@ import {
   C_POLICY_REASON_CODES,
   C_SHORT_CIRCUIT_ACTIONS,
   createPolicyEngine
-} from '../../src/mediation/c/policy-engine.js'
+} from '../../src/mediation/policy-safety/policy-engine.js'
 
 function buildBaseInput(overrides = {}) {
   return {

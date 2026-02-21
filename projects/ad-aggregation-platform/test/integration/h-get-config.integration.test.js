@@ -4,8 +4,8 @@ import test from 'node:test'
 import {
   H_CONFIG_CACHE_DECISIONS,
   H_CONFIG_CACHE_REASON_CODES
-} from '../../src/mediation/h/config-cache.js'
-import { resolveConfig } from '../../src/mediation/h/config-resolution.js'
+} from '../../src/mediation/config-governance/config-cache.js'
+import { resolveConfig } from '../../src/mediation/config-governance/config-resolution.js'
 import { createConfigController } from '../../src/mediation/api/config-controller.js'
 
 function buildContext(nowMs) {

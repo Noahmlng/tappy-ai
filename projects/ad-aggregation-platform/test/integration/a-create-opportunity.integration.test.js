@@ -5,7 +5,7 @@ import {
   A_CREATE_OPPORTUNITY_REASON_CODES,
   A_DEDUP_STATES,
   createCreateOpportunityService
-} from '../../src/mediation/a/create-opportunity.js'
+} from '../../src/mediation/ingress-opportunity/create-opportunity.js'
 
 function baseInput(overrides = {}) {
   return {

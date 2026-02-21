@@ -450,7 +450,7 @@
 }
 ```
 
-`auditRecord` 结构必须完整（见 `/src/mediation/g/audit-store.js` 的 `validateAuditRecordStructure`）。
+`auditRecord` 结构必须完整（见 `/src/mediation/audit-replay/audit-store.js` 的 `validateAuditRecordStructure`）。
 
 ### 响应
 

@@ -1,13 +1,13 @@
 import { loadRuntimeConfig } from '../config/runtime-config.js'
 import { createCjConnector } from '../connectors/cj/index.js'
 import { createPartnerStackConnector } from '../connectors/partnerstack/index.js'
-import { extractEntitiesWithLlm } from '../ner/index.js'
+import { extractEntitiesWithLlm } from '../providers/ner/index.js'
 import { normalizeUnifiedOffers } from '../offers/index.js'
 import {
   enrichOffersWithIntentCardCatalog,
   normalizeIntentCardCatalog,
   summarizeIntentCardCatalog,
-} from '../intent-card/index.js'
+} from '../providers/intent-card/index.js'
 import { offerSnapshotCache, queryCache } from '../cache/runtime-caches.js'
 import {
   getAllNetworkHealth,

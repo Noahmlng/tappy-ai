@@ -5,7 +5,7 @@ import { assertRequiredFields, assertErrorCode } from '../utils/contract-runner.
 import {
   A_TRIGGER_REASON_CODES,
   createTriggerHandler
-} from '../../src/mediation/a/trigger-handler.js'
+} from '../../src/mediation/ingress-opportunity/trigger-handler.js'
 
 function buildValidRequest(overrides = {}) {
   return {

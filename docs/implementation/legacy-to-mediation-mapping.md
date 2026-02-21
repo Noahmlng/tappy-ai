@@ -22,10 +22,10 @@
 | `src/offers/` | Mediation（重构后） | offer 归一与网络映射 | 可复用：`unified-offer.js`、`network-mappers.js` -> `Module B` + `Module D` | 拆为 `normalization` 与 `candidate-normalization` 两层，挂接 B/D 合同测试 |
 | `src/runtime/network-health-state.js` | Mediation（重构后） | 网络健康与降级状态管理 | 可复用：健康评分、熔断状态 -> `Module D` | 下沉到 D 路由策略域，纳入版本锚点与审计 |
 | `src/runtime/ads-runtime.js`、`src/runtime/index.js` | Tooling/过渡实现 | 历史主流程编排（混合临时逻辑） | 有限复用：编排骨架 -> `Module D/E/F` 参考 | 不直接复用为生产主链；按 A-H 重新实现 orchestration |
-| `src/server/simulator-gateway.js` | tooling | 本地 dashboard + 模拟网关 | 可复用：联调入口与模拟负载 -> 测试工具链 | 迁出生产主链，保留为 `devtools/simulator` |
-| `src/intent/` | 非 Mediation | 意图推断（LLM） | 可复用：可作为可选 provider 输入 -> `Module A` 外围 | 迁出主链，移至 `providers/intent` |
-| `src/intent-card/` | 非 Mediation | 向量召回与意图卡补位 | 可复用：可选召回 provider -> `Module A` 外围 | 迁出主链，移至 `providers/intent-card` |
-| `src/ner/` | 非 Mediation | 实体抽取（LLM NER） | 可复用：实体 signal provider -> `Module B` 前置输入源 | 迁出主链，移至 `providers/ner` |
+| `src/devtools/simulator/simulator-gateway.js` | tooling | 本地 dashboard + 模拟网关 | 可复用：联调入口与模拟负载 -> 测试工具链 | 迁出生产主链，保留为 `devtools/simulator` |
+| `src/providers/intent/` | 非 Mediation | 意图推断（LLM） | 可复用：可作为可选 provider 输入 -> `Module A` 外围 | 迁出主链，移至 `providers/intent` |
+| `src/providers/intent-card/` | 非 Mediation | 向量召回与意图卡补位 | 可复用：可选召回 provider -> `Module A` 外围 | 迁出主链，移至 `providers/intent-card` |
+| `src/providers/ner/` | 非 Mediation | 实体抽取（LLM NER） | 可复用：实体 signal provider -> `Module B` 前置输入源 | 迁出主链，移至 `providers/ner` |
 | `src/cache/` | Mediation（重构后） | TTL 缓存与 runtime 缓存 | 可复用：查询缓存/快照缓存 -> `Module D` + `Module H` | 保留能力但统一配置键与审计标签 |
 | `src/config/` | Mediation（重构后） | 运行时配置读取 | 可复用：配置装载/校验 -> `Module H` | 合并到 H 配置治理，替换历史 env 直读模式 |
 | `src/infra/auth/` | Mediation | 服务间鉴权、令牌策略 | 可复用：鉴权中间件与策略基线 -> `Module H` | 作为 H 安全基线直接纳入，补全失效矩阵测试 |
@@ -62,10 +62,10 @@
 
 以下目录标记为“迁出主链”，仅作为可选 provider 或开发辅助，不纳入 Mediation 生产核心责任边界：
 
-1. `src/ner/`（迁出主链）
-2. `src/intent/`（迁出主链）
-3. `src/intent-card/`（迁出主链）
-4. `src/server/simulator-gateway.js`（迁出生产主链，保留 tooling）
+1. `src/providers/ner/`（迁出主链）
+2. `src/providers/intent/`（迁出主链）
+3. `src/providers/intent-card/`（迁出主链）
+4. `src/devtools/simulator/simulator-gateway.js`（迁出生产主链，保留 tooling）
 
 ## 5. 实施约束（执行时必须遵守）
 

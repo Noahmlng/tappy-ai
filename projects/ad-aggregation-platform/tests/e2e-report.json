@@ -1,6 +1,6 @@
 {
   "suite": "qa-e2e-closed-loop",
-  "generatedAt": "2026-02-21T19:32:58.142Z",
+  "generatedAt": "2026-02-21T20:08:04.704Z",
   "summary": {
     "total": 8,
     "passed": 8,
@@ -12,7 +12,7 @@
       "id": "E2E-001",
       "name": "happy",
       "status": "PASS",
-      "durationMs": 15,
+      "durationMs": 16,
       "details": {
         "deliveryStatus": "served",
         "terminalState": "closed_success",
@@ -23,7 +23,7 @@
       "id": "E2E-002",
       "name": "policy_block",
       "status": "PASS",
-      "durationMs": 0,
+      "durationMs": 1,
       "details": {
         "policyAction": "block",
         "deliveryStatus": "no_fill",
@@ -55,7 +55,7 @@
       "id": "E2E-005",
       "name": "duplicate",
       "status": "PASS",
-      "durationMs": 1,
+      "durationMs": 2,
       "details": {
         "fDedupSecondAck": "duplicate",
         "gDedupReason": "g_append_duplicate_accepted_noop",
@@ -93,7 +93,7 @@
       "id": "E2E-008",
       "name": "replay",
       "status": "PASS",
-      "durationMs": 2,
+      "durationMs": 1,
       "details": {
         "matched": 3,
         "determinism": "deterministic",

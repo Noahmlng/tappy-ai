@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { createAuditStore } from '../../src/mediation/g/audit-store.js'
-import { createReplayController } from '../../src/mediation/g/replay-controller.js'
+import { createAuditStore } from '../../src/mediation/audit-replay/audit-store.js'
+import { createReplayController } from '../../src/mediation/audit-replay/replay-controller.js'
 import {
   createReplayEngine,
   G_REPLAY_DETERMINISM_STATUSES,
@@ -11,7 +11,7 @@ import {
   G_REPLAY_OUTPUT_MODES,
   G_REPLAY_QUERY_MODES,
   G_REPLAY_REASON_CODES
-} from '../../src/mediation/g/replay-engine.js'
+} from '../../src/mediation/audit-replay/replay-engine.js'
 
 function buildAdapterParticipation(overrides = {}) {
   return {

@@ -4,15 +4,15 @@ import test from 'node:test'
 import {
   B_BUCKET_REASON_CODES,
   createBucketizerService
-} from '../../src/mediation/b/bucketizer.js'
+} from '../../src/mediation/schema-normalization/bucketizer.js'
 import {
   B_REDACTION_REASON_CODES,
   createRedactionService
-} from '../../src/mediation/b/redaction.js'
+} from '../../src/mediation/schema-normalization/redaction.js'
 import {
   B_PROJECTION_REASON_CODES,
   createOpenrtbProjectionService
-} from '../../src/mediation/b/openrtb-projection.js'
+} from '../../src/mediation/schema-normalization/openrtb-projection.js'
 
 function buildTrace() {
   return {

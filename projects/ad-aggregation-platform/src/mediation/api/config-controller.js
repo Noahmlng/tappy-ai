@@ -1,4 +1,4 @@
-import { H_CONFIG_RESOLUTION_REASON_CODES } from '../h/config-resolution.js'
+import { H_CONFIG_RESOLUTION_REASON_CODES } from '../config-governance/config-resolution.js'
 import {
   H_CONFIG_CACHE_DECISIONS,
   H_CONFIG_CACHE_REASON_CODES,
@@ -6,7 +6,7 @@ import {
   createConfigCache,
   parseIfNoneMatch,
   toStrongEtag
-} from '../h/config-cache.js'
+} from '../config-governance/config-cache.js'
 
 const GET_CONFIG_REQUIRED_FIELDS = Object.freeze([
   'appId',

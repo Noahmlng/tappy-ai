@@ -1,4 +1,4 @@
-import { loadRuntimeConfig } from '../config/runtime-config.js'
+import { loadRuntimeConfig } from '../../config/runtime-config.js'
 import { NER_ENTITY_TYPES } from './entity-schema.js'
 import { buildNerUserPrompt, NER_SYSTEM_PROMPT } from './prompt.js'
 

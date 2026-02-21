@@ -6,7 +6,7 @@ import { createPartnerstackAdapter } from '../../src/adapters/partnerstack-adapt
 import {
   D_ADAPTER_REGISTRY_REASON_CODES,
   createAdapterRegistry
-} from '../../src/mediation/d/adapter-registry.js'
+} from '../../src/mediation/supply-routing/adapter-registry.js'
 
 function createFakeConnector(network) {
   return {

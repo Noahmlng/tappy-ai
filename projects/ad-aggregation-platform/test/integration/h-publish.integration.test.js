@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { createConfigPublishController } from '../../src/mediation/api/config-publish-controller.js'
-import { createConfigPublishService, H_PUBLISH_REASON_CODES } from '../../src/mediation/h/config-publish.js'
+import { createConfigPublishService, H_PUBLISH_REASON_CODES } from '../../src/mediation/config-governance/config-publish.js'
 
 function buildAuthContext() {
   return {

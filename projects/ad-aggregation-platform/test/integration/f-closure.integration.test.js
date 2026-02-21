@@ -5,11 +5,11 @@ import {
   F_IDEMPOTENCY_REASON_CODES,
   F_IDEMPOTENCY_STATES,
   createIdempotencyEngine
-} from '../../src/mediation/f/idempotency.js'
+} from '../../src/mediation/event-attribution/idempotency.js'
 import {
   F_TERMINAL_CLOSURE_REASON_CODES,
   createTerminalClosureEngine
-} from '../../src/mediation/f/terminal-closure.js'
+} from '../../src/mediation/event-attribution/terminal-closure.js'
 
 function buildBaseEvent(overrides = {}) {
   return {

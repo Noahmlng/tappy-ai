@@ -4,11 +4,11 @@ import test from 'node:test'
 import {
   E_DELIVERY_OUTPUT_REASON_CODES,
   createDeliveryOutputBuilder
-} from '../../src/mediation/e/delivery-output.js'
+} from '../../src/mediation/delivery-composer/delivery-output.js'
 import {
   E_EVENT_OUTPUT_REASON_CODES,
   createEventOutputBuilder
-} from '../../src/mediation/e/event-output.js'
+} from '../../src/mediation/delivery-composer/event-output.js'
 
 function buildDToEOutputLite(overrides = {}) {
   return {

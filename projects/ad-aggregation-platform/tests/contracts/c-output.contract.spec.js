@@ -6,12 +6,12 @@ import {
   C_POLICY_ACTIONS,
   C_POLICY_REASON_CODES,
   createPolicyEngine
-} from '../../src/mediation/c/policy-engine.js'
+} from '../../src/mediation/policy-safety/policy-engine.js'
 import {
   C_PRIMARY_POLICY_REASON_CODES,
   C_REASON_CODE_ACTION_MAP,
   createPolicyOutputBuilder
-} from '../../src/mediation/c/output-builder.js'
+} from '../../src/mediation/policy-safety/output-builder.js'
 
 function buildBaseInput(overrides = {}) {
   return {

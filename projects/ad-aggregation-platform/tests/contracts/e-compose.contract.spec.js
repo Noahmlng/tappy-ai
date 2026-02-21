@@ -5,7 +5,7 @@ import { assertRequiredFields } from '../utils/contract-runner.js'
 import {
   E_COMPOSE_REASON_CODES,
   createComposeService
-} from '../../src/mediation/e/compose.js'
+} from '../../src/mediation/delivery-composer/compose.js'
 
 function buildDToEOutputLite(overrides = {}) {
   return {

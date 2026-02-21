@@ -282,7 +282,7 @@
    - 标注“可复用资产 -> 对应模块（B/D/H等）”。
    - 标注“迁出主链”的目录。
 6. 验收标准：
-   - 至少覆盖 `src/connectors`、`src/offers`、`src/runtime`、`src/server`、`src/intent*`、`src/ner`。
+   - 至少覆盖 `src/connectors`、`src/offers`、`src/runtime`、`src/devtools/simulator`、`src/providers/intent*`、`src/providers/ner`。
 7. 验证命令：
    - `rg -n "可复用|迁出主链|tooling|Module D|Module B" docs/implementation/legacy-to-mediation-mapping.md`
 8. 输出物：
@@ -386,7 +386,7 @@
    - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/module-h-config-version-governance.md`
    - 小节：`3.10.3` 到 `3.10.8`
 4. 允许改动：
-   - 新增 `src/mediation/h/config-resolution.*`
+   - 新增 `src/mediation/config-governance/config-resolution.*`
    - 新增对应单测
 5. 执行步骤：
    - 实现合并顺序与字段覆盖规则。
@@ -408,7 +408,7 @@
    - module-h 小节：`3.10.9` 到 `3.10.14`
 4. 允许改动：
    - `src/mediation/api/config-controller.*`
-   - `src/mediation/h/config-cache.*`
+   - `src/mediation/config-governance/config-cache.*`
    - 对应 integration tests
 5. 执行步骤：
    - 支持 `ETag/If-None-Match`。
@@ -429,7 +429,7 @@
 3. 必读 context：
    - module-h 小节：`3.10.15` 到 `3.10.20`
 4. 允许改动：
-   - `src/mediation/h/config-publish.*`
+   - `src/mediation/config-governance/config-publish.*`
    - `src/mediation/api/config-publish-controller.*`
    - 对应 tests
 5. 执行步骤：
@@ -452,8 +452,8 @@
 3. 必读 context：
    - module-h 小节：`3.10.21` 到 `3.10.34`
 4. 允许改动：
-   - `src/mediation/h/version-gate.*`
-   - `src/mediation/h/anchor-injector.*`
+   - `src/mediation/config-governance/version-gate.*`
+   - `src/mediation/config-governance/anchor-injector.*`
    - tests
 5. 执行步骤：
    - 实现 `allow/degrade/reject`。
@@ -474,8 +474,8 @@
 3. 必读 context：
    - module-h 小节：`3.10.35` 到 `3.10.53`
 4. 允许改动：
-   - `src/mediation/h/rollout.*`
-   - `src/mediation/h/failure-matrix.*`
+   - `src/mediation/config-governance/rollout.*`
+   - `src/mediation/config-governance/failure-matrix.*`
    - tests
 5. 执行步骤：
    - 实现百分比分流/熔断回退。
@@ -501,7 +501,7 @@
    - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/module-a-sdk-ingress-opportunity-sensing.md`
    - 小节：`3.3.10` 到 `3.3.13`
 4. 允许改动：
-   - `src/mediation/a/trigger-handler.*`
+   - `src/mediation/ingress-opportunity/trigger-handler.*`
    - tests
 5. 执行步骤：
    - 校验 required/optional。
@@ -522,7 +522,7 @@
 3. 必读 context：
    - module-a 小节：`3.3.14` 到 `3.3.17`，`3.3.29`
 4. 允许改动：
-   - `src/mediation/a/create-opportunity.*`
+   - `src/mediation/ingress-opportunity/create-opportunity.*`
    - tests
 5. 执行步骤：
    - 生成 `requestKey/opportunityKey/attemptKey/traceKey`。
@@ -543,7 +543,7 @@
 3. 必读 context：
    - module-a 小节：`3.3.18` 到 `3.3.23`，`3.3.28`
 4. 允许改动：
-   - `src/mediation/a/opportunity-event-emitter.*`
+   - `src/mediation/ingress-opportunity/opportunity-event-emitter.*`
    - tests
 5. 执行步骤：
    - eventKey + idempotencyKey 规则。
@@ -568,8 +568,8 @@
 3. 必读 context：
    - module-b 小节：`3.4.6` 到 `3.4.13`
 4. 允许改动：
-   - `src/mediation/b/input-normalizer.*`
-   - `src/mediation/b/canonical-dict.*`
+   - `src/mediation/schema-normalization/input-normalizer.*`
+   - `src/mediation/schema-normalization/canonical-dict.*`
    - tests
 5. 执行步骤：
    - required 矩阵校验。
@@ -590,8 +590,8 @@
 3. 必读 context：
    - module-b 小节：`3.4.14` 到 `3.4.20`
 4. 允许改动：
-   - `src/mediation/b/conflict-resolver.*`
-   - `src/mediation/b/mapping-audit.*`
+   - `src/mediation/schema-normalization/conflict-resolver.*`
+   - `src/mediation/schema-normalization/mapping-audit.*`
    - tests
 5. 执行步骤：
    - 优先级裁决 + tie-break。
@@ -612,9 +612,9 @@
 3. 必读 context：
    - module-b 小节：`3.4.23` 到 `3.4.36`
 4. 允许改动：
-   - `src/mediation/b/openrtb-projection.*`
-   - `src/mediation/b/redaction.*`
-   - `src/mediation/b/bucketizer.*`
+   - `src/mediation/schema-normalization/openrtb-projection.*`
+   - `src/mediation/schema-normalization/redaction.*`
+   - `src/mediation/schema-normalization/bucketizer.*`
    - tests
 5. 执行步骤：
    - 实现 mapped/partial/unmapped。
@@ -635,7 +635,7 @@
 3. 必读 context：
    - module-b 小节：`3.4.40` 到 `3.4.45`
 4. 允许改动：
-   - `src/mediation/b/signal-event-emitter.*`
+   - `src/mediation/schema-normalization/signal-event-emitter.*`
    - tests
 5. 执行步骤：
    - 稳定哈希采样。
@@ -661,7 +661,7 @@
    - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/module-c-policy-safety-governor.md`
    - 小节：`3.5.4` 到 `3.5.11`
 4. 允许改动：
-   - `src/mediation/c/policy-engine.*`
+   - `src/mediation/policy-safety/policy-engine.*`
    - tests
 5. 执行步骤：
    - 固定 gate 顺序，命中 block 立即短路。
@@ -681,8 +681,8 @@
 3. 必读 context：
    - module-c 小节：`3.5.12` 到 `3.5.20`
 4. 允许改动：
-   - `src/mediation/c/output-builder.*`
-   - `src/mediation/c/policy-audit.*`
+   - `src/mediation/policy-safety/output-builder.*`
+   - `src/mediation/policy-safety/policy-audit.*`
    - tests
 5. 执行步骤：
    - 输出 `constraintsLite`。
@@ -709,7 +709,7 @@
    - 小节：`3.6.9` 到 `3.6.15`
    - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/src/connectors/`
 4. 允许改动：
-   - `src/mediation/d/adapter-registry.*`
+   - `src/mediation/supply-routing/adapter-registry.*`
    - `src/adapters/*`（对接 cj/partnerstack）
    - tests
 5. 执行步骤：
@@ -731,7 +731,7 @@
 3. 必读 context：
    - module-d 小节：`3.6.24` 到 `3.6.28`
 4. 允许改动：
-   - `src/mediation/d/route-planner.*`
+   - `src/mediation/supply-routing/route-planner.*`
    - tests
 5. 执行步骤：
    - 实现 waterfall/bidding/hybrid。
@@ -752,8 +752,8 @@
 3. 必读 context：
    - module-d 小节：`3.6.29` 到 `3.6.33`
 4. 允许改动：
-   - `src/mediation/d/output-builder.*`
-   - `src/mediation/d/route-audit.*`
+   - `src/mediation/supply-routing/output-builder.*`
+   - `src/mediation/supply-routing/route-audit.*`
    - tests
 5. 执行步骤：
    - 输出 D->E 合同对象。
@@ -779,7 +779,7 @@
    - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/module-e-delivery-composer.md`
    - 小节：`3.7.4` 到 `3.7.13`
 4. 允许改动：
-   - `src/mediation/e/compose.*`
+   - `src/mediation/delivery-composer/compose.*`
    - tests
 5. 执行步骤：
    - 校验 compose 输入与版本锚点。
@@ -800,8 +800,8 @@
 3. 必读 context：
    - module-e 小节：`3.7.18` 到 `3.7.36`
 4. 允许改动：
-   - `src/mediation/e/render-gate.*`
-   - `src/mediation/e/error-degrade.*`
+   - `src/mediation/delivery-composer/render-gate.*`
+   - `src/mediation/delivery-composer/error-degrade.*`
    - tests
 5. 执行步骤：
    - 实现 capability gate。
@@ -822,8 +822,8 @@
 3. 必读 context：
    - module-e 小节：`3.7.37` 到 `3.7.40`
 4. 允许改动：
-   - `src/mediation/e/delivery-output.*`
-   - `src/mediation/e/event-output.*`
+   - `src/mediation/delivery-composer/delivery-output.*`
+   - `src/mediation/delivery-composer/event-output.*`
    - tests
 5. 执行步骤：
    - 输出最终 Delivery。
@@ -849,7 +849,7 @@
    - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/module-f-event-attribution-processor.md`
    - 小节：`3.8.4` 到 `3.8.11`
 4. 允许改动：
-   - `src/mediation/f/events-controller.*`
+   - `src/mediation/event-attribution/events-controller.*`
    - tests
 5. 执行步骤：
    - envelope + single event 校验。
@@ -871,8 +871,8 @@
    - module-f 小节：`3.8.12` 到 `3.8.20`
    - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/operations/01-closed-loop-model.md`
 4. 允许改动：
-   - `src/mediation/f/idempotency.*`
-   - `src/mediation/f/terminal-closure.*`
+   - `src/mediation/event-attribution/idempotency.*`
+   - `src/mediation/event-attribution/terminal-closure.*`
    - tests
 5. 执行步骤：
    - client key 与 computed key 优先级。
@@ -893,8 +893,8 @@
 3. 必读 context：
    - module-f 小节：`3.8.21` 到 `3.8.30`
 4. 允许改动：
-   - `src/mediation/f/facts-mapper.*`
-   - `src/mediation/f/archive-record-builder.*`
+   - `src/mediation/event-attribution/facts-mapper.*`
+   - `src/mediation/event-attribution/archive-record-builder.*`
    - tests
 5. 执行步骤：
    - 映射 `billableFacts/attributionFacts`。
@@ -920,8 +920,8 @@
    - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/module-g-audit-replay-controller.md`
    - 小节：`3.9.7` 到 `3.9.13`
 4. 允许改动：
-   - `src/mediation/g/append-controller.*`
-   - `src/mediation/g/audit-store.*`
+   - `src/mediation/audit-replay/append-controller.*`
+   - `src/mediation/audit-replay/audit-store.*`
    - tests
 5. 执行步骤：
    - append 幂等键优先级。
@@ -942,8 +942,8 @@
 3. 必读 context：
    - module-g 小节：`3.9.14` 到 `3.9.24`
 4. 允许改动：
-   - `src/mediation/g/replay-controller.*`
-   - `src/mediation/g/replay-engine.*`
+   - `src/mediation/audit-replay/replay-controller.*`
+   - `src/mediation/audit-replay/replay-engine.*`
    - tests
 5. 执行步骤：
    - summary/full 模式、分页排序、空结果语义。

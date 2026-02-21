@@ -2,11 +2,11 @@ import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import test from 'node:test'
 
-import { createCreateOpportunityService } from '../../src/mediation/a/create-opportunity.js'
+import { createCreateOpportunityService } from '../../src/mediation/ingress-opportunity/create-opportunity.js'
 import {
   A_OPPORTUNITY_EVENT_REASON_CODES,
   createOpportunityEventEmitterService
-} from '../../src/mediation/a/opportunity-event-emitter.js'
+} from '../../src/mediation/ingress-opportunity/opportunity-event-emitter.js'
 
 function buildCreateInput(overrides = {}) {
   return {

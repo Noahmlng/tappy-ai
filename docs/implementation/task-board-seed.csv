@@ -10,7 +10,7 @@ task_id,module,owner,status,depends_on,dod,test_command,artifact_path
 "INFRA-009","INFRA","unassigned","done","INFRA-003|G-002","差异可定位到 recordKey 与版本锚点。","npm --prefix ./projects/ad-aggregation-platform run test:integration -- reconcile","reconciliation baseline"
 "INFRA-010","INFRA","unassigned","done","INFRA-001~INFRA-009","任一阻断项失败即 No-Go。","rg -n Go|No-Go|阻断|必须全部满足 docs/implementation/go-no-go-checklist.md","go/no-go checklist"
 "FND-001","FND","unassigned","done","none","A-H 全覆盖，无空节。 | 可被后续任务直接引用。","rg -n Module A|Module H|输入合同|输出合同|原因码|版本锚点 docs/implementation/contract-catalog.md","contract-catalog.md"
-"FND-002","FND","unassigned","done","FND-001","至少覆盖 src/connectors、src/offers、src/runtime、src/server、src/intent*、src/ner。","rg -n 可复用|迁出主链|tooling|Module D|Module B docs/implementation/legacy-to-mediation-mapping.md","legacy-to-mediation-mapping.md"
+"FND-002","FND","unassigned","done","FND-001","至少覆盖 src/connectors、src/offers、src/runtime、src/devtools/simulator、src/providers/intent*、src/providers/ner。","rg -n 可复用|迁出主链|tooling|Module D|Module B docs/implementation/legacy-to-mediation-mapping.md","legacy-to-mediation-mapping.md"
 "FND-003","FND","unassigned","done","FND-001|FND-002","每个任务一行，依赖关系可追踪。","head -n 5 docs/implementation/task-board-seed.csv ; wc -l docs/implementation/task-board-seed.csv","task-board-seed.csv"
 "FND-004","FND","unassigned","todo","FND-001","npm --prefix ./projects/ad-aggregation-platform run test:functional:p0 可运行。","npm --prefix ./projects/ad-aggregation-platform run test:functional:p0","测试命令基线"
 "FND-005","FND","unassigned","todo","FND-004","基础合同测试可复用到 A-H。","npm --prefix ./projects/ad-aggregation-platform run test:contracts","contract-runner"

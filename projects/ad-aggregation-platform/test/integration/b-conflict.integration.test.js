@@ -4,8 +4,8 @@ import test from 'node:test'
 import {
   B_CONFLICT_REASON_CODES,
   createConflictResolver
-} from '../../src/mediation/b/conflict-resolver.js'
-import { createMappingAuditBuilder } from '../../src/mediation/b/mapping-audit.js'
+} from '../../src/mediation/schema-normalization/conflict-resolver.js'
+import { createMappingAuditBuilder } from '../../src/mediation/schema-normalization/mapping-audit.js'
 
 test('b-conflict: override by source priority is deterministic', () => {
   const resolver = createConflictResolver()

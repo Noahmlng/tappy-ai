@@ -5,8 +5,8 @@ import {
   G_APPEND_ACK_STATUSES,
   G_APPEND_REASON_CODES,
   createAuditStore
-} from '../../src/mediation/g/audit-store.js'
-import { createAppendController } from '../../src/mediation/g/append-controller.js'
+} from '../../src/mediation/audit-replay/audit-store.js'
+import { createAppendController } from '../../src/mediation/audit-replay/append-controller.js'
 
 function buildAdapterParticipation(overrides = {}) {
   return {

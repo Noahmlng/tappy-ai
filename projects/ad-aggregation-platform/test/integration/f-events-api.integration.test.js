@@ -6,7 +6,7 @@ import {
   F_EVENTS_OVERALL_STATUSES,
   F_EVENTS_REASON_CODES,
   createEventsController
-} from '../../src/mediation/f/events-controller.js'
+} from '../../src/mediation/event-attribution/events-controller.js'
 
 function buildEnvelope(overrides = {}) {
   return {

@@ -1,4 +1,4 @@
-import { createConfigPublishService, H_PUBLISH_REASON_CODES } from '../h/config-publish.js'
+import { createConfigPublishService, H_PUBLISH_REASON_CODES } from '../config-governance/config-publish.js'
 
 function isAuthErrorCode(code) {
   return (

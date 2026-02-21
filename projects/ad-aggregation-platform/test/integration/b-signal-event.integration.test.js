@@ -6,7 +6,7 @@ import {
   B_SIGNAL_EVENT_REASON_CODES,
   computeSignalSamplingDecision,
   createSignalEventEmitterService
-} from '../../src/mediation/b/signal-event-emitter.js'
+} from '../../src/mediation/schema-normalization/signal-event-emitter.js'
 
 function buildEventInput(overrides = {}) {
   return {

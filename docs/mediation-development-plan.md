@@ -42,13 +42,13 @@
 
 ### 3.1 明确属于“非 Mediation 临时替代层”
 
-1. `src/ner/*`
+1. `src/providers/ner/*`
    - 角色：LLM NER 召回实体。
    - 结论：属于上游 signal provider，不是 Mediation 核心合同内必需能力。
-2. `src/intent/*`
+2. `src/providers/intent/*`
    - 角色：Next-Step 意图推理。
    - 结论：属于业务侧推断层，不是 A-H Mediation 核心模块。
-3. `src/intent-card/*`
+3. `src/providers/intent-card/*`
    - 角色：向量检索与意图卡召回。
    - 结论：属于临时“供给不足补位”机制，不是标准 Mediation 主链。
 4. `schemas/web-search-*.json`、`schemas/follow-up-*.json`
@@ -57,7 +57,7 @@
 
 ### 3.2 属于“本地模拟/运营工具层（非生产 Mediation 主链）”
 
-1. `src/server/simulator-gateway.js`
+1. `src/devtools/simulator/simulator-gateway.js`
    - 包含 dashboard 配置管理、统计聚合、日志查询、本地状态持久化等。
    - 结论：可作为开发联调壳保留，但要拆出生产 Mediation API 主服务。
 2. `docs/local-simulator-gateway.md` 与 dashboard 相关 API。
@@ -389,11 +389,11 @@
 3. 迁移为 D 健康与降级基础：
    - `src/runtime/network-health-state.js`
 4. 保留为 dev tooling：
-   - `src/server/simulator-gateway.js`（拆分 dashboard 接口与 mediation API）
+   - `src/devtools/simulator/simulator-gateway.js`（拆分 dashboard 接口与 mediation API）
 5. 迁出主链为可选 provider：
-   - `src/ner/*`
-   - `src/intent/*`
-   - `src/intent-card/*`
+   - `src/providers/ner/*`
+   - `src/providers/intent/*`
+   - `src/providers/intent-card/*`
 
 ## 附录 B：完成定义（Definition of Done）
 

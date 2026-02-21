@@ -5,8 +5,8 @@ import { assertRequiredFields } from '../utils/contract-runner.js'
 import {
   D_OUTPUT_REASON_CODES,
   createDOutputBuilder
-} from '../../src/mediation/d/output-builder.js'
-import { D_ROUTE_AUDIT_REASON_CODES } from '../../src/mediation/d/route-audit.js'
+} from '../../src/mediation/supply-routing/output-builder.js'
+import { D_ROUTE_AUDIT_REASON_CODES } from '../../src/mediation/supply-routing/route-audit.js'
 
 function buildRoutePlanLite(overrides = {}) {
   return {

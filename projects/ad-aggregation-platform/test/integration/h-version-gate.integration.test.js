@@ -4,11 +4,11 @@ import test from 'node:test'
 import {
   evaluateVersionGate,
   H_VERSION_GATE_REASON_CODES
-} from '../../src/mediation/h/version-gate.js'
+} from '../../src/mediation/config-governance/version-gate.js'
 import {
   injectVersionAnchors,
   H_ANCHOR_REASON_CODES
-} from '../../src/mediation/h/anchor-injector.js'
+} from '../../src/mediation/config-governance/anchor-injector.js'
 
 function baseResolvedConfigSnapshot() {
   return {

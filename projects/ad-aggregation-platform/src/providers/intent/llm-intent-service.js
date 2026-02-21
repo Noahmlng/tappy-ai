@@ -1,4 +1,4 @@
-import { loadRuntimeConfig } from '../config/runtime-config.js'
+import { loadRuntimeConfig } from '../../config/runtime-config.js'
 import {
   INTENT_CLASSES,
   PREFERENCE_FACET_KEYS,

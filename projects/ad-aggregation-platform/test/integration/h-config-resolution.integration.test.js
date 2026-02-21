@@ -5,7 +5,7 @@ import {
   H_CONFIG_RESOLUTION_REASON_CODES,
   H_CONFIG_RESOLUTION_STATUSES,
   resolveConfig
-} from '../../src/mediation/h/config-resolution.js'
+} from '../../src/mediation/config-governance/config-resolution.js'
 
 function baseContext() {
   return {

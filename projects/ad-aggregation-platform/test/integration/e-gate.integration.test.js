@@ -4,12 +4,12 @@ import test from 'node:test'
 import {
   E_RENDER_GATE_REASON_CODES,
   createRenderGate
-} from '../../src/mediation/e/render-gate.js'
+} from '../../src/mediation/delivery-composer/render-gate.js'
 import {
   E_CANONICAL_REASON_CODES,
   E_ERROR_DEGRADE_REASON_CODES,
   createErrorDegradeEngine
-} from '../../src/mediation/e/error-degrade.js'
+} from '../../src/mediation/delivery-composer/error-degrade.js'
 
 function buildTraceKeys() {
   return {

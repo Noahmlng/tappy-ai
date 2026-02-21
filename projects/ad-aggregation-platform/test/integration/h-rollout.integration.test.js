@@ -4,12 +4,12 @@ import test from 'node:test'
 import {
   createRolloutEvaluator,
   H_ROLLOUT_REASON_CODES
-} from '../../src/mediation/h/rollout.js'
+} from '../../src/mediation/config-governance/rollout.js'
 import {
   evaluateFailureMatrix,
   H_CONFIG_FAILURE_REASON_CODES,
   H_CONFIG_FAILURE_SCENARIOS
-} from '../../src/mediation/h/failure-matrix.js'
+} from '../../src/mediation/config-governance/failure-matrix.js'
 
 function baseRequest(overrides = {}) {
   return {
