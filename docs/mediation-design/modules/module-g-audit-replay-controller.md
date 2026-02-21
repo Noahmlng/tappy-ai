@@ -223,3 +223,126 @@ optional：
 2. 任一 adapter 的响应/延迟/超时/过滤原因都可在结构中定位，不依赖额外日志。
 3. winner 与 adapter 列表、render 结果、终态事件在同记录内交叉一致。
 4. 任一 dispute 可通过 `auditRecordId + traceKey + responseReferenceOrNA` 分钟级提取证据链。
+
+#### 3.9.14 replay(opportunity_id | time_range) 接口合同（P0，MVP 冻结）
+
+接口定义：
+1. `replay(opportunity_id | time_range)`
+2. 语义：按机会或时间范围回放审计事实，用于 debug、争议对账、模型训练抽样。
+3. 输入方式：二选一（`opportunity_id` 模式或 `time_range` 模式）。
+
+请求对象：`gReplayQueryLite`
+
+required（全局）：
+1. `queryMode`（`by_opportunity` / `by_time_range`）
+2. `outputMode`（`summary` / `full`）
+3. `pagination`
+4. `sort`
+5. `replayContractVersion`
+
+模式 required：
+1. `queryMode=by_opportunity`：
+   - `opportunityId`
+2. `queryMode=by_time_range`：
+   - `timeRange.startAt`
+   - `timeRange.endAt`
+
+optional：
+1. `filters`
+2. `includeRawPayload`
+3. `cursor`
+4. `extensions`
+
+#### 3.9.15 查询参数与过滤器（P0，MVP 冻结）
+
+`filters` 可选字段：
+1. `traceKey`
+2. `requestKey`
+3. `attemptKey`
+4. `responseReference`
+5. `adapterIdIn[]`
+6. `recordTypeIn[]`（`billable_fact` / `attribution_fact` / `decision_audit`）
+7. `recordStatusIn[]`（`new` / `committed` / `duplicate` / `conflicted` / `rejected` / `superseded`）
+8. `hasTimeoutOnly`（`true/false`）
+9. `hasConflictOnly`（`true/false`）
+
+过滤约束：
+1. `queryMode=by_opportunity` 时，`timeRange` 不允许出现。
+2. `queryMode=by_time_range` 时，`opportunityId` 不允许出现。
+3. `timeRange.endAt` 必须 `>= timeRange.startAt`。
+4. `timeRange` 最大跨度：`7d`（超出拒绝）。
+
+#### 3.9.16 输出模式合同（summary/full，P0，MVP 冻结）
+
+响应对象：`gReplayResultLite`
+
+required：
+1. `queryEcho`
+2. `resultMeta`
+   - `totalMatched`
+   - `returnedCount`
+   - `hasMore`
+   - `nextCursorOrNA`
+3. `items[]`
+4. `emptyResult`
+5. `generatedAt`
+
+`outputMode=summary`：
+1. 每条 `item` 最小字段：
+   - `opportunityKey`
+   - `traceKey`
+   - `responseReferenceOrNA`
+   - `terminalStatus`
+   - `winnerAdapterIdOrNA`
+   - `keyReasonCodes[]`
+   - `recordCountByType`
+2. 不返回完整快照 payload。
+
+`outputMode=full`：
+1. 每条 `item` 包含：
+   - `gAuditRecordLite`
+   - `fToGArchiveRecordLite[]`
+   - `factDecisionAuditLite[]`
+2. `includeRawPayload=true` 时才返回 raw payload（受权限与脱敏策略约束）。
+
+#### 3.9.17 分页与排序规则（P0，MVP 冻结）
+
+`pagination` required：
+1. `pageSize`（`1..200`）
+2. `pageTokenOrNA`
+
+`sort` required：
+1. `sortBy`（`auditAt` / `outputAt` / `eventAt`）
+2. `sortOrder`（`asc` / `desc`）
+
+规则：
+1. 默认排序：`sortBy=auditAt`, `sortOrder=desc`。
+2. 稳定排序 tie-break：`traceKey` -> `requestKey` -> `attemptKey` -> `auditRecordId`。
+3. 翻页必须复用同一 `queryEcho`（除 `pageTokenOrNA` 外不可变）。
+4. 若请求 `cursor` 无效，返回错误 `g_replay_invalid_cursor`。
+
+#### 3.9.18 空结果语义（P0，MVP 冻结）
+
+`emptyResult` required：
+1. `isEmpty`（`true/false`）
+2. `emptyReasonCode`
+3. `diagnosticHint`
+
+空结果原因码（最小集）：
+1. `g_replay_not_found_opportunity`
+2. `g_replay_no_record_in_time_range`
+3. `g_replay_filtered_out`
+4. `g_replay_access_denied_scope`
+
+语义约束：
+1. 空结果不是错误：返回成功响应，`items=[]`。
+2. 仅请求非法时返回 `rejected`（非空结果语义）：如 `g_replay_invalid_query_mode`、`g_replay_invalid_time_range`。
+3. `emptyReasonCode` 必须稳定可用于调用方 UI/自动化处理。
+
+#### 3.9.19 MVP 验收基线（replay 合同）
+
+1. `by_opportunity` 与 `by_time_range` 两种查询模式都可稳定返回可消费结果。
+2. `summary/full` 输出在同请求同版本下结构确定性一致。
+3. 分页与排序结果稳定，不出现跨页重复或漏项。
+4. 空结果语义清晰，不与请求错误语义混淆。
+5. 任一回放请求可通过 `queryEcho + replayContractVersion + generatedAt` 分钟级复现。

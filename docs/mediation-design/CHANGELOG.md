@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.9）
+
+1. 在 `Module G` 新增 `replay(opportunity_id | time_range)` 接口合同，冻结两类查询模式与参数边界。
+2. 冻结过滤器集合与约束，明确 `by_opportunity` 与 `by_time_range` 的互斥语义。
+3. 新增 `summary/full` 输出模式合同，定义分页回放最小返回结构。
+4. 冻结分页排序规则与稳定 tie-break，并补充无效 cursor 处理。
+5. 新增空结果语义与原因码体系，并将 replay 合同纳入 MVP 交付项。
+
 ### 2026-02-21（v4.8）
 
 1. 升级 `Module G` 的 `gAuditRecordLite`，从块级定义扩展为字段级 required 矩阵。
