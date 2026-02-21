@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.22
+- 文档版本：v3.23
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -976,7 +976,7 @@ optional：
 1. 标准候选结果集合或空结果。
 2. 路由轨迹与降级轨迹。
 3. 状态更新（进入 `routed` 并最终走向终态）。
-4. 详细字段合同见 `3.6.29` ~ `3.6.31`（`D -> E` 冻结）。
+4. 详细字段合同见 `3.6.29` ~ `3.6.33`（`D -> E` 与路由审计快照冻结）。
 
 #### 3.6.5 D 输入合同（C -> D，MVP 冻结）
 
@@ -1442,12 +1442,13 @@ Route Plan 仅允许三类短路动作：
    - `finalAction`（`deliver` / `no_fill` / `terminal_error`）
    - `finalReasonCode`
    - `fallbackUsed`（`true` / `false`）
-9. `stateUpdate`
+9. `routeAuditSnapshotLite`（结构见 `3.6.32`）
+10. `stateUpdate`
    - `fromState`（固定 `routed`）
    - `toState`（`served` / `no_fill` / `error`）
    - `statusReasonCode`
    - `updatedAt`
-10. `versionAnchors`
+11. `versionAnchors`
    - `dOutputContractVersion`
    - `routingPolicyVersion`
    - `fallbackProfileVersion`
@@ -1456,9 +1457,8 @@ Route Plan 仅允许三类短路动作：
 
 optional：
 1. `winningCandidateRef`
-2. `routeExecutionDigest`
-3. `warnings`
-4. `extensions`
+2. `warnings`
+3. `extensions`
 
 #### 3.6.30 候选存在性、路由结论与状态更新约束（MVP）
 
@@ -1486,6 +1486,57 @@ optional：
 3. 路由结论（`routeOutcome/finalAction/finalReasonCode`）可审计回放。
 4. `stateUpdate` 与路由结论不发生语义冲突（served/no_fill/error 一致）。
 5. 任一 `D -> E` 输出可通过 `traceKey + requestKey + attemptKey` 分钟级定位。
+
+#### 3.6.32 路由审计快照（`routeAuditSnapshotLite`，MVP 冻结）
+
+`routeAuditSnapshotLite` 是 D 层唯一权威路由审计对象，用于回放“如何选路、为何切路、最终走了哪条路”。
+
+required：
+1. `traceKeys`
+   - `traceKey`
+   - `requestKey`
+   - `attemptKey`
+   - `opportunityKey`
+2. `routingHitSnapshot`
+   - `routePlanId`
+   - `hitRouteTier`（`primary` / `secondary` / `fallback`）
+   - `hitSourceId`
+   - `hitStepIndex`
+3. `routeSwitches`
+   - `switchCount`
+   - `switchEvents[]`（按时间顺序）
+     - `fromSourceId`
+     - `toSourceId`
+     - `switchReasonCode`
+     - `switchAt`
+4. `finalRouteDecision`
+   - `finalSourceId`（允许 `none`）
+   - `finalRouteTier`（`primary` / `secondary` / `fallback` / `none`）
+   - `finalOutcome`（`served_candidate` / `no_fill` / `error`）
+   - `finalReasonCode`
+   - `selectedAt`
+5. `versionSnapshot`
+   - `routingPolicyVersion`
+   - `fallbackProfileVersion`
+   - `adapterRegistryVersion`
+   - `routePlanRuleVersion`
+6. `snapshotMeta`
+   - `routeAuditSchemaVersion`
+   - `generatedAt`
+
+一致性约束：
+1. `finalRouteDecision.finalReasonCode` 必须与 `routeConclusion.finalReasonCode` 一致。
+2. `traceKeys` 必须与 `dToEOutputLite` 主键一致。
+3. `switchEvents` 为空时，`switchCount` 必须为 `0`。
+4. 任一 `switchReasonCode` 必须来自标准原因码集合（不可自由文本）。
+
+#### 3.6.33 MVP 验收基线（路由审计快照）
+
+1. 每个 D 输出都包含且仅包含一份 `routeAuditSnapshotLite`。
+2. 可从快照完整还原“命中路由 -> 切路原因 -> 最终选路”。
+3. 快照必须携带可定位的版本快照与 trace 键。
+4. 同请求同版本下快照内容可复现，不出现顺序漂移。
+5. E/G 可直接消费快照，无需额外拼接路由历史。
 
 ### 3.7 Module E: Delivery Composer
 
@@ -1640,7 +1691,7 @@ optional：
 1. 模块化主链框架（A-H）与边界说明。
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
 3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照 + D 输入合同 + Adapter 注册与能力声明 + request adapt 子合同 + candidate normalize 子合同 + error normalize 体系）。
-4. 两类供给源最小适配合同（adapter 四件事）与编排基线（含 Route Plan 触发/裁决/短路口径 + D 输出合同）。
+4. 两类供给源最小适配合同（adapter 四件事）与编排基线（含 Route Plan 触发/裁决/短路口径 + D 输出合同 + 路由审计快照）。
 5. Delivery / Event Schema 分离与 `responseReference` 关联口径。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
 7. 可观测与审计最小模型（单机会对象 + 四段决策点）。
@@ -1700,6 +1751,13 @@ optional：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.23）
+
+1. 新增 `3.6.32`，冻结 `routeAuditSnapshotLite` 结构（命中路由、切路原因、最终选路、版本快照、trace 键）。
+2. 新增 `3.6.33`，补充路由审计快照的 MVP 验收基线。
+3. 更新 `3.6.29`，将 `routeAuditSnapshotLite` 升级为 `D -> E` 必填字段。
+4. 更新第 4 章交付项，纳入路由审计快照交付口径。
 
 ### 2026-02-21（v3.22）
 
