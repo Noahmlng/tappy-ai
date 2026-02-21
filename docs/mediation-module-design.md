@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v2.5
+- 文档版本：v2.6
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -372,6 +372,110 @@ Ingress 校验分三层，按顺序执行：
 4. 鉴权模块故障时默认 fail-safe（不放大风险流量）。
 5. Auth/Trust 结果可被下游稳定消费，不引入字段歧义。
 
+#### 3.3.16 Idempotency / De-dup（仅 Mediation Ingress，当前版本冻结）
+
+范围边界：
+1. 本设计只覆盖 Mediation Ingress 的重复请求治理。
+2. 不约束 Ads Network 内部重复请求处理，不依赖 DSP 侧幂等语义。
+3. 目标是“同一业务请求只产生一次有效机会与一次下游调用语义”。
+
+目标：
+1. 解决重试、网络抖动、客户端重复发送导致的重复机会问题。
+2. 保证同请求在同策略版本下结果可复现。
+3. 减少重复下游调用，稳定统计口径与审计口径。
+
+#### 3.3.17 幂等键与去重指纹（冻结）
+
+幂等键优先级（高 -> 低）：
+1. `clientRequestId`（SDK 显式提供，首选）。
+2. `idempotencyKey`（接入方显式提供）。
+3. `canonicalFingerprint`（平台按标准字段计算）。
+
+`canonicalFingerprint` 最小组成：
+1. app identity
+2. session identity
+3. placement identity
+4. trigger type + trigger time bucket
+5. normalized request payload hash
+
+约束：
+1. 同优先级键冲突时按稳定规则裁决（固定排序 + 版本化算法）。
+2. 指纹算法版本化管理：`dedupFingerprintVersion`。
+3. 幂等键缺失时必须回落到平台指纹，不允许直接放弃去重。
+
+#### 3.3.18 去重窗口与状态机（冻结）
+
+去重窗口（当前版本）：
+1. `inflight window`：请求处理中窗口（防并发重复进入）。
+2. `result reuse window`：结果复用窗口（重复请求直接复用结果）。
+3. `late retry window`：迟到重试窗口（超窗口按新请求处理，但保留关联）。
+
+去重状态机：
+1. `new`：首次进入。
+2. `inflight_duplicate`：命中处理中重复请求。
+3. `reused_result`：命中结果复用窗口并返回复用结果。
+4. `expired_retry`：超出去重窗口，按新请求处理并标记重试来源。
+
+状态约束：
+1. 同一幂等键同一时刻只允许一个 `new/inflight` 主处理实例。
+2. `inflight_duplicate` 不得触发新的下游 supply 调用。
+3. 所有状态迁移必须记录时间戳、原因码、策略版本。
+
+#### 3.3.19 重复请求处理动作（Mediation 行为）
+
+动作矩阵：
+1. 命中 `inflight_duplicate`
+   - 动作：挂起等待主实例结果或返回受控“处理中”语义（按接入模式）。
+2. 命中 `reused_result`
+   - 动作：直接复用上次标准输出（含 `responseReference` 关联信息）。
+3. 命中 `expired_retry`
+   - 动作：创建新机会对象，但写入 `retryOf` 关联键用于审计串联。
+4. 幂等校验失败（键异常/格式非法）
+   - 动作：进入受控拒绝或降级路径，返回标准错误码。
+
+最小原因码集：
+1. `duplicate_inflight`
+2. `duplicate_reused_result`
+3. `dedup_window_expired`
+4. `idempotency_key_invalid`
+5. `idempotency_store_unavailable`
+
+#### 3.3.20 存储与一致性约束（Ingress De-dup Store）
+
+1. 幂等与去重依赖独立 `dedup store`，作为 Ingress 基础设施。
+2. `dedup store` 至少保证：原子写入、原子锁定、状态可查询。
+3. 存储异常时默认 fail-safe：
+   - 高风险来源（T2/T3）默认拒绝。
+   - 低风险来源（T0/T1）按配置受控放行并强审计标记。
+4. 任何“受控放行”都必须写入 `dedup_degraded=true` 标记，供后续排查与口径隔离。
+
+#### 3.3.21 输出合同与观测基线（Idempotency / De-dup）
+
+`Module A` 增补输出 `dedupSnapshot`：
+1. `idempotencyKeyType`（client/idempotencyKey/fingerprint）
+2. `dedupState`（new/inflight_duplicate/reused_result/expired_retry）
+3. `dedupReasonCode`
+4. `dedupWindowProfile`
+5. `dedupPolicyVersion`
+
+下游消费约束：
+1. `Module B` 承载 `dedupSnapshot`，不得重算去重结论。
+2. `Module D` 仅当 `dedupState=new/expired_retry` 才允许发起 supply 调用。
+3. 审计层必须能按幂等键回放所有重复请求分支。
+
+核心指标：
+1. `duplicate_request_rate`
+2. `inflight_duplicate_rate`
+3. `reused_result_rate`
+4. `duplicate_supply_call_prevented_rate`
+5. `dedup_degraded_rate`
+
+验收基线：
+1. 同一请求重试不会重复触发供给调用。
+2. 重复请求可稳定复用结果且可审计追溯。
+3. 去重策略异常时不会无痕放大重复流量。
+4. 幂等结果在同策略版本下可复现。
+
 ### 3.4 Module B: Schema Translation & Signal Normalization
 
 #### 3.4.1 统一 Opportunity Schema（共同语言）
@@ -657,6 +761,7 @@ Ingress 校验分三层，按顺序执行：
 15. Mediation 与 Ads Network 交互边界与流程图说明。
 16. Module A Ingress Request Envelope 合同与校验规则说明。
 17. Module A Auth + Source Trust 鉴权与可信分级说明（Mediation 范围）。
+18. Module A Idempotency / De-dup 幂等与去重规则说明（Mediation 范围）。
 
 ## 5. 优化项与 SSP 过渡（Plan）
 
@@ -825,6 +930,14 @@ Ingress 校验分三层，按顺序执行：
    - 未来：实现对账自动化与争议回放自动化。
 
 ## 6. 变更记录
+
+### 2026-02-21（v2.6）
+
+1. 在 `3.3` 新增 Idempotency / De-dup 设计，明确仅覆盖 Mediation Ingress 范围。
+2. 冻结幂等键优先级与平台去重指纹规则，并引入 `dedupFingerprintVersion`。
+3. 新增去重窗口与状态机（`new/inflight_duplicate/reused_result/expired_retry`）。
+4. 新增重复请求处理矩阵、最小原因码、`dedup store` 一致性约束与降级策略。
+5. 新增 `dedupSnapshot` 输出合同、核心指标与验收基线，并更新交付包条目。
 
 ### 2026-02-21（v2.5）
 
