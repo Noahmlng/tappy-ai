@@ -76,7 +76,7 @@ MVP 必做：
 1. 完整 `Auth + Source Trust` 分级体系
 2. 完整 `Fail-open / Fail-closed` 异常矩阵
 3. 完整 `Context Extraction Boundary`（多窗口 + 完整脱敏策略）
-4. 完整 `Idempotency` 窗口与存储退化治理
+4. 去重存储退化治理（跨节点/跨地域一致性）
 5. 完整 `Error Code Taxonomy` 分层与聚合规则
 6. 触发类型长尾扩展与跨 SDK 一致性分析
 7. 时延预算分档精细化（`L0/L1/L2` 全量策略）
@@ -164,15 +164,18 @@ optional：
 3. `a_trg_invalid_placement_id` -> `errorAction=reject`, `triggerAction=reject`
 4. `a_trg_invalid_trigger_type` -> `errorAction=reject`, `triggerAction=reject`
 5. `a_trg_duplicate_inflight` -> `errorAction=allow`, `triggerAction=no_op`
-6. `a_trg_soft_budget_exceeded` -> `errorAction=degrade`, `triggerAction=create_opportunity`
-7. `a_trg_hard_budget_exceeded` -> `errorAction=reject`, `triggerAction=reject`
-8. `a_trg_config_timeout_with_snapshot` -> `errorAction=degrade`, `triggerAction=create_opportunity`
-9. `a_trg_config_unavailable_no_snapshot` -> `errorAction=reject`, `triggerAction=reject`
-10. `a_trg_config_version_invalid` -> `errorAction=reject`, `triggerAction=reject`
-11. `a_trg_internal_unavailable` -> `errorAction=reject`, `triggerAction=reject`, `retryable=true`
+6. `a_trg_duplicate_reused_result` -> `errorAction=allow`, `triggerAction=no_op`
+7. `a_trg_soft_budget_exceeded` -> `errorAction=degrade`, `triggerAction=create_opportunity`
+8. `a_trg_hard_budget_exceeded` -> `errorAction=reject`, `triggerAction=reject`
+9. `a_trg_config_timeout_with_snapshot` -> `errorAction=degrade`, `triggerAction=create_opportunity`
+10. `a_trg_config_timeout_no_snapshot` -> `errorAction=reject`, `triggerAction=reject`
+11. `a_trg_config_unavailable_with_snapshot` -> `errorAction=degrade`, `triggerAction=create_opportunity`
+12. `a_trg_config_unavailable_no_snapshot` -> `errorAction=reject`, `triggerAction=reject`
+13. `a_trg_config_version_invalid` -> `errorAction=reject`, `triggerAction=reject`
+14. `a_trg_internal_unavailable` -> `errorAction=reject`, `triggerAction=reject`, `retryable=true`
 
 一致性约束：
-1. `config_*` 相关故障动作必须与 H 的失效矩阵一致（见 `3.10.47~3.10.53`）。
+1. `config_*` 相关故障动作必须与 H 的失效矩阵一致（见 `3.10.47~3.10.53`）；该矩阵是 A 层执行约束的上位规则。
 2. 同 `reasonCode` 在同版本下动作不得漂移。
 3. `retryable=true` 仅允许出现在可重试内部故障，不得用于结构/合同错误。
 
@@ -412,3 +415,69 @@ canonical `triggerType`（最小集）：
 2. 未知触发类型不会静默放行，必须稳定拒绝并返回标准原因码。
 3. 同请求同版本下映射与冲突处理结果完全可复现。
 4. 任一触发映射可通过 `traceKey + triggerType + triggerTaxonomyVersion + reasonCode` 分钟级定位。
+
+#### 3.3.28 A 层去重窗口规则（P0，MVP 冻结）
+
+去重对象：`aDedupSnapshotLite`
+
+去重键优先级：
+1. `clientRequestId`（非空且格式合法时优先）。
+2. `computedDedupKey`（当 `clientRequestId` 缺失时使用）：
+   - `sha256(appId + "|" + sessionId + "|" + placementId + "|" + triggerType + "|" + triggerAt)`
+3. `dedupFingerprintVersion` 固定为 `a_dedup_v1`。
+
+最小状态机：
+1. `new`
+2. `inflight_duplicate`
+3. `reused_result`
+4. `expired_retry`
+
+去重窗口（最小）：
+1. `dedupWindowSec = 120`。
+2. 同键命中且首请求仍在处理中 -> `dedupState=inflight_duplicate`，返回 `triggerAction=no_op`，`reasonCode=a_trg_duplicate_inflight`。
+3. 同键命中且首请求已完成 -> `dedupState=reused_result`，复用首请求结论，不再执行二次创建/下游调用。
+4. 超出窗口 -> `dedupState=expired_retry`，按新请求处理。
+
+输出约束：
+1. A 输出必须携带 `aDedupSnapshotLite`：`dedupKeySource/dedupFingerprintVersion/dedupState/dedupWindowSec`。
+2. 同 `dedupKey + dedupWindowSec + dedupFingerprintVersion` 下，去重判定必须确定性一致。
+
+#### 3.3.29 Trace 初始化与继承规则（P0，MVP 冻结）
+
+规则对象：`traceInitLite`
+
+主键集合（最小）：
+1. `traceKey`
+2. `requestKey`
+3. `attemptKey`
+
+初始化与继承：
+1. 首次受理请求（`dedupState=new`）必须生成完整三键。
+2. `inflight_duplicate/reused_result` 必须复用首请求的 `traceKey/requestKey/attemptKey`，禁止派生新 attempt。
+3. `expired_retry` 视为新请求：必须生成新 `requestKey/attemptKey`；若 `appId + sessionId + placementId` 未变化可复用 `traceKey`。
+4. 进入 `createOpportunity` 时，`traceInitLite` 三键必须原样透传；任一键不一致按合同错误拒绝。
+
+可观测约束：
+1. A 的每次返回都必须可通过 `traceKey + requestKey + attemptKey` 唯一定位。
+2. trace 初始化失败必须返回 `a_trg_internal_unavailable`，并保留 `retryable=true` 语义。
+
+#### 3.3.30 A 层执行约束：显式引用 H 失效矩阵（P0，MVP 冻结）
+
+上位约束来源：
+1. A 在处理配置失效时，必须以 H 的 `3.10.47~3.10.53` 为执行基线。
+2. 若 A 层局部规则与 H 冲突，以 H 的 `fail-open/fail-closed` 决策为准。
+
+场景绑定（A）：
+1. `config_timeout`
+   - 有稳定快照：`errorAction=degrade`, `triggerAction=create_opportunity`, `reasonCode=a_trg_config_timeout_with_snapshot`
+   - 无稳定快照：`errorAction=reject`, `triggerAction=reject`, `reasonCode=a_trg_config_timeout_no_snapshot`
+2. `config_unavailable`
+   - 有稳定快照：`errorAction=degrade`, `triggerAction=create_opportunity`, `reasonCode=a_trg_config_unavailable_with_snapshot`
+   - 无稳定快照：`errorAction=reject`, `triggerAction=reject`, `reasonCode=a_trg_config_unavailable_no_snapshot`
+3. `config_version_invalid`
+   - 强制 `errorAction=reject`, `triggerAction=reject`, `reasonCode=a_trg_config_version_invalid`
+   - 不得进入 B/C/D/E。
+
+审计约束（A -> F/G）：
+1. A 必须输出并透传 `configFailureScenario + failureMode + primaryReasonCode`。
+2. 若 H 返回 `hConfigFailureDecisionSnapshotLite.snapshotId`，A 必须挂入本次请求审计上下文，保证后续回放可对齐。

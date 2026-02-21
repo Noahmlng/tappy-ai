@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.24）
+
+1. 在 `Module A` 冻结 A 层去重窗口规则，明确 `dedupWindowSec=120`、去重键优先级与 `aDedupSnapshotLite` 最小输出约束。
+2. 冻结 A 层 trace 初始化与继承规则，明确 `traceKey/requestKey/attemptKey` 在 `new/inflight_duplicate/reused_result/expired_retry` 下的行为边界。
+3. 在 A 层错误码与动作映射中补齐 `config_timeout/config_unavailable` 的“有/无稳定快照”分支原因码。
+4. 新增“显式引用 H 失效矩阵”的 A 层执行约束章节，固定以 H `3.10.47~3.10.53` 作为 A 的上位规则。
+5. 更新 MVP 交付项，将 A 层去重窗口、trace 规则及 H 失效矩阵执行约束纳入当前版本交付口径。
+
 ### 2026-02-21（v4.23）
 
 1. 在 `Module A` 新增 `triggerTaxonomyLite` 字典冻结，明确 `triggerType` 最小 canonical 集与 `unknown_trigger_type` 处置边界。
