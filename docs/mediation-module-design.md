@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.5
+- 文档版本：v3.6
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -322,6 +322,83 @@ MVP 必做：
 2. 映射审计记录（支持回放）。
 3. 下游可直接消费的标准枚举与状态。
 
+#### 3.4.6 B 输入合同（A -> B，MVP 冻结）
+
+当前版本冻结 `A -> B` 最小输入包 `bIngressPacketLite`，B 不再猜字段。
+
+required（缺失即不可继续映射）：
+1. `opportunitySeed`
+   - 最小语义：`opportunityKey`、`state=received`、基础请求上下文引用。
+2. `traceInitLite`
+   - `traceKey`、`requestKey`、`attemptKey`。
+3. `triggerSnapshotLite`
+   - `triggerType`、`triggerDecision`。
+4. `sensingDecisionLite`
+   - `decisionOutcome`、`hitType`、`confidenceBand`。
+5. `sourceInputBundleLite`
+   - 三路输入快照：`appExplicit`、`placementConfig`、`defaultPolicy`（可为空对象，但槽位必须存在）。
+
+optional（缺失可降级）：
+1. `aErrorLite`
+   - A 层异常快照（供 B 审计承载与原因串联）。
+2. `aLatencyBudgetLite`
+   - A 层预算结论（供 B 做超时保护决策）。
+3. `debugHints`
+   - 联调辅助字段，不进入主语义。
+
+版本锚点：
+1. `bInputContractVersion`（A 与 B 共同冻结，默认随主文档版本发布）。
+
+#### 3.4.7 缺失处理规则（MVP）
+
+缺失处理动作只允许三类：`continue` / `degrade` / `reject`。
+
+1. required 缺失：
+   - 动作：`reject`。
+   - 结果：B 产出标准错误结果并将机会状态置为 `error`，不进入正常路由。
+   - 原因码：`b_missing_required_field`。
+2. optional 缺失：
+   - 动作：`degrade`。
+   - 结果：写默认值或 `unknown_*`，并记录 `mappingWarning`。
+   - 原因码：`b_optional_default_applied`。
+3. required 槽位存在但为空对象（仅 `sourceInputBundleLite` 允许）：
+   - 动作：`degrade`。
+   - 结果：仅用已存在来源参与映射与冲突裁决，缺失来源按“无输入”处理并记录告警。
+   - 原因码：`b_source_slot_empty`。
+
+一致性约束：
+1. 同请求、同 `bInputContractVersion`、同规则版本下，缺失处理动作必须一致。
+2. B 不得静默补齐 required 字段。
+
+#### 3.4.8 非法值处理规则（MVP）
+
+非法值分三类并固定处置：
+
+1. 结构非法（类型错误、trace 主键格式错误、必需对象非对象）：
+   - 动作：`reject`。
+   - 原因码：`b_invalid_structure` / `b_invalid_trace_context`。
+2. 枚举非法（不在归一字典）：
+   - required 语义位点：`reject`，原因码 `b_invalid_required_enum`。
+   - optional 语义位点：`degrade` 到 `unknown_*`，原因码 `b_invalid_optional_enum`。
+3. 值域非法（超界、时间戳异常、互斥组合冲突）：
+   - 可修正：`degrade`（按默认策略修正并记审计），原因码 `b_value_corrected`。
+   - 不可修正：`reject`，原因码 `b_invalid_value_range`。
+
+审计要求（每次非法值都必须记录）：
+1. `rawValue`
+2. `normalizedValue`（若存在）
+3. `disposition`（reject/degrade）
+4. `reasonCode`
+5. `ruleVersion`
+
+#### 3.4.9 MVP 验收基线（B 输入合同）
+
+1. A->B 输入在字段级可判定（required/optional 无歧义）。
+2. required 缺失或 required 非法值不会进入 C/D 正常主链路。
+3. optional 缺失/非法值可受控降级且不破坏可回放性。
+4. 同请求在同版本下映射结果与处置动作可复现。
+5. B 错误结果可通过 `traceKey + reasonCode` 分钟级定位。
+
 ### 3.5 Module C: Policy & Safety Governor
 
 #### 3.5.1 职责边界
@@ -533,7 +610,7 @@ MVP 必做：
 
 1. 模块化主链框架（A-H）与边界说明。
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
-3. 外部输入映射与冲突优先级规则（最小可复现口径）。
+3. 外部输入映射与冲突优先级规则（含 B 输入合同：A -> B）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线。
 5. Delivery / Event Schema 分离与 `responseReference` 关联口径。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
@@ -594,6 +671,14 @@ MVP 必做：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.6）
+
+1. 新增 `3.4.6`，冻结 Module B 的 `A -> B` 输入合同（required/optional + 版本锚点）。
+2. 新增 `3.4.7`，明确 required/optional 缺失处理动作与标准原因码。
+3. 新增 `3.4.8`，明确结构/枚举/值域三类非法值的处置规则与审计字段。
+4. 新增 `3.4.9`，补充 B 输入合同的 MVP 验收基线。
+5. 更新第 4 章交付项，纳入 B 输入合同交付口径。
 
 ### 2026-02-21（v3.5）
 
