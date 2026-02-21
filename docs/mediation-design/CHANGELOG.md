@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.20）
+
+1. 在 `Module A` 新增 `trigger(placement_id, app_context)` 输入合同，冻结 required/optional 边界与输入校验约束。
+2. 新增 `aTriggerSyncResultLite` 同步返回合同，冻结 `create_opportunity/no_op/reject` 三类返回动作语义。
+3. 冻结 A 层 trigger 错误码与动作映射（`allow/degrade/reject`），并与 H 失效矩阵建立一致性约束。
+4. 新增 trigger 合同的 MVP 验收基线，确保同步调用行为与结果可回放。
+5. 更新 MVP 交付项，将 Module A trigger 合同纳入当前版本交付口径。
+
 ### 2026-02-21（v4.19）
 
 1. 在 `Module H` 新增配置失效场景分类（`config_timeout/config_unavailable/config_version_invalid`）与统一故障上下文字段。
