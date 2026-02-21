@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.1
+- 文档版本：v3.2
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -940,6 +940,93 @@ A 层处理阶段预算拆分：
 3. A 层预算策略调整可灰度，且不破坏输出合同兼容性。
 4. 入口预算治理后，主链路 `Request -> Delivery` SLA 波动收敛。
 
+#### 3.3.48 Trace Initialization Contract（追踪主键初始化规则，当前版本冻结）
+
+范围边界：
+1. 仅定义 `Module A` 在 Ingress 阶段初始化追踪主键的规则。
+2. 不替代后续模块的业务字段扩展，但后续必须复用 A 层主键体系。
+3. 目标是保证“单请求从 A 到 Archive 不断链、可回放、可对账”。
+
+合同目标：
+1. 固化主键集合与生成优先级，避免多模块各自造 key。
+2. 保证重试/去重/复用路径下主键继承一致。
+3. 让所有 A 层 snapshot（auth/dedup/trigger/decision/disposition/context/latency）可统一挂接。
+
+#### 3.3.49 主键集合与语义（冻结）
+
+`Module A` 初始化以下最小主键集合：
+1. `traceKey`（主链路主键）
+   - 单次请求主追踪键，后续全链路必传。
+2. `requestKey`（请求身份键）
+   - 标识业务请求身份，可跨重试稳定复用。
+3. `attemptKey`（尝试键）
+   - 每次 ingress 尝试唯一，区分重试与重复进入。
+4. `opportunityKey`（机会对象键）
+   - 表示一次有效机会对象身份；去重复用时可继承。
+5. `lineageKey`（谱系键）
+   - 串联 `retryOf/reusedFrom` 等关系，支撑审计回放。
+
+关系约束：
+1. `requestKey` 可对应多个 `attemptKey`。
+2. `attemptKey` 仅对应一个 `traceKey`。
+3. `opportunityKey` 在 `reused_result` 场景可跨 attempt 复用。
+4. 所有 key 必须关联到同一 `lineageKey` 族谱中。
+
+#### 3.3.50 生成优先级与继承规则（冻结）
+
+生成优先级（高 -> 低）：
+1. 上游显式稳定键（如 `clientRequestId`）映射生成 `requestKey`。
+2. 平台幂等键映射（`idempotencyKey/fingerprint`）生成 `requestKey`。
+3. 无显式键时平台生成确定性 `requestKey`（版本化算法）。
+
+初始化规则：
+1. `attemptKey` 每次请求进入 A 层都新建。
+2. `traceKey` 由 `requestKey + attemptKey + timestamp` 生成且全局唯一。
+3. `opportunityKey` 在 `new/expired_retry` 新建，在 `reused_result` 复用旧值。
+4. `lineageKey` 首次请求创建，后续 retry/reuse 继承。
+
+去重联动规则：
+1. `inflight_duplicate`：继承 `requestKey/lineageKey`，共享主处理 `opportunityKey`。
+2. `reused_result`：继承 `requestKey/opportunityKey/lineageKey`，仅更新 `attemptKey`。
+3. `expired_retry`：继承 `requestKey/lineageKey`，新建 `opportunityKey` 与 `traceKey`。
+
+#### 3.3.51 输出合同与失败兜底（A -> B/C/D）
+
+`Module A` 增补 `traceInitSnapshot`：
+1. `traceInitVersion`
+2. `traceKey`
+3. `requestKey`
+4. `attemptKey`
+5. `opportunityKey`
+6. `lineageKey`
+7. `traceInitMode`（upstream_mapped/platform_generated/mixed）
+8. `traceInitReasonCode`
+
+失败兜底：
+1. 上游 key 缺失或格式异常时，使用平台生成模式并记录 `trace_init_fallback_generated`。
+2. 任何 key 初始化失败不得静默；必须返回受控错误或受控降级。
+3. `traceKey` 生成失败时默认 `fail_closed + block_reject`，禁止进入后续链路。
+
+下游消费约束：
+1. `Module B/C/D` 不得重建 `traceKey/requestKey/attemptKey/opportunityKey/lineageKey`。
+2. 允许追加派生键，但必须保留原始 `traceInitSnapshot` 不变。
+3. `responseReference` 生成后必须能回链到 `traceKey + opportunityKey`。
+
+#### 3.3.52 观测指标与验收基线（Trace Initialization）
+
+核心指标：
+1. `trace_init_success_rate`
+2. `trace_chain_continuity_rate`
+3. `trace_init_fallback_rate`
+4. `orphan_event_rate`（无可回链 trace 的事件率）
+5. `lineage_replay_success_rate`
+
+验收基线：
+1. A 层所有输出都带可用 `traceKey`，后续链路无断链。
+2. 重试/复用场景下 key 继承与新建行为符合冻结规则。
+3. 任何一条 `impression/click/failure` 事件可回溯到 `requestKey + opportunityKey`。
+4. 审计系统可按 `lineageKey` 回放单请求全生命周期。
+
 ### 3.4 Module B: Schema Translation & Signal Normalization
 
 #### 3.4.1 统一 Opportunity Schema（共同语言）
@@ -1231,6 +1318,7 @@ A 层处理阶段预算拆分：
 21. Module A Fail-open / Fail-closed 异常处置矩阵说明（Mediation 范围）。
 22. Module A Context Extraction Boundary 上下文抽取边界说明（Mediation 范围）。
 23. Module A A-layer Latency Budget 时延预算与截断策略说明（Mediation 范围）。
+24. Module A Trace Initialization Contract 追踪主键初始化规则说明（Mediation 范围）。
 
 ## 5. 优化项与 SSP 过渡（Plan）
 
@@ -1399,6 +1487,14 @@ A 层处理阶段预算拆分：
    - 未来：实现对账自动化与争议回放自动化。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.2）
+
+1. 在 `3.3` 新增 Trace Initialization Contract，冻结 A 层追踪主键初始化规则。
+2. 固化主键集合（trace/request/attempt/opportunity/lineage）及主键关系约束。
+3. 新增生成优先级与 retry/reuse 继承规则，确保去重与重试链路不断链。
+4. 新增 `traceInitSnapshot` 输出合同、失败兜底与下游消费约束。
+5. 增加 trace 连续性核心指标与验收基线，并更新交付包条目。
 
 ### 2026-02-21（v3.1）
 
