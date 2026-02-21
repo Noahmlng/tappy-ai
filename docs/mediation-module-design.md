@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v2.8
+- 文档版本：v2.9
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -677,6 +677,79 @@ optional：
 3. 被阻断和不成立请求都可追溯到标准原因码。
 4. B/C/D 可直接消费合同字段，无需推断性补齐。
 
+#### 3.3.34 Fail-open / Fail-closed Matrix in A（A 层异常处置矩阵，当前版本冻结）
+
+范围边界：
+1. 仅定义 `Module A` 内部异常处置，不覆盖 `Module C/D` 的独立策略与路由逻辑。
+2. 目标是把“受控降级”变成可执行矩阵，避免线上同类异常出现不一致处理。
+
+处置目标：
+1. 高风险异常默认 fail-closed，优先控制风险扩散。
+2. 低风险或可恢复异常可 fail-open，但必须带降级标记与审计证据。
+3. 同异常、同版本、同风险分级下处置结果必须确定性一致。
+
+#### 3.3.35 处置模式与动作定义（冻结）
+
+处置模式：
+1. `fail_open`：允许请求继续，但必须走受控路径并标记降级。
+2. `fail_closed`：在 A 层终止主路径，不进入正常机会链路。
+
+动作定义：
+1. `continue_normal`：正常继续 A -> B -> C。
+2. `continue_degraded`：降级继续（限制字段、限制策略、强化审计）。
+3. `short_circuit_reuse`：短路复用/等待（用于 dedup 重复请求路径）。
+4. `block_noop`：返回受控不可投放结果（ineligible/blocked）。
+5. `block_reject`：直接拒绝请求（结构/鉴权/高风险失败）。
+
+#### 3.3.36 A 层异常处置矩阵（冻结）
+
+| 异常类型 | 典型原因码 | 默认模式 | 默认动作 | 例外条件 |
+|---|---|---|---|---|
+| 结构缺失/结构非法 | `structure_invalid` | `fail_closed` | `block_reject` | 无 |
+| 鉴权硬失败/来源封禁 | `auth_token_invalid`, `source_trust_blocked` | `fail_closed` | `block_reject` | 无 |
+| 重放高置信命中 | `auth_expired_or_replayed` | `fail_closed` | `block_reject` | 无 |
+| ingress 硬策略阻断 | `policy_blocked_at_ingress` | `fail_closed` | `block_noop` | 无 |
+| 去重命中处理中重复 | `duplicate_inflight` | `fail_open` | `short_circuit_reuse` | 无 |
+| 去重命中结果复用 | `duplicate_reused_result` | `fail_open` | `short_circuit_reuse` | 无 |
+| 语义弱信号/未知触发 | `semantic_invalid`, `no_valid_trigger` | `fail_open` | `continue_degraded` | 若来源为 `T2/T3` 升级为 `fail_closed + block_noop` |
+| 去重存储不可用 | `idempotency_store_unavailable` | `fail_open` | `continue_degraded` | 若来源为 `T2/T3` 升级为 `fail_closed + block_reject` |
+| A 层内部超时/依赖轻故障 | `ingress_internal_timeout` | `fail_open` | `continue_degraded` | 若同时命中高风险标记则升级 `fail_closed` |
+
+执行优先级（高 -> 低）：
+1. 安全与可信阻断（auth/trust/replay）
+2. 合规与硬策略阻断
+3. 去重短路路径
+4. 语义与基础设施降级放行
+5. 正常放行
+
+#### 3.3.37 输出合同与观测基线（A 层异常处置）
+
+`Module A` 增补 `aLayerDispositionSnapshot`：
+1. `dispositionMode`（fail_open/fail_closed）
+2. `dispositionAction`（continue_normal/continue_degraded/short_circuit_reuse/block_noop/block_reject）
+3. `dispositionReasonCode`
+4. `dispositionPriority`
+5. `dispositionPolicyVersion`
+6. `dispositionTimestamp`
+
+下游约束：
+1. `Module B` 仅承载处置快照，不改写处置模式与动作。
+2. `Module C/D` 必须尊重 `fail_closed` 结果，不得强行恢复正常路由。
+3. 审计层必须能按 `traceKey + dispositionPolicyVersion` 回放处置决策。
+
+核心指标：
+1. `a_fail_open_rate`
+2. `a_fail_closed_rate`
+3. `a_disposition_consistency_rate`
+4. `a_degraded_path_rate`
+5. `a_exception_to_supply_leak_rate`
+
+验收基线：
+1. 同类异常在同版本下处置一致，无随机分叉。
+2. `fail_closed` 请求不会误入 `Module D` 正常供给路径。
+3. `fail_open` 请求都带有明确降级标记与原因码。
+4. 异常处置可在分钟级检索并完整回放。
+
 ### 3.4 Module B: Schema Translation & Signal Normalization
 
 #### 3.4.1 统一 Opportunity Schema（共同语言）
@@ -965,6 +1038,7 @@ optional：
 18. Module A Idempotency / De-dup 幂等与去重规则说明（Mediation 范围）。
 19. Module A Opportunity Trigger Taxonomy 机会触发类型字典说明（Mediation 范围）。
 20. Module A Sensing Decision Output Contract 识别结果输出合同说明（Mediation 范围）。
+21. Module A Fail-open / Fail-closed 异常处置矩阵说明（Mediation 范围）。
 
 ## 5. 优化项与 SSP 过渡（Plan）
 
@@ -1133,6 +1207,14 @@ optional：
    - 未来：实现对账自动化与争议回放自动化。
 
 ## 6. 变更记录
+
+### 2026-02-21（v2.9）
+
+1. 在 `3.3` 新增 A 层异常处置矩阵（Fail-open / Fail-closed Matrix in A）。
+2. 固化处置模式与动作定义（continue/degrade/short-circuit/block），避免“受控降级”语义歧义。
+3. 新增“异常类型 -> 默认模式/动作 -> 例外条件”的统一矩阵与执行优先级。
+4. 新增 `aLayerDispositionSnapshot` 输出合同及 A->B/C/D 约束。
+5. 增加处置一致性核心指标与验收基线，并更新交付包条目。
 
 ### 2026-02-21（v2.8）
 
