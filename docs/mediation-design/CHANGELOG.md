@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.3）
+
+1. 在 `Module F` 新增幂等键生成公式（`f_dedup_v1`），冻结 `canonicalDedupKey` 结构与 `computedKey` 计算输入。
+2. 冻结幂等键优先级（`idempotencyKey > eventId > computedKey`）及冲突裁决规则。
+3. 冻结去重窗口（`billing=14d`, `diagnostics=3d`, 并发锁 `120s`）与窗口内外处理语义。
+4. 新增 F 层去重状态机（`new/inflight/accepted/duplicate/rejected/expired`）与 ACK 映射。
+5. 更新 ACK 原因码与 MVP 交付项，将幂等与去重基线纳入当前版本交付。
+
 ### 2026-02-21（v4.2）
 
 1. 在 `Module F` 新增事件类型 canonical 字典，覆盖 `opportunity_created/auction_started/ad_filled/impression/click/interaction/postback/error` 八类事件。

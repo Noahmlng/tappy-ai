@@ -74,8 +74,10 @@ envelope 级约束：
 6. `attemptKey`
 7. `opportunityKey`
 8. `responseReference`（下述例外场景除外）
-9. `idempotencyKey`
-10. `eventVersion`
+9. `eventVersion`
+
+optional：
+1. `idempotencyKey`（若提供则作为最高优先级幂等键）
 
 例外场景：
 1. `opportunity_created` / `auction_started` 允许无 `responseReference`，但必须有 `opportunityKey + requestKey + attemptKey`。
@@ -94,6 +96,8 @@ envelope 级约束：
 1. `eventType` 未知 -> `rejected`，原因码 `f_event_type_unsupported`
 2. 必填字段缺失 -> `rejected`，原因码 `f_event_missing_required`
 3. 时间戳非法 -> `rejected`，原因码 `f_event_time_invalid`
+4. `idempotencyKey` 非法 -> `accepted`（降级使用低优先级键），原因码 `f_idempotency_key_invalid_fallback`
+5. `eventId` 非法且 `computedKey` 无法生成 -> `rejected`，原因码 `f_event_id_invalid_no_fallback`
 
 #### 3.8.6 每条事件 ACK 合同（P0，MVP 冻结）
 
@@ -117,6 +121,9 @@ ACK 约束：
 1. `accepted`：事件进入标准处理轨道。
 2. `duplicate`：事件被去重，不重复进入计费/归因轨道。
 3. `rejected`：事件未进入标准轨道；仅 `retryable=true` 的项允许客户端重试。
+4. `duplicate` 场景标准原因码：
+   - `f_dedup_inflight_duplicate`
+   - `f_dedup_committed_duplicate`
 
 #### 3.8.7 部分成功语义（P0）
 
@@ -152,35 +159,35 @@ Canonical 字典（最小）：
 1. `opportunity_created`
    - 定义：机会对象在 Mediation 主链创建完成。
    - 层级：`diagnostics`
-   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `placementKey`, `idempotencyKey`
+   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `placementKey`
 2. `auction_started`
    - 定义：供给编排开始执行（首个 route step 启动）。
    - 层级：`diagnostics`
-   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `auctionChannel`, `idempotencyKey`
+   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `auctionChannel`
 3. `ad_filled`
    - 定义：本次机会已形成可交付填充结果（不代表已计费）。
    - 层级：`diagnostics`
-   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `responseReference`, `creativeId`, `idempotencyKey`
+   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `responseReference`, `creativeId`
 4. `impression`
    - 定义：渲染成功后产生的有效曝光事实。
    - 层级：`billing`
-   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `responseReference`, `renderAttemptId`, `creativeId`, `idempotencyKey`
+   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `responseReference`, `renderAttemptId`, `creativeId`
 5. `click`
    - 定义：有效点击事实（同一渲染尝试下可归因）。
    - 层级：`billing`
-   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `responseReference`, `renderAttemptId`, `clickTarget`, `idempotencyKey`
+   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `responseReference`, `renderAttemptId`, `clickTarget`
 6. `interaction`
    - 定义：非计费互动行为（如展开、停留、关闭）。
    - 层级：`diagnostics`
-   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `responseReference`, `renderAttemptId`, `interactionType`, `idempotencyKey`
+   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `responseReference`, `renderAttemptId`, `interactionType`
 7. `postback`
    - 定义：外部网络/归因回执事件（用于计费回执与结果归因）。
    - 层级：`billing`
-   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `responseReference`, `postbackType`, `postbackStatus`, `idempotencyKey`
+   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `responseReference`, `postbackType`, `postbackStatus`
 8. `error`
    - 定义：链路异常事实（客户端或服务端阶段错误）。
    - 层级：`diagnostics`
-   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `errorStage`, `errorCode`, `idempotencyKey`
+   - required：`eventId`, `eventType`, `eventAt`, `traceKey`, `requestKey`, `attemptKey`, `opportunityKey`, `errorStage`, `errorCode`
 
 分层约束：
 1. `billing` 事件必须携带 `responseReference`。
@@ -213,3 +220,95 @@ Canonical 字典（最小）：
 3. 任一事件都可校验其 required 字段完整性并给出稳定 ACK 结果。
 4. `unknown eventType` 被稳定拒绝，`unknown 子枚举` 被稳定归一。
 5. 任一分层或归一冲突可通过 `batchId + eventId + ackReasonCode` 分钟级定位。
+
+#### 3.8.12 幂等键生成公式（P0，MVP 冻结）
+
+F 层为每条事件解析 `canonicalDedupKey`，用于去重判定。
+
+生成步骤（固定）：
+1. 读取客户端 `idempotencyKey`（若存在且合法）。
+2. 读取客户端 `eventId`（若存在且合法）。
+3. 生成 `computedKey`（当 1/2 不可用时作为回退）：
+   - `computedKey = sha256(computedKeyInputV1)`
+   - `computedKeyInputV1 = appId + \"|\" + eventType + \"|\" + requestKey + \"|\" + attemptKey + \"|\" + opportunityKey + \"|\" + responseReferenceOrNA + \"|\" + renderAttemptIdOrNA + \"|\" + semanticPayloadDigest`
+4. 统一输出：
+   - `canonicalDedupKey = \"f_dedup_v1:\" + keySource + \":\" + keyValue`
+   - `keySource in {client_idempotency, client_event_id, computed}`
+
+`semanticPayloadDigest`（按事件类型）：
+1. `opportunity_created`：`placementKey`
+2. `auction_started`：`auctionChannel`
+3. `ad_filled`：`creativeId`
+4. `impression`：`creativeId + renderAttemptId`
+5. `click`：`renderAttemptId + clickTarget`
+6. `interaction`：`renderAttemptId + interactionType`
+7. `postback`：`postbackType + postbackStatus`
+8. `error`：`errorStage + errorCode`
+
+#### 3.8.13 幂等优先级（client eventId vs computed key，P0）
+
+优先级（高 -> 低）：
+1. 客户端 `idempotencyKey`
+2. 客户端 `eventId`
+3. 服务端 `computedKey`
+
+裁决规则：
+1. `idempotencyKey` 合法时，必须作为最终 dedup 键（不回退到低优先级）。
+2. 无 `idempotencyKey` 且 `eventId` 合法时，使用 `eventId`。
+3. 两者缺失/非法时，使用 `computedKey`。
+4. 若高优先级键对应历史指纹与当前 `computedKey` 冲突：
+   - `ackStatus=rejected`
+   - `ackReasonCode=f_dedup_payload_conflict`
+   - `retryable=false`
+
+一致性约束：
+1. 同请求同版本下，键源选择必须确定性一致。
+2. 去重判定必须记录 `keySource + canonicalDedupKey + dedupFingerprintVersion(f_dedup_v1)`。
+
+#### 3.8.14 去重窗口（P0，MVP 冻结）
+
+窗口定义（按层级）：
+1. `billing` 事件去重窗口：`14d`
+2. `diagnostics` 事件去重窗口：`3d`
+3. 并发锁窗口（全事件）：`120s`
+
+窗口规则：
+1. 并发锁窗口内同键重复提交 -> `duplicate`（`f_dedup_inflight_duplicate`）。
+2. 去重窗口内同键重放 -> `duplicate`（`f_dedup_committed_duplicate`）。
+3. `receivedAt - eventAt` 超出对应层级窗口：
+   - `ackStatus=rejected`
+   - `ackReasonCode=f_event_stale_outside_dedup_window`
+   - `retryable=false`
+
+#### 3.8.15 去重状态机（P0，MVP 冻结）
+
+状态集合：
+1. `new`
+2. `inflight_locked`
+3. `accepted_committed`
+4. `duplicate_inflight`
+5. `duplicate_committed`
+6. `rejected_conflict`
+7. `expired`
+
+状态迁移（最小）：
+1. `new -> inflight_locked`（首次受理）
+2. `inflight_locked -> accepted_committed`（校验通过并写入事实流）
+3. `inflight_locked -> rejected_conflict`（键冲突/载荷冲突）
+4. `inflight_locked -> duplicate_inflight`（并发重复）
+5. `accepted_committed -> duplicate_committed`（窗口内重放）
+6. `accepted_committed -> expired`（超过去重窗口）
+7. `expired -> new`（作为新周期事件重新受理）
+
+ACK 映射：
+1. `accepted_committed` -> `ackStatus=accepted`
+2. `duplicate_inflight/duplicate_committed` -> `ackStatus=duplicate`
+3. `rejected_conflict` -> `ackStatus=rejected`
+
+#### 3.8.16 MVP 验收基线（幂等键与去重规则）
+
+1. 同一事件重复上报只会有一次 `accepted`，其余为 `duplicate`。
+2. 并发重复提交不会导致双重计费或双重归因写入。
+3. `idempotencyKey/eventId/computedKey` 选键优先级在同请求同版本下可复现。
+4. 去重窗口边界行为稳定（窗口内重复必去重，超窗按规则拒绝或新周期处理）。
+5. 任一去重冲突可通过 `batchId + eventId + canonicalDedupKey + ackReasonCode` 分钟级定位。
