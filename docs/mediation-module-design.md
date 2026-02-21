@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.8
+- 文档版本：v3.9
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -527,6 +527,70 @@ MVP 验收基线：
 4. `reject` 冲突不会进入 C/D 正常主链路。
 5. 每次冲突都可通过 `traceKey + semanticSlot + reasonCode` 快速定位。
 
+#### 3.4.18 B 输出合同（MVP 冻结）
+
+`Module B -> Module C` 标准输出对象冻结为 `bNormalizedOpportunityLite`。
+
+required：
+1. `opportunityKey`
+2. `schemaVersion`
+3. `state`（保持 `received`，不在 B 层推进状态机终态）
+4. 六块骨架最小对象：
+   - `RequestMeta`
+   - `PlacementMeta`
+   - `UserContext`
+   - `OpportunityContext`
+   - `PolicyContext`
+   - `TraceContext`
+5. `normalizationSummary`
+   - `normalizedAt`
+   - `mappingProfileVersion`
+   - `enumDictVersion`
+   - `conflictPolicyVersion`
+6. `mappingAuditSnapshotLite`
+
+optional：
+1. `mappingWarnings`（仅告警，不改变主语义）
+2. `extensions`（非核心语义扩展，禁止影响策略门禁主判断）
+
+输出约束：
+1. B 输出只能包含 canonical 值，不允许 raw 值直通到 C/D。
+2. 若 required 语义位点无法产出 canonical 值，B 必须走 `reject`，不得输出残缺对象。
+
+#### 3.4.19 映射审计快照（`mappingAuditSnapshotLite`，MVP）
+
+审计单元：
+1. 以 `semanticSlot` 为最小粒度，每个被处理位点输出一条审计记录。
+
+每条审计记录必填项（冻结）：
+1. `semanticSlot`
+2. `raw`（原值，若多来源冲突可为数组）
+3. `normalized`（归一值）
+4. `conflictAction`（`override` / `merge` / `reject` / `none`）
+5. `ruleVersion`（映射或冲突裁决生效规则版本）
+
+建议必填项（当前版本默认开启）：
+1. `reasonCode`
+2. `source`（appExplicit/placementConfig/defaultPolicy）
+3. `mappingAction`（exact_match/alias_map/unknown_fallback/value_corrected）
+4. `auditTimestamp`
+
+快照级必填元信息：
+1. `traceKey`
+2. `requestKey`
+3. `bInputContractVersion`
+4. `mappingProfileVersion`
+5. `enumDictVersion`
+6. `conflictPolicyVersion`
+
+#### 3.4.20 MVP 验收基线（B 输出合同 + mappingAudit）
+
+1. C 层消费 B 输出时无需补字段或猜字段。
+2. 每个处理过的 `semanticSlot` 都有审计记录，且包含 `raw/normalized/conflictAction/ruleVersion`。
+3. 同请求在同版本下 `bNormalizedOpportunityLite` 与 `mappingAuditSnapshotLite` 均可复现。
+4. 任一策略或路由结果都可回溯到具体审计记录和规则版本。
+5. B 输出缺失 `mappingAuditSnapshotLite` 时视为不合格输出，不得进入主链路。
+
 ### 3.5 Module C: Policy & Safety Governor
 
 #### 3.5.1 职责边界
@@ -738,7 +802,7 @@ MVP 验收基线：
 
 1. 模块化主链框架（A-H）与边界说明。
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
-3. 外部输入映射与冲突优先级规则（含 B 输入合同 + Canonical 枚举字典 + 字段级冲突裁决引擎）。
+3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线。
 5. Delivery / Event Schema 分离与 `responseReference` 关联口径。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
@@ -799,6 +863,13 @@ MVP 验收基线：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.9）
+
+1. 新增 `3.4.18`，冻结 Module B 输出合同 `bNormalizedOpportunityLite` 的最小字段集合。
+2. 新增 `3.4.19`，冻结 `mappingAuditSnapshotLite` 审计结构与必填项（含 `raw/normalized/conflictAction/ruleVersion`）。
+3. 新增 `3.4.20`，补充 B 输出合同与映射审计快照的 MVP 验收基线。
+4. 更新第 4 章交付项，纳入 B 输出合同与 mappingAudit 交付口径。
 
 ### 2026-02-21（v3.8）
 
