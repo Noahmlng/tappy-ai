@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.10）
+
+1. 在 `Module G` 新增回放执行模式定义，冻结 `snapshot_replay` 与 `rule_recompute` 语义边界。
+2. 新增版本钉住策略，明确重放所需关键版本锚点与缺失/不一致处置。
+3. 新增差异判定对象与原因码体系（`exact_match/semantically_equivalent/diverged/not_comparable`）。
+4. 在 replay 输出合同中补充确定性元信息（`replayRunId/replayExecutionMode/determinismStatus`）。
+5. 新增回放确定性验收基线，并将该规则纳入 MVP 交付项。
+
 ### 2026-02-21（v4.9）
 
 1. 在 `Module G` 新增 `replay(opportunity_id | time_range)` 接口合同，冻结两类查询模式与参数边界。

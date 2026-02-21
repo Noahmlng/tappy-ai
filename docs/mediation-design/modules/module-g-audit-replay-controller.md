@@ -283,6 +283,9 @@ required：
    - `returnedCount`
    - `hasMore`
    - `nextCursorOrNA`
+   - `replayRunId`
+   - `replayExecutionMode`（`snapshot_replay` / `rule_recompute`）
+   - `determinismStatus`（`deterministic` / `non_deterministic` / `not_comparable`）
 3. `items[]`
 4. `emptyResult`
 5. `generatedAt`
@@ -346,3 +349,74 @@ required：
 3. 分页与排序结果稳定，不出现跨页重复或漏项。
 4. 空结果语义清晰，不与请求错误语义混淆。
 5. 任一回放请求可通过 `queryEcho + replayContractVersion + generatedAt` 分钟级复现。
+
+#### 3.9.20 回放执行模式（快照重放 vs 规则重算，P0，MVP 冻结）
+
+`replayExecutionMode`：
+1. `snapshot_replay`：以归档快照为准，不重新运行路由/策略/映射逻辑。
+2. `rule_recompute`：基于指定版本重算规则，再与历史快照做差异比较。
+
+MVP 规则：
+1. dispute 场景默认且强制 `snapshot_replay`。
+2. `rule_recompute` 仅用于内部诊断，不作为对账主口径。
+3. 未显式指定时默认 `snapshot_replay`。
+
+#### 3.9.21 版本钉住策略（P0，MVP 冻结）
+
+`rule_recompute` 模式下必须提供或可解析以下版本锚点：
+1. `schemaVersion`
+2. `mappingRuleVersion`
+3. `routingPolicyVersion`
+4. `policyRuleVersion`
+5. `deliveryRuleVersion`
+6. `eventContractVersion`
+7. `dedupFingerprintVersion`
+
+钉住规则：
+1. 优先使用 AuditRecord/F 输出记录中的历史版本锚点。
+2. 若请求显式传入版本锚点，则必须与历史锚点一致；不一致时拒绝。
+3. 任一关键锚点缺失时：
+   - `snapshot_replay`：允许继续并标记 `determinismStatus=not_comparable`
+   - `rule_recompute`：拒绝，原因码 `g_replay_missing_version_anchor`
+
+#### 3.9.22 差异判定与原因码（P0，MVP 冻结）
+
+差异判定对象：`replayDiffSummaryLite`
+
+required：
+1. `diffStatus`（`exact_match` / `semantically_equivalent` / `diverged` / `not_comparable`）
+2. `diffReasonCodes[]`
+3. `fieldDiffCount`
+4. `comparedAt`
+
+判定规则（最小）：
+1. `exact_match`：关键字段逐项一致（winner、terminal status、billable facts、reason codes）。
+2. `semantically_equivalent`：字段有差异但不影响计费/终态语义（如排序或非关键摘要字段）。
+3. `diverged`：关键字段差异，影响终态/计费/归因结果。
+4. `not_comparable`：缺关键锚点或缺必要快照，无法比较。
+
+标准原因码（最小集）：
+1. `g_replay_diff_none`
+2. `g_replay_diff_non_key_field_changed`
+3. `g_replay_diff_winner_changed`
+4. `g_replay_diff_terminal_status_changed`
+5. `g_replay_diff_billable_fact_changed`
+6. `g_replay_diff_reason_code_changed`
+7. `g_replay_diff_missing_snapshot`
+8. `g_replay_diff_version_mismatch`
+9. `g_replay_diff_not_comparable`
+
+#### 3.9.23 确定性约束与输出语义（P0）
+
+1. 同一 `queryEcho + replayExecutionMode + pinnedVersions` 重放结果必须一致。
+2. `snapshot_replay` 模式下，`determinismStatus` 只能为 `deterministic` 或 `not_comparable`。
+3. `rule_recompute` 模式下，必须返回 `replayDiffSummaryLite`。
+4. `diffStatus=diverged` 时，必须附至少一个关键原因码（如 `*_winner_changed` / `*_terminal_status_changed` / `*_billable_fact_changed`）。
+5. 任一 non-deterministic 结果必须进入审计告警轨道（不阻塞请求返回）。
+
+#### 3.9.24 MVP 验收基线（回放确定性）
+
+1. 同一 case 多次 `snapshot_replay` 输出一致，不出现漂移。
+2. `rule_recompute` 在版本钉住完整时可稳定产出 diff 结论。
+3. 所有差异结果都可映射到标准 `diffReasonCodes`，便于 dispute 解释。
+4. 任一不一致可通过 `replayRunId + queryEcho + diffReasonCodes` 分钟级定位。

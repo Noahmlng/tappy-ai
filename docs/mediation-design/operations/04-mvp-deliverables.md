@@ -12,4 +12,4 @@
 8. 配置与版本治理基线（三线分离：schema/route/placement）。
 9. 最小接入指南 + 最小链路清单 + 联调检查清单。
 10. Module A MVP 裁剪结论（必要模块已实现边界 + 延后模块索引）。
-11. Module F 输入合同（`POST /events` 批量 envelope + 单事件必填字段 + 逐条 ACK + 部分成功语义）、事件类型字典分层（`billing/diagnostics` + unknown 处理）、幂等去重基线（幂等键公式 + 优先级 + 去重窗口 + 状态机）、终态闭环规则（`responseReference + renderAttemptId`、超时补写、`impression/failure` 互斥优先级）、归因计费映射合同（`billableFacts/attributionFacts` 映射 + 单尝试唯一计费 + 冲突裁决）、F 输出合同（`fToGArchiveRecordLite` 字段 + 状态 + 版本锚点 + 关联键）、G append 接口合同（请求体 + 幂等键 + 异步 ACK + 可重试原因码 + AuditRecord 字段级 required 矩阵）与 G replay 合同（查询参数 + 过滤器 + `summary/full` + 分页排序 + 空结果语义）。
+11. Module F 输入合同（`POST /events` 批量 envelope + 单事件必填字段 + 逐条 ACK + 部分成功语义）、事件类型字典分层（`billing/diagnostics` + unknown 处理）、幂等去重基线（幂等键公式 + 优先级 + 去重窗口 + 状态机）、终态闭环规则（`responseReference + renderAttemptId`、超时补写、`impression/failure` 互斥优先级）、归因计费映射合同（`billableFacts/attributionFacts` 映射 + 单尝试唯一计费 + 冲突裁决）、F 输出合同（`fToGArchiveRecordLite` 字段 + 状态 + 版本锚点 + 关联键）、G append 接口合同（请求体 + 幂等键 + 异步 ACK + 可重试原因码 + AuditRecord 字段级 required 矩阵）与 G replay 合同（查询参数 + 过滤器 + `summary/full` + 分页排序 + 空结果语义 + 回放确定性规则）。
