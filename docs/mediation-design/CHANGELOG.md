@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.25）
+
+1. 在 `Module B` 新增 OpenRTB 投影合同，冻结 `openrtbProjectionLite` 与独立版本线 `openrtbProjectionVersion`。
+2. 冻结六块 Schema 到 `imp/app/device/user/regs/ext` 的最小字段映射矩阵，并补充 `app.id/device.id` 的来源回退规则。
+3. 新增 `mapped/partial/unmapped` 投影结论与动作约束，明确 `unmapped` 请求必须在 B 层拒绝。
+4. 新增 `projectionAuditSnapshotLite`，冻结目标路径覆盖度、投影结论与原因码审计字段。
+5. 更新 MVP 交付项，将 OpenRTB 投影合同与投影审计纳入当前版本交付口径。
+
 ### 2026-02-21（v4.24）
 
 1. 在 `Module A` 冻结 A 层去重窗口规则，明确 `dedupWindowSec=120`、去重键优先级与 `aDedupSnapshotLite` 最小输出约束。

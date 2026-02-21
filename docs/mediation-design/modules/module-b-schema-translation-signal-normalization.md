@@ -285,8 +285,12 @@ required：
    - `mappingProfileVersion`
    - `enumDictVersion`
    - `conflictPolicyVersion`
+   - `openrtbProjectionVersion`
 6. `mappingAuditSnapshotLite`
 7. 六块对象均满足 `3.4.21` 的 required 矩阵
+8. `openrtbProjectionLite`
+9. `openrtbProjectionVersion`
+10. `projectionAuditSnapshotLite`
 
 optional：
 1. `mappingWarnings`（仅告警，不改变主语义）
@@ -295,6 +299,8 @@ optional：
 输出约束：
 1. B 输出只能包含 canonical 值，不允许 raw 值直通到 C/D。
 2. 若 required 语义位点无法产出 canonical 值，B 必须走 `reject`，不得输出残缺对象。
+3. `openrtbProjectionLite` 只允许输出 `imp/app/device/user/regs/ext` 六类对象，不得引入非标准主路径字段。
+4. exchange-specific 私有字段必须进入对应对象 `ext`，不得污染 canonical 主语义字段。
 
 #### 3.4.19 映射审计快照（`mappingAuditSnapshotLite`，MVP）
 
@@ -357,3 +363,101 @@ optional：
 4. 任一策略/路由结果都能反查到六块 required 字段快照。
 5. 六块矩阵变更必须伴随版本发布（`schemaVersion` 或对应策略版本）并可回滚。
 
+#### 3.4.23 OpenRTB 投影合同（P0，MVP 冻结）
+
+当前版本新增 `openrtbProjectionLite`，作为 `bNormalizedOpportunityLite` 的可交易投影对象。
+
+投影目标对象（最小集）：
+1. `imp[]`
+2. `app`
+3. `device`
+4. `user`
+5. `regs`
+6. `ext`
+
+版本锚点：
+1. `openrtbProjectionVersion`（独立版本线，不与 `schemaVersion` 绑死）。
+2. `openrtbProjectionVersion` 必须同时写入 `normalizationSummary` 与 `projectionAuditSnapshotLite`。
+
+合同约束：
+1. 投影只做字段映射与语义承载，不在 B 层做竞价/收益决策。
+2. 标准字段优先进入 OpenRTB 标准路径；非标准字段必须进入对应对象的 `ext`。
+3. 投影结果必须可由 `traceKey + openrtbProjectionVersion` 唯一回放。
+
+#### 3.4.24 六块 Schema -> OpenRTB 最小映射矩阵（P0，MVP 冻结）
+
+| 六块字段（canonical） | OpenRTB 目标路径 | 处置 |
+|---|---|---|
+| `RequestMeta.requestKey` | `BidRequest.id` | `required`，缺失 -> `unmapped` |
+| `RequestMeta.requestTimestamp` | `BidRequest.ext.mediation.request_ts` | `optional`，缺失 -> `partial` |
+| `RequestMeta.channelType` | `BidRequest.app.ext.channel_type` | `optional`，缺失 -> `partial` |
+| `PlacementMeta.placementKey` | `BidRequest.imp[0].id` | `required`，缺失 -> `unmapped` |
+| `PlacementMeta.placementSurface` | `BidRequest.imp[0].tagid` | `required`，缺失 -> `unmapped` |
+| `PlacementMeta.placementType` | `BidRequest.imp[0].ext.placement_type` | `required`，缺失 -> `unmapped` |
+| `UserContext.sessionKey` | `BidRequest.user.id`（哈希后） | `required`，缺失且无 `device.id` -> `unmapped` |
+| `UserContext.actorType` | `BidRequest.user.ext.actor_type` | `optional`，缺失 -> `partial` |
+| `OpportunityContext.triggerDecision` | `BidRequest.imp[0].ext.trigger_decision` | `required`，缺失 -> `unmapped` |
+| `OpportunityContext.decisionOutcome` | `BidRequest.imp[0].ext.decision_outcome` | `required`，缺失 -> `unmapped` |
+| `OpportunityContext.hitType` | `BidRequest.imp[0].ext.hit_type` | `required`，缺失 -> `unmapped` |
+| `PolicyContext.consentScope` | `BidRequest.regs.ext.consent_scope` | `required`，缺失 -> `unmapped` |
+| `PolicyContext.policyGateHint` | `BidRequest.regs.ext.policy_gate_hint` | `optional`，缺失 -> `partial` |
+| `PolicyContext.restrictedCategoryFlags` | `BidRequest.regs.ext.restricted_category_flags` | `required`（可空数组） |
+| `TraceContext.traceKey` | `BidRequest.ext.trace.trace_key` | `required`，缺失 -> `unmapped` |
+| `TraceContext.requestKey` | `BidRequest.ext.trace.request_key` | `required`，缺失 -> `unmapped` |
+| `TraceContext.attemptKey` | `BidRequest.ext.trace.attempt_key` | `required`，缺失 -> `unmapped` |
+
+补充映射（非六块直出，允许 from sourceInput）：
+1. `app.id`：优先 `appExplicit.appId`，回退 `placementConfig.appId`，再回退 `defaultPolicy.appId`；仍缺失 -> `unmapped`。
+2. `device.id`：优先设备稳定键（脱敏后）；若缺失且 `user.id` 存在，则允许 `partial`。
+3. `device.ext.performance_tier`：来自端上性能信号；缺失 -> `partial`。
+
+#### 3.4.25 `mapped/partial/unmapped` 处置规则（P0，MVP 冻结）
+
+投影结论字段：
+1. `projectionDisposition`（`mapped` / `partial` / `unmapped`）
+2. `projectionReasonCode`
+
+判定规则：
+1. `mapped`：最小必需目标全部可映射（`id + imp + app.id + regs + trace`），且关键值合法。
+2. `partial`：必需目标已映射，但 optional 目标缺失/降级（如 `device.ext`、`user.ext.actor_type`）。
+3. `unmapped`：任一必需目标缺失或非法，无法形成可交易投影。
+
+动作规则：
+1. `mapped` -> `continue`，进入 C。
+2. `partial` -> `degrade`，进入 C，并强制写 `mappingWarnings`。
+3. `unmapped` -> `reject`，状态置 `error`，不进入 C 正常主链路。
+
+最小原因码：
+1. `b_proj_mapped_complete`
+2. `b_proj_partial_optional_missing`
+3. `b_proj_unmapped_required_missing`
+4. `b_proj_unmapped_invalid_value`
+
+#### 3.4.26 投影审计快照（`projectionAuditSnapshotLite`，P0，MVP 冻结）
+
+required：
+1. `traceKey`
+2. `requestKey`
+3. `attemptKey`
+4. `openrtbProjectionVersion`
+5. `projectionDisposition`
+6. `projectionReasonCode`
+7. `targetCoverage[]`
+   - `openrtbPath`
+   - `mappedFrom`
+   - `coverageStatus`（`mapped` / `partial` / `unmapped`）
+   - `reasonCode`
+8. `generatedAt`
+
+约束：
+1. 任一 `required` 目标路径都必须在 `targetCoverage[]` 出现，禁止隐式缺省。
+2. `projectionDisposition=unmapped` 时，必须至少有一条 `coverageStatus=unmapped` 且指向 required 目标路径。
+3. 快照不得写入明文敏感 raw 值，只记录字段路径与处置结果。
+
+#### 3.4.27 MVP 验收基线（OpenRTB 投影合同）
+
+1. 每个 `bNormalizedOpportunityLite` 都可生成且仅生成一份 `openrtbProjectionLite`。
+2. 六块 required 字段可稳定投影到 `imp/app/device/user/regs/ext` 最小目标路径。
+3. 同请求在同 `openrtbProjectionVersion` 下，`projectionDisposition` 与 `projectionReasonCode` 可复现。
+4. `unmapped` 请求不会进入 C/D 正常主链路。
+5. 任一交易争议可通过 `traceKey + openrtbProjectionVersion + projectionAuditSnapshotLite` 分钟级定位。
