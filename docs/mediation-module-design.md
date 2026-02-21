@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.23
+- 文档版本：v3.24
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -1558,6 +1558,112 @@ required：
 2. `responseReference`（必填）。
 3. 可被下游事件与审计直接关联的最小返回快照。
 
+#### 3.7.4 compose 输入合同（P0，MVP 冻结）
+
+`Module E` 入口函数冻结为：
+1. `compose(auction_result, placement_spec, device_capabilities) -> render_plan`
+2. 对应输入对象冻结为 `eComposeInputLite`
+
+`eComposeInputLite` required：
+1. `auctionResultLite`（来自 `dToEOutputLite`）
+   - `opportunityKey`
+   - `traceKey`
+   - `requestKey`
+   - `attemptKey`
+   - `hasCandidate`
+   - `candidateCount`
+   - `normalizedCandidates`
+   - `routeConclusion`
+   - `routeAuditSnapshotLite`
+   - `stateUpdate`
+2. `placementSpecLite`
+   - `placementKey`
+   - `placementType`
+   - `placementSurface`
+   - `allowedRenderModes`（`native_card` / `webview` / `mraid_container` / `video_vast_container`）
+   - `maxRenderCount`
+   - `uiConstraintProfile`
+   - `disclosurePolicy`
+3. `deviceCapabilitiesLite`
+   - `platformType`
+   - `sdkVersion`
+   - `supportedRenderModes`
+   - `webviewSupported`
+   - `mraidSupported`
+   - `videoVastSupported`
+   - `maxRenderSlotCount`
+4. `composeContextLite`
+   - `composeRequestAt`
+   - `composeMode`（`sync_delivery`）
+
+optional：
+1. `locale`
+2. `timezone`
+3. `sdkHints`
+4. `extensions`
+
+#### 3.7.5 缺失字段处置（compose 输入，MVP）
+
+缺失处置动作仅允许：`continue` / `degrade` / `reject`。
+
+1. `auctionResultLite` required 缺失：
+   - 动作：`reject`（E 不做补洞）。
+   - 原因码：`e_compose_missing_auction_required`。
+2. `placementSpecLite` required 缺失：
+   - 动作：`reject`。
+   - 原因码：`e_compose_missing_placement_required`。
+3. `deviceCapabilitiesLite` required 缺失：
+   - 动作：`degrade` 到 `safe-default-capabilities`（仅允许 `native_card` 路径）；若 placement 不支持则 `reject`。
+   - 原因码：`e_compose_missing_device_capabilities`。
+4. optional 缺失：
+   - 动作：`continue`（使用默认值并记录 warning）。
+   - 原因码：`e_compose_optional_default_applied`。
+
+一致性约束：
+1. 同请求同版本下，缺失处置动作必须一致。
+2. E 不允许静默补齐 `auctionResultLite/placementSpecLite` 的 required 字段。
+
+#### 3.7.6 非法值处置（compose 输入，MVP）
+
+1. 结构非法（关键对象非对象或空对象）：
+   - 动作：`reject`。
+   - 原因码：`e_compose_invalid_structure`。
+2. 枚举非法（`allowedRenderModes/supportedRenderModes` 含未知值）：
+   - 动作：`degrade`（过滤非法值后继续；若过滤后为空则 `reject`）。
+   - 原因码：`e_compose_invalid_render_mode`。
+3. 数值非法（`maxRenderCount <= 0` 或 `maxRenderSlotCount <= 0`）：
+   - 动作：`degrade` 到默认值 `1`。
+   - 原因码：`e_compose_invalid_numeric_corrected`。
+4. 输入语义冲突（`hasCandidate=true` 但候选为空等）：
+   - 动作：`reject`。
+   - 原因码：`e_compose_inconsistent_auction_result`。
+
+审计要求：
+1. 必须记录 `traceKey`、字段路径、原值、处置动作、原因码、规则版本。
+
+#### 3.7.7 版本锚点（compose 输入，MVP 冻结）
+
+`eComposeInputLite` 必须携带可定位版本：
+1. `eComposeInputContractVersion`
+2. `dOutputContractVersion`（来自 D 输出）
+3. `schemaVersion`
+4. `placementConfigVersion`
+5. `renderPolicyVersion`
+6. `deviceCapabilityProfileVersion`
+7. `routingPolicyVersion`（来自上游 route 结论）
+
+版本约束：
+1. 任一关键版本缺失 -> `reject`，原因码 `e_compose_invalid_version_anchor`。
+2. 同请求的 compose 决策必须可由上述版本集合完全复现。
+
+#### 3.7.8 MVP 验收基线（compose 输入合同）
+
+1. E 层对 `auction_result/placement_spec/device_capabilities` 的输入边界可判定、可复现。
+2. 任一缺失或非法输入都能稳定映射到标准动作与原因码。
+3. 输入版本锚点完整时，compose 前置判断结果在同请求同版本下一致。
+4. 输入校验失败不会污染 `Delivery/Event` 口径。
+5. 任一 compose 输入失败可通过 `traceKey + reasonCode` 分钟级定位。
+
 ### 3.8 Module F: Event & Attribution Processor
 
 #### 3.8.1 事件合同（当前最小集）
@@ -1692,7 +1798,7 @@ required：
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
 3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照 + D 输入合同 + Adapter 注册与能力声明 + request adapt 子合同 + candidate normalize 子合同 + error normalize 体系）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线（含 Route Plan 触发/裁决/短路口径 + D 输出合同 + 路由审计快照）。
-5. Delivery / Event Schema 分离与 `responseReference` 关联口径。
+5. Delivery / Event Schema 分离与 `responseReference` 关联口径（含 E 层 compose 输入合同）。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
 7. 可观测与审计最小模型（单机会对象 + 四段决策点）。
 8. 配置与版本治理基线（三线分离：schema/route/placement）。
@@ -1751,6 +1857,15 @@ required：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.24）
+
+1. 新增 `3.7.4`，冻结 `compose(auction_result, placement_spec, device_capabilities)` 的输入合同（`eComposeInputLite`）。
+2. 新增 `3.7.5`，明确 compose 输入缺失字段处置动作与原因码。
+3. 新增 `3.7.6`，明确 compose 输入非法值处置与语义冲突处置。
+4. 新增 `3.7.7`，冻结 compose 输入版本锚点集合与版本约束。
+5. 新增 `3.7.8`，补充 compose 输入合同的 MVP 验收基线。
+6. 更新第 4 章交付项，将 E 层 compose 输入合同纳入当前版本交付口径。
 
 ### 2026-02-21（v3.23）
 
