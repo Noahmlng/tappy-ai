@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.29
+- 文档版本：v3.30
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -1557,7 +1557,7 @@ required：
 1. 返回状态：`served` / `no_fill` / `error`。
 2. `responseReference`（必填）。
 3. 可被下游事件与审计直接关联的最小返回快照。
-4. `render_plan` 详细字段合同见 `3.7.9` ~ `3.7.31`（P0 冻结）。
+4. `render_plan` 详细字段合同见 `3.7.9` ~ `3.7.36`（P0 冻结）。
 
 #### 3.7.4 compose 输入合同（P0，MVP 冻结）
 
@@ -1710,6 +1710,7 @@ optional：
     - `consumptionReasonCode`
 15. `renderCapabilityGateSnapshotLite`（结构见 `3.7.20`）
 16. `eValidationSnapshotLite`（结构见 `3.7.30`）
+17. `eErrorDegradeDecisionSnapshotLite`（结构见 `3.7.35`）
 
 optional：
 1. `fallbackReasonCode`
@@ -2135,6 +2136,124 @@ UI 安全边界规则：
 4. 同请求同版本下，验证结果与最终 Delivery 状态一致且可复现。
 5. 任一拦截可通过 `traceKey + responseReference + finalValidationReasonCode` 分钟级定位。
 
+#### 3.7.32 E 层标准错误码体系（P0，MVP 冻结）
+
+E 层最终失败语义只允许两类终态：`no_fill` 与 `error`。
+
+标准原因码前缀：
+1. `e_nf_*`：`no_fill`（可预期无可交付结果）。
+2. `e_er_*`：`error`（系统/合同/运行异常）。
+
+最小原因码集合：
+1. `no_fill`：
+   - `e_nf_no_candidate_input`
+   - `e_nf_all_candidate_rejected`
+   - `e_nf_capability_gate_rejected`
+   - `e_nf_policy_blocked`
+   - `e_nf_disclosure_blocked`
+   - `e_nf_frequency_capped`
+2. `error`：
+   - `e_er_invalid_compose_input`
+   - `e_er_invalid_version_anchor`
+   - `e_er_tracking_contract_broken`
+   - `e_er_compose_runtime_failure`
+   - `e_er_compose_timeout`
+   - `e_er_unknown`
+
+阶段原因码到标准原因码映射（最小）：
+1. `e_no_candidate_input` -> `e_nf_no_candidate_input`
+2. `e_candidate_all_rejected` / `e_material_all_rejected` -> `e_nf_all_candidate_rejected`
+3. `e_gate_all_modes_rejected` -> `e_nf_capability_gate_rejected`
+4. `e_policy_hard_blocked` / `e_policy_sensitive_scene_blocked` -> `e_nf_policy_blocked`
+5. `e_disclosure_all_rejected` -> `e_nf_disclosure_blocked`
+6. `e_ui_frequency_hard_cap` -> `e_nf_frequency_capped`
+7. `e_compose_invalid_structure` / `e_compose_inconsistent_auction_result` -> `e_er_invalid_compose_input`
+8. `e_compose_invalid_version_anchor` -> `e_er_invalid_version_anchor`
+9. `e_tracking_injection_missing` -> `e_er_tracking_contract_broken`
+10. `e_render_compose_error` -> `e_er_compose_runtime_failure`
+11. `e_render_terminal_missing_timeout` -> `e_er_compose_timeout`
+
+#### 3.7.33 no_fill vs error 判定规则（P0）
+
+判定顺序（固定）：
+1. 先判定 `error`：
+   - 输入合同/版本锚点无效
+   - 追踪注入合同破坏
+   - compose 运行异常或超时
+2. 再判定 `no_fill`：
+   - 无候选输入
+   - 候选被策略/素材/disclosure/能力门禁过滤完
+   - 频控或敏感场景导致无可投放结果
+3. 均不命中时：
+   - 归入 `error`，原因码 `e_er_unknown`
+
+一致性约束：
+1. `deliveryStatus=no_fill` 时，最终原因码必须来自 `e_nf_*`。
+2. `deliveryStatus=error` 时，最终原因码必须来自 `e_er_*`。
+3. 同请求同版本下，`no_fill vs error` 结论必须确定性一致。
+
+#### 3.7.34 fail-open / fail-closed 动作矩阵（P0）
+
+默认策略：
+1. 主链路默认 `fail-open`（请求不阻塞，返回可消费终态）。
+2. 合规/合同完整性红线采用 `fail-closed`（禁止继续渲染）。
+
+动作矩阵（最小）：
+1. 单候选素材问题：
+   - 模式：`fail-open`
+   - 动作：`drop_candidate_and_continue`
+   - 终态：视剩余候选决定 `served/no_fill`
+2. 能力门禁不支持：
+   - 模式：`fail-open`
+   - 动作：`degrade_mode_chain`
+   - 终态：命中可用模式则 `served`，否则 `no_fill`
+3. policy/disclosure/敏感场景硬拦截：
+   - 模式：`fail-closed`（对广告渲染）
+   - 动作：`block_render`
+   - 终态：`no_fill`
+4. 输入合同/版本锚点错误：
+   - 模式：`fail-closed`
+   - 动作：`terminal_error`
+   - 终态：`error`
+5. compose 运行时异常/超时：
+   - 模式：`fail-open`（对主链路）+ `fail-closed`（对当前渲染尝试）
+   - 动作：`return_error_safe_payload`
+   - 终态：`error`
+
+矩阵约束：
+1. `fail-open` 不得输出非法可渲染 payload。
+2. `fail-closed` 必须附可审计原因码与规则版本。
+
+#### 3.7.35 错误与降级决策快照（`eErrorDegradeDecisionSnapshotLite`，P0 冻结）
+
+`eErrorDegradeDecisionSnapshotLite` required：
+1. `traceKeys`（`traceKey`, `requestKey`, `attemptKey`, `opportunityKey`）
+2. `finalDeliveryStatus`（`served` / `no_fill` / `error`）
+3. `finalCanonicalReasonCode`
+4. `failureClass`（`no_fill` / `error` / `none`）
+5. `failStrategy`（`fail_open` / `fail_closed` / `mixed`）
+6. `actionsTaken[]`
+   - `stage`
+   - `action`
+   - `rawReasonCode`
+   - `canonicalReasonCode`
+7. `modeDegradePath`
+8. `decisionRuleVersion`
+9. `decidedAt`
+
+一致性约束：
+1. `finalDeliveryStatus` 必须与 `renderPlanLite.deliveryStatus` 一致。
+2. `finalCanonicalReasonCode` 必须与 `deliveryStatus` 前缀一致（`e_nf_*` 或 `e_er_*`）。
+3. `actionsTaken` 必须覆盖从失败触发到终态决策的关键动作。
+
+#### 3.7.36 MVP 验收基线（E 层错误码与降级矩阵）
+
+1. 任一 E 层失败都能稳定映射到标准原因码（`e_nf_*` 或 `e_er_*`）。
+2. `no_fill` 与 `error` 判定在同请求同版本下可复现、可回放。
+3. fail-open/fail-closed 动作符合矩阵，不出现“状态正确但动作不一致”。
+4. `eErrorDegradeDecisionSnapshotLite` 可还原从原始失败到终态判定的完整过程。
+5. 任一线上失败可通过 `traceKey + responseReference + finalCanonicalReasonCode` 分钟级定位。
+
 ### 3.8 Module F: Event & Attribution Processor
 
 #### 3.8.1 事件合同（当前最小集）
@@ -2270,7 +2389,7 @@ UI 安全边界规则：
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
 3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照 + D 输入合同 + Adapter 注册与能力声明 + request adapt 子合同 + candidate normalize 子合同 + error normalize 体系）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线（含 Route Plan 触发/裁决/短路口径 + D 输出合同 + 路由审计快照）。
-5. Delivery / Event Schema 分离与 `responseReference` 关联口径（含 E 层 compose 输入合同 + render_plan 输出合同 + 候选消费与最终渲染决策规则 + 渲染能力门禁矩阵 + 追踪注入与事件合同 + E 层验证与拦截规则）。
+5. Delivery / Event Schema 分离与 `responseReference` 关联口径（含 E 层 compose 输入合同 + render_plan 输出合同 + 候选消费与最终渲染决策规则 + 渲染能力门禁矩阵 + 追踪注入与事件合同 + E 层验证与拦截规则 + E 层错误码与降级矩阵）。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
 7. 可观测与审计最小模型（单机会对象 + 四段决策点）。
 8. 配置与版本治理基线（三线分离：schema/route/placement）。
@@ -2329,6 +2448,17 @@ UI 安全边界规则：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.30）
+
+1. 更新 `3.7.3`，将 E 层输出合同范围扩展至 `3.7.36`。
+2. 更新 `3.7.9`，将 `eErrorDegradeDecisionSnapshotLite` 升级为 `renderPlanLite` 必填字段。
+3. 新增 `3.7.32`，冻结 E 层标准错误码体系（`e_nf_*` / `e_er_*`）及阶段映射规则。
+4. 新增 `3.7.33`，冻结 `no_fill vs error` 判定顺序与一致性约束。
+5. 新增 `3.7.34`，冻结 fail-open / fail-closed 动作矩阵。
+6. 新增 `3.7.35`，冻结错误与降级决策快照结构。
+7. 新增 `3.7.36`，补充 E 层错误码与降级矩阵的 MVP 验收基线。
+8. 更新第 4 章交付项，将 E 层错误码与降级矩阵纳入当前版本交付口径。
 
 ### 2026-02-21（v3.29）
 
