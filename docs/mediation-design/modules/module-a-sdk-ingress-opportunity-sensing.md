@@ -267,3 +267,87 @@ optional：
 2. 无 `impSeed` 或关键键不一致的请求不会进入 B。
 3. 成功创建的机会对象都以 `state=received` 进入后续链路。
 4. 任一创建失败都可通过 `traceKey + opportunityKey + reasonCode` 分钟级定位。
+
+#### 3.3.18 `opportunity_created` 事件合同（P0，MVP 冻结）
+
+事件对象：`aOpportunityCreatedEventLite`
+
+required：
+1. `eventKey`（事件主键）
+2. `eventIdempotencyKey`（幂等键）
+3. `eventType`（固定 `opportunity_created`）
+4. `eventAt`
+5. `requestKey`
+6. `opportunityKey`
+7. `traceKey`
+8. `attemptKey`
+9. `placementId`
+10. `impSeedRefs[]`（至少 1 个 `impKey`）
+11. `createOpportunityContractVersion`
+12. `opportunityEventContractVersion`
+
+optional：
+1. `experimentTagsOrNA`
+2. `debugHints`
+
+#### 3.3.19 事件主键与幂等键规则（P0，MVP 冻结）
+
+1. 事件主键：
+   - `eventKey = "evt_oc_" + uuidv7`
+   - 全局唯一，不随重发变化。
+2. 幂等键：
+   - `eventIdempotencyKey = sha256(requestKey + "|" + opportunityKey + "|" + attemptKey + "|opportunity_created|" + opportunityEventContractVersion)`
+   - 同一机会对象重发必须复用同一幂等键。
+3. 冲突规则：
+   - 同 `eventIdempotencyKey` 且 payload 摘要一致 -> 视为重复事件（幂等 no-op）。
+   - 同 `eventIdempotencyKey` 且 payload 摘要不一致 -> 合同冲突，直接拒绝并审计。
+
+#### 3.3.20 触发时机（P0，MVP 冻结）
+
+1. 仅当 `createOpportunity` 返回 `createAction=created` 时触发 `opportunity_created`。
+2. 触发顺序固定：
+   - 先机会对象创建成功（`state=received`）
+   - 后发出 `opportunity_created`
+   - 再进入 A -> B 正常主链路
+3. `createAction=duplicate_noop/rejected` 时不得重新触发该事件。
+4. `eventAt` 必须满足：`opportunityCreatedAt <= eventAt <= handoffToBAt`。
+
+#### 3.3.21 ACK 与重发语义（P0，MVP 冻结）
+
+ACK 对象：`aOpportunityEventAckLite`
+
+required：
+1. `eventKey`
+2. `eventIdempotencyKey`
+3. `ackStatus`（`accepted` / `duplicate` / `rejected`）
+4. `ackReasonCode`
+5. `retryable`
+6. `ackedAt`
+
+语义与动作：
+1. `accepted`：事件已进入标准处理轨道；不重发。
+2. `duplicate`：幂等重复成功；不重发。
+3. `rejected && retryable=true`：按指数退避重发（`1s -> 5s -> 30s -> 120s`），最大窗口 `15m`。
+4. `rejected && retryable=false`：不重发，写失败审计并保留机会链路。
+
+重发约束：
+1. 重发必须复用同一 `eventKey + eventIdempotencyKey`。
+2. 重发不得修改业务 payload（仅允许补充传输层元数据）。
+3. 超过重发窗口仍失败 -> 记录 `a_oc_emit_retry_exhausted`，进入审计告警轨道。
+
+#### 3.3.22 事件原因码（P0，MVP 冻结）
+
+1. `a_oc_emit_accepted`
+2. `a_oc_emit_duplicate_noop`
+3. `a_oc_emit_rejected_retryable`
+4. `a_oc_emit_rejected_non_retryable`
+5. `a_oc_emit_payload_conflict`
+6. `a_oc_emit_retry_exhausted`
+7. `a_oc_emit_contract_invalid`
+
+#### 3.3.23 MVP 验收基线（opportunity_created 事件合同）
+
+1. 每个成功创建的机会对象都可产生且仅产生一个业务语义等价的 `opportunity_created` 事件。
+2. 事件主键与幂等键在重发场景下稳定不变。
+3. ACK 与重发行为在同请求同版本下确定性一致。
+4. 任一事件异常可通过 `eventKey + eventIdempotencyKey + ackReasonCode` 分钟级定位。

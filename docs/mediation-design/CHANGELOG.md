@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.22）
+
+1. 在 `Module A` 新增 `opportunity_created` 事件合同，冻结事件对象最小字段集合。
+2. 冻结事件主键与幂等键规则，明确重发复用键与 payload 冲突处置。
+3. 新增事件触发时机约束，明确仅在 `createAction=created` 后触发。
+4. 冻结 ACK/重发语义（`accepted/duplicate/rejected` + `retryable`），并定义重发窗口与耗尽动作。
+5. 更新 MVP 交付项，将 `opportunity_created` 事件合同纳入 Module A 当前版本交付口径。
+
 ### 2026-02-21（v4.21）
 
 1. 在 `Module A` 新增 `createOpportunity(opportunity_v1)` 输入合同，冻结 `requestKey/opportunityKey/impSeed[]/timestamps/traceInit` 最小必填集。
