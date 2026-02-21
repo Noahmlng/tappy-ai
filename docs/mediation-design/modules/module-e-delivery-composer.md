@@ -32,6 +32,12 @@
    - `traceKey`
    - `requestKey`
    - `attemptKey`
+   - `auctionResultLite`（D 主语义锚点）
+     - `served`
+     - `winner`（`sourceId`, `candidateId`）
+     - `price`（`value`, `currency`）
+     - `creativeHandle`
+     - `debugRef`
    - `hasCandidate`
    - `candidateCount`
    - `normalizedCandidates`

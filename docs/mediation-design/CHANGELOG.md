@@ -1,5 +1,14 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.35）
+
+1. 在 `Module D` 输出合同新增 `auctionResultLite`，冻结最小交易语义：`served/winner/price/creativeHandle/debugRef`。
+2. 将 `auctionResultLite` 明确为 D 主输出语义锚点，并保留 `normalizedCandidates` 作为明细上下文。
+3. 在 D 输出约束中新增一致性规则：winner 必须命中候选、price/creative 必须与 winner 候选一致、`served` 必须与 `routeOutcome` 一致。
+4. 在 D 输出验收基线中补齐“下游可仅消费 `auctionResultLite`”要求，降低消费方字段拼装成本。
+5. 更新 MVP 交付清单，纳入 D 输出锚点 `auctionResultLite`。
+6. 在 `Module E` compose 输入合同中显式引用 D 输出的 `auctionResultLite` 锚点，避免 D -> E 消费口径分叉。
+
 ### 2026-02-21（v4.34）
 
 1. 在 `Module D` 输入合同新增独立 `configSnapshotLite`，冻结 `configSnapshotId/resolvedConfigRef/configHash/effectiveAt` 四个必填锚点。

@@ -49,7 +49,7 @@
 
 #### 3.6.4 输出合同
 
-1. 标准候选结果集合或空结果。
+1. `auctionResultLite`（最小交易语义锚点）：`served/winner/price/creativeHandle/debugRef`。
 2. 路由轨迹与降级轨迹。
 3. 状态更新（进入 `routed` 并最终走向终态）。
 4. 详细字段合同见 `3.6.29` ~ `3.6.33`（`D -> E` 与路由审计快照冻结）。
@@ -588,13 +588,28 @@ Route Plan 仅允许三类短路动作：
 5. `hasCandidate`（`true` / `false`）
 6. `candidateCount`
 7. `normalizedCandidates`（有序列表，允许为空）
-8. `policyConstraintsLite`
+8. `auctionResultLite`（D 主输出语义锚点）
+   - `served`（bool）
+   - `winner`
+     - `sourceId`（`served=false` 时固定 `none`）
+     - `candidateId`（`served=false` 时固定 `none`）
+   - `price`
+     - `value`（`served=false` 时固定 `0`）
+     - `currency`（`served=false` 时固定 `NA`）
+   - `creativeHandle`
+     - `creativeId`（`served=false` 时固定 `none`）
+     - `landingType`（`served=false` 时固定 `none`）
+   - `debugRef`
+     - `routePlanId`
+     - `routeAuditSnapshotRef`（`traceKey + attemptKey`）
+     - `decisionVersionRefs`（`routingPolicyVersion`, `executionStrategyVersion`, `configSnapshotId`）
+9. `policyConstraintsLite`
    - `constraintSetVersion`
    - `categoryConstraints`（`bcat`, `badv`）
    - `personalizationConstraints`（`nonPersonalizedOnly`）
    - `renderConstraints`（`disallowRenderModes`）
    - `sourceConstraints`（`sourceSelectionMode`, `allowedSourceIds`, `blockedSourceIds`）
-9. `routeConclusion`
+10. `routeConclusion`
    - `routePlanId`
    - `configSnapshotId`
    - `strategyType`
@@ -603,13 +618,13 @@ Route Plan 仅允许三类短路动作：
    - `finalAction`（`deliver` / `no_fill` / `terminal_error`）
    - `finalReasonCode`
    - `fallbackUsed`（`true` / `false`）
-10. `routeAuditSnapshotLite`（结构见 `3.6.32`）
-11. `stateUpdate`
+11. `routeAuditSnapshotLite`（结构见 `3.6.32`）
+12. `stateUpdate`
    - `fromState`（固定 `routed`）
    - `toState`（`served` / `no_fill` / `error`）
    - `statusReasonCode`
    - `updatedAt`
-12. `versionAnchors`
+13. `versionAnchors`
    - `dOutputContractVersion`
    - `routingPolicyVersion`
    - `fallbackProfileVersion`
@@ -620,7 +635,7 @@ Route Plan 仅允许三类短路动作：
    - `configSnapshotId`
 
 optional：
-1. `winningCandidateRef`
+1. `winningCandidateRef`（兼容字段；若存在必须与 `auctionResultLite.winner` 一致）
 2. `warnings`
 3. `extensions`
 
@@ -639,6 +654,14 @@ optional：
 5. `routeConclusion.strategyType` 必须与 `routePlanLite.executionStrategyLite.strategyType` 一致。
 6. `routeConclusion.configSnapshotId` 必须与 `routePlanLite.configSnapshotLite.configSnapshotId` 一致。
 
+`auctionResultLite` 约束：
+1. `auctionResultLite.served=true` -> `hasCandidate=true` 且 `routeConclusion.routeOutcome=served_candidate`。
+2. `auctionResultLite.served=false` -> `routeConclusion.routeOutcome` 仅允许 `no_fill` 或 `error`。
+3. `auctionResultLite.winner` 必须命中 `normalizedCandidates` 中的唯一候选（`sourceId + candidateId`）。
+4. `auctionResultLite.price` 必须与 winner 候选 `pricing` 一致。
+5. `auctionResultLite.creativeHandle` 必须与 winner 候选 `creativeRef` 一致。
+6. `auctionResultLite.debugRef.routePlanId` 必须与 `routeConclusion.routePlanId` 一致。
+
 状态更新约束：
 1. `hasCandidate=true` 必须映射为 `stateUpdate.toState=served`。
 2. `hasCandidate=false` 且 `routeOutcome=no_fill` 必须映射为 `stateUpdate.toState=no_fill`。
@@ -655,6 +678,7 @@ optional：
 6. `policyConstraintsLite` 在 C 输入、source request 与 D 输出间逐字段一致（允许仅透传，不允许重写语义）。
 7. `strategyType` 在 D 输入、Route Plan、D 输出、审计快照之间一致。
 8. `configSnapshotId` 在 D 输入、Route Plan、D 输出、审计快照之间一致。
+9. 下游可仅消费 `auctionResultLite` 获取稳定交易语义（`served/winner/price/creativeHandle/debugRef`）。
 
 #### 3.6.32 路由审计快照（`routeAuditSnapshotLite`，MVP 冻结）
 
