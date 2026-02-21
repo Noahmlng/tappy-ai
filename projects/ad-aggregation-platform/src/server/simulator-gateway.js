@@ -1368,8 +1368,8 @@ async function evaluateRequest(payload) {
     }
   }
 
-  if (intentScore < postRulePolicy.intentThreshold) {
-    const decision = createDecision('blocked', 'intent_below_threshold', intentScore)
+  if (placement.placementKey === NEXT_STEP_INTENT_CARD_PLACEMENT_KEY && intentClass === 'non_commercial') {
+    const decision = createDecision('blocked', 'intent_non_commercial', intentScore)
     recordBlockedOrNoFill(placement)
     recordDecisionForRequest({
       request,
@@ -1387,8 +1387,8 @@ async function evaluateRequest(payload) {
     }
   }
 
-  if (placement.placementKey === NEXT_STEP_INTENT_CARD_PLACEMENT_KEY && intentClass === 'non_commercial') {
-    const decision = createDecision('blocked', 'intent_non_commercial', intentScore)
+  if (intentScore < postRulePolicy.intentThreshold) {
+    const decision = createDecision('blocked', 'intent_below_threshold', intentScore)
     recordBlockedOrNoFill(placement)
     recordDecisionForRequest({
       request,
