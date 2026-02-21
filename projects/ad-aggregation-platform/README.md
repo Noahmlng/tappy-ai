@@ -23,7 +23,7 @@
 - `config/default-web-search-chain.json`：Web Search 默认配置
 - `config/default-follow-up-chain.json`：Follow-up 默认配置
 - `docs/phase-1-scope.md`：阶段范围与后续实现清单
-- `docs/sdk-placement-settings-draft.md`：SDK placement 与 trigger 参数设计雏形
+- `archive/temporary-docs/sdk-placement-settings-draft.md`：SDK placement 与 trigger 参数设计雏形（归档）
 - `docs/sdk-integration-document-spec.md`：SDK 接入文档写作规范与模板
 - `docs/next-step-intent-card-contract.md`：`next_step.intent_card` 接口协议（含示例）
 - `docs/e2e-next-step-scenarios.md`：Next-Step E2E 场景集（购物/送礼偏好/无商业意图/敏感话题）
