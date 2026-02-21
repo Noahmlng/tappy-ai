@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v2.3
+- 文档版本：v2.4
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -197,6 +197,79 @@ flowchart LR
 1. 机会种子对象（状态初始为 `received`）。
 2. 机会触发解释摘要（用于审计与排障）。
 3. 追踪主键与请求级时间戳。
+
+#### 3.3.5 Ingress Request Envelope（接入请求壳层合同，当前版本冻结）
+
+目标：
+1. 给 SDK 一个稳定、可自检的接入壳层，避免“能发请求但语义不完整”。
+2. 在进入机会识别前完成最小可信与最小可用校验。
+3. 为后续 `Module B` 映射提供结构化输入，不让下游补洞。
+
+Envelope 采用“六块壳层”：
+1. `EnvelopeMeta`（required）
+   - 请求身份、应用身份、接入时间、接入通道、SDK 声明版本。
+2. `PlacementTrigger`（required）
+   - placement 身份、触发位置、触发时机、触发类型。
+3. `ContextSnapshot`（required）
+   - 会话最小上下文、交互主体类型、人/agent 当前阶段。
+4. `UserPolicyHints`（optional）
+   - 用户设置、应用偏好、实验分桶、调试标记。
+5. `TraceBootstrap`（required）
+   - trace 初始化信息、上游引用、请求链路关联键。
+6. `IntegrityHints`（required）
+   - 来源可信信息、签名/令牌校验结果、重放防护标记。
+
+冻结规则：
+1. 先冻结六块结构与 required/optional，不在当前版本冻结细字段枚举。
+2. required 块缺失时不得进入机会识别主流程。
+3. optional 块缺失时走默认策略，不阻断主链路。
+
+#### 3.3.6 Envelope 校验层级与处理动作（当前版本）
+
+Ingress 校验分三层，按顺序执行：
+1. `L1 Structural Validation`
+   - 校验 Envelope 结构完整性（六块壳层是否满足 required）。
+   - 失败动作：直接拒绝并返回结构错误码。
+2. `L2 Semantic Validation`
+   - 校验关键语义可解释性（placement 可识别、触发类型有效、时间窗口合理）。
+   - 失败动作：进入受控降级或受控拒绝（按原因码矩阵）。
+3. `L3 Trust Validation`
+   - 校验来源可信、重放风险、基础鉴权状态。
+   - 失败动作：标记高风险并默认 fail-closed（除非配置显式放行）。
+
+约束：
+1. 校验结果必须结构化输出给后续模块，不允许只输出文本日志。
+2. 同请求在同规则版本下校验结果必须确定性一致。
+
+#### 3.3.7 Envelope 输出与错误语义（当前版本）
+
+`Module A` 输出分两类：
+1. `accepted opportunity seed`
+   - 包含：机会种子、校验摘要、trace key、规则版本、初始状态 `received`。
+2. `rejected/blocked ingress result`
+   - 包含：拒绝类型、原因码、是否可重试、审计关联键。
+
+错误语义最小分类：
+1. `structure_invalid`
+2. `semantic_invalid`
+3. `source_untrusted`
+4. `replay_suspected`
+5. `policy_blocked_at_ingress`
+
+#### 3.3.8 Envelope 版本与兼容规则（当前版本）
+
+1. Envelope 独立版本线：`ingressEnvelopeVersion`。
+2. 向后兼容变更优先走 optional 扩展。
+3. 破坏兼容才升级主版本，并提供迁移窗口。
+4. 单请求必须记录 `ingressEnvelopeVersion`，保证回放可复现。
+
+#### 3.3.9 验收基线（Module A / Envelope）
+
+1. SDK 可在本地按壳层合同完成请求自检。
+2. required 缺失可在 Ingress 层被稳定拦截，不进入 `Module B`。
+3. optional 缺失不会造成主链路不可用。
+4. 同类异常可命中稳定错误码并在分钟级检索。
+5. Ingress 输出可被 `Module B` 直接消费，无需二次补齐。
 
 ### 3.4 Module B: Schema Translation & Signal Normalization
 
@@ -481,6 +554,7 @@ flowchart LR
 13. Agent Plan 模块框架说明（A-H 模块链路）。
 14. 模块化链路说明（SDK 接入与机会识别 -> SSP-like 关键信息构建）。
 15. Mediation 与 Ads Network 交互边界与流程图说明。
+16. Module A Ingress Request Envelope 合同与校验规则说明。
 
 ## 5. 优化项与 SSP 过渡（Plan）
 
@@ -649,6 +723,14 @@ flowchart LR
    - 未来：实现对账自动化与争议回放自动化。
 
 ## 6. 变更记录
+
+### 2026-02-21（v2.4）
+
+1. 在 `3.3` 新增 Ingress Request Envelope 设计（六块壳层 + required/optional 冻结边界）。
+2. 增加 Ingress 三层校验模型（结构/语义/可信）及失败处理动作。
+3. 增加 Module A 输出与错误语义分类（accepted seed vs rejected/blocked）。
+4. 增加 Envelope 独立版本线 `ingressEnvelopeVersion` 与兼容规则。
+5. 在交付包新增 Module A Envelope 合同说明条目。
 
 ### 2026-02-21（v2.3）
 
