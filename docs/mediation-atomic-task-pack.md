@@ -1,0 +1,899 @@
+# Mediation 原子任务包（Self-Contained Agent Tasks）
+
+- 版本：v1.0
+- 日期：2026-02-21
+- 关联总计划：`/Users/zeming/Documents/chat-ads-main/docs/mediation-development-plan.md`
+- 目标：把 Mediation 落地任务拆为可独立执行的原子任务，确保单次 agent context 可控且任务可闭环验收。
+
+## 0. 使用规则（所有任务通用）
+
+1. 每次只执行一个任务卡（单任务单 PR/单 commit）。
+2. 必须先读该任务卡列出的“必读 context”，不额外扩散阅读。
+3. 只改该任务卡允许的文件范围。
+4. 任务结束必须满足：
+   - 代码/文档变更完成
+   - 对应测试命令通过
+   - 输出物完整
+5. 若依赖任务未完成，当前任务不可开始。
+6. 若测试失败，不进入后续任务。
+
+---
+
+## 1. Foundation（FND）
+
+### FND-001：建立 Mediation 合同目录索引
+
+1. 目标：
+   - 产出 A-H 合同索引（输入/输出/事件/原因码/锚点）。
+2. 前置依赖：
+   - 无
+3. 必读 context：
+   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/INDEX.md`
+   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/`
+4. 允许改动：
+   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/implementation/contract-catalog.md`
+5. 执行步骤：
+   - 为 A-H 每个模块建立小节。
+   - 每模块至少列出：核心接口、输入合同、输出合同、关键事件、原因码段、版本锚点字段。
+6. 验收标准：
+   - A-H 全覆盖，无空节。
+   - 可被后续任务直接引用。
+7. 验证命令：
+   - `rg -n "Module A|Module H|输入合同|输出合同|原因码|版本锚点" docs/implementation/contract-catalog.md`
+8. 输出物：
+   - `contract-catalog.md`
+
+### FND-002：建立历史代码迁移映射清单
+
+1. 目标：
+   - 把历史实现映射到 Mediation/非 Mediation/Tooling 三类。
+2. 前置依赖：
+   - FND-001
+3. 必读 context：
+   - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/src/`
+   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-development-plan.md`
+4. 允许改动：
+   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/implementation/legacy-to-mediation-mapping.md`
+5. 执行步骤：
+   - 按目录级别列出归属分类。
+   - 标注“可复用资产 -> 对应模块（B/D/H等）”。
+   - 标注“迁出主链”的目录。
+6. 验收标准：
+   - 至少覆盖 `src/connectors`、`src/offers`、`src/runtime`、`src/server`、`src/intent*`、`src/ner`。
+7. 验证命令：
+   - `rg -n "可复用|迁出主链|tooling|Module D|Module B" docs/implementation/legacy-to-mediation-mapping.md`
+8. 输出物：
+   - `legacy-to-mediation-mapping.md`
+
+### FND-003：创建任务追踪基线（CSV）
+
+1. 目标：
+   - 生成可导入看板的任务基线。
+2. 前置依赖：
+   - FND-001
+   - FND-002
+3. 必读 context：
+   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-atomic-task-pack.md`
+4. 允许改动：
+   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/implementation/task-board-seed.csv`
+5. 执行步骤：
+   - 列：`task_id,module,owner,status,depends_on,dod,test_command,artifact_path`
+   - 把本文件任务卡同步入表。
+6. 验收标准：
+   - 每个任务一行，依赖关系可追踪。
+7. 验证命令：
+   - `head -n 5 docs/implementation/task-board-seed.csv`
+   - `wc -l docs/implementation/task-board-seed.csv`
+8. 输出物：
+   - `task-board-seed.csv`
+
+### FND-004：搭建测试目录骨架与命令入口
+
+1. 目标：
+   - 创建统一测试目录与 npm script。
+2. 前置依赖：
+   - FND-001
+3. 必读 context：
+   - `/Users/zeming/Documents/chat-ads-main/package.json`
+   - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/package.json`
+4. 允许改动：
+   - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/package.json`
+   - 新增 `tests/contracts/`, `tests/integration/`, `tests/e2e/`（在 ad-aggregation-platform 内）
+5. 执行步骤：
+   - 增加脚本：`test:contracts`, `test:integration`, `test:e2e`, `test:functional:p0`。
+   - 每个目录放置占位测试，先可执行通过。
+6. 验收标准：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:functional:p0` 可运行。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:functional:p0`
+8. 输出物：
+   - 测试命令基线
+
+### FND-005：建立合同测试 runner（schema + snapshot）
+
+1. 目标：
+   - 提供可复用合同测试工具层。
+2. 前置依赖：
+   - FND-004
+3. 必读 context：
+   - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/schemas/`
+4. 允许改动：
+   - 新增 `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/tests/utils/contract-runner.*`
+   - 新增 `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/tests/contracts/base-contract.spec.*`
+5. 执行步骤：
+   - 支持 JSON schema 校验、required 字段断言、错误码断言。
+6. 验收标准：
+   - 基础合同测试可复用到 A-H。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:contracts`
+8. 输出物：
+   - contract-runner
+
+### FND-006：建立 E2E 基线（最小链路）
+
+1. 目标：
+   - 先打通最小黑盒链路测试框架。
+2. 前置依赖：
+   - FND-004
+3. 必读 context：
+   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/operations/01-closed-loop-model.md`
+   - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/scripts/e2e-next-step-scenarios.js`
+4. 允许改动：
+   - 新增 `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/tests/e2e/minimal-closed-loop.spec.*`
+5. 执行步骤：
+   - 构建 `request -> delivery -> event -> archive` 最小场景。
+6. 验收标准：
+   - E2E 套件可运行并有明确 fail 条件。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:e2e`
+8. 输出物：
+   - minimal e2e baseline
+
+---
+
+## 2. Module H（配置与版本治理）优先任务
+
+### H-001：实现配置解析合同（global/app/placement）
+
+1. 目标：
+   - 落地 `3.10.3~3.10.8`。
+2. 前置依赖：
+   - FND-005
+3. 必读 context：
+   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/module-h-config-version-governance.md`
+   - 小节：`3.10.3` 到 `3.10.8`
+4. 允许改动：
+   - 新增 `src/mediation/h/config-resolution.*`
+   - 新增对应单测
+5. 执行步骤：
+   - 实现合并顺序与字段覆盖规则。
+   - 输出 `resolvedConfigSnapshot`。
+6. 验收标准：
+   - 缺失/非法值有稳定动作与原因码。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- h-config-resolution`
+8. 输出物：
+   - 配置解析模块
+
+### H-002：实现 GET /config（缓存语义）
+
+1. 目标：
+   - 落地 `3.10.9~3.10.14`。
+2. 前置依赖：
+   - H-001
+3. 必读 context：
+   - module-h 小节：`3.10.9` 到 `3.10.14`
+4. 允许改动：
+   - `src/mediation/api/config-controller.*`
+   - `src/mediation/h/config-cache.*`
+   - 对应 integration tests
+5. 执行步骤：
+   - 支持 `ETag/If-None-Match`。
+   - TTL/304/过期重验证行为完整。
+6. 验收标准：
+   - 304 命中和过期失败路径均可测试。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- h-get-config`
+8. 输出物：
+   - GET /config API
+
+### H-003：实现 POST /config/publish 状态机与幂等
+
+1. 目标：
+   - 落地 `3.10.15~3.10.20`。
+2. 前置依赖：
+   - H-001
+3. 必读 context：
+   - module-h 小节：`3.10.15` 到 `3.10.20`
+4. 允许改动：
+   - `src/mediation/h/config-publish.*`
+   - `src/mediation/api/config-publish-controller.*`
+   - 对应 tests
+5. 执行步骤：
+   - 实现 draft/validated/published/rollback。
+   - 加入 publish 幂等键窗口。
+6. 验收标准：
+   - duplicate 与 payload conflict 可区分。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- h-publish`
+8. 输出物：
+   - publish API + 状态机
+
+### H-004：实现版本门禁与锚点注入
+
+1. 目标：
+   - 落地 `3.10.21~3.10.34`。
+2. 前置依赖：
+   - H-002
+   - H-003
+3. 必读 context：
+   - module-h 小节：`3.10.21` 到 `3.10.34`
+4. 允许改动：
+   - `src/mediation/h/version-gate.*`
+   - `src/mediation/h/anchor-injector.*`
+   - tests
+5. 执行步骤：
+   - 实现 `allow/degrade/reject`。
+   - 维护 A-H 冻结点注入规则。
+6. 验收标准：
+   - 同请求同版本下门禁动作确定性一致。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- h-version-gate`
+8. 输出物：
+   - version gate + anchor injector
+
+### H-005：实现灰度与失效矩阵
+
+1. 目标：
+   - 落地 `3.10.35~3.10.53`。
+2. 前置依赖：
+   - H-004
+3. 必读 context：
+   - module-h 小节：`3.10.35` 到 `3.10.53`
+4. 允许改动：
+   - `src/mediation/h/rollout.*`
+   - `src/mediation/h/failure-matrix.*`
+   - tests
+5. 执行步骤：
+   - 实现百分比分流/熔断回退。
+   - 实现 A-H fail-open/fail-closed 统一动作输出。
+6. 验收标准：
+   - `force_fallback` 语义、原因码、审计快照齐全。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- h-rollout`
+8. 输出物：
+   - 灰度与失效治理模块
+
+---
+
+## 3. Module A 原子任务
+
+### A-001：实现 trigger 输入/返回合同
+
+1. 目标：
+   - 落地 `3.3.10~3.3.13`。
+2. 前置依赖：
+   - H-004
+3. 必读 context：
+   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/module-a-sdk-ingress-opportunity-sensing.md`
+   - 小节：`3.3.10` 到 `3.3.13`
+4. 允许改动：
+   - `src/mediation/a/trigger-handler.*`
+   - tests
+5. 执行步骤：
+   - 校验 required/optional。
+   - 映射 trigger 错误码与动作。
+6. 验收标准：
+   - 合同校验失败返回稳定 reason code。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:contracts -- a-trigger`
+8. 输出物：
+   - trigger handler
+
+### A-002：实现 createOpportunity + trace 规则
+
+1. 目标：
+   - 落地 `3.3.14~3.3.17`、`3.3.29`。
+2. 前置依赖：
+   - A-001
+3. 必读 context：
+   - module-a 小节：`3.3.14` 到 `3.3.17`，`3.3.29`
+4. 允许改动：
+   - `src/mediation/a/create-opportunity.*`
+   - tests
+5. 执行步骤：
+   - 生成 `requestKey/opportunityKey/attemptKey/traceKey`。
+   - 输出 A->B 最小合同对象。
+6. 验收标准：
+   - trace 初始化与继承一致。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- a-create-opportunity`
+8. 输出物：
+   - createOpportunity service
+
+### A-003：实现 opportunity_created 事件与幂等重发
+
+1. 目标：
+   - 落地 `3.3.18~3.3.23`、`3.3.28`。
+2. 前置依赖：
+   - A-002
+3. 必读 context：
+   - module-a 小节：`3.3.18` 到 `3.3.23`，`3.3.28`
+4. 允许改动：
+   - `src/mediation/a/opportunity-event-emitter.*`
+   - tests
+5. 执行步骤：
+   - eventKey + idempotencyKey 规则。
+   - ACK/重发窗口与退避策略。
+6. 验收标准：
+   - duplicate 不重复发送；重发复用同键。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- a-opportunity-event`
+8. 输出物：
+   - A event emitter
+
+---
+
+## 4. Module B 原子任务
+
+### B-001：实现 B 输入合同与 canonical 映射
+
+1. 目标：
+   - 落地 `3.4.6~3.4.13`。
+2. 前置依赖：
+   - A-003
+3. 必读 context：
+   - module-b 小节：`3.4.6` 到 `3.4.13`
+4. 允许改动：
+   - `src/mediation/b/input-normalizer.*`
+   - `src/mediation/b/canonical-dict.*`
+   - tests
+5. 执行步骤：
+   - required 矩阵校验。
+   - raw->canonical + unknown fallback。
+6. 验收标准：
+   - 字段缺失/非法有稳定动作与原因码。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:contracts -- b-input`
+8. 输出物：
+   - B input normalizer
+
+### B-002：实现冲突裁决引擎与 mapping 审计
+
+1. 目标：
+   - 落地 `3.4.14~3.4.20`。
+2. 前置依赖：
+   - B-001
+3. 必读 context：
+   - module-b 小节：`3.4.14` 到 `3.4.20`
+4. 允许改动：
+   - `src/mediation/b/conflict-resolver.*`
+   - `src/mediation/b/mapping-audit.*`
+   - tests
+5. 执行步骤：
+   - 优先级裁决 + tie-break。
+   - 输出 `mappingAuditSnapshotLite`。
+6. 验收标准：
+   - 同输入多次运行结果一致。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- b-conflict`
+8. 输出物：
+   - conflict resolver
+
+### B-003：实现 OpenRTB 投影 + 脱敏 + 分桶
+
+1. 目标：
+   - 落地 `3.4.23~3.4.36`。
+2. 前置依赖：
+   - B-002
+3. 必读 context：
+   - module-b 小节：`3.4.23` 到 `3.4.36`
+4. 允许改动：
+   - `src/mediation/b/openrtb-projection.*`
+   - `src/mediation/b/redaction.*`
+   - `src/mediation/b/bucketizer.*`
+   - tests
+5. 执行步骤：
+   - 实现 mapped/partial/unmapped。
+   - 先脱敏后审计；实现 outlier/unknown 分桶策略。
+6. 验收标准：
+   - 三个快照：projection/redaction/bucket 均可输出。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- b-projection`
+8. 输出物：
+   - B advanced pipeline
+
+### B-004：实现 signal_normalized 事件链路
+
+1. 目标：
+   - 落地 `3.4.40~3.4.45`。
+2. 前置依赖：
+   - B-003
+3. 必读 context：
+   - module-b 小节：`3.4.40` 到 `3.4.45`
+4. 允许改动：
+   - `src/mediation/b/signal-event-emitter.*`
+   - tests
+5. 执行步骤：
+   - 稳定哈希采样。
+   - ACK/重发/幂等规则。
+6. 验收标准：
+   - sampled_out 不发送；sampled_in 可追踪 ACK。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- b-signal-event`
+8. 输出物：
+   - B signal event emitter
+
+---
+
+## 5. Module C 原子任务
+
+### C-001：实现策略执行顺序与短路机制
+
+1. 目标：
+   - 落地 `3.5.4~3.5.11`。
+2. 前置依赖：
+   - B-004
+3. 必读 context：
+   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/module-c-policy-safety-governor.md`
+   - 小节：`3.5.4` 到 `3.5.11`
+4. 允许改动：
+   - `src/mediation/c/policy-engine.*`
+   - tests
+5. 执行步骤：
+   - 固定 gate 顺序，命中 block 立即短路。
+6. 验收标准：
+   - `short_circuit_block/allow` 行为稳定。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- c-short-circuit`
+8. 输出物：
+   - policy engine core
+
+### C-002：实现 C 输出合同、原因码与审计快照
+
+1. 目标：
+   - 落地 `3.5.12~3.5.20`。
+2. 前置依赖：
+   - C-001
+3. 必读 context：
+   - module-c 小节：`3.5.12` 到 `3.5.20`
+4. 允许改动：
+   - `src/mediation/c/output-builder.*`
+   - `src/mediation/c/policy-audit.*`
+   - tests
+5. 执行步骤：
+   - 输出 `constraintsLite`。
+   - 固化 policy 原因码体系和审计快照结构。
+6. 验收标准：
+   - C->D/E 出口字段完整可消费。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:contracts -- c-output`
+8. 输出物：
+   - C output + audit module
+
+---
+
+## 6. Module D 原子任务
+
+### D-001：重构 adapter 注册与能力声明
+
+1. 目标：
+   - 落地 `3.6.9~3.6.15`。
+2. 前置依赖：
+   - C-002
+3. 必读 context：
+   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/module-d-supply-orchestrator-adapter-layer.md`
+   - 小节：`3.6.9` 到 `3.6.15`
+   - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/src/connectors/`
+4. 允许改动：
+   - `src/mediation/d/adapter-registry.*`
+   - `src/adapters/*`（对接 cj/partnerstack）
+   - tests
+5. 执行步骤：
+   - 统一 adapter contract。
+   - 将现有 connector 包装为 D adapter。
+6. 验收标准：
+   - adapter 启停与能力声明可测试。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- d-adapter-registry`
+8. 输出物：
+   - adapter registry
+
+### D-002：实现路由执行计划与 fallback 策略
+
+1. 目标：
+   - 落地 `3.6.24~3.6.28`。
+2. 前置依赖：
+   - D-001
+3. 必读 context：
+   - module-d 小节：`3.6.24` 到 `3.6.28`
+4. 允许改动：
+   - `src/mediation/d/route-planner.*`
+   - tests
+5. 执行步骤：
+   - 实现 waterfall/bidding/hybrid。
+   - 实现主次/fallback 触发与短路优先级。
+6. 验收标准：
+   - `routePlan` 可确定性复现。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- d-route-plan`
+8. 输出物：
+   - route planner
+
+### D-003：实现 D 输出合同与路由审计快照
+
+1. 目标：
+   - 落地 `3.6.29~3.6.33`。
+2. 前置依赖：
+   - D-002
+3. 必读 context：
+   - module-d 小节：`3.6.29` 到 `3.6.33`
+4. 允许改动：
+   - `src/mediation/d/output-builder.*`
+   - `src/mediation/d/route-audit.*`
+   - tests
+5. 执行步骤：
+   - 输出 D->E 合同对象。
+   - 记录 `routeAuditSnapshotLite`。
+6. 验收标准：
+   - E 可以无推断消费 D 输出。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:contracts -- d-output`
+8. 输出物：
+   - D output + route audit
+
+---
+
+## 7. Module E 原子任务
+
+### E-001：实现 compose 输入合同与 render_plan 输出
+
+1. 目标：
+   - 落地 `3.7.4~3.7.13`。
+2. 前置依赖：
+   - D-003
+3. 必读 context：
+   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/module-e-delivery-composer.md`
+   - 小节：`3.7.4` 到 `3.7.13`
+4. 允许改动：
+   - `src/mediation/e/compose.*`
+   - tests
+5. 执行步骤：
+   - 校验 compose 输入与版本锚点。
+   - 输出 `render_plan`。
+6. 验收标准：
+   - 合同错误返回稳定 reason code。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:contracts -- e-compose`
+8. 输出物：
+   - compose module
+
+### E-002：实现渲染门禁与降级矩阵
+
+1. 目标：
+   - 落地 `3.7.18~3.7.36`。
+2. 前置依赖：
+   - E-001
+3. 必读 context：
+   - module-e 小节：`3.7.18` 到 `3.7.36`
+4. 允许改动：
+   - `src/mediation/e/render-gate.*`
+   - `src/mediation/e/error-degrade.*`
+   - tests
+5. 执行步骤：
+   - 实现 capability gate。
+   - 实现 fail-open/fail-closed 动作矩阵。
+6. 验收标准：
+   - no_fill/error 判定一致且可审计。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- e-gate`
+8. 输出物：
+   - render gate + degrade engine
+
+### E-003：实现 E 输出合同与 E->F 事件输出
+
+1. 目标：
+   - 落地 `3.7.37~3.7.40`。
+2. 前置依赖：
+   - E-002
+3. 必读 context：
+   - module-e 小节：`3.7.37` 到 `3.7.40`
+4. 允许改动：
+   - `src/mediation/e/delivery-output.*`
+   - `src/mediation/e/event-output.*`
+   - tests
+5. 执行步骤：
+   - 输出最终 Delivery。
+   - 输出 F 可消费事件并保持状态迁移一致。
+6. 验收标准：
+   - `routed -> served/no_fill/error` 一致。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- e-output`
+8. 输出物：
+   - final delivery/output module
+
+---
+
+## 8. Module F 原子任务
+
+### F-001：实现 POST /events 输入与逐条 ACK
+
+1. 目标：
+   - 落地 `3.8.4~3.8.11`。
+2. 前置依赖：
+   - E-003
+3. 必读 context：
+   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/module-f-event-attribution-processor.md`
+   - 小节：`3.8.4` 到 `3.8.11`
+4. 允许改动：
+   - `src/mediation/f/events-controller.*`
+   - tests
+5. 执行步骤：
+   - envelope + single event 校验。
+   - partial success 语义与逐条 ACK。
+6. 验收标准：
+   - 错误事件不影响合法事件 ACK 返回。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- f-events-api`
+8. 输出物：
+   - events API
+
+### F-002：实现幂等去重与终态闭环
+
+1. 目标：
+   - 落地 `3.8.12~3.8.20`。
+2. 前置依赖：
+   - F-001
+3. 必读 context：
+   - module-f 小节：`3.8.12` 到 `3.8.20`
+   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/operations/01-closed-loop-model.md`
+4. 允许改动：
+   - `src/mediation/f/idempotency.*`
+   - `src/mediation/f/terminal-closure.*`
+   - tests
+5. 执行步骤：
+   - client key 与 computed key 优先级。
+   - 120s 超时补写、impression/failure 互斥。
+6. 验收标准：
+   - 闭环状态可重放验证。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- f-closure`
+8. 输出物：
+   - dedup + closure engine
+
+### F-003：实现归因计费与 F->G 输出合同
+
+1. 目标：
+   - 落地 `3.8.21~3.8.30`。
+2. 前置依赖：
+   - F-002
+3. 必读 context：
+   - module-f 小节：`3.8.21` 到 `3.8.30`
+4. 允许改动：
+   - `src/mediation/f/facts-mapper.*`
+   - `src/mediation/f/archive-record-builder.*`
+   - tests
+5. 执行步骤：
+   - 映射 `billableFacts/attributionFacts`。
+   - 产出 `fToGArchiveRecordLite`。
+6. 验收标准：
+   - 单尝试唯一计费、recordKey 幂等语义成立。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- f-output`
+8. 输出物：
+   - F output contract module
+
+---
+
+## 9. Module G 原子任务
+
+### G-001：实现 append(AuditRecord) 接口
+
+1. 目标：
+   - 落地 `3.9.7~3.9.13`。
+2. 前置依赖：
+   - F-003
+3. 必读 context：
+   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/module-g-audit-replay-controller.md`
+   - 小节：`3.9.7` 到 `3.9.13`
+4. 允许改动：
+   - `src/mediation/g/append-controller.*`
+   - `src/mediation/g/audit-store.*`
+   - tests
+5. 执行步骤：
+   - append 幂等键优先级。
+   - 异步 ACK 语义（accepted/queued/rejected）。
+6. 验收标准：
+   - duplicate no-op 与 payload conflict 可区分。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- g-append`
+8. 输出物：
+   - append API
+
+### G-002：实现 replay 接口与确定性回放
+
+1. 目标：
+   - 落地 `3.9.14~3.9.24`。
+2. 前置依赖：
+   - G-001
+3. 必读 context：
+   - module-g 小节：`3.9.14` 到 `3.9.24`
+4. 允许改动：
+   - `src/mediation/g/replay-controller.*`
+   - `src/mediation/g/replay-engine.*`
+   - tests
+5. 执行步骤：
+   - summary/full 模式、分页排序、空结果语义。
+   - `snapshot_replay` 与 `rule_recompute` 确定性输出。
+6. 验收标准：
+   - 同锚点回放 diff 为 0。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:e2e -- g-replay-determinism`
+8. 输出物：
+   - replay API + engine
+
+---
+
+## 10. 全链路与质量门禁任务
+
+### QA-001：构建模块级 P0 功能矩阵测试
+
+1. 目标：
+   - 建立 A-H 的 P0 测试矩阵。
+2. 前置依赖：
+   - H-005, A-003, B-004, C-002, D-003, E-003, F-003, G-002
+3. 必读 context：
+   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-development-plan.md` 第 6 章
+4. 允许改动：
+   - `tests/contracts/*`
+   - `tests/integration/*`
+5. 执行步骤：
+   - 按模块覆盖合同/状态/错误码/幂等/审计。
+6. 验收标准：
+   - 所有矩阵 case 明确 PASS/FAIL。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:functional:p0`
+8. 输出物：
+   - `tests/p0-matrix-report.json`
+
+### QA-002：构建全链路 E2E 套件（8 大场景）
+
+1. 目标：
+   - 落地 8 个闭环场景。
+2. 前置依赖：
+   - QA-001
+3. 必读 context：
+   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-development-plan.md` 第 6.3 节
+4. 允许改动：
+   - `tests/e2e/*`
+5. 执行步骤：
+   - 增加 happy/policy_block/no_fill/error/duplicate/timeout/version/replay 场景。
+6. 验收标准：
+   - 8 场景全部可复现执行。
+7. 验证命令：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:e2e`
+8. 输出物：
+   - `tests/e2e-report.json`
+
+### QA-003：CI 门禁落地（失败即阻断）
+
+1. 目标：
+   - 把功能测试绑定到 CI。
+2. 前置依赖：
+   - QA-001
+   - QA-002
+3. 必读 context：
+   - 现有 CI 配置文件（若有）
+4. 允许改动：
+   - `.github/workflows/*` 或对应 CI 配置
+5. 执行步骤：
+   - 强制执行 `test:functional:p0` + `test:e2e`。
+6. 验收标准：
+   - 任一任务失败即 CI fail。
+7. 验证命令：
+   - 本地 dry-run 或 CI 试跑记录
+8. 输出物：
+   - CI gate pipeline
+
+### QA-004：发布前 100% 通过率报告
+
+1. 目标：
+   - 生成可审计测试通过报告。
+2. 前置依赖：
+   - QA-003
+3. 必读 context：
+   - QA-001/QA-002 测试输出
+4. 允许改动：
+   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/implementation/test-readiness-report.md`
+5. 执行步骤：
+   - 汇总模块通过率、场景通过率、失败清零证明。
+6. 验收标准：
+   - 明确写出 `P0 matrix = 100%`、`E2E = 100%`。
+7. 验证命令：
+   - `rg -n "100%" docs/implementation/test-readiness-report.md`
+8. 输出物：
+   - test readiness report
+
+---
+
+## 11. SDK 文档后置任务（仅在 QA-004 后）
+
+### SDK-001：产出最小接入 Quickstart
+
+1. 目标：
+   - 产出可运行最小接入文档。
+2. 前置依赖：
+   - QA-004
+3. 必读 context：
+   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/operations/02-sdk-integration-guide-and-minimal-checklist.md`
+   - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/docs/sdk-integration-document-spec.md`
+4. 允许改动：
+   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/integration/quickstart.md`
+5. 执行步骤：
+   - 包含 init/evaluate/events/验证步骤。
+6. 验收标准：
+   - 按文档可完成首条链路验证。
+7. 验证命令：
+   - 按文档执行 smoke 命令
+8. 输出物：
+   - quickstart 文档
+
+### SDK-002：产出 API Reference（A/E/F/G/H 对外接口）
+
+1. 目标：
+   - 输出生产级接口参考文档。
+2. 前置依赖：
+   - SDK-001
+3. 必读 context：
+   - A/E/F/G/H 模块合同文档
+4. 允许改动：
+   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/integration/api-reference.md`
+5. 执行步骤：
+   - 每接口列：请求、响应、错误码、重试语义、幂等约束。
+6. 验收标准：
+   - 字段与实现一致，无占位描述。
+7. 验证命令：
+   - 抽样调用接口对照文档
+8. 输出物：
+   - API Reference
+
+### SDK-003：产出 Runbook 与排障手册
+
+1. 目标：
+   - 覆盖接入方常见故障排查。
+2. 前置依赖：
+   - SDK-002
+3. 必读 context：
+   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-development-plan.md`
+   - `/Users/zeming/Documents/chat-ads-main/docs/integration/api-reference.md`
+4. 允许改动：
+   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/integration/runbook.md`
+5. 执行步骤：
+   - 覆盖 no_fill、高 blocked、回放不一致、配置发布失败等问题。
+6. 验收标准：
+   - 每问题有“现象-原因-检查-修复-验证”闭环。
+7. 验证命令：
+   - `rg -n "现象|可能原因|检查步骤|修复动作|验证方式" docs/integration/runbook.md`
+8. 输出物：
+   - runbook 文档
+
+---
+
+## 12. 推荐执行批次（降低上下文负载）
+
+1. Batch-A（基础）：
+   - FND-001~FND-006
+2. Batch-B（横切 H）：
+   - H-001~H-005
+3. Batch-C（主链上半）：
+   - A-001~A-003, B-001~B-004, C-001~C-002
+4. Batch-D（主链下半）：
+   - D-001~D-003, E-001~E-003
+5. Batch-E（闭环）：
+   - F-001~F-003, G-001~G-002
+6. Batch-F（质量门禁）：
+   - QA-001~QA-004
+7. Batch-G（文档交付）：
+   - SDK-001~SDK-003
+
+只允许按批次前后顺序推进，不跳批次。
