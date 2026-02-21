@@ -788,3 +788,118 @@ optional：
 2. 任一请求都能回放出完整 `decisionPath + selectedVersionSnapshot + anchorDigest`。
 3. F/G 对账可通过 `snapshotId + primaryReasonCode + anchorHash` 对齐“为什么用了这份配置”。
 4. 任一解释争议可通过 `requestKey + traceKey + configDecisionAuditSnapshotRef` 分钟级定位。
+
+#### 3.10.47 配置失效场景分类（P0，MVP 冻结）
+
+标准失效场景（最小集）：
+1. `config_timeout`：配置服务超时，未在 `configFetchTimeoutMs` 内返回。
+2. `config_unavailable`：配置服务不可用（5xx、网络不可达、依赖故障）。
+3. `config_version_invalid`：配置返回成功但版本非法/不兼容（含 schema/version anchor 不合法）。
+
+统一故障上下文字段：
+1. `configFailureScenario`
+2. `failureDetectedAt`
+3. `detectedByModule`
+4. `failureMode`（`fail_open` / `fail_closed`）
+
+#### 3.10.48 失效处置总则（P0，MVP 冻结）
+
+总则：
+1. 安全与合规优先于可用性；遇到版本非法一律优先 `fail_closed`。
+2. 仅当存在“可验证的稳定快照”（fresh 或 `stale_grace`）时允许 `fail_open`。
+3. `fail_open` 必须显式标记降级并写审计，不允许静默放行。
+4. `fail_closed` 必须返回标准原因码并阻断后续竞价/渲染链路。
+
+优先级：
+1. `config_version_invalid` -> 强制 `fail_closed`
+2. `config_unavailable/config_timeout` -> 先尝试 `fail_open`（若有稳定快照），否则 `fail_closed`
+
+#### 3.10.49 A-H 模块级 fail-open / fail-closed 矩阵（P0，MVP 冻结）
+
+场景一：`config_timeout`
+1. `Module A`：有稳定快照 -> `fail_open`（`degrade`）；无快照 -> `fail_closed`（`reject`）。
+2. `Module B`：仅在携带 `resolvedConfigSnapshot` 时放行；缺失则 `fail_closed`。
+3. `Module C`：可基于快照执行最小策略集；策略快照缺失则 `fail_closed`。
+4. `Module D`：`fail_open` 时仅使用 `lastStablePolicyId` 与兼容 adapter 集；否则 `fail_closed`。
+5. `Module E`：仅当 D 有有效候选且 C 未拒绝时放行；否则返回 `no_fill/error`。
+6. `Module F`：始终放行审计写入，记录 `failureMode + reasonCodes`。
+7. `Module G`：始终放行审计归档与回放索引，不参与拦截。
+8. `Module H`：负责输出最终 `failureMode` 与模块动作快照。
+
+场景二：`config_unavailable`
+1. `Module A`：同 `config_timeout` 规则。
+2. `Module B`：同 `config_timeout` 规则。
+3. `Module C`：同 `config_timeout` 规则，且必须启用最严格默认 policy（若快照可用）。
+4. `Module D`：降级为最小路由（主 source + fallback source），并收紧超时。
+5. `Module E`：不允许启用新模板/新容器，仅允许稳定模板白名单。
+6. `Module F`：放行事实流与失败事实写入。
+7. `Module G`：放行审计归档与 replay。
+8. `Module H`：触发配置服务不可用告警与熔断评估。
+
+场景三：`config_version_invalid`
+1. `Module A`：强制 `fail_closed`，拒绝进入 B。
+2. `Module B`：若收到该场景请求必须 `reject`，不得做映射推断。
+3. `Module C`：强制 `reject`，原因码必须保留。
+4. `Module D`：不得发起 supply 请求。
+5. `Module E`：不得执行渲染计划生成。
+6. `Module F`：必须写入 `reject` 终态审计事件。
+7. `Module G`：必须归档完整失败快照用于 dispute。
+8. `Module H`：标记配置版本异常并禁止该版本继续灰度/发布。
+
+#### 3.10.50 故障原因码与动作映射（P0，MVP 冻结）
+
+标准原因码（最小集）：
+1. `h_cfg_fail_open_timeout_stale_grace`
+2. `h_cfg_fail_open_unavailable_stable_snapshot`
+3. `h_cfg_fail_closed_no_stable_snapshot`
+4. `h_cfg_fail_closed_version_invalid`
+5. `h_cfg_fail_closed_anchor_invalid`
+6. `h_cfg_fail_closed_policy_missing`
+7. `h_cfg_fail_open_restricted_route_mode`
+8. `h_cfg_fail_open_restricted_template_mode`
+9. `h_cfg_fail_closed_contract_violation`
+
+动作映射：
+1. `fail_open` 仅允许 `h_cfg_fail_open_*`。
+2. `fail_closed` 仅允许 `h_cfg_fail_closed_*`。
+3. 任一故障决策必须携带 `primaryReasonCode` 与 `configFailureScenario`。
+
+#### 3.10.51 失效决策审计快照（P0，MVP 冻结）
+
+审计对象：`hConfigFailureDecisionSnapshotLite`
+
+required：
+1. `snapshotId`
+2. `requestKey`
+3. `traceKey`
+4. `configFailureScenario`
+5. `failureMode`
+6. `primaryReasonCode`
+7. `moduleActions`
+   - `moduleAAction`
+   - `moduleBAction`
+   - `moduleCAction`
+   - `moduleDAction`
+   - `moduleEAction`
+   - `moduleFAction`
+   - `moduleGAction`
+   - `moduleHAction`
+8. `stableSnapshotRefOrNA`
+9. `lastStablePolicyIdOrNA`
+10. `anchorHashOrNA`
+11. `generatedAt`
+12. `failureAuditContractVersion`
+
+#### 3.10.52 执行与回放约束（P0，MVP 冻结）
+
+1. 进入 `fail_open` 时，必须携带 `stableSnapshotRefOrNA` 与受限动作标记（restricted route/template）。
+2. 进入 `fail_closed` 时，必须在 A 或 C 截断主链路，D/E 不得被调用（`config_version_invalid` 场景）。
+3. F/G 必须归档 `hConfigFailureDecisionSnapshotLite`，保证 replay 可还原模块动作矩阵。
+4. 任一故障请求都必须可由 `requestKey + configFailureScenario + primaryReasonCode` 唯一定位。
+
+#### 3.10.53 MVP 验收基线（配置失效 fail-open / fail-closed 矩阵）
+
+1. 三类失效场景在 A-H 上的动作一致且可预测，不出现同场景多行为。
+2. `config_version_invalid` 始终 `fail_closed`，不会进入 supply/渲染链路。
+3. `timeout/unavailable` 仅在稳定快照存在时允许 `fail_open`，否则稳定 `fail_closed`。
+4. 所有故障决策都可通过 `hConfigFailureDecisionSnapshotLite` 在 replay/dispute 中完整复原。

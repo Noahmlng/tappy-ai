@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.19）
+
+1. 在 `Module H` 新增配置失效场景分类（`config_timeout/config_unavailable/config_version_invalid`）与统一故障上下文字段。
+2. 冻结配置失效总则与优先级，明确“版本非法强制 fail-closed”“仅稳定快照允许 fail-open”。
+3. 新增 A-H 模块级 `fail-open/fail-closed` 矩阵，覆盖放行/拦截/降级的模块动作边界。
+4. 新增失效原因码映射与 `hConfigFailureDecisionSnapshotLite` 审计快照合同，确保故障决策可回放。
+5. 更新闭环与 MVP 交付项，将配置失效矩阵纳入当前版本交付口径。
+
 ### 2026-02-21（v4.18）
 
 1. 在 `Module H` 新增配置决策原因码体系，冻结 `hit/degrade/reject` 三类标准 reasonCode。

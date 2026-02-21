@@ -12,6 +12,7 @@
 8. 闭环归档一致性状态冻结为 `consistent_committed/consistent_non_billable/partial_pending/partial_timeout`（见 `3.8.29` / `3.9.5`）。
 9. 闭环记录必须绑定同一 `versionAnchorSnapshot`（或其可还原引用）与 `anchorHash`，用于 replay/dispute（见 `3.10.28~3.10.32`）。
 10. 闭环审计必须可还原配置决策结论（`decisionAction + primaryReasonCode + configDecisionAuditSnapshotRef`，见 `3.10.42~3.10.45`）。
+11. 配置失效场景必须可还原 `configFailureScenario + failureMode + moduleActions`（见 `3.10.47~3.10.52`）。
 
 #### 3.11.2 闭环价值
 
