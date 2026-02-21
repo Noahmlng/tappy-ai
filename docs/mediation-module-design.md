@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.6
+- 文档版本：v3.7
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -399,6 +399,69 @@ optional（缺失可降级）：
 4. 同请求在同版本下映射结果与处置动作可复现。
 5. B 错误结果可通过 `traceKey + reasonCode` 分钟级定位。
 
+#### 3.4.10 Canonical 枚举字典（MVP 冻结）
+
+当前版本冻结 `enumDictionaryLite`，用于消除跨来源枚举歧义。
+
+最小语义槽位（MVP）：
+1. `triggerDecision`
+   - `opportunity_eligible` / `opportunity_ineligible` / `opportunity_blocked_by_policy` / `unknown_trigger_decision`
+2. `decisionOutcome`
+   - `opportunity_eligible` / `opportunity_ineligible` / `opportunity_blocked_by_policy` / `unknown_decision_outcome`
+3. `hitType`
+   - `explicit_hit` / `workflow_hit` / `contextual_hit` / `scheduled_hit` / `policy_forced_hit` / `no_hit` / `unknown_hit_type`
+4. `placementType`
+   - `chat_inline` / `tool_result` / `workflow_checkpoint` / `agent_handoff` / `unknown_placement_type`
+5. `actorType`
+   - `human` / `agent` / `agent_chain` / `system` / `unknown_actor_type`
+6. `channelType`
+   - `sdk_server` / `sdk_client` / `webhook` / `batch` / `unknown_channel_type`
+
+字典治理（最小）：
+1. 独立版本：`enumDictVersion`。
+2. 每个语义槽位都必须声明 canonical 集合和 alias 映射规则。
+3. 映射结果必须带 `enumDictVersion` 写入审计快照。
+
+#### 3.4.11 raw -> canonical 映射规则（MVP）
+
+固定映射流程：
+1. 预处理：去首尾空格、统一小写、下划线归一。
+2. 按语义槽位查 alias 表，命中则映射到 canonical。
+3. 未命中按 `unknown` 回退策略执行（见 `3.4.12`）。
+4. 记录映射动作（`exact_match` / `alias_map` / `unknown_fallback` / `reject`）。
+
+最小映射表示例：
+
+| semanticSlot | raw value (example) | canonical | action |
+|---|---|---|---|
+| `placementType` | `chat-inline`, `in_message` | `chat_inline` | `alias_map` |
+| `placementType` | `tool-output`, `function_result` | `tool_result` | `alias_map` |
+| `actorType` | `end_user`, `human_user` | `human` | `alias_map` |
+| `actorType` | `assistant_agent`, `auto_agent` | `agent` | `alias_map` |
+| `channelType` | `sdk_http`, `rest` | `sdk_server` | `alias_map` |
+| `hitType` | `explicit_intent`, `intent_hit` | `explicit_hit` | `alias_map` |
+| `placementType` | `unknown_widget_x` | `unknown_placement_type` | `unknown_fallback` |
+
+#### 3.4.12 `unknown` 回退值策略（MVP）
+
+回退原则：
+1. 每个枚举槽位必须有唯一 `unknown_*` 值，禁止空值落地。
+2. 同 raw 值在同 `enumDictVersion` 下必须稳定映射到同 `unknown_*`。
+3. `unknown_*` 必须记录原始值和来源，供字典迭代。
+
+与非法值处置的边界（与 `3.4.8` 对齐）：
+1. 主链路 gating 槽位（`decisionOutcome`、`hitType`、`triggerDecision`）命中 `unknown_*` 时按 `reject` 处理。
+2. 非 gating 槽位（`placementType`、`actorType`、`channelType`）允许 `unknown_*` 并按 `degrade` 处理。
+3. B 不得将 `unknown_*` 直接解释为积极路由信号；下游按保守策略消费。
+
+#### 3.4.13 MVP 验收基线（Canonical 枚举字典）
+
+1. 同语义 raw 值跨来源能稳定归一到同 canonical 值。
+2. `unknown_*` 回退不会导致同请求在 C/D 侧出现策略分叉。
+3. 任一映射都可追溯到 `enumDictVersion + mappingAction + rawValue`。
+4. gating 槽位的 `unknown_*` 会被稳定拦截，不进入正常路由。
+5. 非 gating 槽位命中 `unknown_*` 时请求仍可受控跑通主链路。
+
 ### 3.5 Module C: Policy & Safety Governor
 
 #### 3.5.1 职责边界
@@ -610,7 +673,7 @@ optional（缺失可降级）：
 
 1. 模块化主链框架（A-H）与边界说明。
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
-3. 外部输入映射与冲突优先级规则（含 B 输入合同：A -> B）。
+3. 外部输入映射与冲突优先级规则（含 B 输入合同 + Canonical 枚举字典）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线。
 5. Delivery / Event Schema 分离与 `responseReference` 关联口径。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
@@ -671,6 +734,14 @@ optional（缺失可降级）：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.7）
+
+1. 新增 `3.4.10`，冻结 Module B 的 Canonical 枚举字典最小集合与版本线（`enumDictVersion`）。
+2. 新增 `3.4.11`，定义 raw -> canonical 的固定映射流程与最小映射表示例。
+3. 新增 `3.4.12`，明确 `unknown_*` 回退值策略以及 gating/non-gating 处置边界。
+4. 新增 `3.4.13`，补充 Canonical 枚举字典的 MVP 验收基线。
+5. 更新第 4 章交付项，纳入 Canonical 枚举字典交付口径。
 
 ### 2026-02-21（v3.6）
 
