@@ -160,9 +160,18 @@ test('e2e: minimal closed-loop request -> delivery -> event -> archive', async (
   const port = 3400 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${HOST}:${port}`
   const gateway = startGateway(port)
+  let placementPatched = false
 
   try {
     await waitForGateway(baseUrl)
+    const patchResponse = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_inline_v1', {
+      method: 'PUT',
+      body: {
+        enabled: false
+      }
+    })
+    assert.equal(patchResponse.ok, true, 'fail condition: chat_inline_v1 should be configurable for deterministic e2e')
+    placementPatched = true
 
     const requestPayload = buildAttachMvpPayload()
 
@@ -178,9 +187,14 @@ test('e2e: minimal closed-loop request -> delivery -> event -> archive', async (
 
     assert.equal(requestId.length > 0, true, 'fail condition: request stage must return non-empty requestId')
     assert.equal(
-      ['served', 'no_fill', 'error'].includes(deliveryResult),
+      deliveryResult,
+      'blocked',
+      `fail condition: delivery.result must be blocked under forced placement disable, got ${deliveryResult || 'empty'}`
+    )
+    assert.equal(
+      ['blocked', 'served', 'no_fill', 'error'].includes(deliveryResult),
       true,
-      `fail condition: delivery.result must be served/no_fill/error, got ${deliveryResult || 'empty'}`
+      `fail condition: delivery.result must be one of blocked/served/no_fill/error, got ${deliveryResult || 'empty'}`
     )
 
     const eventResponse = await requestJson(baseUrl, '/api/v1/sdk/events', {
@@ -223,6 +237,14 @@ test('e2e: minimal closed-loop request -> delivery -> event -> archive', async (
     assert.equal(ARCHIVE_STATUSES.has(archiveRecord.archiveStatus), true)
     assert.equal(archiveRecord.terminalEvent.eventType, 'sdk_event')
   } finally {
+    if (placementPatched) {
+      await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_inline_v1', {
+        method: 'PUT',
+        body: {
+          enabled: true
+        }
+      }).catch(() => {})
+    }
     await stopGateway(gateway)
   }
 })
