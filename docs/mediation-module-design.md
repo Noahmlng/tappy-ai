@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.0
+- 文档版本：v3.1
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -842,6 +842,104 @@ optional：
 3. A 层抽取时延在预算内，超限时按固定策略降级。
 4. 抽取结果可稳定支持 trigger 与 sensing 判定，不引入随机漂移。
 
+#### 3.3.43 A-layer Latency Budget（A 层时延预算，当前版本冻结）
+
+范围边界：
+1. 仅定义 `Module A` 从请求进入到输出 `opportunity seed/sensingDecision` 的时延预算。
+2. 不覆盖 `Module B-D` 的处理预算，但需为主链路预留预算空间。
+3. 目标是防止入口时延扩散，保护 `Request -> Delivery` 总体 SLA。
+
+预算目标：
+1. A 层必须有硬预算（hard cap）与软预算（soft cap）。
+2. 超过软预算触发降级，超过硬预算触发截断。
+3. 同类请求在同预算档位下执行一致的截断策略。
+
+#### 3.3.44 预算模型与档位（冻结）
+
+预算维度：
+1. `a_total_budget_ms`：A 层总预算。
+2. `a_soft_budget_ms`：软预算阈值（触发降级）。
+3. `a_hard_budget_ms`：硬预算阈值（触发截断）。
+
+按请求档位冻结三档（当前版本）：
+1. `L0 critical_path`
+   - 适用于强实时 placement。
+   - 预算策略：最严格，优先稳定低延迟。
+2. `L1 standard_path`
+   - 适用于普通在线请求。
+   - 预算策略：平衡时延与信号完整性。
+3. `L2 relaxed_path`
+   - 适用于非强实时场景。
+   - 预算策略：允许有限额外抽取，但仍受硬预算约束。
+
+约束：
+1. 每个请求进入 A 层时必须绑定一个 `latencyBudgetTier`。
+2. 无档位请求默认降级到 `L1`。
+3. 档位配置版本化：`aLatencyBudgetPolicyVersion`。
+
+#### 3.3.45 分阶段预算拆分与超限处理（冻结）
+
+A 层处理阶段预算拆分：
+1. `ingress_validate_budget_ms`（结构/鉴权/去重前置校验）
+2. `context_extract_budget_ms`（上下文抽取与脱敏）
+3. `sensing_decision_budget_ms`（触发识别与结论输出）
+
+执行规则：
+1. 单阶段超软预算：立即执行该阶段降级动作，不等待总预算耗尽。
+2. 单阶段超硬预算：阶段立即截断并产出受控结果。
+3. 总预算超软预算：启用全局降级（裁剪窗口、降低证据粒度）。
+4. 总预算超硬预算：执行 A 层截断矩阵，禁止继续深度识别。
+
+降级顺序（固定）：
+1. 裁剪 `task_window`
+2. 裁剪 `session_window`
+3. 仅保留 `turn_window` + 核心字段
+4. 若仍超限，返回 `continue_degraded` 或 `block_noop`（按异常矩阵）
+
+#### 3.3.46 截断策略矩阵（A 层）
+
+| 触发条件 | 默认动作 | 输出结果 | 是否允许进入 B |
+|---|---|---|---|
+| 阶段软超时 | `continue_degraded` | 保留最小识别结果 + 降级标记 | 是 |
+| 阶段硬超时 | `block_noop` | `opportunity_ineligible` + `latency_stage_hard_timeout` | 否 |
+| 总软超时 | `continue_degraded` | 降级识别结果 + `latency_budget_exceeded_soft` | 是 |
+| 总硬超时 | `block_noop` | `opportunity_ineligible` + `latency_budget_exceeded_hard` | 否 |
+| 高风险来源 + 任一超时 | `block_reject` | 受控拒绝 + `latency_risk_escalated` | 否 |
+
+一致性约束：
+1. 超时处理动作必须与 `3.3.34-3.3.37` 的异常处置矩阵一致。
+2. 不允许“有时放行、有时拦截”的随机行为。
+3. 截断后必须产出结构化原因码，不允许静默失败。
+
+#### 3.3.47 输出合同与验收基线（A-layer Latency）
+
+`Module A` 增补 `aLatencyBudgetSnapshot`：
+1. `latencyBudgetTier`（L0/L1/L2）
+2. `aLatencyBudgetPolicyVersion`
+3. `aStageLatencyMs`（validate/context/sensing）
+4. `aTotalLatencyMs`
+5. `latencyDecision`（within_soft/soft_exceeded/hard_exceeded）
+6. `latencyDispositionAction`
+7. `latencyReasonCode`
+
+下游消费约束：
+1. `Module B` 仅承载预算快照，不回补被截断上下文。
+2. 审计层必须可按 `traceKey` 回放“预算命中 -> 降级/截断 -> 输出”链路。
+3. 运维监控必须按 `latencyBudgetTier` 分层看板，不混算口径。
+
+核心指标：
+1. `a_total_latency_p95`
+2. `a_soft_budget_exceeded_rate`
+3. `a_hard_budget_exceeded_rate`
+4. `a_latency_cutoff_rate`
+5. `a_sla_protection_effect`（A 层降级后主链路 SLA 保持率）
+
+验收基线：
+1. A 层硬预算可强制生效，超限请求不会无限拖延。
+2. 降级与截断动作可预测、可复现、可审计。
+3. A 层预算策略调整可灰度，且不破坏输出合同兼容性。
+4. 入口预算治理后，主链路 `Request -> Delivery` SLA 波动收敛。
+
 ### 3.4 Module B: Schema Translation & Signal Normalization
 
 #### 3.4.1 统一 Opportunity Schema（共同语言）
@@ -1132,6 +1230,7 @@ optional：
 20. Module A Sensing Decision Output Contract 识别结果输出合同说明（Mediation 范围）。
 21. Module A Fail-open / Fail-closed 异常处置矩阵说明（Mediation 范围）。
 22. Module A Context Extraction Boundary 上下文抽取边界说明（Mediation 范围）。
+23. Module A A-layer Latency Budget 时延预算与截断策略说明（Mediation 范围）。
 
 ## 5. 优化项与 SSP 过渡（Plan）
 
@@ -1300,6 +1399,14 @@ optional：
    - 未来：实现对账自动化与争议回放自动化。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.1）
+
+1. 在 `3.3` 新增 A-layer Latency Budget，明确 A 层软/硬预算与预算档位模型。
+2. 增加 A 层分阶段预算拆分（validate/context/sensing）与超限处理顺序。
+3. 新增 A 层截断策略矩阵，明确超时时的放行/降级/拦截行为。
+4. 新增 `aLatencyBudgetSnapshot` 输出合同及下游消费约束。
+5. 增加时延治理核心指标与验收基线，并更新交付包条目。
 
 ### 2026-02-21（v3.0）
 
