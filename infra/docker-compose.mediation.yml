@@ -1,0 +1,46 @@
+name: mediation-infra
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: mediation-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--save", "60", "1000", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    volumes:
+      - mediation_redis_data:/data
+    networks:
+      - mediation
+
+  nats:
+    image: nats:2.10-alpine
+    container_name: mediation-nats
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    command: ["-js", "-m", "8222"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    volumes:
+      - mediation_nats_data:/data
+    networks:
+      - mediation
+
+volumes:
+  mediation_redis_data:
+  mediation_nats_data:
+
+networks:
+  mediation:
+    driver: bridge
+

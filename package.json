@@ -16,6 +16,9 @@
     "dev:gateway": "npm run dev:gateway --workspace @ai-network/ad-aggregation-platform",
     "dev:dashboard": "npm run dev --workspace @ai-network/simulator-dashboard",
     "build:dashboard": "npm run build --workspace @ai-network/simulator-dashboard",
-    "dev:local": "node ./scripts/dev-local.js"
+    "dev:local": "node ./scripts/dev-local.js",
+    "infra:up": "bash ./scripts/dev-mediation-infra.sh up",
+    "infra:down": "bash ./scripts/dev-mediation-infra.sh down",
+    "infra:status": "bash ./scripts/dev-mediation-infra.sh status"
   }
 }
