@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.2
+- 文档版本：v3.3
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -1027,6 +1027,112 @@ A 层处理阶段预算拆分：
 3. 任何一条 `impression/click/failure` 事件可回溯到 `requestKey + opportunityKey`。
 4. 审计系统可按 `lineageKey` 回放单请求全生命周期。
 
+#### 3.3.53 A-layer Error Code Taxonomy（A 层错误码体系，当前版本冻结）
+
+范围边界：
+1. 本体系只覆盖 `Module A` 的错误与原因码标准化。
+2. 不覆盖 `Module B-D` 的业务错误细节，但允许后续模块按本规范扩展。
+3. 目标是让运维、排障、审计使用同一套可检索、可聚合、可回放的错误码语义。
+
+设计目标：
+1. 统一错误码命名与分类，消除同义不同码。
+2. 每个错误码可映射到固定处置动作（fail-open/fail-closed）。
+3. 错误码与关键快照（auth/dedup/trigger/decision/trace/latency）可交叉检索。
+
+#### 3.3.54 错误码分层与命名规范（冻结）
+
+命名格式：
+1. `A_<DOMAIN>_<SCENARIO>_<RESULT>`
+2. 示例：`A_AUTH_TOKEN_INVALID_HARDFAIL`
+
+分层结构：
+1. `SEV`：严重级别（`INFO/WARN/ERROR/FATAL`）
+2. `DOMAIN`：错误域（`INGRESS/AUTH/TRUST/DEDUP/TRIGGER/DECISION/CONTEXT/LATENCY/TRACE`）
+3. `CLASS`：错误类（`VALIDATION/TIMEOUT/CONFLICT/MISSING/INVALID/BLOCKED/DEGRADED/INTERNAL`）
+4. `ACTION`：默认处置（`CONTINUE_NORMAL/CONTINUE_DEGRADED/SHORT_CIRCUIT/BLOCK_NOOP/BLOCK_REJECT`）
+
+约束：
+1. 一个错误码必须绑定唯一 `DOMAIN + CLASS + ACTION`。
+2. 新增错误码必须声明兼容性等级（新增/替换/废弃）。
+3. 禁止使用自由文本作为主诊断口径，文本仅可作为补充说明。
+
+#### 3.3.55 A 层错误域最小码集（当前版本）
+
+`INGRESS`：
+1. `A_INGRESS_STRUCTURE_MISSING_REJECT`
+2. `A_INGRESS_STRUCTURE_INVALID_REJECT`
+
+`AUTH/TRUST`：
+1. `A_AUTH_TOKEN_INVALID_HARDFAIL`
+2. `A_AUTH_SIGNATURE_MISMATCH_HARDFAIL`
+3. `A_TRUST_SOURCE_BLOCKED_HARDFAIL`
+4. `A_AUTH_SOFTFAIL_DEGRADED`
+
+`DEDUP`：
+1. `A_DEDUP_INFLIGHT_DUPLICATE_SHORTCIRCUIT`
+2. `A_DEDUP_REUSED_RESULT_SHORTCIRCUIT`
+3. `A_DEDUP_WINDOW_EXPIRED_NEWATTEMPT`
+4. `A_DEDUP_STORE_UNAVAILABLE_DEGRADED`
+
+`TRIGGER/DECISION`：
+1. `A_TRIGGER_UNKNOWN_DEGRADED`
+2. `A_TRIGGER_PLACEMENT_INCOMPATIBLE_BLOCKNOOP`
+3. `A_DECISION_CONFLICT_RESOLVED_DEGRADED`
+4. `A_DECISION_POLICY_BLOCKED_BLOCKNOOP`
+
+`CONTEXT/LATENCY`：
+1. `A_CONTEXT_BUDGET_EXCEEDED_DEGRADED`
+2. `A_CONTEXT_REDACTION_REQUIRED_DEGRADED`
+3. `A_LATENCY_SOFT_EXCEEDED_DEGRADED`
+4. `A_LATENCY_HARD_EXCEEDED_BLOCKNOOP`
+
+`TRACE`：
+1. `A_TRACE_INIT_FALLBACK_GENERATED_DEGRADED`
+2. `A_TRACE_INIT_FAILED_HARDFAIL`
+
+#### 3.3.56 错误码映射规则（处置 + 输出 + 审计）
+
+映射规则：
+1. 每个错误码必须映射到 `aLayerDispositionSnapshot.dispositionAction`。
+2. 每个错误码必须映射到 `sensingDecision` 的可解释结果（eligible/ineligible/blocked）。
+3. 每个错误码必须携带 `traceKey + attemptKey + aLatencyBudgetPolicyVersion`。
+4. 同请求出现多错误时按优先级合并：`FATAL > ERROR > WARN > INFO`。
+
+聚合规则：
+1. 主错误码（primary code）只允许一个，用于对账与告警。
+2. 次错误码（secondary codes）可多值，用于深度排障。
+3. 主错误码变更必须写入 `error_resolution_reason`。
+
+#### 3.3.57 输出合同与观测基线（A-layer Error Taxonomy）
+
+`Module A` 增补 `aErrorSnapshot`：
+1. `primaryErrorCode`
+2. `secondaryErrorCodes`
+3. `errorSeverity`
+4. `errorDomain`
+5. `errorClass`
+6. `errorAction`
+7. `errorTaxonomyVersion`
+8. `errorResolutionReason`
+
+下游约束：
+1. `Module B/C/D` 不得改写 `primaryErrorCode`，仅可追加本模块派生码。
+2. 审计层必须支持按 `errorDomain/errorCode/errorSeverity` 检索与聚合。
+3. 运维告警默认以 `primaryErrorCode` 触发，不以文本日志触发。
+
+核心指标：
+1. `a_error_code_coverage_rate`
+2. `a_unknown_error_code_rate`
+3. `a_primary_error_stability_rate`
+4. `a_error_to_disposition_consistency_rate`
+5. `a_mttr_by_error_domain`
+
+验收基线：
+1. A 层异常都有标准错误码，无裸文本主诊断。
+2. 同类异常跨 SDK/应用命中同一主错误码。
+3. 错误码可稳定映射到处置动作，不出现口径冲突。
+4. 运维可按错误域快速定位问题并触发回放。
+
 ### 3.4 Module B: Schema Translation & Signal Normalization
 
 #### 3.4.1 统一 Opportunity Schema（共同语言）
@@ -1319,6 +1425,7 @@ A 层处理阶段预算拆分：
 22. Module A Context Extraction Boundary 上下文抽取边界说明（Mediation 范围）。
 23. Module A A-layer Latency Budget 时延预算与截断策略说明（Mediation 范围）。
 24. Module A Trace Initialization Contract 追踪主键初始化规则说明（Mediation 范围）。
+25. Module A Error Code Taxonomy A层错误码体系说明（Mediation 范围）。
 
 ## 5. 优化项与 SSP 过渡（Plan）
 
@@ -1487,6 +1594,14 @@ A 层处理阶段预算拆分：
    - 未来：实现对账自动化与争议回放自动化。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.3）
+
+1. 在 `3.3` 新增 A-layer Error Code Taxonomy，统一 A 层错误码命名、分层与最小码集。
+2. 固化错误码与处置动作映射规则，要求错误码可直接映射到异常处置与识别结果。
+3. 新增主错误码/次错误码聚合规则，统一运维告警和对账口径。
+4. 新增 `aErrorSnapshot` 输出合同及下游消费约束。
+5. 增加错误码覆盖率与一致性核心指标，并更新交付包条目。
 
 ### 2026-02-21（v3.2）
 
