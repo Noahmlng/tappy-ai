@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.39）
+
+1. 在 `Module F` 输入合同新增 `eventIdScope`（`global_unique` / `batch_scoped`），默认 `batch_scoped`。
+2. 冻结 `client_event_id` 命名空间化规则：`appId|batchId|eventId`（默认）或 `appId|global|eventId`（通过全局唯一性校验时）。
+3. 在幂等优先级中将 `eventId` 明确为 `eventIdScoped`，禁止裸 `eventId` 直接作为 dedup 键值。
+4. 新增全局唯一性声明校验失败处置：`f_event_id_global_uniqueness_unverified`（`ackStatus=rejected`）。
+5. 补齐 `idempotencyKey/eventId/computedKey` 裁决规则，明确“先命名空间化，再进入去重”。
+
 ### 2026-02-21（v4.38）
 
 1. 在 `Module E` 将 D 输出锚点命名统一为 `dToEOutputLite.auctionDecisionLite`，消除 `auctionResultLite` 同名嵌套歧义。

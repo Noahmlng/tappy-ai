@@ -79,6 +79,7 @@ envelope 级约束：
 
 optional：
 1. `idempotencyKey`（若提供则作为最高优先级幂等键）
+2. `eventIdScope`（`global_unique` / `batch_scoped`，默认 `batch_scoped`）
 
 例外场景：
 1. `opportunity_created` / `auction_started` 允许无 `responseReference`，但必须有 `opportunityKey + requestKey + attemptKey`。
@@ -99,6 +100,7 @@ optional：
 3. 时间戳非法 -> `rejected`，原因码 `f_event_time_invalid`
 4. `idempotencyKey` 非法 -> `accepted`（降级使用低优先级键），原因码 `f_idempotency_key_invalid_fallback`
 5. `eventId` 非法且 `computedKey` 无法生成 -> `rejected`，原因码 `f_event_id_invalid_no_fallback`
+6. `eventIdScope=global_unique` 但缺失唯一性声明或校验失败 -> `rejected`，原因码 `f_event_id_global_uniqueness_unverified`
 
 #### 3.8.6 每条事件 ACK 合同（P0，MVP 冻结）
 
@@ -236,6 +238,13 @@ F 层为每条事件解析 `canonicalDedupKey`，用于去重判定。
    - `canonicalDedupKey = \"f_dedup_v1:\" + keySource + \":\" + keyValue`
    - `keySource in {client_idempotency, client_event_id, computed}`
 
+`client_event_id` 命名空间化规则（P0 冻结）：
+1. 当 `keySource=client_event_id` 时，`keyValue` 必须为：
+   - `eventIdScoped = appId + \"|\" + batchId + \"|\" + eventId`（默认，`eventIdScope=batch_scoped`）
+2. 若客户端显式声明 `eventIdScope=global_unique` 且通过服务端校验，可使用：
+   - `eventIdScoped = appId + \"|global|\" + eventId`
+3. 任何未命名空间化的裸 `eventId` 不得直接作为 `canonicalDedupKey` 的 `keyValue`。
+
 `semanticPayloadDigest`（按事件类型）：
 1. `opportunity_created`：`placementKey`
 2. `auction_started`：`auctionChannel`
@@ -250,16 +259,20 @@ F 层为每条事件解析 `canonicalDedupKey`，用于去重判定。
 
 优先级（高 -> 低）：
 1. 客户端 `idempotencyKey`
-2. 客户端 `eventId`
+2. 客户端 `eventIdScoped`（由 `appId|batchId|eventId` 或 `appId|global|eventId` 构成）
 3. 服务端 `computedKey`
 
 裁决规则：
 1. `idempotencyKey` 合法时，必须作为最终 dedup 键（不回退到低优先级）。
-2. 无 `idempotencyKey` 且 `eventId` 合法时，使用 `eventId`。
+2. 无 `idempotencyKey` 且 `eventId` 合法时，必须先做命名空间化再使用 `eventIdScoped`。
 3. 两者缺失/非法时，使用 `computedKey`。
 4. 若高优先级键对应历史指纹与当前 `computedKey` 冲突：
    - `ackStatus=rejected`
    - `ackReasonCode=f_dedup_payload_conflict`
+   - `retryable=false`
+5. 若声明 `eventIdScope=global_unique` 但未通过唯一性校验：
+   - `ackStatus=rejected`
+   - `ackReasonCode=f_event_id_global_uniqueness_unverified`
    - `retryable=false`
 
 一致性约束：
