@@ -1,5 +1,12 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.40）
+
+1. 在 `Module F` 为可重复事件新增 `eventSeq` 合同（适用 `click/interaction/postback`），并冻结为类型条件必填。
+2. 新增 `eventSeqScope` 与单调递增约束，明确序号作用域与顺序语义。
+3. 补齐 `eventSeq` 非法值处置：`f_event_seq_missing_required` / `f_event_seq_invalid`。
+4. 将 `semanticPayloadDigest` 的 `click/interaction/postback` 计算规则补入 `eventSeq`，避免合法多次事件被错误折叠去重。
+
 ### 2026-02-21（v4.39）
 
 1. 在 `Module F` 输入合同新增 `eventIdScope`（`global_unique` / `batch_scoped`），默认 `batch_scoped`。

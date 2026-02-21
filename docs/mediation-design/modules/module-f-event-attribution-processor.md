@@ -89,10 +89,17 @@ optional：
 2. `auction_started`：`auctionChannel`
 3. `ad_filled`：`responseReference`, `creativeId`
 4. `impression`：`responseReference`, `renderAttemptId`, `creativeId`
-5. `click`：`responseReference`, `renderAttemptId`, `clickTarget`
-6. `interaction`：`responseReference`, `renderAttemptId`, `interactionType`
-7. `postback`：`responseReference`, `postbackType`, `postbackStatus`
+5. `click`：`responseReference`, `renderAttemptId`, `clickTarget`, `eventSeq`
+6. `interaction`：`responseReference`, `renderAttemptId`, `interactionType`, `eventSeq`
+7. `postback`：`responseReference`, `postbackType`, `postbackStatus`, `eventSeq`
 8. `error`：`errorStage`, `errorCode`（若关联交付链路则 `responseReference` 必填）
+
+可重复事件序号合同（P0，MVP 冻结）：
+1. 适用类型：`click` / `interaction` / `postback`。
+2. 字段：`eventSeq`（整数，`>=1`）。
+3. 作用域：`eventSeqScope = appId + responseReference + renderAttemptIdOrNA + eventType`。
+4. 序号语义：同一 `eventSeqScope` 内，`eventSeq` 必须单调递增。
+5. 缺失或非法时拒绝，不降级到默认序号。
 
 非法值处置（最小）：
 1. `eventType` 未知 -> `rejected`，原因码 `f_event_type_unsupported`
@@ -101,6 +108,8 @@ optional：
 4. `idempotencyKey` 非法 -> `accepted`（降级使用低优先级键），原因码 `f_idempotency_key_invalid_fallback`
 5. `eventId` 非法且 `computedKey` 无法生成 -> `rejected`，原因码 `f_event_id_invalid_no_fallback`
 6. `eventIdScope=global_unique` 但缺失唯一性声明或校验失败 -> `rejected`，原因码 `f_event_id_global_uniqueness_unverified`
+7. 可重复事件缺失 `eventSeq` -> `rejected`，原因码 `f_event_seq_missing_required`
+8. `eventSeq` 非法（非整数、`<1`、或违反单调递增）-> `rejected`，原因码 `f_event_seq_invalid`
 
 #### 3.8.6 每条事件 ACK 合同（P0，MVP 冻结）
 
@@ -250,9 +259,9 @@ F 层为每条事件解析 `canonicalDedupKey`，用于去重判定。
 2. `auction_started`：`auctionChannel`
 3. `ad_filled`：`creativeId`
 4. `impression`：`creativeId + renderAttemptId`
-5. `click`：`renderAttemptId + clickTarget`
-6. `interaction`：`renderAttemptId + interactionType`
-7. `postback`：`postbackType + postbackStatus`
+5. `click`：`renderAttemptId + clickTarget + eventSeq`
+6. `interaction`：`renderAttemptId + interactionType + eventSeq`
+7. `postback`：`postbackType + postbackStatus + eventSeq`
 8. `error`：`errorStage + errorCode`
 
 #### 3.8.13 幂等优先级（client eventId vs computed key，P0）
