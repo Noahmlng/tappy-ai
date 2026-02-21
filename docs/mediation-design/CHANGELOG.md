@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.28）
+
+1. 在 `Module B` 收紧 `sourceInputBundleLite`，冻结 `app_context` 最小输入位点：`language/session_state/device_performance_score/privacy_status`。
+2. 新增 `app_context -> semanticSlot` 最小 canonical 子合同，明确 required/optional 边界与 canonical 规则。
+3. 新增 `app_context` 缺失/非法值处置补充，冻结标准原因码与 `reject/degrade` 动作边界。
+4. 新增 `app_context` 子合同 MVP 验收基线，要求同请求同版本映射结果可复现。
+5. 更新 MVP 交付项，将 `app_context` canonical 子合同纳入当前版本交付口径。
+
 ### 2026-02-21（v4.27）
 
 1. 在 `Module B` 新增数值分桶字典合同 `bucketDictLite`，冻结独立版本线 `bucketDictVersion`。

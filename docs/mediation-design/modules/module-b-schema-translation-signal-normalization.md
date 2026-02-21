@@ -75,6 +75,7 @@ required（缺失即不可继续映射）：
    - `decisionOutcome`、`hitType`、`confidenceBand`。
 5. `sourceInputBundleLite`
    - 三路输入快照：`appExplicit`、`placementConfig`、`defaultPolicy`（可为空对象，但槽位必须存在）。
+   - `app_context` 最小输入槽位：`language`、`session_state`、`device_performance_score`、`privacy_status`（映射规则见 `3.4.37`）。
 
 optional（缺失可降级）：
 1. `aErrorLite`
@@ -648,3 +649,50 @@ required：
 3. `mappingAuditSnapshotLite` 与 `bucketAuditSnapshotLite` 均可复放 `rawValue -> bucketValue` 路径。
 4. `bucketDictVersion` 缺失或非法请求不会进入 C/D 正常主链路。
 5. 任一分桶争议可通过 `traceKey + bucketDictVersion + bucketAuditSnapshotLite` 分钟级定位。
+
+#### 3.4.37 `app_context -> semanticSlot` 最小 canonical 子合同（P0，MVP 冻结）
+
+目标：冻结 `app_context` 的关键输入位点，避免 `sourceInputBundleLite` 过泛导致 B 层推断不一致。
+
+输入来源：
+1. `sourceInputBundleLite.appExplicit.app_context`（优先）
+2. `sourceInputBundleLite.placementConfig.app_context`（回退）
+3. `sourceInputBundleLite.defaultPolicy.app_context`（最终回退）
+
+映射规则表（MVP）：
+
+| app_context field | semanticSlot（目标） | required/optional | canonical 规则 | 缺失动作 | 非法动作 |
+|---|---|---|---|---|---|
+| `language` | `UserContext.language` | `optional` | 归一为 BCP-47 小写（例：`en-US` -> `en-us`）；无法识别 -> `lang_unknown` | `degrade`（`b_appctx_language_missing`） | `degrade`（`b_appctx_language_invalid`） |
+| `session_state` | `UserContext.sessionState` | `required` | `active/resumed/idle/ended/unknown_session_state` | `reject`（`b_appctx_required_slot_missing`） | `reject`（`b_appctx_session_state_invalid`） |
+| `device_performance_score` | `RequestMeta.devicePerfBucket` | `optional` | 先走 `bucketDictLite`（`devicePerfScore`）得到 canonical bucket | `degrade`（`b_appctx_perf_missing`） | `degrade`（`b_appctx_perf_invalid`） |
+| `privacy_status` | `PolicyContext.consentScope` | `required` | `consent_granted/consent_limited/consent_denied/unknown_consent_scope` | `reject`（`b_appctx_required_slot_missing`） | `reject`（`b_appctx_privacy_status_invalid`） |
+
+一致性约束：
+1. 同请求在同 `bInputContractVersion + enumDictVersion + bucketDictVersion` 下，`app_context` 映射结果必须确定性一致。
+2. `session_state/privacy_status` 为 required，禁止静默降级为放行语义。
+3. `device_performance_score` 的分桶结果必须与 `bucketAuditSnapshotLite` 对齐。
+
+#### 3.4.38 `app_context` 缺失/非法值处置补充（P0，MVP 冻结）
+
+补充原因码（最小）：
+1. `b_appctx_required_slot_missing`
+2. `b_appctx_language_missing`
+3. `b_appctx_perf_missing`
+4. `b_appctx_language_invalid`
+5. `b_appctx_session_state_invalid`
+6. `b_appctx_perf_invalid`
+7. `b_appctx_privacy_status_invalid`
+
+处置边界：
+1. required 槽位缺失或非法 -> `reject`，状态置 `error`，不进入 C 正常主链路。
+2. optional 槽位缺失或非法 -> `degrade`，写 canonical `unknown_*` 或 `bucket_unknown`，并追加 `mappingWarnings`。
+3. 任一 `app_context` 处置都必须记录 `rawValue + normalized/bucketValue + reasonCode` 到审计快照。
+
+#### 3.4.39 MVP 验收基线（app_context canonical 子合同）
+
+1. `language/session_state/device_performance_score/privacy_status` 四个位点都能按固定规则映射。
+2. required 位点（`session_state/privacy_status`）不会被静默降级为放行。
+3. `device_performance_score` 的 bucket 与 `bucketDictVersion`、`bucketAuditSnapshotLite` 一致。
+4. 同请求同版本下 `app_context` 映射与动作可复现。
+5. 任一 `app_context` 争议可通过 `traceKey + semanticSlot + reasonCode` 分钟级定位。
