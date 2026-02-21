@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.21
+- 文档版本：v3.22
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -976,6 +976,7 @@ optional：
 1. 标准候选结果集合或空结果。
 2. 路由轨迹与降级轨迹。
 3. 状态更新（进入 `routed` 并最终走向终态）。
+4. 详细字段合同见 `3.6.29` ~ `3.6.31`（`D -> E` 冻结）。
 
 #### 3.6.5 D 输入合同（C -> D，MVP 冻结）
 
@@ -1422,6 +1423,70 @@ Route Plan 仅允许三类短路动作：
 4. 任一短路动作都可定位到触发 step、原因码与版本快照。
 5. Route Plan 输出可被 E/F/G 直接消费，不需要二次推断路由过程。
 
+#### 3.6.29 D 输出合同（D -> E，MVP 冻结）
+
+`Module D -> Module E` 标准输出对象冻结为 `dToEOutputLite`。
+
+`dToEOutputLite` required：
+1. `opportunityKey`
+2. `traceKey`
+3. `requestKey`
+4. `attemptKey`
+5. `hasCandidate`（`true` / `false`）
+6. `candidateCount`
+7. `normalizedCandidates`（有序列表，允许为空）
+8. `routeConclusion`
+   - `routePlanId`
+   - `routeOutcome`（`served_candidate` / `no_fill` / `error`）
+   - `finalRouteTier`（`primary` / `secondary` / `fallback` / `none`）
+   - `finalAction`（`deliver` / `no_fill` / `terminal_error`）
+   - `finalReasonCode`
+   - `fallbackUsed`（`true` / `false`）
+9. `stateUpdate`
+   - `fromState`（固定 `routed`）
+   - `toState`（`served` / `no_fill` / `error`）
+   - `statusReasonCode`
+   - `updatedAt`
+10. `versionAnchors`
+   - `dOutputContractVersion`
+   - `routingPolicyVersion`
+   - `fallbackProfileVersion`
+   - `candidateNormalizeVersion`
+   - `errorNormalizeVersion`
+
+optional：
+1. `winningCandidateRef`
+2. `routeExecutionDigest`
+3. `warnings`
+4. `extensions`
+
+#### 3.6.30 候选存在性、路由结论与状态更新约束（MVP）
+
+存在性约束：
+1. `hasCandidate=true` 时：`candidateCount >= 1` 且 `normalizedCandidates` 非空。
+2. `hasCandidate=false` 时：`candidateCount=0` 且 `normalizedCandidates` 为空列表。
+3. `normalizedCandidates` 必须沿用 D 层既定排序结果，E 不得重排。
+
+路由结论约束：
+1. `routeOutcome=served_candidate` -> `finalAction=deliver`，且 `finalRouteTier != none`。
+2. `routeOutcome=no_fill` -> `finalAction=no_fill`，且允许 `finalRouteTier=none`。
+3. `routeOutcome=error` -> `finalAction=terminal_error`，并携带标准化错误原因码。
+4. 任一输出都必须附带唯一 `finalReasonCode`（不可空）。
+
+状态更新约束：
+1. `hasCandidate=true` 必须映射为 `stateUpdate.toState=served`。
+2. `hasCandidate=false` 且 `routeOutcome=no_fill` 必须映射为 `stateUpdate.toState=no_fill`。
+3. `routeOutcome=error` 必须映射为 `stateUpdate.toState=error`。
+4. `stateUpdate.statusReasonCode` 必须与 `routeConclusion.finalReasonCode` 一致。
+
+#### 3.6.31 MVP 验收基线（D 输出合同）
+
+1. E 层可仅基于 `dToEOutputLite` 完成 Delivery 组装，不依赖隐式上下文。
+2. “是否有候选”与候选列表在同请求同版本下结论一致且可复现。
+3. 路由结论（`routeOutcome/finalAction/finalReasonCode`）可审计回放。
+4. `stateUpdate` 与路由结论不发生语义冲突（served/no_fill/error 一致）。
+5. 任一 `D -> E` 输出可通过 `traceKey + requestKey + attemptKey` 分钟级定位。
+
 ### 3.7 Module E: Delivery Composer
 
 #### 3.7.1 Delivery Schema 职责
@@ -1575,7 +1640,7 @@ Route Plan 仅允许三类短路动作：
 1. 模块化主链框架（A-H）与边界说明。
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
 3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照 + D 输入合同 + Adapter 注册与能力声明 + request adapt 子合同 + candidate normalize 子合同 + error normalize 体系）。
-4. 两类供给源最小适配合同（adapter 四件事）与编排基线（含 Route Plan 触发/裁决/短路口径）。
+4. 两类供给源最小适配合同（adapter 四件事）与编排基线（含 Route Plan 触发/裁决/短路口径 + D 输出合同）。
 5. Delivery / Event Schema 分离与 `responseReference` 关联口径。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
 7. 可观测与审计最小模型（单机会对象 + 四段决策点）。
@@ -1635,6 +1700,14 @@ Route Plan 仅允许三类短路动作：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.22）
+
+1. 新增 `3.6.29`，冻结 `D -> E` 输出合同 `dToEOutputLite`（最小字段 + 版本锚点）。
+2. 新增 `3.6.30`，明确候选存在性、路由结论、状态更新三类一致性约束。
+3. 新增 `3.6.31`，补充 D 输出合同的 MVP 验收基线。
+4. 更新 `3.6.4`，将 D 输出合同指向冻结章节。
+5. 更新第 4 章交付项，纳入 D 输出合同交付口径。
 
 ### 2026-02-21（v3.21）
 
