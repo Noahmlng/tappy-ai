@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v2.9
+- 文档版本：v3.0
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -750,6 +750,98 @@ optional：
 3. `fail_open` 请求都带有明确降级标记与原因码。
 4. 异常处置可在分钟级检索并完整回放。
 
+#### 3.3.38 Context Extraction Boundary（上下文抽取边界，当前版本冻结）
+
+范围边界：
+1. 仅定义 `Module A` 在 Ingress 阶段可抽取的上下文范围与处理方式。
+2. 不做跨系统全量数据回拉，不扩展到 DSP/SSP 侧数据处理。
+3. 目标是平衡三件事：隐私安全、时延预算、信号有效性。
+
+设计目标：
+1. 防止过度抽取导致隐私风险与合规风险。
+2. 防止无边界抽取导致时延失控与资源浪费。
+3. 防止信号泛滥导致机会识别噪声过高、判定不稳定。
+
+#### 3.3.39 抽取窗口模型（Window Model）
+
+当前版本冻结三层窗口：
+1. `turn_window`
+   - 当前交互回合的最小必要上下文（优先级最高）。
+2. `session_window`
+   - 当前会话内有限历史窗口（用于意图连续性与去重辅助）。
+3. `task_window`
+   - 当前任务阶段的结构化摘要窗口（不拉取全量历史原文）。
+
+窗口规则：
+1. 默认先用 `turn_window`，仅在证据不足时升级到 `session_window`。
+2. `task_window` 只允许结构化摘要进入，不允许原文大段透传。
+3. 任一窗口升级必须记录原因码与升级层级。
+4. 超出窗口的数据不得进入 A 层识别输入。
+
+#### 3.3.40 脱敏与最小必要原则（Data Minimization + Redaction）
+
+敏感度分层（用于抽取前判定）：
+1. `S0 Public`：可直接使用。
+2. `S1 Internal`：可使用但需最小化。
+3. `S2 Sensitive`：默认摘要化或哈希化后使用。
+4. `S3 Restricted`：默认不进入识别链路，仅保留“存在性标记”。
+
+脱敏规则（冻结）：
+1. 识别链路优先消费“结构化标签/摘要”，不消费高敏原文。
+2. `S2` 数据进入时必须执行脱敏动作（mask/hash/coarse-grain）。
+3. `S3` 数据禁止直接进入 `triggerEvidence` 与 `evidenceSummary`。
+4. 所有脱敏动作必须记录 `redactionPolicyVersion` 与动作类型。
+
+最小必要约束：
+1. 无法证明对触发判定有增益的字段不得抽取。
+2. 同类信号重复抽取时只保留单次有效证据引用。
+3. 抽取字段集合必须可配置并可灰度发布。
+
+#### 3.3.41 负载预算与降级策略（Latency/Volume Guardrail）
+
+预算维度：
+1. `context_token_budget`：上下文处理 token 预算。
+2. `context_time_budget_ms`：A 层上下文抽取时延预算。
+3. `context_field_budget`：允许进入判定的字段数量预算。
+
+预算超限处理（按顺序）：
+1. 优先裁剪低优先级窗口（task -> session -> turn）。
+2. 再降级证据粒度（原文 -> 摘要 -> 标签）。
+3. 仍超限时输出 `continue_degraded`，并附带 `context_budget_exceeded`。
+
+约束：
+1. 超限降级不得破坏必需字段（trigger/decision/dedup/auth 核心字段）。
+2. 降级动作必须写入 `aLayerDispositionSnapshot` 与审计记录。
+
+#### 3.3.42 输出合同与验收基线（Context Boundary）
+
+`Module A` 增补 `contextBoundarySnapshot`：
+1. `windowProfile`（turn/session/task 使用情况）
+2. `extractionScopeVersion`
+3. `redactionPolicyVersion`
+4. `sensitivityStats`（S0-S3 命中分布）
+5. `budgetUsage`（token/time/field）
+6. `budgetDecision`（within_budget/degraded/exceeded_blocked）
+7. `boundaryReasonCode`
+
+下游消费约束：
+1. `Module B` 仅承载边界快照，不反向请求超边界上下文。
+2. `Module C` 可使用 `budgetDecision` 与 `sensitivityStats` 强化策略判断。
+3. 审计层必须可回放“抽取窗口 -> 脱敏动作 -> 预算决策”链路。
+
+核心指标：
+1. `context_budget_exceeded_rate`
+2. `sensitive_data_redaction_coverage_rate`
+3. `window_upgrade_rate`
+4. `context_extraction_latency_p95`
+5. `signal_overload_drop_rate`
+
+验收基线：
+1. 抽取范围可配置、可回放、可审计，且无跨边界泄漏。
+2. `S2/S3` 数据处理满足脱敏约束，不直接进入可识别原文证据。
+3. A 层抽取时延在预算内，超限时按固定策略降级。
+4. 抽取结果可稳定支持 trigger 与 sensing 判定，不引入随机漂移。
+
 ### 3.4 Module B: Schema Translation & Signal Normalization
 
 #### 3.4.1 统一 Opportunity Schema（共同语言）
@@ -1039,6 +1131,7 @@ optional：
 19. Module A Opportunity Trigger Taxonomy 机会触发类型字典说明（Mediation 范围）。
 20. Module A Sensing Decision Output Contract 识别结果输出合同说明（Mediation 范围）。
 21. Module A Fail-open / Fail-closed 异常处置矩阵说明（Mediation 范围）。
+22. Module A Context Extraction Boundary 上下文抽取边界说明（Mediation 范围）。
 
 ## 5. 优化项与 SSP 过渡（Plan）
 
@@ -1207,6 +1300,14 @@ optional：
    - 未来：实现对账自动化与争议回放自动化。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.0）
+
+1. 在 `3.3` 新增 Context Extraction Boundary，明确 A 层上下文抽取边界仅在 Mediation Ingress 范围生效。
+2. 冻结三层抽取窗口模型（turn/session/task）与窗口升级规则。
+3. 新增敏感度分层（S0-S3）、脱敏规则与最小必要抽取约束。
+4. 新增上下文预算护栏（token/time/field）及超限降级流程。
+5. 新增 `contextBoundarySnapshot` 输出合同、核心指标与验收基线，并更新交付包条目。
 
 ### 2026-02-21（v2.9）
 
