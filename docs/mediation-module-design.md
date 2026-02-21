@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.7
+- 文档版本：v3.8
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -462,6 +462,71 @@ optional（缺失可降级）：
 4. gating 槽位的 `unknown_*` 会被稳定拦截，不进入正常路由。
 5. 非 gating 槽位命中 `unknown_*` 时请求仍可受控跑通主链路。
 
+#### 3.4.14 字段级冲突裁决引擎（MVP 冻结）
+
+当前版本冻结 `fieldConflictResolverLite`，按“字段级”而非“请求级”裁决冲突。
+
+冲突检测单元：
+1. 语义位点（`semanticSlot`）是最小裁决单元。
+2. 同一 `semanticSlot` 出现 2 个及以上不同 canonical 值即视为冲突。
+3. 冲突输入只接收已归一的候选值（先 canonical，后裁决）。
+
+字段策略（最小）：
+1. `scalar`（默认）：只允许 `override` 或 `reject`。
+2. `set_like`（白名单字段）：允许 `merge`（并集去重）或 `override` 或 `reject`。
+3. 未声明字段默认按 `scalar` 处理，避免隐式 merge。
+
+#### 3.4.15 冲突动作与原因码（MVP）
+
+冲突动作冻结为三类：
+1. `override`
+   - 语义：选择单一胜出值覆盖其余候选。
+   - 主要触发：来源优先级可判定或 tie-break 可判定。
+2. `merge`
+   - 语义：仅对白名单 `set_like` 字段做稳定并集（去重 + 排序）。
+   - 主要触发：多来源标签类值可兼容。
+3. `reject`
+   - 语义：冲突不可安全裁决，直接拒绝该请求进入正常主链。
+   - 主要触发：gating 槽位硬冲突或字段不允许 merge/override。
+
+最小原因码集：
+1. `b_conflict_override_by_priority`
+2. `b_conflict_override_by_tie_break`
+3. `b_conflict_merge_union`
+4. `b_conflict_reject_gating_hard`
+5. `b_conflict_reject_unmergeable`
+
+#### 3.4.16 同优先级 tie-break（MVP，确定性）
+
+当冲突候选来源优先级相同，按固定链路裁决，禁止随机行为：
+1. 优先非 `unknown_*` 值。
+2. 优先 `inputUpdatedAt` 更新更晚的候选。
+3. 若仍相同，优先 `sourceSequence` 更大的候选（同源输入顺序）。
+4. 若仍相同，按 `normalizedValue` 字典序最小值胜出（最终确定性兜底）。
+
+tie-break 约束：
+1. 每次同优先级裁决必须记录命中的 tie-break 规则。
+2. 同请求、同版本下必须得到相同胜出值。
+3. 任一字段命中 tie-break 都必须产出原因码 `b_conflict_override_by_tie_break`。
+
+#### 3.4.17 裁决审计输出与 MVP 验收基线
+
+`conflictResolutionSnapshotLite` 最小输出：
+1. `semanticSlot`
+2. `candidates`（source, rawValue, normalizedValue, sourcePriority）
+3. `conflictAction`（override/merge/reject）
+4. `selectedValue`（reject 时为空）
+5. `reasonCode`
+6. `tieBreakRule`（未命中可空）
+7. `conflictPolicyVersion`
+
+MVP 验收基线：
+1. 同请求在同 `conflictPolicyVersion` 下不会出现多结果。
+2. 非白名单字段不会发生隐式 `merge`。
+3. 同优先级冲突可稳定复现并可回放解释。
+4. `reject` 冲突不会进入 C/D 正常主链路。
+5. 每次冲突都可通过 `traceKey + semanticSlot + reasonCode` 快速定位。
+
 ### 3.5 Module C: Policy & Safety Governor
 
 #### 3.5.1 职责边界
@@ -673,7 +738,7 @@ optional（缺失可降级）：
 
 1. 模块化主链框架（A-H）与边界说明。
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
-3. 外部输入映射与冲突优先级规则（含 B 输入合同 + Canonical 枚举字典）。
+3. 外部输入映射与冲突优先级规则（含 B 输入合同 + Canonical 枚举字典 + 字段级冲突裁决引擎）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线。
 5. Delivery / Event Schema 分离与 `responseReference` 关联口径。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
@@ -734,6 +799,14 @@ optional（缺失可降级）：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.8）
+
+1. 新增 `3.4.14`，冻结 Module B 字段级冲突裁决引擎（字段单元、冲突检测、字段策略）。
+2. 新增 `3.4.15`，定义冲突动作 `override/merge/reject` 与最小原因码集。
+3. 新增 `3.4.16`，冻结同优先级 tie-break 的确定性规则链路。
+4. 新增 `3.4.17`，补充冲突裁决审计输出合同与 MVP 验收基线。
+5. 更新第 4 章交付项，纳入字段级冲突裁决引擎交付口径。
 
 ### 2026-02-21（v3.7）
 
