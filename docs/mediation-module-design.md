@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.3
+- 文档版本：v3.4
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -1133,6 +1133,43 @@ A 层处理阶段预算拆分：
 3. 错误码可稳定映射到处置动作，不出现口径冲突。
 4. 运维可按错误域快速定位问题并触发回放。
 
+#### 3.3.58 Module A MVP 裁剪清单（必要模块 vs 优化模块）
+
+目标：
+1. 按“先走通路径，再补系统完整性”原则裁剪当前实现范围。
+2. 保留完整设计文档，但工程实施只做必要模块的最小闭环。
+3. 优化模块全部延后到后续迭代，不进入当前 MVP 开发范围。
+
+当前版本必要模块（Now, MVP 必做）：
+
+| 模块 | 是否必要 | MVP 最小实现边界 |
+|---|---|---|
+| Ingress Request Envelope | 必要 | 仅实现 required 壳层校验与基础版本字段；optional 全部可缺省 |
+| Opportunity Trigger Taxonomy | 必要 | 仅保留最小触发类型集与主 trigger 唯一判定 |
+| Sensing Decision Output Contract | 必要 | 固定 `decisionOutcome/hitType/confidenceBand/reasonCode/version` 最小字段 |
+| Trace Initialization Contract | 必要 | 先落 `traceKey/requestKey/attemptKey` 三键，保证不断链 |
+| A-layer Latency Budget | 必要 | 先落单一软/硬预算与硬超时截断，保护主链路 SLA |
+| Idempotency / De-dup（基础版） | 必要 | 先做 `clientRequestId` + in-flight 去重短路，避免重复供给调用 |
+| A-layer Error Code（基础版） | 必要 | 先做主错误码（primary code）与处置动作映射 |
+
+后续优化模块（Later, 本阶段不做）：
+
+| 模块 | 当前状态 | 延后原因 |
+|---|---|---|
+| Auth + Source Trust（完整分级） | 延后 | 冷启动阶段先做基础鉴权即可，完整 T0-T3 分层可后补 |
+| Fail-open / Fail-closed Matrix（完整矩阵） | 延后 | 先用最小硬编码处置规则，完整异常矩阵后补 |
+| Context Extraction Boundary（完整模型） | 延后 | 先固定小窗口与基础脱敏，复杂窗口升级与敏感分层后补 |
+| Idempotency / De-dup（完整窗口/存储退化） | 延后 | 先保证不重复调用，完整窗口策略与降级治理后补 |
+| Error Code Taxonomy（完整分层与聚合） | 延后 | 先保证 primary code 可定位，再补 secondary 与统计体系 |
+| Trigger Taxonomy 扩展与一致性分析 | 延后 | 先稳定最小触发类型，再扩展长尾类型和跨 SDK 一致性治理 |
+| Latency Budget 分档精细化（L0/L1/L2 全量） | 延后 | 先守住统一预算上限，再做分档调优 |
+| Trace Lineage 高级谱系能力 | 延后 | 先保证链路不断，再补 lineage 级高级回放与分析 |
+
+实施原则（冻结）：
+1. 当前迭代只开发“必要模块”的 MVP 边界，不允许顺手扩展优化模块。
+2. 优化模块保留设计文档，不删不做，统一挂到后续优化 backlog。
+3. 任何新增需求先判断是否影响主链路走通；不影响则默认延后。
+
 ### 3.4 Module B: Schema Translation & Signal Normalization
 
 #### 3.4.1 统一 Opportunity Schema（共同语言）
@@ -1426,6 +1463,7 @@ A 层处理阶段预算拆分：
 23. Module A A-layer Latency Budget 时延预算与截断策略说明（Mediation 范围）。
 24. Module A Trace Initialization Contract 追踪主键初始化规则说明（Mediation 范围）。
 25. Module A Error Code Taxonomy A层错误码体系说明（Mediation 范围）。
+26. Module A MVP 裁剪清单（必要模块 vs 优化模块）说明。
 
 ## 5. 优化项与 SSP 过渡（Plan）
 
@@ -1594,6 +1632,14 @@ A 层处理阶段预算拆分：
    - 未来：实现对账自动化与争议回放自动化。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.4）
+
+1. 新增 `3.3.58`，按“先走通路径”原则划分 Module A 的必要模块与优化模块。
+2. 为必要模块定义 MVP 最小实现边界，避免过度工程化。
+3. 将完整分级鉴权、完整异常矩阵、完整上下文边界等归入后续优化项。
+4. 冻结当前实施原则：本阶段只做必要模块，优化模块统一延后。
+5. 更新交付包清单，新增 Module A MVP 裁剪说明条目。
 
 ### 2026-02-21（v3.3）
 
