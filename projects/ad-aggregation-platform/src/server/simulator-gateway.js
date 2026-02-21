@@ -1208,23 +1208,50 @@ function clipText(value, maxLength = 800) {
   return `${text.slice(0, maxLength)}...`
 }
 
+function normalizeIntentInferenceMeta(value, options = {}) {
+  const input = value && typeof value === 'object' ? value : {}
+  const force = options?.force === true
+  const inferenceFallbackReason = String(
+    input.inferenceFallbackReason || input.fallbackReason || '',
+  ).trim()
+  const inferenceModel = String(input.inferenceModel || input.model || '').trim()
+  const inferenceLatencyMs = toPositiveInteger(input.inferenceLatencyMs, 0)
+
+  if (!force && !inferenceFallbackReason && !inferenceModel && inferenceLatencyMs === 0) {
+    return null
+  }
+
+  return {
+    inferenceFallbackReason,
+    inferenceModel,
+    inferenceLatencyMs,
+  }
+}
+
 function buildDecisionInputSnapshot(request, placement, intentScore) {
   const context = request?.context && typeof request.context === 'object' ? request.context : {}
+  const placementKey = String(placement?.placementKey || request?.placementKey || '').trim()
+  const isNextStepIntentCard = placementKey === NEXT_STEP_INTENT_CARD_PLACEMENT_KEY
   const postRulePolicy = context?.postRulePolicy && typeof context.postRulePolicy === 'object'
     ? context.postRulePolicy
     : null
+  const intentInference = normalizeIntentInferenceMeta(context.intentInferenceMeta, {
+    force: isNextStepIntentCard,
+  })
+
   return {
     appId: String(request?.appId || '').trim(),
     sessionId: String(request?.sessionId || '').trim(),
     turnId: String(request?.turnId || '').trim(),
     event: String(request?.event || '').trim(),
     placementId: String(placement?.placementId || '').trim(),
-    placementKey: String(placement?.placementKey || request?.placementKey || '').trim(),
+    placementKey,
     query: clipText(context.query, 280),
     answerText: clipText(context.answerText, 800),
     locale: String(context.locale || '').trim(),
     intentClass: String(context.intentClass || '').trim(),
     intentScore: Number.isFinite(intentScore) ? intentScore : 0,
+    ...(intentInference ? { intentInference } : {}),
     ...(postRulePolicy
       ? {
           postRules: {
@@ -1264,6 +1291,13 @@ function summarizeAdsForDecisionLog(ads) {
 function recordDecisionForRequest({ request, placement, requestId, decision, runtime, ads }) {
   const result = DECISION_REASON_ENUM.has(decision?.result) ? decision.result : 'error'
   const reason = DECISION_REASON_ENUM.has(decision?.reason) ? decision.reason : 'error'
+  const context = request?.context && typeof request.context === 'object' ? request.context : {}
+  const placementKey = String(placement?.placementKey || request?.placementKey || '').trim()
+  const isNextStepIntentCard = placementKey === NEXT_STEP_INTENT_CARD_PLACEMENT_KEY
+  const intentInference = normalizeIntentInferenceMeta(context.intentInferenceMeta, {
+    force: isNextStepIntentCard,
+  })
+
   const payload = {
     requestId,
     appId: request?.appId || '',
@@ -1271,13 +1305,14 @@ function recordDecisionForRequest({ request, placement, requestId, decision, run
     turnId: request?.turnId || '',
     event: request?.event || '',
     placementId: placement?.placementId || '',
-    placementKey: placement?.placementKey || request?.placementKey || '',
+    placementKey,
     result,
     reason,
     reasonDetail: decision?.reasonDetail || '',
     intentScore: Number.isFinite(decision?.intentScore) ? decision.intentScore : 0,
     input: buildDecisionInputSnapshot(request, placement, decision?.intentScore),
     ads: summarizeAdsForDecisionLog(ads),
+    ...(intentInference ? { intentInference } : {}),
   }
 
   if (runtime && typeof runtime === 'object') {
@@ -1868,7 +1903,9 @@ async function requestHandler(req, res) {
       const payload = await readJsonBody(req)
       if (isNextStepIntentCardPayload(payload)) {
         const request = normalizeNextStepIntentCardPayload(payload, 'sdk/evaluate')
+        const inferenceStartedAt = Date.now()
         const { inference, resolvedContext } = await resolveIntentInferenceForNextStep(request)
+        const inferenceLatencyMs = Math.max(0, Date.now() - inferenceStartedAt)
         const result = await evaluateRequest({
           appId: request.appId,
           sessionId: request.sessionId,
@@ -1886,6 +1923,11 @@ async function requestHandler(req, res) {
             constraints: resolvedContext.constraints,
             expectedRevenue: resolvedContext.expectedRevenue,
             locale: resolvedContext.locale,
+            intentInferenceMeta: {
+              inferenceFallbackReason: String(inference?.fallbackReason || ''),
+              inferenceModel: String(inference?.model || ''),
+              inferenceLatencyMs,
+            },
           },
         })
         sendJson(

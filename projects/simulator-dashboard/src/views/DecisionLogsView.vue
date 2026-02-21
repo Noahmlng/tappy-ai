@@ -68,6 +68,24 @@ function getAds(row) {
 function formatConfidence(value) {
   return Number.isFinite(value) ? value.toFixed(2) : '0.00'
 }
+
+function getIntentInferenceMeta(row) {
+  if (!row || typeof row !== 'object') return null
+  const value = row.intentInference
+  if (!value || typeof value !== 'object') return null
+
+  return {
+    inferenceFallbackReason: typeof value.inferenceFallbackReason === 'string'
+      ? value.inferenceFallbackReason.trim()
+      : '',
+    inferenceModel: typeof value.inferenceModel === 'string'
+      ? value.inferenceModel.trim()
+      : '',
+    inferenceLatencyMs: Number.isFinite(value.inferenceLatencyMs)
+      ? Math.max(0, Math.floor(value.inferenceLatencyMs))
+      : 0,
+  }
+}
 </script>
 
 <template>
@@ -123,6 +141,15 @@ function formatConfidence(value) {
                 {{ getDisplayReason(row) }}
               </div>
               <div class="text-xs text-[#98a2b3]">intent {{ formatIntentScore(row.intentScore) }}</div>
+              <template v-if="getIntentInferenceMeta(row)">
+                <div class="text-xs text-[#98a2b3]">
+                  infer {{ getIntentInferenceMeta(row).inferenceModel || '-' }} ·
+                  {{ getIntentInferenceMeta(row).inferenceLatencyMs }}ms
+                </div>
+                <div class="text-xs text-[#667085]">
+                  fallback {{ getIntentInferenceMeta(row).inferenceFallbackReason || 'none' }}
+                </div>
+              </template>
             </td>
             <td>
               <div class="text-xs font-medium text-[#1f2937]">Q: {{ getInputQuery(row) }}</div>

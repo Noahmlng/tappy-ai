@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-02-21T19:44:31.457Z",
+  "generatedAt": "2026-02-21T19:47:11.684Z",
   "suite": "qa-p0-matrix",
   "summary": {
     "total": 24,
@@ -80,7 +80,7 @@
         "audit"
       ],
       "status": "PASS",
-      "durationMs": 9
+      "durationMs": 10
     },
     {
       "id": "B-P0-001",
@@ -101,7 +101,7 @@
         "error_code"
       ],
       "status": "PASS",
-      "durationMs": 0
+      "durationMs": 1
     },
     {
       "id": "B-P0-003",
@@ -112,7 +112,7 @@
         "audit"
       ],
       "status": "PASS",
-      "durationMs": 0
+      "durationMs": 2
     },
     {
       "id": "C-P0-001",
@@ -123,7 +123,7 @@
         "status"
       ],
       "status": "PASS",
-      "durationMs": 1
+      "durationMs": 0
     },
     {
       "id": "C-P0-002",
@@ -133,7 +133,7 @@
         "error_code"
       ],
       "status": "PASS",
-      "durationMs": 0
+      "durationMs": 1
     },
     {
       "id": "C-P0-003",
@@ -240,7 +240,7 @@
         "audit"
       ],
       "status": "PASS",
-      "durationMs": 0
+      "durationMs": 1
     },
     {
       "id": "G-P0-001",
@@ -251,7 +251,7 @@
         "status"
       ],
       "status": "PASS",
-      "durationMs": 1
+      "durationMs": 0
     },
     {
       "id": "G-P0-002",
@@ -261,7 +261,7 @@
         "error_code"
       ],
       "status": "PASS",
-      "durationMs": 0
+      "durationMs": 1
     },
     {
       "id": "G-P0-003",

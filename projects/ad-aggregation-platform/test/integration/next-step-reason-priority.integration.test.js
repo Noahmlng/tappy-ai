@@ -76,7 +76,7 @@ function startGateway(port) {
       SIMULATOR_GATEWAY_HOST: HOST,
       SIMULATOR_GATEWAY_PORT: String(port),
       OPENROUTER_API_KEY: '',
-      OPENROUTER_MODEL: '',
+      OPENROUTER_MODEL: 'glm-5',
       CJ_TOKEN: 'mock-cj-token',
       PARTNERSTACK_API_KEY: 'mock-partnerstack-key',
     },
@@ -159,6 +159,78 @@ test('next-step reason priority: intent_non_commercial wins over threshold when 
     const message = error instanceof Error ? error.message : String(error)
     throw new Error(
       `[next-step-reason-priority] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`,
+    )
+  } finally {
+    await stopGateway(gateway)
+  }
+})
+
+test('next-step decision logs: inference fallback reason/model/latency are recorded for dashboard observability', async () => {
+  const port = 3550 + Math.floor(Math.random() * 200)
+  const baseUrl = `http://${HOST}:${port}`
+  const gateway = startGateway(port)
+
+  try {
+    await waitForGateway(baseUrl)
+
+    const enablePlacement = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_followup_v1', {
+      method: 'PUT',
+      body: {
+        enabled: true,
+      },
+    })
+    assert.equal(enablePlacement.ok, true, 'chat_followup_v1 should be enabled for next-step checks')
+
+    const evaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
+      method: 'POST',
+      body: {
+        appId: 'simulator-chatbot',
+        sessionId: `inference_observe_session_${Date.now()}`,
+        turnId: `inference_observe_turn_${Date.now()}`,
+        userId: 'inference_observe_user',
+        event: 'followup_generation',
+        placementId: 'chat_followup_v1',
+        placementKey: 'next_step.intent_card',
+        context: {
+          query: 'I want to buy a running shoe for daily gym training',
+          answerText: 'You can compare running shoes by cushioning and durability.',
+          locale: 'en-US',
+          intent_class: 'shopping',
+          intent_score: 0.95,
+          preference_facets: [],
+        },
+      },
+    })
+
+    assert.equal(evaluate.ok, true, `evaluate failed: ${JSON.stringify(evaluate.payload)}`)
+    const requestId = String(evaluate.payload?.requestId || '').trim()
+    assert.equal(requestId.length > 0, true, 'evaluate must return requestId')
+
+    const decisions = await requestJson(baseUrl, `/api/v1/dashboard/decisions?requestId=${encodeURIComponent(requestId)}`)
+    assert.equal(decisions.ok, true, `decision query failed: ${JSON.stringify(decisions.payload)}`)
+
+    const items = Array.isArray(decisions.payload?.items) ? decisions.payload.items : []
+    const row = items.find((item) => String(item?.requestId || '').trim() === requestId)
+    assert.equal(Boolean(row), true, 'decision row should be present')
+
+    const inference = row?.intentInference
+    assert.equal(Boolean(inference && typeof inference === 'object'), true, 'intentInference must be recorded')
+    assert.equal(inference?.inferenceFallbackReason, 'missing_llm_config')
+    assert.equal(inference?.inferenceModel, 'glm-5')
+    assert.equal(Number.isFinite(inference?.inferenceLatencyMs), true)
+    assert.equal(inference.inferenceLatencyMs >= 0, true)
+
+    const inputInference = row?.input?.intentInference
+    assert.equal(Boolean(inputInference && typeof inputInference === 'object'), true, 'input.intentInference must be recorded')
+    assert.equal(inputInference?.inferenceFallbackReason, 'missing_llm_config')
+    assert.equal(inputInference?.inferenceModel, 'glm-5')
+    assert.equal(Number.isFinite(inputInference?.inferenceLatencyMs), true)
+    assert.equal(inputInference.inferenceLatencyMs >= 0, true)
+  } catch (error) {
+    const logs = gateway.getLogs()
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `[next-step-inference-observability] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`,
     )
   } finally {
     await stopGateway(gateway)
