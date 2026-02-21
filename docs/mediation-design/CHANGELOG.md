@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.12）
+
+1. 在 `Module H` 新增 `Config Resolution Contract`（P0），冻结配置解析输入合同与版本锚点。
+2. 冻结 `global -> app -> placement` 合并顺序，并明确同请求禁止多次重算配置。
+3. 新增字段级覆盖规则（标量覆盖、对象按 key 合并、数组整字段替换、显式 `null` 清空继承）。
+4. 新增缺失/非法值处置与最小原因码体系，明确 `global` 不可用 fail-closed、`app/placement` 不可用降级语义。
+5. 冻结 `resolvedConfigSnapshot` 结构与 MVP 验收基线，并将该合同纳入当前版本交付项。
+
 ### 2026-02-21（v4.11）
 
 1. 在 `Module F` 完善 `F -> G/Archive` 写入一致性合同，冻结 `recordKey` 确定性生成与幂等冲突语义。
