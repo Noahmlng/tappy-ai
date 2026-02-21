@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.13
+- 文档版本：v3.14
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -825,6 +825,65 @@ optional：
 4. `allow/degrade` 结论一定走 D，且状态更新为 `routed`。
 5. 同请求在同版本下输出字段、分流结果、状态更新均可复现。
 
+#### 3.5.15 Policy 原因码体系（MVP 冻结）
+
+当前版本冻结 `policyReasonCodeLite`，用于统一策略结论解释、运维排障与回放检索。
+
+命名规范：
+1. 格式：`c_<domain>_<action_or_reason>`。
+2. `domain` 仅允许：`compliance` / `consent` / `frequency` / `category` / `input` / `conflict` / `system`。
+3. `action_or_reason` 必须直接表达裁决语义，禁止模糊词。
+
+最小原因码集（MVP）：
+1. `c_compliance_hard_block`
+2. `c_consent_scope_blocked`
+3. `c_frequency_hard_cap_block`
+4. `c_category_restricted_block`
+5. `c_frequency_soft_cap_degrade`
+6. `c_category_soft_risk_degrade`
+7. `c_policy_pass`
+8. `c_policy_degraded_pass`
+9. `c_invalid_input_state`
+10. `c_missing_required_field`
+11. `c_invalid_required_enum`
+12. `c_invalid_version_anchor`
+13. `c_policy_conflict_resolved`
+14. `c_policy_engine_error`
+
+#### 3.5.16 原因码与动作映射（MVP 冻结）
+
+动作集合固定为：`allow` / `degrade` / `block` / `reject`。
+
+映射规则（主映射）：
+1. `c_compliance_hard_block` -> `block`
+2. `c_consent_scope_blocked` -> `block`
+3. `c_frequency_hard_cap_block` -> `block`
+4. `c_category_restricted_block` -> `block`
+5. `c_frequency_soft_cap_degrade` -> `degrade`
+6. `c_category_soft_risk_degrade` -> `degrade`
+7. `c_policy_pass` -> `allow`
+8. `c_policy_degraded_pass` -> `degrade`
+9. `c_invalid_input_state` -> `reject`
+10. `c_missing_required_field` -> `reject`
+11. `c_invalid_required_enum` -> `reject`
+12. `c_invalid_version_anchor` -> `reject`
+13. `c_policy_conflict_resolved` -> 以 `finalPolicyAction` 为准（不得独立决定动作）
+14. `c_policy_engine_error` -> 默认 `reject`（可配置降级为 `degrade`，需显式版本化）
+
+一致性约束：
+1. 一个请求只能有一个 `primaryPolicyReasonCode`。
+2. 可选多个 `secondaryPolicyReasonCodes`，但不得与主动作冲突。
+3. 同请求同版本下，`primaryPolicyReasonCode -> finalPolicyAction` 必须确定性一致。
+4. D/E 与审计层必须以 `primaryPolicyReasonCode` 作为主诊断码。
+
+#### 3.5.17 MVP 验收基线（Policy 原因码体系）
+
+1. 所有 C 结论都能落到 `primaryPolicyReasonCode`，无裸文本主诊断。
+2. 任一 `primaryPolicyReasonCode` 都能唯一映射到动作或映射规则。
+3. 相同输入与版本下，原因码和动作结果稳定一致。
+4. 分钟级检索可通过 `traceKey + primaryPolicyReasonCode` 定位请求。
+5. 变更原因码映射时必须携带 `policyRuleVersion` 并可回滚。
+
 ### 3.6 Module D: Supply Orchestrator & Adapter Layer
 
 #### 3.6.1 供给范围（当前最小）
@@ -1017,7 +1076,7 @@ optional：
 
 1. 模块化主链框架（A-H）与边界说明。
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
-3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同）。
+3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线。
 5. Delivery / Event Schema 分离与 `responseReference` 关联口径。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
@@ -1078,6 +1137,13 @@ optional：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.14）
+
+1. 新增 `3.5.15`，冻结 Module C 的 Policy 原因码体系（命名规范与最小原因码集）。
+2. 新增 `3.5.16`，冻结原因码到动作（allow/degrade/block/reject）的映射关系。
+3. 新增 `3.5.17`，补充 Policy 原因码体系的 MVP 验收基线。
+4. 更新第 4 章交付项，纳入 Policy 原因码体系交付口径。
 
 ### 2026-02-21（v3.13）
 
