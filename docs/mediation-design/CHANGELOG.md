@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.23）
+
+1. 在 `Module A` 新增 `triggerTaxonomyLite` 字典冻结，明确 `triggerType` 最小 canonical 集与 `unknown_trigger_type` 处置边界。
+2. 冻结 `triggerType -> decisionOutcome/hitType/reasonCode` 映射表，确保触发识别结果可确定性复现。
+3. 新增映射执行顺序与冲突处理规则，明确策略阻断覆盖优先级与 `secondaryReasonCodes[]` 解释约束。
+4. 新增 Trigger Taxonomy 的 MVP 验收基线，强化“未知触发拒绝、三元组唯一、trace 可追溯”要求。
+5. 更新 MVP 交付项，将 Trigger Taxonomy 字典与映射表冻结纳入 Module A 当前版本交付口径。
+
 ### 2026-02-21（v4.22）
 
 1. 在 `Module A` 新增 `opportunity_created` 事件合同，冻结事件对象最小字段集合。

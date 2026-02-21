@@ -351,3 +351,64 @@ required：
 2. 事件主键与幂等键在重发场景下稳定不变。
 3. ACK 与重发行为在同请求同版本下确定性一致。
 4. 任一事件异常可通过 `eventKey + eventIdempotencyKey + ackReasonCode` 分钟级定位。
+
+#### 3.3.24 Trigger Taxonomy 字典（P0，MVP 冻结）
+
+字典对象：`triggerTaxonomyLite`
+
+canonical `triggerType`（最小集）：
+1. `answer_end`
+2. `intent_spike`
+3. `session_resume`
+4. `tool_result_ready`
+5. `workflow_checkpoint`
+6. `manual_refresh`
+7. `policy_forced_trigger`
+8. `blocked_by_policy`
+9. `unknown_trigger_type`
+
+治理规则：
+1. 独立版本：`triggerTaxonomyVersion`。
+2. `triggerType` 必须先命中字典，再做下游映射。
+3. 未命中字典统一归一到 `unknown_trigger_type`，并按 `reject` 处理。
+
+#### 3.3.25 `triggerType -> decisionOutcome/hitType/reasonCode` 映射表（P0，MVP 冻结）
+
+| triggerType | decisionOutcome | hitType | reasonCode |
+|---|---|---|---|
+| `answer_end` | `opportunity_eligible` | `workflow_hit` | `a_trg_map_answer_end_eligible` |
+| `intent_spike` | `opportunity_eligible` | `explicit_hit` | `a_trg_map_intent_spike_eligible` |
+| `session_resume` | `opportunity_eligible` | `scheduled_hit` | `a_trg_map_session_resume_eligible` |
+| `tool_result_ready` | `opportunity_eligible` | `contextual_hit` | `a_trg_map_tool_result_ready_eligible` |
+| `workflow_checkpoint` | `opportunity_eligible` | `workflow_hit` | `a_trg_map_workflow_checkpoint_eligible` |
+| `manual_refresh` | `opportunity_ineligible` | `no_hit` | `a_trg_map_manual_refresh_ineligible` |
+| `policy_forced_trigger` | `opportunity_eligible` | `policy_forced_hit` | `a_trg_map_policy_forced_eligible` |
+| `blocked_by_policy` | `opportunity_blocked_by_policy` | `no_hit` | `a_trg_map_blocked_by_policy` |
+| `unknown_trigger_type` | `opportunity_ineligible` | `no_hit` | `a_trg_map_unknown_trigger_reject` |
+
+映射约束：
+1. 映射结果必须使用 B 字典中的 canonical 值（`decisionOutcome/hitType`）。
+2. `unknown_trigger_type` 不得进入创建流程，必须返回 `triggerAction=reject`。
+3. 同 `triggerType + triggerTaxonomyVersion` 下映射结果必须确定性一致。
+
+#### 3.3.26 映射执行顺序与冲突处理（P0，MVP 冻结）
+
+执行顺序：
+1. `triggerType` canonical 归一。
+2. 查 `triggerTaxonomyLite` 映射表生成 `decisionOutcome/hitType/reasonCode`。
+3. 与策略层结果做一致性检查（如 `blocked_by_policy`）。
+4. 输出到 `sensingDecisionLite` 与 `triggerSnapshotLite`。
+
+冲突处理：
+1. 若 `triggerType` 映射为 `eligible` 但策略层判定 `blocked`，最终以策略层为准：
+   - `decisionOutcome=opportunity_blocked_by_policy`
+   - `hitType=no_hit`
+   - `reasonCode=a_trg_map_overridden_by_policy`
+2. 若映射结果与返回动作冲突（如 `eligible` + `triggerAction=reject`），必须补充 `secondaryReasonCodes[]` 解释冲突来源。
+
+#### 3.3.27 MVP 验收基线（Trigger Taxonomy）
+
+1. 所有 `triggerType` 都能稳定映射到唯一 `decisionOutcome/hitType/reasonCode` 三元组。
+2. 未知触发类型不会静默放行，必须稳定拒绝并返回标准原因码。
+3. 同请求同版本下映射与冲突处理结果完全可复现。
+4. 任一触发映射可通过 `traceKey + triggerType + triggerTaxonomyVersion + reasonCode` 分钟级定位。
