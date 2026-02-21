@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.36）
+
+1. 在 `Module E` compose 输入合同中消除命名歧义：外层统一为 `dToEOutputLite`，其内承载 D 输出的 `auctionResultLite`。
+2. 新增 winner 绑定校验：`served=true` 时 winner 必须可定位到候选，否则以 `e_compose_winner_binding_invalid` 拒绝输入。
+3. 冻结 winner-first 消费规则：`top1_strict` 下先消费 winner；winner 不可渲染时必须 `override_by_e` 并落 `e_candidate_not_renderable_after_compose`。
+4. 在 E 状态一致性矩阵中显式固化“winner 不可渲染 -> no_fill + override_by_e”的迁移语义。
+5. 在 E 标准错误码映射中补齐 `e_candidate_not_renderable_after_compose` 与 `e_compose_winner_binding_invalid` 的 canonical 归类。
+
 ### 2026-02-21（v4.35）
 
 1. 在 `Module D` 输出合同新增 `auctionResultLite`，冻结最小交易语义：`served/winner/price/creativeHandle/debugRef`。

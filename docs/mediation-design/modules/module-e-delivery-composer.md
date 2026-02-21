@@ -27,7 +27,7 @@
 2. 对应输入对象冻结为 `eComposeInputLite`
 
 `eComposeInputLite` required：
-1. `auctionResultLite`（来自 `dToEOutputLite`）
+1. `dToEOutputLite`（来自 `Module D`）
    - `opportunityKey`
    - `traceKey`
    - `requestKey`
@@ -79,7 +79,7 @@ optional：
 
 缺失处置动作仅允许：`continue` / `degrade` / `reject`。
 
-1. `auctionResultLite` required 缺失：
+1. `dToEOutputLite` required 缺失：
    - 动作：`reject`（E 不做补洞）。
    - 原因码：`e_compose_missing_auction_required`。
 2. `placementSpecLite` required 缺失：
@@ -94,7 +94,7 @@ optional：
 
 一致性约束：
 1. 同请求同版本下，缺失处置动作必须一致。
-2. E 不允许静默补齐 `auctionResultLite/placementSpecLite` 的 required 字段。
+2. E 不允许静默补齐 `dToEOutputLite/placementSpecLite` 的 required 字段。
 
 #### 3.7.6 非法值处置（compose 输入，MVP）
 
@@ -110,6 +110,9 @@ optional：
 4. 输入语义冲突（`hasCandidate=true` 但候选为空等）：
    - 动作：`reject`。
    - 原因码：`e_compose_inconsistent_auction_result`。
+5. winner 绑定冲突（`auctionResultLite.served=true` 但 winner 缺失/不在 `normalizedCandidates`）：
+   - 动作：`reject`。
+   - 原因码：`e_compose_winner_binding_invalid`。
 
 审计要求：
 1. 必须记录 `traceKey`、字段路径、原值、处置动作、原因码、规则版本。
@@ -258,15 +261,17 @@ optional：
 
 E 层消费 `normalizedCandidates` 的规则冻结为：
 1. 输入候选顺序以 D 层排序结果为准，E 不得重排。
-2. 先做可渲染性筛选（render mode 能力、素材完整性、UI 约束兼容、TTL 可用）。
-3. 再按 `selectionMode` 产出最终候选集。
+2. 当 `auctionResultLite.served=true` 时，必须先绑定并校验 `auctionResultLite.winner` 指向候选（`sourceId + candidateId`）。
+3. 先做可渲染性筛选（render mode 能力、素材完整性、UI 约束兼容、TTL 可用）。
+4. 再按 `selectionMode` 产出最终候选集。
 
 `selectionMode` 规则：
 1. `top1_strict`（默认）：
-   - 选择首个“可渲染候选”。
-   - 若无可渲染候选，进入 no-fill 路径。
+   - 若 `auctionResultLite.served=true`：优先尝试 winner 候选；winner 可渲染则只输出 winner。
+   - 若 winner 不可渲染：必须 `override_by_e`，原因码 `e_candidate_not_renderable_after_compose`，并进入 no-fill（MVP 不切换到非 winner 候选）。
+   - 若 `auctionResultLite.served=false`：选择首个“可渲染候选”；无可渲染候选则 no-fill。
 2. `topN_fill`：
-   - 从前向后选择前 N 个“可渲染候选”。
+   - 仅当 `auctionResultLite.served=false` 时启用；从前向后选择前 N 个“可渲染候选”。
    - N 计算见 `3.7.16`。
 
 审计约束：
@@ -328,7 +333,7 @@ N 计算公式（固定）：
    - 原因码 `e_render_compose_error`
 
 与上游一致性：
-1. 若 D 层 `routeConclusion.routeOutcome=served_candidate` 但 E 层无可渲染候选，必须显式降级为 `no_fill` 并记录 `e_candidate_not_renderable_after_compose`。
+1. 若 D 层 `routeConclusion.routeOutcome=served_candidate` 且 winner 候选不可渲染，必须显式降级为 `no_fill` 并记录 `e_candidate_not_renderable_after_compose`。
 2. E 的最终状态必须与 `candidateConsumptionDecision` 一致，不得出现 “有候选却 no_fill” 的无因结果。
 3. 同请求同版本下，最终渲染决策必须可复现。
 
@@ -652,10 +657,12 @@ E 层最终失败语义只允许两类终态：`no_fill` 与 `error`。
 5. `e_disclosure_all_rejected` -> `e_nf_disclosure_blocked`
 6. `e_ui_frequency_hard_cap` -> `e_nf_frequency_capped`
 7. `e_compose_invalid_structure` / `e_compose_inconsistent_auction_result` -> `e_er_invalid_compose_input`
-8. `e_compose_invalid_version_anchor` -> `e_er_invalid_version_anchor`
-9. `e_tracking_injection_missing` -> `e_er_tracking_contract_broken`
-10. `e_render_compose_error` -> `e_er_compose_runtime_failure`
-11. `e_render_terminal_missing_timeout` -> `e_er_compose_timeout`
+8. `e_candidate_not_renderable_after_compose` -> `e_nf_all_candidate_rejected`
+9. `e_compose_winner_binding_invalid` -> `e_er_invalid_compose_input`
+10. `e_compose_invalid_version_anchor` -> `e_er_invalid_version_anchor`
+11. `e_tracking_injection_missing` -> `e_er_tracking_contract_broken`
+12. `e_render_compose_error` -> `e_er_compose_runtime_failure`
+13. `e_render_terminal_missing_timeout` -> `e_er_compose_timeout`
 
 #### 3.7.33 no_fill vs error 判定规则（P0）
 
@@ -817,9 +824,10 @@ E 层是 Delivery 终态的统一落锤层；D 的状态是“路由结论输入
 1. D `routeOutcome=served_candidate` 且 E 验证/门禁通过：
    - E 终态：`served`
    - `consistencyAction=pass_through`
-2. D `routeOutcome=served_candidate` 但 E 触发 capability/policy/disclosure/material 拦截：
+2. D `routeOutcome=served_candidate` 但 winner 候选触发 capability/policy/disclosure/material 拦截：
    - E 终态：`no_fill`
    - `consistencyAction=override_by_e`
+   - `consistencyReasonCode=e_candidate_not_renderable_after_compose`
 3. D `routeOutcome=no_fill`：
    - E 终态：`no_fill`
    - `consistencyAction=pass_through`
