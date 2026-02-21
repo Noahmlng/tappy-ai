@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v2.7
+- 文档版本：v2.8
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -572,6 +572,111 @@ Ingress 校验分三层，按顺序执行：
 3. 触发判定与去重/策略结果无冲突（无同请求多判定）。
 4. 单请求可回放“触发 -> 判定 -> 下游处理”完整链路。
 
+#### 3.3.28 Sensing Decision Output Contract（识别结果输出合同，当前版本冻结）
+
+范围边界：
+1. 本合同只定义 `Module A -> Module B/C` 的结构化识别结果输出。
+2. 不定义下游竞价决策，不替代 `Module C` 的策略裁决。
+3. 目标是让识别结果从“描述性文本”升级为“可计算合同对象”。
+
+合同目标：
+1. 固定命中类型、置信带、阻断原因、版本快照四类关键字段。
+2. 保证同请求同规则版本下识别输出可复现。
+3. 为策略门禁、路由和审计提供统一输入，不做二次猜测。
+
+#### 3.3.29 合同对象结构（`sensingDecision`）
+
+`sensingDecision` 必须作为 `Module A` 标准输出对象，字段分层如下：
+
+required：
+1. `decisionOutcome`
+   - 枚举：`opportunity_eligible` / `opportunity_ineligible` / `opportunity_blocked_by_policy`。
+2. `hitType`
+   - 枚举：`explicit_hit` / `workflow_hit` / `contextual_hit` / `scheduled_hit` / `policy_forced_hit` / `no_hit`。
+3. `confidenceBand`
+   - 枚举：`high` / `medium` / `low`。
+4. `decisionTimestamp`
+   - 识别结果生成时间。
+5. `decisionEngineVersion`
+   - 识别引擎或规则版本。
+6. `sensingDecisionContractVersion`
+   - 合同版本号。
+7. `traceKey`
+   - 关联审计和回放主键。
+
+conditional required：
+1. `blockReasonCode`
+   - 当 `decisionOutcome=opportunity_blocked_by_policy` 时必填。
+2. `ineligibleReasonCode`
+   - 当 `decisionOutcome=opportunity_ineligible` 时必填。
+
+optional：
+1. `evidenceSummary`
+   - 命中证据摘要（不含敏感原文）。
+2. `relatedSnapshotRefs`
+   - 指向 `triggerSnapshot` / `authTrustSnapshot` / `dedupSnapshot` 的引用。
+3. `routingHint`
+   - 给 `Module C/D` 的非强制提示（例如 cautious / normal）。
+
+#### 3.3.30 判定一致性与字段约束（冻结）
+
+一致性约束：
+1. `hitType=no_hit` 时，`decisionOutcome` 不得为 `opportunity_eligible`。
+2. `decisionOutcome=opportunity_blocked_by_policy` 时，必须提供 `blockReasonCode`。
+3. `decisionOutcome=opportunity_ineligible` 时，必须提供 `ineligibleReasonCode`。
+4. 同请求在同版本下 `decisionOutcome/hitType/confidenceBand` 必须确定性一致。
+
+冲突约束：
+1. `triggerSnapshot.triggerDecision` 与 `sensingDecision.decisionOutcome` 不一致时，`sensingDecision` 为主裁决并记录 `decision_conflict_resolved`。
+2. 冲突必须带原因码与版本快照，不得静默覆盖。
+
+#### 3.3.31 下游消费合同（A -> B/C/D）
+
+1. `Module B`
+   - 承载并映射 `sensingDecision`，不得改写核心字段（outcome/hitType/confidenceBand）。
+2. `Module C`
+   - 基于 `decisionOutcome + confidenceBand + blockReasonCode` 执行策略加强或拦截确认。
+3. `Module D`
+   - 仅当 `decisionOutcome=opportunity_eligible` 且未命中硬阻断时允许进入正常供给路由。
+
+消费边界：
+1. 下游可追加派生字段，但不得回写 `Module A` 的原始识别结论。
+2. 任一模块的派生动作都需保留原始 `sensingDecision` 快照。
+
+#### 3.3.32 原因码最小集与版本治理
+
+`blockReasonCode` 最小集：
+1. `blocked_by_policy_hard_cap`
+2. `blocked_by_risk_tier`
+3. `blocked_by_frequency_hard_limit`
+4. `blocked_by_compliance_rule`
+
+`ineligibleReasonCode` 最小集：
+1. `no_valid_trigger`
+2. `trigger_placement_incompatible`
+3. `dedup_reused_path`
+4. `context_window_not_reachable`
+
+版本治理：
+1. 合同独立版本线：`sensingDecisionContractVersion`。
+2. 原因码追加可小版本升级，重命名/删除需主版本升级。
+3. 单请求必须记录：`sensingDecisionContractVersion` + `decisionEngineVersion` + `triggerTaxonomyVersion`。
+
+#### 3.3.33 观测指标与验收基线（Sensing Decision）
+
+核心指标：
+1. `decision_contract_completeness_rate`
+2. `decision_conflict_rate`
+3. `blocked_reason_coverage_rate`
+4. `ineligible_reason_coverage_rate`
+5. `decision_reproducibility_rate`
+
+验收基线：
+1. A 层输出必须结构化完整，禁止以文本替代关键字段。
+2. 同请求重放时 `decisionOutcome/hitType/confidenceBand` 一致。
+3. 被阻断和不成立请求都可追溯到标准原因码。
+4. B/C/D 可直接消费合同字段，无需推断性补齐。
+
 ### 3.4 Module B: Schema Translation & Signal Normalization
 
 #### 3.4.1 统一 Opportunity Schema（共同语言）
@@ -859,6 +964,7 @@ Ingress 校验分三层，按顺序执行：
 17. Module A Auth + Source Trust 鉴权与可信分级说明（Mediation 范围）。
 18. Module A Idempotency / De-dup 幂等与去重规则说明（Mediation 范围）。
 19. Module A Opportunity Trigger Taxonomy 机会触发类型字典说明（Mediation 范围）。
+20. Module A Sensing Decision Output Contract 识别结果输出合同说明（Mediation 范围）。
 
 ## 5. 优化项与 SSP 过渡（Plan）
 
@@ -1027,6 +1133,14 @@ Ingress 校验分三层，按顺序执行：
    - 未来：实现对账自动化与争议回放自动化。
 
 ## 6. 变更记录
+
+### 2026-02-21（v2.8）
+
+1. 在 `3.3` 新增 Sensing Decision Output Contract，固化 A->B/C 的结构化识别结果输出。
+2. 冻结合同对象 `sensingDecision` 的 required/conditional/optional 字段集。
+3. 明确命中类型、置信带、阻断原因、不成立原因与冲突裁决约束。
+4. 新增 A->B/C/D 的消费边界，禁止下游改写 A 层原始识别结论。
+5. 增加 `sensingDecisionContractVersion` 版本治理、核心指标与验收基线，并更新交付包条目。
 
 ### 2026-02-21（v2.7）
 
