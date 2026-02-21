@@ -286,11 +286,14 @@ required：
    - `enumDictVersion`
    - `conflictPolicyVersion`
    - `openrtbProjectionVersion`
+   - `redactionPolicyVersion`
 6. `mappingAuditSnapshotLite`
 7. 六块对象均满足 `3.4.21` 的 required 矩阵
 8. `openrtbProjectionLite`
 9. `openrtbProjectionVersion`
 10. `projectionAuditSnapshotLite`
+11. `redactionPolicyLite`
+12. `redactionSnapshotLite`
 
 optional：
 1. `mappingWarnings`（仅告警，不改变主语义）
@@ -301,6 +304,7 @@ optional：
 2. 若 required 语义位点无法产出 canonical 值，B 必须走 `reject`，不得输出残缺对象。
 3. `openrtbProjectionLite` 只允许输出 `imp/app/device/user/regs/ext` 六类对象，不得引入非标准主路径字段。
 4. exchange-specific 私有字段必须进入对应对象 `ext`，不得污染 canonical 主语义字段。
+5. 任意审计对象写入前必须先完成脱敏（`redaction first, audit second`），违反即 `reject`。
 
 #### 3.4.19 映射审计快照（`mappingAuditSnapshotLite`，MVP）
 
@@ -309,7 +313,7 @@ optional：
 
 每条审计记录必填项（冻结）：
 1. `semanticSlot`
-2. `raw`（原值，若多来源冲突可为数组）
+2. `raw`（脱敏后原值视图，若多来源冲突可为数组）
 3. `normalized`（归一值）
 4. `conflictAction`（`override` / `merge` / `reject` / `none`）
 5. `ruleVersion`（映射或冲突裁决生效规则版本）
@@ -327,11 +331,16 @@ optional：
 4. `mappingProfileVersion`
 5. `enumDictVersion`
 6. `conflictPolicyVersion`
+7. `redactionPolicyVersion`
+
+执行顺序约束（P0）：
+1. `mappingAuditSnapshotLite` 只允许记录脱敏后值，禁止写明文敏感原值。
+2. 脱敏失败或顺序违规（先审计后脱敏）必须 `reject`，原因码 `b_redaction_before_audit_violation`。
 
 #### 3.4.20 MVP 验收基线（B 输出合同 + mappingAudit）
 
 1. C 层消费 B 输出时无需补字段或猜字段。
-2. 每个处理过的 `semanticSlot` 都有审计记录，且包含 `raw/normalized/conflictAction/ruleVersion`。
+2. 每个处理过的 `semanticSlot` 都有审计记录，且包含 `raw(已脱敏)/normalized/conflictAction/ruleVersion`。
 3. 同请求在同版本下 `bNormalizedOpportunityLite` 与 `mappingAuditSnapshotLite` 均可复现。
 4. 任一策略或路由结果都可回溯到具体审计记录和规则版本。
 5. B 输出缺失 `mappingAuditSnapshotLite` 时视为不合格输出，不得进入主链路。
@@ -394,7 +403,7 @@ optional：
 | `PlacementMeta.placementKey` | `BidRequest.imp[0].id` | `required`，缺失 -> `unmapped` |
 | `PlacementMeta.placementSurface` | `BidRequest.imp[0].tagid` | `required`，缺失 -> `unmapped` |
 | `PlacementMeta.placementType` | `BidRequest.imp[0].ext.placement_type` | `required`，缺失 -> `unmapped` |
-| `UserContext.sessionKey` | `BidRequest.user.id`（哈希后） | `required`，缺失且无 `device.id` -> `unmapped` |
+| `UserContext.sessionKey` | `BidRequest.user.id`（经 `redaction action=hash`） | `required`，缺失且无 `device.id` -> `unmapped` |
 | `UserContext.actorType` | `BidRequest.user.ext.actor_type` | `optional`，缺失 -> `partial` |
 | `OpportunityContext.triggerDecision` | `BidRequest.imp[0].ext.trigger_decision` | `required`，缺失 -> `unmapped` |
 | `OpportunityContext.decisionOutcome` | `BidRequest.imp[0].ext.decision_outcome` | `required`，缺失 -> `unmapped` |
@@ -440,19 +449,20 @@ required：
 2. `requestKey`
 3. `attemptKey`
 4. `openrtbProjectionVersion`
-5. `projectionDisposition`
-6. `projectionReasonCode`
-7. `targetCoverage[]`
+5. `redactionPolicyVersion`
+6. `projectionDisposition`
+7. `projectionReasonCode`
+8. `targetCoverage[]`
    - `openrtbPath`
    - `mappedFrom`
    - `coverageStatus`（`mapped` / `partial` / `unmapped`）
    - `reasonCode`
-8. `generatedAt`
+9. `generatedAt`
 
 约束：
 1. 任一 `required` 目标路径都必须在 `targetCoverage[]` 出现，禁止隐式缺省。
 2. `projectionDisposition=unmapped` 时，必须至少有一条 `coverageStatus=unmapped` 且指向 required 目标路径。
-3. 快照不得写入明文敏感 raw 值，只记录字段路径与处置结果。
+3. 快照不得写入明文敏感 raw 值，只记录字段路径与处置结果（必须遵循 `redactionPolicyLite`）。
 
 #### 3.4.27 MVP 验收基线（OpenRTB 投影合同）
 
@@ -461,3 +471,86 @@ required：
 3. 同请求在同 `openrtbProjectionVersion` 下，`projectionDisposition` 与 `projectionReasonCode` 可复现。
 4. `unmapped` 请求不会进入 C/D 正常主链路。
 5. 任一交易争议可通过 `traceKey + openrtbProjectionVersion + projectionAuditSnapshotLite` 分钟级定位。
+
+#### 3.4.28 敏感字段脱敏策略合同（`redactionPolicyLite`，P0，MVP 冻结）
+
+目标：在 B 层冻结“字段分级 + 脱敏动作”，确保审计和投影不会泄露明文敏感数据。
+
+版本锚点：
+1. `redactionPolicyVersion`（独立版本线）。
+2. `redactionPolicyVersion` 必须写入 `normalizationSummary`、`mappingAuditSnapshotLite`、`projectionAuditSnapshotLite`。
+
+字段分级（最小）：
+1. `S0_public`：公开或低风险字段（默认动作 `pass`）。
+2. `S1_quasi_identifier`：准标识字段（默认动作 `coarsen`）。
+3. `S2_identifier`：直接标识字段（默认动作 `hash`）。
+4. `S3_sensitive_content`：高敏内容字段（默认动作 `drop`）。
+
+动作集合（冻结）：
+1. `pass`：原值通过（仅允许 `S0_public`）。
+2. `hash`：不可逆哈希（用于 `S2_identifier`）。
+3. `coarsen`：降精度/分桶（用于 `S1_quasi_identifier`）。
+4. `drop`：不落地该字段值（用于 `S3_sensitive_content` 或高风险场景）。
+
+策略对象 required：
+1. `redactionPolicyVersion`
+2. `fieldClassRules[]`
+   - `fieldPath`
+   - `sensitivityClass`
+   - `defaultAction`
+3. `hashRule`
+   - `algorithm`（固定 `sha256`）
+   - `saltKeyRef`
+4. `coarsenRules[]`
+   - `fieldPath`
+   - `coarsenMethod`（如 `time_bucket`, `range_bucket`, `prefix_mask`）
+5. `redactionFailureMode`（MVP 固定 `reject`）
+
+#### 3.4.29 脱敏快照合同（`redactionSnapshotLite`，P0，MVP 冻结）
+
+required：
+1. `traceKey`
+2. `requestKey`
+3. `attemptKey`
+4. `redactionPolicyVersion`
+5. `beforeAuditEnforced`（固定 `true`）
+6. `fieldDecisions[]`
+   - `fieldPath`
+   - `sensitivityClass`
+   - `action`（`pass/hash/coarsen/drop`）
+   - `inputDigest`
+   - `outputPreviewOrNA`
+   - `reasonCode`
+7. `actionSummary`
+   - `passCount`
+   - `hashCount`
+   - `coarsenCount`
+   - `dropCount`
+8. `generatedAt`
+
+约束：
+1. `fieldDecisions[]` 至少覆盖所有进入 `mappingAuditSnapshotLite/projectionAuditSnapshotLite` 的 raw 字段路径。
+2. `drop` 动作下 `outputPreviewOrNA` 必须为空。
+3. 任一 `S2/S3` 字段不得出现 `pass` 动作；命中即 `reject`。
+
+#### 3.4.30 脱敏执行顺序与失败处置（P0，MVP 冻结）
+
+固定执行顺序：
+1. 收集待审计原始值（仅内存态）。
+2. 应用 `redactionPolicyLite` 生成 `redactionSnapshotLite`。
+3. 仅使用脱敏后的值写入 `mappingAuditSnapshotLite` 与 `projectionAuditSnapshotLite`。
+4. 输出 `bNormalizedOpportunityLite`。
+
+失败处置：
+1. 脱敏策略缺失或版本非法 -> `reject`，原因码 `b_redaction_policy_missing_or_invalid`。
+2. 脱敏动作违规（如 `S2/S3 -> pass`）-> `reject`，原因码 `b_redaction_action_violation`。
+3. 脱敏执行失败（哈希/降精度异常）-> `reject`，原因码 `b_redaction_execution_failed`。
+4. 审计写入检测到明文敏感值 -> `reject`，原因码 `b_redaction_before_audit_violation`。
+
+#### 3.4.31 MVP 验收基线（敏感字段脱敏合同）
+
+1. 任一进入审计的 raw 字段都可在 `redactionSnapshotLite` 找到对应脱敏决策。
+2. `mappingAuditSnapshotLite/projectionAuditSnapshotLite` 不出现明文 `S2/S3` 字段值。
+3. 同请求在同 `redactionPolicyVersion` 下，脱敏动作与结果可复现。
+4. 脱敏失败请求不会进入 C/D 正常主链路。
+5. 任一隐私争议可通过 `traceKey + redactionPolicyVersion + redactionSnapshotLite` 分钟级定位。

@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.26）
+
+1. 在 `Module B` 新增敏感字段脱敏策略合同 `redactionPolicyLite`，冻结字段分级（`S0/S1/S2/S3`）与动作集合（`pass/hash/coarsen/drop`）。
+2. 新增 `redactionSnapshotLite`，冻结字段级脱敏决策、动作计数与版本锚点。
+3. 在 B 输出合同中新增 `redactionPolicyVersion/redactionPolicyLite/redactionSnapshotLite`，将脱敏结果纳入标准输出。
+4. 冻结“先脱敏后审计”执行顺序，并补齐脱敏违规/失败的标准原因码与拒绝动作。
+5. 更新 MVP 交付项，将敏感字段脱敏合同纳入当前版本交付口径。
+
 ### 2026-02-21（v4.25）
 
 1. 在 `Module B` 新增 OpenRTB 投影合同，冻结 `openrtbProjectionLite` 与独立版本线 `openrtbProjectionVersion`。
