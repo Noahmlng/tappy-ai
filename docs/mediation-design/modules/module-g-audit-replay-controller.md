@@ -275,7 +275,8 @@ optional：
 1. `filters`
 2. `includeRawPayload`
 3. `cursor`
-4. `extensions`
+4. `replayAsOfAt`（可选；未提供时默认服务端接收该回放请求时刻）
+5. `extensions`
 
 #### 3.9.15 查询参数与过滤器（P0，MVP 冻结）
 
@@ -295,6 +296,7 @@ optional：
 2. `queryMode=by_time_range` 时，`opportunityId` 不允许出现。
 3. `timeRange.endAt` 必须 `>= timeRange.startAt`。
 4. `timeRange` 最大跨度：`7d`（超出拒绝）。
+5. `replayAsOfAt` 若提供，必须 `<= requestReceivedAt`，否则拒绝（`g_replay_invalid_as_of_time`）。
 
 #### 3.9.16 输出模式合同（summary/full，P0，MVP 冻结）
 
@@ -310,9 +312,14 @@ required：
    - `replayRunId`
    - `replayExecutionMode`（`snapshot_replay` / `rule_recompute`）
    - `determinismStatus`（`deterministic` / `non_deterministic` / `not_comparable`）
+   - `snapshotCutoffAt`（本次回放冻结点，等于解析后的 `replayAsOfAt`）
 3. `items[]`
 4. `emptyResult`
 5. `generatedAt`
+
+`queryEcho` 确定性回显要求（冻结）：
+1. 必须包含 `resolvedReplayAsOfAt`（若请求缺省，则为服务端接收时刻）。
+2. 翻页请求中 `resolvedReplayAsOfAt` 必须保持不变。
 
 `outputMode=summary`：
 1. 每条 `item` 最小字段：
@@ -345,7 +352,7 @@ required：
 规则：
 1. 默认排序：`sortBy=auditAt`, `sortOrder=desc`。
 2. 稳定排序 tie-break：`traceKey` -> `requestKey` -> `attemptKey` -> `auditRecordId`。
-3. 翻页必须复用同一 `queryEcho`（除 `pageTokenOrNA` 外不可变）。
+3. 翻页必须复用同一 `queryEcho`（除 `pageTokenOrNA` 外不可变），且 `resolvedReplayAsOfAt` 不可漂移。
 4. 若请求 `cursor` 无效，返回错误 `g_replay_invalid_cursor`。
 
 #### 3.9.18 空结果语义（P0，MVP 冻结）
@@ -433,6 +440,7 @@ required：
 #### 3.9.23 确定性约束与输出语义（P0）
 
 1. 同一 `queryEcho + replayExecutionMode + pinnedVersions` 重放结果必须一致。
+   - `queryEcho` 的一致性锚点必须包含 `resolvedReplayAsOfAt`，并与 `resultMeta.snapshotCutoffAt` 相等。
 2. `snapshot_replay` 模式下，`determinismStatus` 只能为 `deterministic` 或 `not_comparable`。
 3. `rule_recompute` 模式下，必须返回 `replayDiffSummaryLite`。
 4. `diffStatus=diverged` 时，必须附至少一个关键原因码（如 `*_winner_changed` / `*_terminal_status_changed` / `*_billable_fact_changed`）。
@@ -440,7 +448,7 @@ required：
 
 #### 3.9.24 MVP 验收基线（回放确定性）
 
-1. 同一 case 多次 `snapshot_replay` 输出一致，不出现漂移。
+1. 同一 case 在同一 `resolvedReplayAsOfAt` 下多次 `snapshot_replay` 输出一致，不出现漂移。
 2. `rule_recompute` 在版本钉住完整时可稳定产出 diff 结论。
 3. 所有差异结果都可映射到标准 `diffReasonCodes`，便于 dispute 解释。
 4. 任一不一致可通过 `replayRunId + queryEcho + diffReasonCodes` 分钟级定位。

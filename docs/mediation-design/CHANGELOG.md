@@ -1,5 +1,12 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.42）
+
+1. 在 `Module G` 的 `gReplayQueryLite` 新增可选 `replayAsOfAt`，未提供时默认服务端接收时刻。
+2. 新增 `replayAsOfAt` 约束：若提供且晚于 `requestReceivedAt`，返回 `g_replay_invalid_as_of_time`。
+3. 在 `gReplayResultLite.resultMeta` 新增 `snapshotCutoffAt`，并要求与 `queryEcho.resolvedReplayAsOfAt` 一致。
+4. 补充翻页与确定性约束：同一回放链路必须固定 `resolvedReplayAsOfAt`，防止补偿写入导致回放漂移。
+
 ### 2026-02-21（v4.41）
 
 1. 在 `Module G` 的 append 去重规则中冻结 `computedAppendKeyV2`，移除 `appendAt` 参与键计算，避免重试键漂移。
