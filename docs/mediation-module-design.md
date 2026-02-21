@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.18
+- 文档版本：v3.19
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -1161,6 +1161,82 @@ optional：
 4. 同请求同版本下 `sourceRequestLite` 可稳定复现。
 5. `request adapt` 失败不会造成主链路状态断裂，且可通过 `traceKey + reasonCode` 定位。
 
+#### 3.6.16 candidate normalize 子合同（MVP 冻结）
+
+`candidate normalize` 输入输出冻结为：
+1. 输入：`sourceCandidateRawLite`
+2. 输出：`normalizedCandidateLite`
+
+`normalizedCandidateLite` required：
+1. `sourceId`
+2. `sourceCandidateId`
+3. `opportunityKey`
+4. `traceKey`
+5. `requestKey`
+6. `attemptKey`
+7. `candidateStatus`（`eligible` / `no_fill` / `error`）
+8. `pricing`
+   - `bidValue`
+   - `currency`
+9. `creativeRef`
+   - `creativeId`
+   - `landingType`
+10. `policyFlags`
+11. `normalizeMeta`
+   - `candidateNormalizeVersion`
+   - `mappingProfileVersion`
+   - `normalizedAt`
+
+optional：
+1. `qualityScore`
+2. `predictedCtr`
+3. `latencyMs`
+4. `extensions`
+
+#### 3.6.17 排序字段与排序规则（MVP）
+
+候选排序字段（固定优先级）：
+1. `rankPrimary`：`bidValue`（高优先）
+2. `rankSecondary`：`qualityScore`（高优先，缺失按最小值）
+3. `rankTertiary`：`latencyMs`（低优先）
+4. `rankTieBreak`：`sourceId + sourceCandidateId` 字典序
+
+排序约束：
+1. 仅 `candidateStatus=eligible` 参与正常排序。
+2. `no_fill/error` 候选不参与排名，但必须保留审计记录。
+3. 同请求同版本下排序结果必须确定性一致。
+
+#### 3.6.18 缺失处理与 canonical 映射（MVP）
+
+缺失处理：
+1. required 缺失：
+   - 动作：丢弃该候选（不阻断整请求）。
+   - 原因码：`d_candidate_required_missing`。
+2. optional 缺失：
+   - 动作：补默认值或 `unknown_*`，继续参与流程。
+   - 原因码：`d_candidate_optional_default_applied`。
+
+canonical 映射规则：
+1. 先做 raw 预处理（trim/lowercase/alias 归一），再映射 canonical 枚举。
+2. `candidateStatus`、`currency`、`landingType` 必须映射到 canonical 集合。
+3. canonical 失败：
+   - required 枚举失败 -> 丢弃候选，原因码 `d_candidate_invalid_required_enum`。
+   - optional 枚举失败 -> 回退 `unknown_*`，原因码 `d_candidate_invalid_optional_enum`。
+
+映射审计最小字段（每候选必填）：
+1. `raw`
+2. `normalized`
+3. `mappingAction`（`exact_match` / `alias_map` / `unknown_fallback` / `drop`）
+4. `ruleVersion`
+
+#### 3.6.19 MVP 验收基线（candidate normalize）
+
+1. 任一 source 候选可稳定归一成 `normalizedCandidateLite` 或被可解释丢弃。
+2. 候选排序在同请求同版本下稳定一致，不出现随机顺序。
+3. required 缺失仅影响单候选，不影响其他候选处理。
+4. canonical 映射全程可审计回放（raw -> normalized -> action -> version）。
+5. D 层可基于归一候选直接进入后续 Delivery 组装，不需二次猜字段。
+
 ### 3.7 Module E: Delivery Composer
 
 #### 3.7.1 Delivery Schema 职责
@@ -1313,7 +1389,7 @@ optional：
 
 1. 模块化主链框架（A-H）与边界说明。
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
-3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照 + D 输入合同 + Adapter 注册与能力声明 + request adapt 子合同）。
+3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照 + D 输入合同 + Adapter 注册与能力声明 + request adapt 子合同 + candidate normalize 子合同）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线。
 5. Delivery / Event Schema 分离与 `responseReference` 关联口径。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
@@ -1374,6 +1450,14 @@ optional：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.19）
+
+1. 新增 `3.6.16`，冻结 `candidate normalize` 子合同（`sourceCandidateRawLite` -> `normalizedCandidateLite`）。
+2. 新增 `3.6.17`，冻结候选排序字段与确定性排序规则。
+3. 新增 `3.6.18`，明确候选缺失处理与 canonical 映射规则。
+4. 新增 `3.6.19`，补充 `candidate normalize` 的 MVP 验收基线。
+5. 更新第 4 章交付项，纳入 `candidate normalize` 子合同交付口径。
 
 ### 2026-02-21（v3.18）
 
