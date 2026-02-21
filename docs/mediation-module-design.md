@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.27
+- 文档版本：v3.28
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -1557,7 +1557,7 @@ required：
 1. 返回状态：`served` / `no_fill` / `error`。
 2. `responseReference`（必填）。
 3. 可被下游事件与审计直接关联的最小返回快照。
-4. `render_plan` 详细字段合同见 `3.7.9` ~ `3.7.21`（P0 冻结）。
+4. `render_plan` 详细字段合同见 `3.7.9` ~ `3.7.25`（P0 冻结）。
 
 #### 3.7.4 compose 输入合同（P0，MVP 冻结）
 
@@ -1753,6 +1753,7 @@ optional：
    - `served` 路径：`reject`，原因码 `e_tracking_injection_missing`。
    - `no_fill/error` 路径：允许最小失败注入并 `continue`。
 3. 追踪注入字段不得被 `extensions` 覆盖。
+4. 事件字段、触发时机、幂等键与 M1 映射详见 `3.7.22` ~ `3.7.24`。
 
 #### 3.7.12 UI 约束与 TTL 规则（P0）
 
@@ -1946,6 +1947,81 @@ E 层门禁判定维度固定为：`placement_spec × device_capabilities × mod
 4. `renderCapabilityGateSnapshotLite` 可还原“候选模式 -> 门禁判定 -> 最终模式/无模式”全过程。
 5. 任一门禁失败可通过 `traceKey + responseReference + gateReasonCode` 分钟级定位。
 
+#### 3.7.22 追踪注入事件合同（P0，MVP 冻结）
+
+E 层输出渲染事件对象冻结为 `renderTrackingEventLite`。
+
+`renderTrackingEventLite` required：
+1. `eventId`
+2. `eventType`（`ad_render_started` / `ad_rendered` / `ad_render_failed`）
+3. `responseReference`
+4. `traceKey`
+5. `requestKey`
+6. `attemptKey`
+7. `opportunityKey`
+8. `renderAttemptId`
+9. `idempotencyKey`
+10. `eventAt`
+11. `renderMode`
+12. `containerType`
+13. `creativeRef`（`creativeId`, `destinationRef`）
+14. `eventContractVersion`
+
+条件必填字段：
+1. `ad_render_started`：
+   - `startStage`（`container_mount_begin`）
+2. `ad_rendered`：
+   - `renderLatencyMs`
+   - `viewReady=true`
+3. `ad_render_failed`：
+   - `failureStage`
+   - `failureReasonCode`
+
+绑定约束：
+1. 三类渲染事件必须绑定同一 `responseReference`（与 Delivery 一致）。
+2. `traceKey/requestKey/attemptKey/opportunityKey` 必须与 `renderPlanLite` 主键一致。
+3. 事件不得脱离 `renderAttemptId` 独立上报。
+
+#### 3.7.23 触发时机与幂等规则（P0）
+
+触发时机（MVP 固定）：
+1. `ad_render_started`：渲染容器开始挂载时触发（在首帧提交前）。
+2. `ad_rendered`：首帧已提交且 disclosure 满足可见要求时触发。
+3. `ad_render_failed`：渲染流程进入终态失败时触发（包含超时、容器错误、素材错误、策略拦截）。
+
+时序约束：
+1. 单次 `renderAttemptId` 允许序列：`started -> rendered` 或 `started -> failed`。
+2. `rendered` 与 `failed` 对同一 `renderAttemptId` 互斥。
+3. 若未触发 `started` 则不得触发 `rendered/failed`。
+
+幂等规则：
+1. `idempotencyKey = hash(responseReference + renderAttemptId + eventType)`。
+2. 重试上报必须复用同一 `idempotencyKey`。
+3. 去重窗口：`24h`。
+4. 同一 `idempotencyKey` 在口径侧只能生效一次。
+
+#### 3.7.24 与 M1 事件映射关系（P0）
+
+渲染事件到 M1 事件映射：
+1. `ad_render_started` -> 不直接映射 M1 计费事件（仅运营/审计事件）。
+2. `ad_rendered` -> 映射为 `impression`（同一 `responseReference` 下一次且仅一次）。
+3. `ad_render_failed` -> 映射为 `failure`（携带 `failureReasonCode`）。
+4. `onClick`（非本小节三类事件）-> 映射为 `click`。
+
+映射约束：
+1. M1 `impression/click/failure` 必须继承同一 `responseReference`。
+2. 同一 `renderAttemptId` 只允许产生一个终态 M1（`impression` 或 `failure`）。
+3. 若 `ad_rendered` 后又收到重复 `ad_render_failed`，按幂等规则丢弃后者。
+4. `ad_render_started` 缺失终态时，窗口超时补写 `failure`（原因码 `e_render_terminal_missing_timeout`）。
+
+#### 3.7.25 MVP 验收基线（追踪注入与事件合同）
+
+1. 三类渲染事件字段完整且可被 F 层稳定消费。
+2. 触发时机固定，单 `renderAttemptId` 不出现 `rendered/failed` 双终态。
+3. 幂等去重后，M1 口径不重复记账。
+4. `responseReference` 绑定在 Delivery/Render/M1 事件三侧一致。
+5. 任一映射冲突可通过 `traceKey + responseReference + idempotencyKey` 分钟级定位。
+
 ### 3.8 Module F: Event & Attribution Processor
 
 #### 3.8.1 事件合同（当前最小集）
@@ -1960,6 +2036,7 @@ E 层门禁判定维度固定为：`placement_spec × device_capabilities × mod
 2. 事件类型
 3. 事件时间
 4. 状态与原因码（适用时）
+5. 渲染事件到 M1 的映射规则见 `3.7.24`（必须保持一致）。
 
 #### 3.8.2 处理规则
 
@@ -2080,7 +2157,7 @@ E 层门禁判定维度固定为：`placement_spec × device_capabilities × mod
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
 3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照 + D 输入合同 + Adapter 注册与能力声明 + request adapt 子合同 + candidate normalize 子合同 + error normalize 体系）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线（含 Route Plan 触发/裁决/短路口径 + D 输出合同 + 路由审计快照）。
-5. Delivery / Event Schema 分离与 `responseReference` 关联口径（含 E 层 compose 输入合同 + render_plan 输出合同 + 候选消费与最终渲染决策规则 + 渲染能力门禁矩阵）。
+5. Delivery / Event Schema 分离与 `responseReference` 关联口径（含 E 层 compose 输入合同 + render_plan 输出合同 + 候选消费与最终渲染决策规则 + 渲染能力门禁矩阵 + 追踪注入与事件合同）。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
 7. 可观测与审计最小模型（单机会对象 + 四段决策点）。
 8. 配置与版本治理基线（三线分离：schema/route/placement）。
@@ -2139,6 +2216,17 @@ E 层门禁判定维度固定为：`placement_spec × device_capabilities × mod
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.28）
+
+1. 更新 `3.7.3`，将 E 层输出合同范围扩展至 `3.7.25`。
+2. 更新 `3.7.11`，补充追踪注入字段/时机/映射的结构引用。
+3. 新增 `3.7.22`，冻结 `ad_render_started/ad_rendered/ad_render_failed` 事件字段合同与 `responseReference` 绑定。
+4. 新增 `3.7.23`，冻结触发时机、时序互斥与幂等键规则。
+5. 新增 `3.7.24`，冻结渲染事件与 M1 `impression/click/failure` 映射关系。
+6. 新增 `3.7.25`，补充追踪注入与事件合同的 MVP 验收基线。
+7. 更新 `3.8.1`，显式绑定 F 层与 `3.7.24` 的映射一致性要求。
+8. 更新第 4 章交付项，将追踪注入与事件合同纳入当前版本交付口径。
 
 ### 2026-02-21（v3.27）
 
