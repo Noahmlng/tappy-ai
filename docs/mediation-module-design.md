@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.16
+- 文档版本：v3.17
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -1056,6 +1056,54 @@ optional：
 4. 同请求在同版本下输入判定与处置动作可复现。
 5. 任一输入拒绝可通过 `traceKey + reasonCode` 分钟级定位。
 
+#### 3.6.9 Adapter 注册与能力声明（MVP 冻结）
+
+每个 adapter 在进入路由编排前必须完成注册并声明能力；未注册或声明不完整不得参与编排。
+
+`adapterRegistryEntryLite` required：
+1. `sourceId`（全局唯一、稳定不变）
+2. `adapterId`
+3. `sourceType`（`alliance` / `simulated_inventory`）
+4. `status`（`active` / `paused` / `draining` / `disabled`）
+5. `adapterContractVersion`
+6. `capabilityProfileVersion`
+7. `supportedCapabilities`
+   - 最小集合：`request_adapt`, `candidate_normalize`, `error_normalize`, `source_trace`
+8. `supportedPlacementTypes`（最小可支持列表）
+9. `timeoutPolicyMs`（该 source 的默认超时策略）
+10. `owner`（责任归属）
+11. `updatedAt`
+
+optional：
+1. `extensions`
+2. `tags`
+
+#### 3.6.10 能力声明约束与启停状态语义（MVP）
+
+能力约束：
+1. `supportedCapabilities` 必须覆盖四项最小能力，否则注册拒绝。
+2. `adapterContractVersion` 与 `capabilityProfileVersion` 必须显式声明，禁止隐式继承。
+3. `supportedPlacementTypes` 为空时视为无可服务能力，不可进入可用池。
+
+启停状态语义：
+1. `active`：可参与新请求路由。
+2. `paused`：不参与新请求；在途请求允许完成。
+3. `draining`：仅处理已分配在途，不接收新分配。
+4. `disabled`：完全不可用，不参与任何路由与回退。
+
+路由消费规则：
+1. D 仅从 `active` source 选主路由。
+2. `paused/draining/disabled` source 不得成为新主路由候选。
+3. 状态变更必须带 `statusReasonCode` 并写审计。
+
+#### 3.6.11 MVP 验收基线（Adapter 注册与能力声明）
+
+1. 未注册 adapter 无法进入路由编排路径。
+2. 缺少最小能力声明的 source 会被稳定拒绝并给出标准原因码。
+3. source 启停状态切换后，路由行为能在单版本下稳定一致。
+4. 单请求可回放“所选 source 的注册快照 + 能力快照 + 状态快照”。
+5. 同 `sourceId` 在同版本下能力声明不可漂移，变更必须版本化。
+
 ### 3.7 Module E: Delivery Composer
 
 #### 3.7.1 Delivery Schema 职责
@@ -1208,7 +1256,7 @@ optional：
 
 1. 模块化主链框架（A-H）与边界说明。
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
-3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照 + D 输入合同）。
+3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照 + D 输入合同 + Adapter 注册与能力声明）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线。
 5. Delivery / Event Schema 分离与 `responseReference` 关联口径。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
@@ -1269,6 +1317,13 @@ optional：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.17）
+
+1. 新增 `3.6.9`，冻结 Adapter 注册与能力声明最小合同（`sourceId`、能力集、合同版本、启停状态）。
+2. 新增 `3.6.10`，明确能力声明约束与 `active/paused/draining/disabled` 状态语义。
+3. 新增 `3.6.11`，补充 Adapter 注册与能力声明的 MVP 验收基线。
+4. 更新第 4 章交付项，纳入 Adapter 注册与能力声明交付口径。
 
 ### 2026-02-21（v3.16）
 
