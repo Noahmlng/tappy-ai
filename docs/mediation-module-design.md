@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.28
+- 文档版本：v3.29
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -1557,7 +1557,7 @@ required：
 1. 返回状态：`served` / `no_fill` / `error`。
 2. `responseReference`（必填）。
 3. 可被下游事件与审计直接关联的最小返回快照。
-4. `render_plan` 详细字段合同见 `3.7.9` ~ `3.7.25`（P0 冻结）。
+4. `render_plan` 详细字段合同见 `3.7.9` ~ `3.7.31`（P0 冻结）。
 
 #### 3.7.4 compose 输入合同（P0，MVP 冻结）
 
@@ -1709,6 +1709,7 @@ optional：
     - `droppedCandidateRefs`（含 `dropReasonCode`）
     - `consumptionReasonCode`
 15. `renderCapabilityGateSnapshotLite`（结构见 `3.7.20`）
+16. `eValidationSnapshotLite`（结构见 `3.7.30`）
 
 optional：
 1. `fallbackReasonCode`
@@ -2022,6 +2023,118 @@ E 层输出渲染事件对象冻结为 `renderTrackingEventLite`。
 4. `responseReference` 绑定在 Delivery/Render/M1 事件三侧一致。
 5. 任一映射冲突可通过 `traceKey + responseReference + idempotencyKey` 分钟级定位。
 
+#### 3.7.26 E 层验证与拦截总则（P0，MVP 冻结）
+
+E 层在生成 `renderPlanLite` 前必须执行统一验证链路：
+1. `material_integrity_check`（素材完整性）
+2. `policy_flag_intercept`（policy flag 拦截）
+3. `disclosure_check`（披露要求）
+4. `ui_safety_check`（UI 安全边界：尺寸/频控/敏感场景）
+
+验证动作仅允许：
+1. `allow`
+2. `degrade`
+3. `block`
+
+动作语义：
+1. `allow`：候选进入渲染决策阶段。
+2. `degrade`：候选可继续，但必须附降级原因并收窄渲染能力。
+3. `block`：候选不可继续，写入丢弃原因码。
+
+全链路约束：
+1. 任一 `block` 都必须有标准原因码与规则版本。
+2. 验证结果必须写入 `eValidationSnapshotLite`。
+3. 同请求同版本下，验证与拦截结果可复现。
+
+#### 3.7.27 素材完整性校验（P0）
+
+按 `renderMode` 执行最小完整性校验：
+1. `native_card`
+   - 必填：`creativeId`, `assetRefs`, `destinationRef`
+2. `webview`
+   - 必填：`creativeId`, `containerParams.url`
+3. `mraid_container`
+   - 必填：`creativeId`, `containerParams.htmlSnippetRef`, `containerParams.mraidVersion`
+4. `video_vast_container`
+   - 必填：`creativeId`, `containerParams.vastTagUrl`, `containerParams.videoSlotSpec`
+
+校验失败处置：
+1. 单候选失败 -> `block` 该候选，原因码 `e_material_missing_required`。
+2. 候选格式非法 -> `block` 该候选，原因码 `e_material_invalid_format`。
+3. 全部候选失败 -> 输出 `no_fill`，原因码 `e_material_all_rejected`。
+
+#### 3.7.28 policy flag 拦截矩阵（P0）
+
+输入信号：
+1. 候选级 `policyFlags`
+2. 上游 `PolicyContext`（含 `restrictedCategoryFlags` 与 gating 结论）
+
+拦截矩阵（固定）：
+1. `hard_block`
+   - 动作：`block`
+   - 原因码：`e_policy_hard_blocked`
+2. `soft_risk`
+   - 动作：`degrade`（限制为低风险模式，优先 `native_card`）
+   - 原因码：`e_policy_soft_degraded`
+3. `pass`
+   - 动作：`allow`
+   - 原因码：`e_policy_passed`
+
+敏感场景约束：
+1. 若命中敏感场景且策略要求禁投，直接 `block`，原因码 `e_policy_sensitive_scene_blocked`。
+2. `soft_risk` 不得提升到更高干预模式（例如从 native 升级到 mraid/webview）。
+
+#### 3.7.29 disclosure 要求与拦截（P0）
+
+`deliveryStatus=served` 时 disclosure 必须可渲染且可见：
+1. `disclosureLabel` 非空
+2. `labelPosition` 在允许集合
+3. `mustBeVisible=true`
+
+校验时机：
+1. 在 `ad_rendered` 触发前必须完成 disclosure 校验。
+
+违规处置：
+1. disclosure 缺失或不可见 -> `block` 当前候选，原因码 `e_disclosure_invalid`。
+2. 所有候选都因 disclosure 失败 -> `no_fill`，原因码 `e_disclosure_all_rejected`。
+
+#### 3.7.30 UI 安全边界（尺寸/频控/敏感场景）与验证快照（P0）
+
+UI 安全边界规则：
+1. 尺寸边界：
+   - `maxHeightPx/maxWidthPx` 必须在设备与 placement 安全范围内。
+   - 超界 -> `block`，原因码 `e_ui_size_out_of_bound`。
+2. 频控边界：
+   - 命中硬频控上限 -> `block`，原因码 `e_ui_frequency_hard_cap`。
+   - 命中软频控 -> `degrade`，原因码 `e_ui_frequency_soft_cap`。
+3. 敏感场景边界：
+   - 命中受限敏感场景 -> `block`，原因码 `e_ui_sensitive_scene_blocked`。
+
+`eValidationSnapshotLite` required：
+1. `traceKeys`（`traceKey`, `requestKey`, `attemptKey`, `opportunityKey`）
+2. `validationStages[]`
+   - `stageName`
+   - `stageAction`（`allow` / `degrade` / `block`）
+   - `stageReasonCode`
+3. `finalValidationAction`
+4. `finalValidationReasonCode`
+5. `degradeAdjustments`
+6. `validationRuleVersion`
+7. `validatedAt`
+
+一致性约束：
+1. `finalValidationAction=block` 时不得输出可渲染 `renderMode`。
+2. `degradeAdjustments` 必须可解释地反映模式/参数收窄。
+3. `eValidationSnapshotLite` 必须与 `candidateConsumptionDecision` 一致。
+
+#### 3.7.31 MVP 验收基线（E 层验证与拦截规则）
+
+1. 素材完整性、policy flag、disclosure、UI 安全边界四段验证均可独立回放。
+2. 任一违规都能稳定映射到标准拦截动作和原因码。
+3. 验证失败不会把非法渲染请求下发到客户端。
+4. 同请求同版本下，验证结果与最终 Delivery 状态一致且可复现。
+5. 任一拦截可通过 `traceKey + responseReference + finalValidationReasonCode` 分钟级定位。
+
 ### 3.8 Module F: Event & Attribution Processor
 
 #### 3.8.1 事件合同（当前最小集）
@@ -2157,7 +2270,7 @@ E 层输出渲染事件对象冻结为 `renderTrackingEventLite`。
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
 3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照 + D 输入合同 + Adapter 注册与能力声明 + request adapt 子合同 + candidate normalize 子合同 + error normalize 体系）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线（含 Route Plan 触发/裁决/短路口径 + D 输出合同 + 路由审计快照）。
-5. Delivery / Event Schema 分离与 `responseReference` 关联口径（含 E 层 compose 输入合同 + render_plan 输出合同 + 候选消费与最终渲染决策规则 + 渲染能力门禁矩阵 + 追踪注入与事件合同）。
+5. Delivery / Event Schema 分离与 `responseReference` 关联口径（含 E 层 compose 输入合同 + render_plan 输出合同 + 候选消费与最终渲染决策规则 + 渲染能力门禁矩阵 + 追踪注入与事件合同 + E 层验证与拦截规则）。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
 7. 可观测与审计最小模型（单机会对象 + 四段决策点）。
 8. 配置与版本治理基线（三线分离：schema/route/placement）。
@@ -2216,6 +2329,18 @@ E 层输出渲染事件对象冻结为 `renderTrackingEventLite`。
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.29）
+
+1. 更新 `3.7.3`，将 E 层输出合同范围扩展至 `3.7.31`。
+2. 更新 `3.7.9`，将 `eValidationSnapshotLite` 升级为 `renderPlanLite` 必填字段。
+3. 新增 `3.7.26`，冻结 E 层验证与拦截总则（allow/degrade/block）。
+4. 新增 `3.7.27`，冻结素材完整性校验与失败处置。
+5. 新增 `3.7.28`，冻结 policy flag 拦截矩阵与敏感场景约束。
+6. 新增 `3.7.29`，冻结 disclosure 要求与拦截规则。
+7. 新增 `3.7.30`，冻结 UI 安全边界（尺寸/频控/敏感场景）及 `eValidationSnapshotLite` 结构。
+8. 新增 `3.7.31`，补充 E 层验证与拦截规则的 MVP 验收基线。
+9. 更新第 4 章交付项，将 E 层验证与拦截规则纳入当前版本交付口径。
 
 ### 2026-02-21（v3.28）
 
