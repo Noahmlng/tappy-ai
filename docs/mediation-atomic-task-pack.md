@@ -19,6 +19,21 @@
 
 ---
 
+## 0.4 当前执行状态（2026-02-21）
+
+1. Batch-0（INFRA-001~INFRA-010）状态：`已完成`。
+2. 前置外部依赖连通状态：
+   - `npm --prefix ./projects/ad-aggregation-platform run check:managed-services` 通过。
+   - Doppler/Grafana/Synadia 均已通过授权与连通校验。
+3. 基础质量门禁状态：
+   - `npm --prefix ./projects/ad-aggregation-platform run test:integration` 通过（13/13）。
+4. 数据库基线状态：
+   - Supabase 项目 `bkqjenmznafkqqwvwrad` 已完成 `0001_mediation_core_baseline.sql` 执行并记录 `schema_migrations`。
+5. 允许进入正式开发：
+   - 下一批次从 Batch-A 的 `FND-001` 开始按序执行。
+
+---
+
 ## 0.5 Infrastructure（INFRA）
 
 ### INFRA-001：产出生产拓扑与容量基线文档
@@ -1091,8 +1106,10 @@
 
 1. Batch-0（基础设施）：
    - INFRA-001~INFRA-010
+   - 状态：`已完成（2026-02-21）`
 2. Batch-A（基础）：
    - FND-001~FND-006
+   - 状态：`下一批次（待开始）`
 3. Batch-B（横切 H）：
    - H-001~H-005
 4. Batch-C（主链上半）：

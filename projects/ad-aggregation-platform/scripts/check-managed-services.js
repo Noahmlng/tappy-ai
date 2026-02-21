@@ -220,10 +220,23 @@ async function checkSynadia() {
 }
 
 async function main() {
-  const checks = {
-    doppler: await checkDoppler(),
-    grafana: await checkGrafana(),
-    synadia: await checkSynadia()
+  const checks = {}
+
+  const runners = {
+    doppler: checkDoppler,
+    grafana: checkGrafana,
+    synadia: checkSynadia
+  }
+
+  for (const [name, runner] of Object.entries(runners)) {
+    try {
+      checks[name] = await runner()
+    } catch (error) {
+      checks[name] = {
+        ok: false,
+        reason: `unexpected error: ${error.message}`
+      }
+    }
   }
 
   const failed = Object.entries(checks)
