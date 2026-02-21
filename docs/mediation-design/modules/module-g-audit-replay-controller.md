@@ -93,31 +93,70 @@ optional：
 4. `requestKey`
 5. `attemptKey`
 6. `responseReferenceOrNA`
-7. `opportunityInputSnapshot`
-8. `adapterParticipation[]`
+7. `auditAt`
+8. `opportunityInputSnapshot`
+   - `requestSchemaVersion`
+   - `placementKey`
+   - `placementType`
+   - `placementSurface`
+   - `policyContextDigest`
+   - `userContextDigest`
+   - `opportunityContextDigest`
+   - `ingressReceivedAt`
+9. `adapterParticipation[]`
    - `adapterId`
+   - `adapterRequestId`
    - `requestSentAt`
+   - `responseReceivedAtOrNA`
    - `responseStatus`（`responded` / `timeout` / `error` / `no_bid`）
-   - `responseLatencyMs`
-   - `filterReasonCodeOrNA`
-9. `winnerSnapshot`
-   - `winnerAdapterIdOrNA`
-   - `winnerCandidateRefOrNA`
-   - `winnerReasonCode`
-10. `renderResultSnapshot`
+   - `responseLatencyMsOrNA`
+   - `timeoutThresholdMs`
+   - `didTimeout`
+   - `responseCodeOrNA`
+   - `candidateReceivedCount`
+   - `candidateAcceptedCount`
+   - `filterReasonCodes[]`
+10. `winnerSnapshot`
+    - `winnerAdapterIdOrNA`
+    - `winnerCandidateRefOrNA`
+    - `winnerBidPriceOrNA`
+    - `winnerCurrencyOrNA`
+    - `winnerReasonCode`
+    - `winnerSelectedAtOrNA`
+11. `renderResultSnapshot`
     - `renderStatus`（`rendered` / `failed` / `not_rendered`）
+    - `renderAttemptIdOrNA`
+    - `renderStartAtOrNA`
+    - `renderEndAtOrNA`
+    - `renderLatencyMsOrNA`
     - `renderReasonCodeOrNA`
-11. `keyEventSummary`
+12. `keyEventSummary`
+    - `eventWindowStartAt`
+    - `eventWindowEndAt`
     - `impressionCount`
     - `clickCount`
     - `failureCount`
-12. `auditRecordVersion`
+    - `interactionCount`
+    - `postbackCount`
+    - `terminalEventTypeOrNA`
+    - `terminalEventAtOrNA`
+13. `auditRecordVersion`
+14. `auditRuleVersion`
+15. `auditContractVersion`
 
 optional：
 1. `closureKeyOrNA`
 2. `billingKeyOrNA`
 3. `attributionKeyOrNA`
 4. `timeRangeTag`
+5. `extensions`
+
+结构一致性约束（MVP）：
+1. `responseStatus=responded` 时，`responseReceivedAtOrNA` 与 `responseLatencyMsOrNA` 必须存在。
+2. `responseStatus=timeout` 时，`didTimeout=true` 且 `timeoutThresholdMs > 0`。
+3. `winnerAdapterIdOrNA` 非空时，必须能在 `adapterParticipation[].adapterId` 中找到对应项。
+4. `renderStatus in {rendered, failed}` 时，`renderAttemptIdOrNA` 必须存在。
+5. `terminalEventTypeOrNA` 非空时，`terminalEventAtOrNA` 必须存在。
 
 #### 3.9.9 幂等键与去重规则（append，P0）
 
@@ -177,3 +216,10 @@ optional：
 2. F 重试同一请求不会导致重复审计写入或语义分叉。
 3. `accepted/queued/rejected` 与 `retryable` 组合可直接驱动调用方重试策略。
 4. 任一拒绝都可通过 `requestId + ackReasonCode + appendTokenOrNA` 分钟级定位。
+
+#### 3.9.13 MVP 验收基线（AuditRecord 标准结构）
+
+1. 单条 `gAuditRecordLite` 可独立复原：机会输入、adapter 过程、winner 决策、渲染结果、关键事件摘要。
+2. 任一 adapter 的响应/延迟/超时/过滤原因都可在结构中定位，不依赖额外日志。
+3. winner 与 adapter 列表、render 结果、终态事件在同记录内交叉一致。
+4. 任一 dispute 可通过 `auditRecordId + traceKey + responseReferenceOrNA` 分钟级提取证据链。

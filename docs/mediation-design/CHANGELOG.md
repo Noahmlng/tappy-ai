@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.8）
+
+1. 升级 `Module G` 的 `gAuditRecordLite`，从块级定义扩展为字段级 required 矩阵。
+2. 补齐机会输入快照、adapter 逐项结果（响应/延迟/超时/过滤原因）、winner、渲染结果、关键事件摘要的必填字段。
+3. 新增 AuditRecord 结构一致性约束，确保 winner/render/terminal 事件可交叉校验。
+4. 新增 `3.9.13`（AuditRecord 标准结构验收基线），强调 dispute 可复原性。
+5. 更新 MVP 交付项，将 AuditRecord 字段级 required 矩阵纳入当前版本交付。
+
 ### 2026-02-21（v4.7）
 
 1. 在 `Module G` 新增 `append(AuditRecord)` 接口合同，冻结请求体与异步 ACK 语义（`accepted/queued/rejected`）。
