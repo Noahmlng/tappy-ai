@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v2.2
+- 文档版本：v2.3
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -105,6 +105,7 @@ Mediation 当前不负责：
 4. App -> Mediation：回传 Event（`impression/click/failure`）。
 5. Mediation（可选）-> Ads Network：回传归因/结果确认（按网络能力）。
 6. 闭环完成判定在 Mediation 内部：`Delivery + terminal Event` 关联后归档。
+7. Mediation 主链内部顺序固定为：`Module A -> Module B -> Module C -> Module D -> Module E`。
 
 ```mermaid
 flowchart LR
@@ -115,7 +116,9 @@ flowchart LR
     end
 
     subgraph MED["Our Product: Mediation"]
-        A["A/B/C Ingress + Schema + Policy"]
+        A["A SDK Ingress + Opportunity Sensing"]
+        B["B Schema Translation + Signal Normalization"]
+        C["C Policy + Safety Governor"]
         D["D Supply Orchestrator + Adapter"]
         E["E Delivery Composer"]
         F["F Event Processor"]
@@ -132,7 +135,10 @@ flowchart LR
     end
 
     APP_REQ -->|Opportunity Request| A
-    A -->|Routable Opportunity| D
+    A -->|Opportunity Seed| B
+    B -->|Unified Opportunity Schema| C
+    C -->|Routable Opportunity| D
+    C -->|Policy blocked result| E
 
     D -->|Network Bid Request| NG
     NG -->|Auction Request| AX
@@ -643,6 +649,13 @@ flowchart LR
    - 未来：实现对账自动化与争议回放自动化。
 
 ## 6. 变更记录
+
+### 2026-02-21（v2.3）
+
+1. 将 `3.2.1` 流程图中的 `A/B/C` 合并节点拆分为独立模块：`Module A`、`Module B`、`Module C`。
+2. 在主流程中明确模块级数据交接：`Opportunity Seed -> Unified Opportunity Schema -> Policy Gate`。
+3. 增加策略拦截分支（`Policy blocked result -> Delivery`），避免“只看可路由路径”的误读。
+4. 在“请求来回与数据职责”补充主链内部固定顺序：`A -> B -> C -> D -> E`。
 
 ### 2026-02-21（v2.2）
 
