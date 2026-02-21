@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.16）
+
+1. 在 `Module H` 新增版本锚点注入合同，冻结必注入版本集合与 `versionAnchorSnapshot` 结构。
+2. 新增“注入责任层与传播规则”，明确 H 为首版锚点唯一写入者，B-F 仅可透传或追加缺失字段。
+3. 冻结四个锚点冻结点（ingress/routing/delivery/event）与“追加允许、覆盖禁止”规则。
+4. 新增中途切换策略，明确核心锚点不可切换及 `pre_route/post_route` 分层处置原因码。
+5. 新增回放与 dispute 锚点约束（`traceKey + anchorHash`），并将锚点注入/冻结纳入当前版本交付项。
+
 ### 2026-02-21（v4.15）
 
 1. 在 `Module H` 新增版本兼容门禁合同（sdk/adapter/schema），冻结门禁输入输出与审计字段。

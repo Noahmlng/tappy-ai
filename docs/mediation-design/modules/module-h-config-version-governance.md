@@ -448,3 +448,120 @@ required：
 2. `schema/sdk/adapter` 顺序校验稳定，不会出现跨环境判定顺序漂移。
 3. `degrade` 场景下被剔除 adapter 在 D 层不会被再次启用。
 4. `reject` 场景不会进入竞价与渲染主链路，可通过 `requestKey + reasonCodes` 分钟级定位。
+
+#### 3.10.28 版本锚点注入合同（P0，MVP 冻结）
+
+注入接口语义：`injectVersionAnchors(gateDecision, resolvedConfigSnapshot, moduleVersions) -> versionAnchorSnapshot`。
+
+输入对象：`hVersionAnchorInjectInputLite`
+
+required：
+1. `requestKey`
+2. `traceKey`
+3. `resolvedConfigSnapshot`
+4. `versionGateDecision`
+5. `moduleVersionRefs`
+   - `enumDictVersion`
+   - `mappingRuleVersion`
+   - `policyRuleVersion`
+   - `routingPolicyVersion`
+   - `deliveryRuleVersion`
+   - `eventContractVersion`
+   - `dedupFingerprintVersion`
+   - `closureRuleVersion`
+   - `billingRuleVersion`
+   - `archiveContractVersion`
+6. `injectAt`
+7. `versionAnchorContractVersion`
+
+输出对象：`versionAnchorSnapshot`
+
+required：
+1. `requestKey`
+2. `traceKey`
+3. `anchorSet`
+   - `schemaVersion`
+   - `routingStrategyVersion`
+   - `placementConfigVersion`
+   - `globalConfigVersion`
+   - `appConfigVersionOrNA`
+   - `placementSourceVersionOrNA`
+   - `configResolutionContractVersion`
+   - `versionGateContractVersion`
+   - `enumDictVersion`
+   - `mappingRuleVersion`
+   - `policyRuleVersion`
+   - `routingPolicyVersion`
+   - `deliveryRuleVersion`
+   - `eventContractVersion`
+   - `dedupFingerprintVersion`
+   - `closureRuleVersion`
+   - `billingRuleVersion`
+   - `archiveContractVersion`
+4. `anchorHash`
+5. `freezeState`
+6. `injectedAt`
+7. `versionAnchorContractVersion`
+
+#### 3.10.29 注入责任层与传播规则（P0，MVP 冻结）
+
+责任层（唯一写入者）：
+1. H 在 A 入口完成 `resolvedConfigSnapshot + versionGateDecision` 后，写入首版 `versionAnchorSnapshot`。
+2. B/C/D/E/F 只可读取与透传锚点，不得覆盖既有锚点值。
+3. B/C/D/E/F 若补充本模块锚点，仅允许“追加缺失字段”，不得改写已有字段。
+
+传播规则：
+1. `versionAnchorSnapshot` 必须挂载到 `TraceContext` 并沿 `A -> B -> C -> D -> E -> F -> G` 全链路透传。
+2. 任一模块输出若缺失 `versionAnchorSnapshot`，视为合同错误并拒绝下游消费。
+
+#### 3.10.30 冻结点定义（P0，MVP 冻结）
+
+冻结点（固定）：
+1. `freeze_point_ingress`：A 完成入口校验并准备进入 B 时，冻结 `schema/config/gate` 锚点。
+2. `freeze_point_routing`：D 产出 Route Plan 时，冻结路由相关锚点（如 `routingPolicyVersion`）。
+3. `freeze_point_delivery`：E 产出 Delivery 时，冻结渲染相关锚点（如 `deliveryRuleVersion`）。
+4. `freeze_point_event`：F 产出归因计费事实时，冻结事件/闭环/归档锚点（`event/closure/billing/archive`）。
+
+冻结约束：
+1. 进入某冻结点后，该冻结点已覆盖的锚点值不可再变更。
+2. 允许后续冻结点追加新锚点字段，但不得改写前置冻结点字段。
+3. `anchorHash` 在每个冻结点重算并写入审计快照。
+
+#### 3.10.31 中途切换策略（是否允许中途切换，P0，MVP 冻结）
+
+禁止中途切换的锚点（全链路硬约束）：
+1. `schemaVersion`
+2. `routingStrategyVersion`
+3. `placementConfigVersion`
+4. `configResolutionContractVersion`
+5. `versionGateContractVersion`
+
+处置规则：
+1. 在 `freeze_point_routing` 前检测到变更 -> `reject`，原因码 `h_anchor_switch_detected_pre_route`。
+2. 在 `freeze_point_routing` 后检测到变更 -> 保持原锚点继续收敛并标记冲突，原因码 `h_anchor_switch_detected_post_route`。
+3. 任一锚点缺失或空值 -> `reject`，原因码 `h_anchor_missing_required`。
+4. 非法覆盖行为（非追加）-> `reject`，原因码 `h_anchor_mutation_forbidden`。
+
+#### 3.10.32 回放与争议对账约束（P0，MVP 冻结）
+
+1. F 输出到 G/Archive 的记录必须携带最终 `versionAnchorSnapshot` 或其可还原引用。
+2. G replay 默认使用归档锚点快照，不允许按“当前版本”替换历史锚点。
+3. dispute 场景下若传入锚点与归档锚点不一致，必须返回 `g_replay_diff_version_mismatch`。
+4. 任一 case 必须可通过 `traceKey + anchorHash` 唯一定位到当时执行版本集合。
+
+#### 3.10.33 版本锚点原因码（P0，MVP 冻结）
+
+1. `h_anchor_all_pass`
+2. `h_anchor_missing_required`
+3. `h_anchor_injection_failed`
+4. `h_anchor_mutation_forbidden`
+5. `h_anchor_switch_detected_pre_route`
+6. `h_anchor_switch_detected_post_route`
+7. `h_anchor_snapshot_hash_mismatch`
+
+#### 3.10.34 MVP 验收基线（版本锚点注入与冻结点）
+
+1. 同一请求在 `A -> G` 全链路可读取同一组核心锚点值，不出现断链。
+2. 锚点仅允许按冻结点追加，不允许中途覆盖，违反时可稳定拒绝并给出原因码。
+3. F/G 回放可基于 `anchorHash` 复原当时版本集合，dispute 不依赖当前线上版本。
+4. 任一锚点异常可通过 `requestKey + traceKey + anchorHash + reasonCodes` 分钟级定位。
