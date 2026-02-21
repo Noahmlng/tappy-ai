@@ -1,7 +1,7 @@
 # AI Assistant Placement Product Spec
 
-- Document Version: v1.2
-- Last Updated: 2026-02-17
+- Document Version: v1.3
+- Last Updated: 2026-02-21
 - Scope: Chat/Assistant placement product definition, governance, and execution alignment
 
 ## 1) Document Purpose
@@ -101,7 +101,7 @@ Every placement must define all blocks below:
 2. Sponsored signal must be visible and machine-auditable.
 3. Sensitive topics follow platform-level block policy.
 4. Frequency cap and dedup are mandatory.
-5. Every impression/click/lead/conversion must be traceable.
+5. Every impression/click/failure/lead/conversion must be traceable.
 
 ## 5.3 Control Ownership Matrix
 
@@ -114,13 +114,63 @@ Every placement must define all blocks below:
 
 ## 5.4 Billing Event Standard
 
-Allowed billing events:
+M1 callback minimum events (required for all placements):
 
 1. `impression`
 2. `click`
-3. `qualified_lead`
-4. `conversion`
-5. `task_completion` (advanced placements only)
+3. `failure`
+
+Allowed extension events (optional by placement type):
+
+4. `qualified_lead`
+5. `conversion`
+6. `task_completion` (advanced placements only)
+
+All events must carry the same `responseReference` as delivery record.
+
+## 5.5 Mediation M1 Schema Alignment (Required)
+
+### 5.5.1 Opportunity Object Binding
+
+Each placement decision must be represented by one unified opportunity object aligned to:
+
+1. `RequestMeta`
+2. `PlacementMeta`
+3. `UserContext`
+4. `OpportunityContext`
+5. `PolicyContext`
+6. `TraceContext`
+
+### 5.5.2 Placement Spec Block -> Schema Mapping
+
+| Placement Spec Block | Primary Schema Blocks | M1 Alignment Rule |
+| --- | --- | --- |
+| `Trigger Logic` | `PlacementMeta`, `OpportunityContext`, `PolicyContext` | Trigger evaluation must be deterministic under same input + rule version. |
+| `Inventory Contract` | `OpportunityContext` + `extensions` | Source-private payload goes to `extensions`, not core schema fields. |
+| `Interaction Contract` | `PlacementMeta`, Delivery schema | Delivery describes only current render/action contract. |
+| `Guardrails` | `PolicyContext` | Safety/compliance and frequency controls are policy-first gates. |
+| `Billing Event` | Event callback schema | Minimum event set is `impression/click/failure`. |
+| `Fallback` | State + routing policy | Fallback outcome must map to `served`/`no_fill`/`error`. |
+
+### 5.5.3 Delivery / Event Separation
+
+1. Delivery only describes "what is returned now".
+2. Event callback only describes "what behavior happened later".
+3. Delivery and Event must be linked by one `responseReference`.
+4. Extension events (`qualified_lead`, `conversion`, `task_completion`) cannot replace minimum M1 events.
+
+### 5.5.4 State and Routing Alignment
+
+1. Placement lifecycle states use `received -> routed -> (served|no_fill|error)`.
+2. `no_fill` and `error` are distinct and must not be merged in reporting.
+3. Routing/degradation follows rule-DAG and ordered fallback (`Primary -> Secondary -> Fallback`).
+4. Default serving behavior is fail-open; fail-closed is only for hard policy constraints.
+
+### 5.5.5 Trace and Replay Requirement
+
+1. Every placement request must be traceable by request trace key and `responseReference`.
+2. Mapping and routing decisions must include rule-version evidence.
+3. A single request should be replayable end-to-end (request -> delivery -> event -> archive).
 
 ## 6) Layer-Level Design Intent
 
@@ -324,6 +374,10 @@ Must:
 3. Recommendation copy cannot impersonate assistant core answer.
 4. If semantic confidence is low, do not render.
 - Billing Event: `impression` (optional), `click` (default), `qualified_lead` (optional by vertical).
+- Schema Alignment (M1):
+1. Delivery response must carry `responseReference` and terminal state (`served` / `no_fill` / `error`).
+2. Callback event minimum set is `impression` / `click` / `failure`.
+3. Any `qualified_lead` extension event must attach the same `responseReference`.
 - Primary Metrics:
 1. `intent_card_impression_rate`
 2. `intent_card_ctr`
@@ -424,7 +478,7 @@ Define `next_step.intent_card` implementation with explicit modules:
 
 5. Observability & Governance Module
 - Responsibilities:
-1. Log decision path (`served/no_fill/blocked/error`) with `requestId`.
+1. Log decision path (`served/no_fill/error`) with `requestId` + `responseReference`, and keep policy block as reason code.
 2. Track exposure and interaction metrics.
 3. Support audit and threshold calibration workflows.
 - Boundaries:
@@ -450,6 +504,11 @@ Use this template when expanding any single placement product:
 13. `Success Metrics`
 14. `Fallback`
 15. `Open Questions`
+16. `Schema Mapping` (RequestMeta/PlacementMeta/UserContext/OpportunityContext/PolicyContext/TraceContext)
+17. `Delivery Schema` (current return only)
+18. `Event Callback Schema` (minimum: impression/click/failure)
+19. `State and Routing Policy` (`received/routed/served/no_fill/error` + fallback order)
+20. `Trace and Replay Requirement` (`responseReference`, rule version, replayability)
 
 ## 11) Candidate Extensions (Not in MVP Commit)
 
@@ -463,3 +522,13 @@ Use this template when expanding any single placement product:
 `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/docs/attach-affiliate-aggregator-design.md`
 2. Next-Step Intent Card request/response contract:
 `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/docs/next-step-intent-card-contract.md`
+
+## 13) Revision Notes
+
+### 2026-02-21 (v1.3)
+
+1. Added M1 schema alignment layer for all placements (six-block opportunity model).
+2. Added delivery/event separation rules with shared `responseReference`.
+3. Standardized M1 minimum callback events to `impression/click/failure`.
+4. Added lifecycle/routing alignment (`received/routed/served/no_fill/error` + ordered fallback).
+5. Updated placement template with schema, callback, state, and replay requirements.

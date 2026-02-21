@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（M1 版）
 
-- 文档版本：v1.2
+- 文档版本：v1.3
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：M1（接入与适配基线）
@@ -11,6 +11,10 @@
 1. 策略与上下文：为什么现在要这么做。
 2. M1 具体设计：现在到底怎么做。
 3. 未来规划：M2/M3 以及向 SSP 过渡怎么走。
+
+### 0.1 关联文档
+
+1. AI Assistant Placement Framework：`/Users/zeming/Documents/chat-ads-main/docs/ai-assistant-placement-framework.md`
 
 ## 1. 模块使命与边界
 
@@ -442,6 +446,11 @@ M1 验收基线：
 2. 将流量质量、机会分析、意图识别、用户建模逐步升级到 SSP 能力。
 
 ## 6. 变更记录
+
+### 2026-02-21（v1.3）
+
+1. 新增关联文档索引，链接回 AI Assistant Placement Framework。
+2. 明确 Mediation 设计文档与 placement 产品规范之间的双向对齐关系。
 
 ### 2026-02-21（v1.2）
 
