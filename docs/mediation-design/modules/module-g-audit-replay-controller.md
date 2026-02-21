@@ -183,7 +183,11 @@ optional：
 幂等键优先级（高 -> 低）：
 1. `idempotencyKey`（请求层）
 2. `auditRecord.auditRecordId`
-3. `computedAppendKey = sha256(opportunityKey + \"|\" + traceKey + \"|\" + appendAt + \"|\" + auditRecordVersion)`
+3. `computedAppendKeyV2 = sha256(opportunityKey + \"|\" + traceKey + \"|\" + auditRecordId + \"|\" + auditRecordVersion + \"|\" + payloadDigest)`
+
+`payloadDigest` 计算规则（冻结）：
+1. 取 `auditRecord` 的 canonical 序列化结果计算 `sha256`。
+2. 计算前必须移除传输态字段（如 `appendAt/requestId/idempotencyKey/extensions`），保证同事实重试键稳定。
 
 去重窗口：
 1. `appendDedupWindow = 7d`

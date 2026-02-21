@@ -1,5 +1,11 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.41）
+
+1. 在 `Module G` 的 append 去重规则中冻结 `computedAppendKeyV2`，移除 `appendAt` 参与键计算，避免重试键漂移。
+2. `computedAppendKeyV2` 公式更新为：`sha256(opportunityKey|traceKey|auditRecordId|auditRecordVersion|payloadDigest)`。
+3. 新增 `payloadDigest` 计算规则：基于 `auditRecord` canonical 序列化并剔除传输态字段，保证同事实重复提交键稳定。
+
 ### 2026-02-21（v4.40）
 
 1. 在 `Module F` 为可重复事件新增 `eventSeq` 合同（适用 `click/interaction/postback`），并冻结为类型条件必填。
