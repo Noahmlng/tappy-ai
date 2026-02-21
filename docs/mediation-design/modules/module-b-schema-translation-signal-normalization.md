@@ -59,6 +59,7 @@
 1. 可交易的统一机会对象（SSP-like request profile 基底）。
 2. 映射审计记录（支持回放）。
 3. 下游可直接消费的标准枚举与状态。
+4. 可选 debug 事件：`signal_normalized`（采样命中时发送）。
 
 #### 3.4.6 B 输入合同（A -> B，MVP 冻结）
 
@@ -302,6 +303,7 @@ required：
 optional：
 1. `mappingWarnings`（仅告警，不改变主语义）
 2. `extensions`（非核心语义扩展，禁止影响策略门禁主判断）
+3. `signalNormalizedEventRefOrNA`
 
 输出约束：
 1. B 输出只能包含 canonical 值，不允许 raw 值直通到 C/D。
@@ -696,3 +698,107 @@ required：
 3. `device_performance_score` 的 bucket 与 `bucketDictVersion`、`bucketAuditSnapshotLite` 一致。
 4. 同请求同版本下 `app_context` 映射与动作可复现。
 5. 任一 `app_context` 争议可通过 `traceKey + semanticSlot + reasonCode` 分钟级定位。
+
+#### 3.4.40 `signal_normalized` 事件合同（P0，MVP 冻结）
+
+事件对象：`bSignalNormalizedEventLite`
+
+required：
+1. `eventKey`
+2. `eventIdempotencyKey`
+3. `eventType`（固定 `signal_normalized`）
+4. `traceKey`
+5. `requestKey`
+6. `attemptKey`
+7. `opportunityKey`
+8. `samplingDecision`（`sampled_in` / `sampled_out`）
+9. `samplingRuleVersion`
+10. `eventAt`
+11. `mappingProfileVersion`
+12. `enumDictVersion`
+13. `bucketDictVersion`
+14. `signalNormalizedEventContractVersion`
+
+optional：
+1. `sampledSemanticSlots[]`
+2. `mappingAuditSnapshotRefOrNA`
+3. `bucketAuditSnapshotRefOrNA`
+
+发送约束：
+1. `samplingDecision=sampled_in`：必须发送事件并等待 ACK。
+2. `samplingDecision=sampled_out`：不发送事件，仅写本地审计，原因码 `b_sig_evt_sampled_out_no_emit`。
+3. 同请求同版本下，`samplingDecision` 与发送动作必须确定性一致。
+
+#### 3.4.41 采样规则（稳定哈希，P0，MVP 冻结）
+
+采样输入：
+1. `traceKey`（稳定主键）
+2. `samplingRuleVersion`
+3. `sampleRateBps`（`0..10000`，万分比）
+
+计算规则：
+1. `samplingHash = uint32(sha256(traceKey + "|" + samplingRuleVersion)[0:8], 16) % 10000`
+2. `samplingHash < sampleRateBps` -> `samplingDecision=sampled_in`
+3. 否则 `samplingDecision=sampled_out`
+
+补充规则：
+1. `debugForceSample=true` 可强制 `sampled_in`（仅联调开关，必须写审计）。
+2. `sampleRateBps=0` 全量不发送；`sampleRateBps=10000` 全量发送。
+3. 同 `traceKey + samplingRuleVersion + sampleRateBps` 下采样结果必须稳定一致。
+
+#### 3.4.42 事件主键与幂等键规则（P0，MVP 冻结）
+
+主键规则：
+1. `eventKey = "evt_b_sig_" + uuidv7`
+2. 单次事件对象唯一，不随重发变化。
+
+幂等键规则：
+1. `eventIdempotencyKey = sha256(traceKey + "|" + requestKey + "|" + attemptKey + "|" + opportunityKey + "|signal_normalized|" + samplingRuleVersion + "|" + signalNormalizedEventContractVersion)`
+2. 重发必须复用同一 `eventIdempotencyKey`。
+
+冲突处置：
+1. 同 `eventIdempotencyKey` 且 payload 摘要一致 -> `duplicate`（幂等 no-op）。
+2. 同 `eventIdempotencyKey` 且 payload 摘要不一致 -> `rejected`，原因码 `b_sig_evt_payload_conflict`。
+
+#### 3.4.43 ACK 与重发语义（P0，MVP 冻结）
+
+ACK 对象：`bSignalNormalizedEventAckLite`
+
+required：
+1. `eventKey`
+2. `eventIdempotencyKey`
+3. `ackStatus`（`accepted` / `duplicate` / `rejected`）
+4. `ackReasonCode`
+5. `retryable`
+6. `ackedAt`
+
+语义与动作：
+1. `accepted`：事件已受理，不重发。
+2. `duplicate`：幂等重复，不重发。
+3. `rejected && retryable=true`：指数退避重发（`1s -> 5s -> 30s -> 120s`），最大窗口 `10m`。
+4. `rejected && retryable=false`：不重发，写失败审计并保留主链。
+
+重发约束：
+1. 重发必须复用 `eventKey + eventIdempotencyKey`。
+2. 重发不得修改业务 payload（仅允许补充传输层元数据）。
+3. 超过重发窗口仍失败 -> 记录 `b_sig_evt_retry_exhausted`。
+
+#### 3.4.44 事件原因码（P0，MVP 冻结）
+
+1. `b_sig_evt_sampled_in_emit`
+2. `b_sig_evt_sampled_out_no_emit`
+3. `b_sig_evt_ack_accepted`
+4. `b_sig_evt_ack_duplicate`
+5. `b_sig_evt_ack_rejected_retryable`
+6. `b_sig_evt_ack_rejected_non_retryable`
+7. `b_sig_evt_payload_conflict`
+8. `b_sig_evt_retry_exhausted`
+9. `b_sig_evt_sampling_rule_invalid`
+
+#### 3.4.45 MVP 验收基线（`signal_normalized` 事件合同）
+
+1. 事件对象含 `eventKey/eventIdempotencyKey/samplingDecision/samplingRuleVersion` 四个核心字段且语义稳定。
+2. 基于 `traceKey` 的采样结果在同版本下可复现，不出现同请求多采样结论。
+3. 幂等与 ACK 语义在重试场景下稳定一致。
+4. `sampled_out` 不会误发送事件，`sampled_in` 具备可观测 ACK 结果。
+5. 任一事件争议可通过 `traceKey + eventIdempotencyKey + samplingRuleVersion` 分钟级定位。

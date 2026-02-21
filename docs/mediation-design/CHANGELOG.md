@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.29）
+
+1. 在 `Module B` 新增 `signal_normalized` 事件合同，冻结 `eventKey/eventIdempotencyKey/samplingDecision/samplingRuleVersion` 最小字段。
+2. 冻结采样规则：基于 `traceKey` 的稳定哈希计算，明确 `sampled_in/sampled_out` 决策与发送边界。
+3. 新增事件主键与幂等键规则，明确重复与 payload 冲突处置。
+4. 新增 ACK/重发语义，冻结 `accepted/duplicate/rejected` 三态与重发窗口。
+5. 更新 MVP 交付项，将 `signal_normalized` 事件合同纳入当前版本交付口径。
+
 ### 2026-02-21（v4.28）
 
 1. 在 `Module B` 收紧 `sourceInputBundleLite`，冻结 `app_context` 最小输入位点：`language/session_state/device_performance_score/privacy_status`。
