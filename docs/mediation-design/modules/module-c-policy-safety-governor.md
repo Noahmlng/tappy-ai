@@ -19,6 +19,7 @@
 1. `routable opportunity` 或 `policy-blocked result`。
 2. 策略命中轨迹（用于审计与回放）。
 3. 接口语义对齐：`evaluate(opportunity_v1, policy_snapshot) -> governor_decision`。
+4. `governor_decision` 必须包含标准 `constraintsLite`，用于表达 `allow=true + constraints`（含 `bcat/badv/nonPersonalizedOnly/disallowRenderModes`）。
 
 #### 3.5.4 C 输入合同（B -> C，MVP 冻结）
 
@@ -200,14 +201,31 @@ optional：
 12. `policyRuleVersion`
 13. `policySnapshotId`
 14. `policySnapshotVersion`
-15. `stateUpdate`（`fromState`, `toState`, `stateReasonCode`）
-16. `policyAuditSnapshotLite`（结构见 `3.5.18`）
+15. `constraintsLite`（结构见下方“constraintsLite 最小结构”）
+16. `stateUpdate`（`fromState`, `toState`, `stateReasonCode`）
+17. `policyAuditSnapshotLite`（结构见 `3.5.18`）
+
+`constraintsLite` 最小结构（MVP 冻结）：
+1. `constraintSetVersion`
+2. `categoryConstraints`
+   - `bcat`（数组，可为空）
+   - `badv`（数组，可为空）
+3. `personalizationConstraints`
+   - `nonPersonalizedOnly`（bool）
+4. `renderConstraints`
+   - `disallowRenderModes`（数组，最小支持：`webview` / `video_vast_container`）
+5. `constraintReasonCodes`（数组，用于解释约束来源；可为空）
+
+输出一致性约束（`constraintsLite`）：
+1. 即使 `finalPolicyAction=allow` 且无额外限制，也必须输出 `constraintsLite`（空数组 + `nonPersonalizedOnly=false`），禁止省略对象。
+2. `degrade` 产生的限制必须落在 `constraintsLite`，不得仅写文本 warning。
+3. `block` 路径可输出空约束，但 `constraintSetVersion` 与键结构必须完整。
 
 输出路径：
 1. `isRoutable=true`：
-   - 输出 `routableOpportunityLite` 给 D（包含可路由机会对象与策略降级标记）。
+   - 输出 `routableOpportunityLite` 给 D（包含可路由机会对象、策略降级标记与 `constraintsLite`）。
 2. `isRoutable=false`：
-   - 输出 `policyBlockedResultLite` 给 E（包含阻断摘要与返回原因）。
+   - 输出 `policyBlockedResultLite` 给 E（包含阻断摘要、返回原因与 `constraintsLite` 快照）。
 
 optional：
 1. `policyWarnings`
@@ -238,6 +256,7 @@ optional：
 4. `allow/degrade` 结论一定走 D，且状态更新为 `routed`。
 5. 同请求在同版本下输出字段、分流结果、状态更新均可复现。
 6. `policySnapshotId + policySnapshotVersion` 在 C 输出与审计快照中一致并可回放。
+7. `constraintsLite` 在 C 输出、下游消费与审计快照中一致可回放。
 
 #### 3.5.15 Policy 原因码体系（MVP 冻结）
 
@@ -323,6 +342,7 @@ optional：
    - `primaryPolicyReasonCode`
    - `winningGate`
    - `winningRuleId`
+   - `constraintsLite`
 10. `versionSnapshot`
    - `policyPackVersion`
    - `policyRuleVersion`
@@ -349,7 +369,8 @@ optional：
 2. 命中短路时必须写入 `shortCircuitSnapshot`，并停止后续 gate 评估记录。
 3. `hitRules` 至少包含所有改变 `finalPolicyAction` 的规则。
 4. `finalConclusion` 必须与 `cPolicyDecisionLite` 完全一致（字段值不可偏离）。
-5. `versionSnapshot` 必须在单请求内保持固定，不得中途切换。
+5. `constraintsLite` 必须与输出对象逐字段一致（含空数组与布尔默认值），禁止审计层二次推断。
+6. `versionSnapshot` 必须在单请求内保持固定，不得中途切换。
 
 #### 3.5.20 MVP 验收基线（Policy 审计快照）
 
@@ -358,3 +379,4 @@ optional：
 3. `traceKey/requestKey/attemptKey` 在 C 输出与审计快照中一致。
 4. 审计快照缺失 required 字段时，视为不合格输出，不得进入 D/E 主链路。
 5. 同请求在同版本下审计快照结构与结论可复现。
+6. `constraintsLite` 可独立作为回放输入恢复 D/E 的策略限制行为。

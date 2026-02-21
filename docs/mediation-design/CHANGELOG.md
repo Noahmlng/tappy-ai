@@ -1,5 +1,14 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.31）
+
+1. 在 `Module C` 输出合同冻结 `constraintsLite` 必填对象，明确 `allow=true + constraints` 的标准表达（`bcat/badv/nonPersonalizedOnly/disallowRenderModes`）。
+2. 补齐 `constraintsLite` 的最小字段结构、默认值语义与输出一致性约束，禁止 `allow` 路径省略约束对象。
+3. 在 C 输出分流路径中明确 `constraintsLite` 透传到 D（可路由）与 E（阻断快照），并纳入 C 输出与审计快照验收基线。
+4. 在 `Module D` 输入、`request adapt` 与 `D -> E` 输出合同中补齐 `constraintsLite/policyConstraints` 透传字段，冻结 `constraintSetVersion` 版本锚点。
+5. 在 `Module E` 组合输入与渲染门禁矩阵中纳入 `policy_constraints` 维度，明确 `disallowRenderModes` 的门禁与 `e_gate_policy_mode_disallowed` 原因码语义。
+6. 更新 MVP 交付清单，明确“C 输出合同”当前版本包含显式 `constraintsLite` 标准出口。
+
 ### 2026-02-21（v4.30）
 
 1. 在 `Module C` 输入合同新增显式 `policySnapshotLite`，对齐接口语义 `evaluate(opportunity_v1, policy_snapshot)`。

@@ -35,6 +35,11 @@
    - `hasCandidate`
    - `candidateCount`
    - `normalizedCandidates`
+   - `policyConstraintsLite`
+     - `constraintSetVersion`
+     - `categoryConstraints`（`bcat`, `badv`）
+     - `personalizationConstraints`（`nonPersonalizedOnly`）
+     - `renderConstraints`（`disallowRenderModes`）
    - `routeConclusion`
    - `routeAuditSnapshotLite`
    - `stateUpdate`
@@ -113,6 +118,7 @@ optional：
 5. `renderPolicyVersion`
 6. `deviceCapabilityProfileVersion`
 7. `routingPolicyVersion`（来自上游 route 结论）
+8. `constraintSetVersion`（来自上游策略约束）
 
 版本约束：
 1. 任一关键版本缺失 -> `reject`，原因码 `e_compose_invalid_version_anchor`。
@@ -322,30 +328,35 @@ N 计算公式（固定）：
 
 #### 3.7.18 渲染能力门禁矩阵（P0，MVP 冻结）
 
-E 层门禁判定维度固定为：`placement_spec × device_capabilities × mode_contract`。
+E 层门禁判定维度固定为：`placement_spec × device_capabilities × policy_constraints × mode_contract`。
 
 门禁矩阵（每模式逐一判定）：
 1. `mraid_container`
    - placement gate：`allowedRenderModes` 包含 `mraid_container`
    - device gate：`supportedRenderModes` 包含 `mraid_container` 且 `mraidSupported=true`
+   - policy gate：`disallowRenderModes` 不包含 `mraid_container`
    - fail reason：`e_gate_mraid_not_supported`
 2. `webview`
    - placement gate：`allowedRenderModes` 包含 `webview`
    - device gate：`supportedRenderModes` 包含 `webview` 且 `webviewSupported=true`
+   - policy gate：`disallowRenderModes` 不包含 `webview`
    - fail reason：`e_gate_webview_not_supported`
 3. `native_card`
    - placement gate：`allowedRenderModes` 包含 `native_card`
    - device gate：`supportedRenderModes` 包含 `native_card` 且 `maxRenderSlotCount>=1`
+   - policy gate：`disallowRenderModes` 不包含 `native_card`
    - fail reason：`e_gate_native_not_supported`
 4. `video_vast_container`（MVP 占位）
    - placement gate：`allowedRenderModes` 包含 `video_vast_container`
    - device gate：`supportedRenderModes` 包含 `video_vast_container` 且 `videoVastSupported=true`
+   - policy gate：`disallowRenderModes` 不包含 `video_vast_container`
    - fail reason：`e_gate_video_not_supported`
 
 门禁结果语义：
 1. 任一模式 gate 失败必须给出标准原因码。
 2. 所有模式 gate 失败 -> `deliveryStatus=no_fill`，原因码 `e_gate_all_modes_rejected`。
 3. 同请求同版本下，门禁判定结果必须一致。
+4. 若模式仅因 policy gate 失败，必须落标准原因码 `e_gate_policy_mode_disallowed` 并带模式名。
 
 #### 3.7.19 格式选择规则与降级顺序（P0）
 
@@ -365,6 +376,7 @@ E 层门禁判定维度固定为：`placement_spec × device_capabilities × mod
 约束：
 1. 禁止跨链路跳级（例如 `mraid` 直接跳 `native`）。
 2. 禁止无门禁判定直接选模式。
+3. 禁止选择被 `policyConstraintsLite.renderConstraints.disallowRenderModes` 显式禁用的模式。
 
 #### 3.7.20 门禁快照（`renderCapabilityGateSnapshotLite`，P0 冻结）
 
@@ -381,21 +393,26 @@ E 层门禁判定维度固定为：`placement_spec × device_capabilities × mod
    - `webviewSupported`
    - `mraidSupported`
    - `videoVastSupported`
-4. `modeEvaluations[]`
+4. `policyModes`
+   - `disallowRenderModes`
+   - `nonPersonalizedOnly`
+   - `bcat`
+   - `badv`
+5. `modeEvaluations[]`
    - `mode`
    - `gateResult`（`pass` / `fail`）
    - `gateReasonCode`
-5. `selectionDecision`
+6. `selectionDecision`
    - `eligibleModes`
    - `selectedRenderMode`
    - `degradePath`
    - `finalGateReasonCode`
-6. `versionSnapshot`
+7. `versionSnapshot`
    - `renderPolicyVersion`
    - `deviceCapabilityProfileVersion`
    - `placementConfigVersion`
    - `gateRuleVersion`
-7. `snapshotAt`
+8. `snapshotAt`
 
 一致性约束：
 1. `selectionDecision.selectedRenderMode` 必须与 `renderPlanLite.renderMode` 一致。
@@ -404,7 +421,7 @@ E 层门禁判定维度固定为：`placement_spec × device_capabilities × mod
 
 #### 3.7.21 MVP 验收基线（渲染能力门禁矩阵）
 
-1. `placement_spec × device_capabilities` 的选型结果在同请求同版本下可复现。
+1. `placement_spec × device_capabilities × policy_constraints` 的选型结果在同请求同版本下可复现。
 2. 降级顺序固定且可回放（典型链路：`mraid -> webview -> native`）。
 3. 不支持容器不会进入端侧渲染阶段，避免线上失败。
 4. `renderCapabilityGateSnapshotLite` 可还原“候选模式 -> 门禁判定 -> 最终模式/无模式”全过程。
@@ -624,7 +641,7 @@ E 层最终失败语义只允许两类终态：`no_fill` 与 `error`。
 阶段原因码到标准原因码映射（最小）：
 1. `e_no_candidate_input` -> `e_nf_no_candidate_input`
 2. `e_candidate_all_rejected` / `e_material_all_rejected` -> `e_nf_all_candidate_rejected`
-3. `e_gate_all_modes_rejected` -> `e_nf_capability_gate_rejected`
+3. `e_gate_all_modes_rejected` / `e_gate_policy_mode_disallowed` -> `e_nf_capability_gate_rejected`
 4. `e_policy_hard_blocked` / `e_policy_sensitive_scene_blocked` -> `e_nf_policy_blocked`
 5. `e_disclosure_all_rejected` -> `e_nf_disclosure_blocked`
 6. `e_ui_frequency_hard_cap` -> `e_nf_frequency_capped`
@@ -819,4 +836,3 @@ E 层是 Delivery 终态的统一落锤层；D 的状态是“路由结论输入
 3. 同请求同版本下，`routed -> served/no_fill/error` 迁移结论可复现、可回放。
 4. `deliveryStatus` 与事件口径一致，不出现“Delivery 成功但事件终态失败”语义断层。
 5. 任一 D -> E -> F 断链可通过 `traceKey + responseReference + eventId` 分钟级定位。
-

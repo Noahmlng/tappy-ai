@@ -56,6 +56,11 @@ required：
    - `policyDecisionReasonCode`
    - `policySnapshotId`
    - `policySnapshotVersion`
+   - `constraintsLite`
+     - `constraintSetVersion`
+     - `categoryConstraints`（`bcat`, `badv`）
+     - `personalizationConstraints`（`nonPersonalizedOnly`）
+     - `renderConstraints`（`disallowRenderModes`）
    - `stateUpdate`（`fromState=received`, `toState=routed`）
    - `policyPackVersion`
    - `policyRuleVersion`
@@ -80,6 +85,7 @@ optional：
 5. `routingPolicyVersion`
 6. `fallbackProfileVersion`
 7. `policySnapshotVersion`
+8. `constraintSetVersion`
 
 #### 3.6.6 缺失字段处置（MVP）
 
@@ -191,10 +197,15 @@ optional：
 9. `actorType`
 10. `policyDecision`（`finalPolicyAction`, `policyDecisionReasonCode`）
 11. `policySnapshot`（`policySnapshotId`, `policySnapshotVersion`）
-12. `routeContext`（`routePath`, `routeHop`, `routingPolicyVersion`）
-13. `timeoutBudgetMs`
-14. `sentAt`
-15. `adapterContractVersion`
+12. `policyConstraints`
+   - `bcat`
+   - `badv`
+   - `nonPersonalizedOnly`
+   - `disallowRenderModes`
+13. `routeContext`（`routePath`, `routeHop`, `routingPolicyVersion`）
+14. `timeoutBudgetMs`
+15. `sentAt`
+16. `adapterContractVersion`
 
 optional：
 1. `sourceHints`
@@ -502,25 +513,31 @@ Route Plan 仅允许三类短路动作：
 5. `hasCandidate`（`true` / `false`）
 6. `candidateCount`
 7. `normalizedCandidates`（有序列表，允许为空）
-8. `routeConclusion`
+8. `policyConstraintsLite`
+   - `constraintSetVersion`
+   - `categoryConstraints`（`bcat`, `badv`）
+   - `personalizationConstraints`（`nonPersonalizedOnly`）
+   - `renderConstraints`（`disallowRenderModes`）
+9. `routeConclusion`
    - `routePlanId`
    - `routeOutcome`（`served_candidate` / `no_fill` / `error`）
    - `finalRouteTier`（`primary` / `secondary` / `fallback` / `none`）
    - `finalAction`（`deliver` / `no_fill` / `terminal_error`）
    - `finalReasonCode`
    - `fallbackUsed`（`true` / `false`）
-9. `routeAuditSnapshotLite`（结构见 `3.6.32`）
-10. `stateUpdate`
+10. `routeAuditSnapshotLite`（结构见 `3.6.32`）
+11. `stateUpdate`
    - `fromState`（固定 `routed`）
    - `toState`（`served` / `no_fill` / `error`）
    - `statusReasonCode`
    - `updatedAt`
-11. `versionAnchors`
+12. `versionAnchors`
    - `dOutputContractVersion`
    - `routingPolicyVersion`
    - `fallbackProfileVersion`
    - `candidateNormalizeVersion`
    - `errorNormalizeVersion`
+   - `constraintSetVersion`
 
 optional：
 1. `winningCandidateRef`
@@ -553,6 +570,7 @@ optional：
 3. 路由结论（`routeOutcome/finalAction/finalReasonCode`）可审计回放。
 4. `stateUpdate` 与路由结论不发生语义冲突（served/no_fill/error 一致）。
 5. 任一 `D -> E` 输出可通过 `traceKey + requestKey + attemptKey` 分钟级定位。
+6. `policyConstraintsLite` 在 C 输入、source request 与 D 输出间逐字段一致（允许仅透传，不允许重写语义）。
 
 #### 3.6.32 路由审计快照（`routeAuditSnapshotLite`，MVP 冻结）
 
