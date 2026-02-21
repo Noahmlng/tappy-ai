@@ -287,6 +287,7 @@ required：
    - `conflictPolicyVersion`
    - `openrtbProjectionVersion`
    - `redactionPolicyVersion`
+   - `bucketDictVersion`
 6. `mappingAuditSnapshotLite`
 7. 六块对象均满足 `3.4.21` 的 required 矩阵
 8. `openrtbProjectionLite`
@@ -294,6 +295,8 @@ required：
 10. `projectionAuditSnapshotLite`
 11. `redactionPolicyLite`
 12. `redactionSnapshotLite`
+13. `bucketDictLite`
+14. `bucketAuditSnapshotLite`
 
 optional：
 1. `mappingWarnings`（仅告警，不改变主语义）
@@ -305,6 +308,7 @@ optional：
 3. `openrtbProjectionLite` 只允许输出 `imp/app/device/user/regs/ext` 六类对象，不得引入非标准主路径字段。
 4. exchange-specific 私有字段必须进入对应对象 `ext`，不得污染 canonical 主语义字段。
 5. 任意审计对象写入前必须先完成脱敏（`redaction first, audit second`），违反即 `reject`。
+6. 数值语义位点（intent/perf/session）必须经过 `bucketDictLite` 分桶后才能写审计与下游消费。
 
 #### 3.4.19 映射审计快照（`mappingAuditSnapshotLite`，MVP）
 
@@ -313,15 +317,16 @@ optional：
 
 每条审计记录必填项（冻结）：
 1. `semanticSlot`
-2. `raw`（脱敏后原值视图，若多来源冲突可为数组）
+2. `rawValue`（脱敏后原值视图，若多来源冲突可为数组）
 3. `normalized`（归一值）
 4. `conflictAction`（`override` / `merge` / `reject` / `none`）
 5. `ruleVersion`（映射或冲突裁决生效规则版本）
+6. `bucketValueOrNA`（数值位点必填，非数值位点可空）
 
 建议必填项（当前版本默认开启）：
 1. `reasonCode`
 2. `source`（appExplicit/placementConfig/defaultPolicy）
-3. `mappingAction`（exact_match/alias_map/unknown_fallback/value_corrected）
+3. `mappingAction`（exact_match/alias_map/unknown_fallback/value_corrected/bucket_mapped/bucket_unknown/bucket_outlier）
 4. `auditTimestamp`
 
 快照级必填元信息：
@@ -332,6 +337,7 @@ optional：
 5. `enumDictVersion`
 6. `conflictPolicyVersion`
 7. `redactionPolicyVersion`
+8. `bucketDictVersion`
 
 执行顺序约束（P0）：
 1. `mappingAuditSnapshotLite` 只允许记录脱敏后值，禁止写明文敏感原值。
@@ -340,7 +346,7 @@ optional：
 #### 3.4.20 MVP 验收基线（B 输出合同 + mappingAudit）
 
 1. C 层消费 B 输出时无需补字段或猜字段。
-2. 每个处理过的 `semanticSlot` 都有审计记录，且包含 `raw(已脱敏)/normalized/conflictAction/ruleVersion`。
+2. 每个处理过的 `semanticSlot` 都有审计记录，且包含 `rawValue(已脱敏)/normalized/conflictAction/ruleVersion`；数值位点额外包含 `bucketValue`。
 3. 同请求在同版本下 `bNormalizedOpportunityLite` 与 `mappingAuditSnapshotLite` 均可复现。
 4. 任一策略或路由结果都可回溯到具体审计记录和规则版本。
 5. B 输出缺失 `mappingAuditSnapshotLite` 时视为不合格输出，不得进入主链路。
@@ -554,3 +560,91 @@ required：
 3. 同请求在同 `redactionPolicyVersion` 下，脱敏动作与结果可复现。
 4. 脱敏失败请求不会进入 C/D 正常主链路。
 5. 任一隐私争议可通过 `traceKey + redactionPolicyVersion + redactionSnapshotLite` 分钟级定位。
+
+#### 3.4.32 数值信号分桶字典合同（`bucketDictLite`，P0，MVP 冻结）
+
+目标：为数值信号提供稳定分桶语义，避免不同 SDK/应用侧按各自口径解释数值范围。
+
+版本锚点：
+1. `bucketDictVersion`（独立版本线）。
+2. `bucketDictVersion` 必须写入 `normalizationSummary`、`mappingAuditSnapshotLite`、`bucketAuditSnapshotLite`。
+
+策略对象 required：
+1. `bucketDictVersion`
+2. `numericSlots[]`
+   - `slotName`
+   - `valueType`（`float` / `int`）
+   - `minInclusive`
+   - `maxInclusive`
+   - `buckets[]`（按区间有序）
+3. `unknownBucketRules[]`
+   - `slotName`
+   - `unknownBucketValue`
+4. `outlierRules[]`
+   - `slotName`
+   - `outlierLowBucketValue`
+   - `outlierHighBucketValue`
+5. `bucketFailureMode`（MVP 固定 `reject`）
+
+#### 3.4.33 intent/perf/session 最小分桶边界（P0，MVP 冻结）
+
+| numeric slot | raw range | bucket values（有序） | 缺失/非法 |
+|---|---|---|---|
+| `intentScore` | `[0.0, 1.0]` | `intent_vlow` `[0.0,0.2)` / `intent_low` `[0.2,0.4)` / `intent_mid` `[0.4,0.7)` / `intent_high` `[0.7,0.9)` / `intent_vhigh` `[0.9,1.0]` | `intent_unknown` |
+| `devicePerfScore` | `[0, 100]` | `perf_p0` `[0,20)` / `perf_p1` `[20,40)` / `perf_p2` `[40,70)` / `perf_p3` `[70,90)` / `perf_p4` `[90,100]` | `perf_unknown` |
+| `sessionDepth` | `[0, +inf)`（MVP 上限 200） | `sess_d0` `0` / `sess_d1_3` `[1,3]` / `sess_d4_10` `[4,10]` / `sess_d11_30` `[11,30]` / `sess_d31p` `[31,200]` | `session_unknown` |
+
+补充约束：
+1. 数值先做类型规范化再分桶；小数比较按左闭右开，最后一档右闭。
+2. `sessionDepth > 200` 视为 outlier，不归入 `sess_d31p`。
+3. 分桶结果必须只使用 `bucketDictVersion` 声明的 canonical bucket 值。
+
+#### 3.4.34 outlier / unknown 处置策略（P0，MVP 冻结）
+
+`unknown` 触发条件：
+1. 字段缺失。
+2. 类型不可解析（如文本/非法格式）。
+3. 值为 `NaN/Inf`。
+
+`outlier` 触发条件：
+1. 小于 `minInclusive` -> `outlier_low_*`。
+2. 大于 `maxInclusive` -> `outlier_high_*`。
+
+动作规则：
+1. `unknown` -> `degrade`，写 `unknown bucket`，原因码 `b_bucket_unknown_value`。
+2. `outlier` -> `degrade`，写 `outlier bucket`，原因码 `b_bucket_outlier_value`。
+3. `bucketDictVersion` 缺失或非法 -> `reject`，原因码 `b_bucket_dict_missing_or_invalid`。
+4. 未声明 `slotName` 却接收到数值位点 -> `reject`，原因码 `b_bucket_slot_undefined`。
+
+分桶 action：
+1. `bucket_mapped`
+2. `bucket_unknown`
+3. `bucket_outlier`
+
+#### 3.4.35 分桶审计快照（`bucketAuditSnapshotLite`，P0，MVP 冻结）
+
+required：
+1. `traceKey`
+2. `requestKey`
+3. `attemptKey`
+4. `bucketDictVersion`
+5. `slotDecisions[]`
+   - `slotName`
+   - `rawValue`
+   - `bucketValue`
+   - `bucketAction`（`bucket_mapped/bucket_unknown/bucket_outlier`）
+   - `reasonCode`
+6. `generatedAt`
+
+约束：
+1. 任一已处理数值位点都必须在 `slotDecisions[]` 出现。
+2. `mappingAuditSnapshotLite` 中数值位点的 `rawValue + bucketValue` 必须与 `bucketAuditSnapshotLite` 对齐。
+3. 任一分桶记录写审计前必须先通过脱敏策略（与 `3.4.30` 一致）。
+
+#### 3.4.36 MVP 验收基线（数值分桶合同）
+
+1. `intentScore/devicePerfScore/sessionDepth` 在同 `bucketDictVersion` 下分桶结果确定性一致。
+2. `unknown/outlier` 不会静默放过，必须产出标准 `bucketAction + reasonCode`。
+3. `mappingAuditSnapshotLite` 与 `bucketAuditSnapshotLite` 均可复放 `rawValue -> bucketValue` 路径。
+4. `bucketDictVersion` 缺失或非法请求不会进入 C/D 正常主链路。
+5. 任一分桶争议可通过 `traceKey + bucketDictVersion + bucketAuditSnapshotLite` 分钟级定位。

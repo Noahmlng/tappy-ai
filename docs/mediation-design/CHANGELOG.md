@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.27）
+
+1. 在 `Module B` 新增数值分桶字典合同 `bucketDictLite`，冻结独立版本线 `bucketDictVersion`。
+2. 冻结 `intentScore/devicePerfScore/sessionDepth` 的最小分桶边界与 canonical bucket 集。
+3. 新增 `unknown/outlier` 处置策略与标准原因码，明确分桶异常的 `degrade/reject` 边界。
+4. 新增 `bucketAuditSnapshotLite`，冻结审计字段 `rawValue + bucketValue + bucketAction`。
+5. 更新 B 输出合同与 MVP 交付项，将数值分桶合同纳入当前版本交付口径。
+
 ### 2026-02-21（v4.26）
 
 1. 在 `Module B` 新增敏感字段脱敏策略合同 `redactionPolicyLite`，冻结字段分级（`S0/S1/S2/S3`）与动作集合（`pass/hash/coarsen/drop`）。
