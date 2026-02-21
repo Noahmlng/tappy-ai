@@ -1,6 +1,6 @@
 # Stage 1 House Ads 模拟广告库资源填充计划
 
-- 文档版本：v0.1
+- 文档版本：v0.2
 - 最近更新：2026-02-21
 - 适用阶段：`docs/ai-network-development-plan.md` Stage 1（Mediation 冷启动）
 - 目标定位：在 DSP / 大型 Ads Network 尚未快速接入前，以“仓库化模拟广告库”先完成供给填充能力。
@@ -174,3 +174,185 @@ projects/ad-aggregation-platform/data/house-ads/
 2. 两类 placement 对应 creative 文件齐全且可被 runtime 消费。
 3. 覆盖/质量报告可复现（脚本重复执行结果稳定）。
 4. 主文档已登记本计划入口与范围边界（本轮不做项已写明）。
+
+## 10. 具体填充方法（可直接执行）
+
+下面是“怎么搜、怎么爬、怎么补”的执行版 SOP。
+
+### 10.1 搜索填充（Brand Discovery）怎么做
+
+目标：先拿到“品牌 + 官方域名 + 行业”的主数据，再扩展 creative。
+
+执行步骤：
+1. 先准备行业词表（`vertical_l1` + `vertical_l2`）。
+2. 每个行业跑三类查询：品牌发现、官方站点确认、合作信号补充。
+3. 只保留可验证到官方域名的品牌；其余进入待审池。
+
+#### 10.1.1 查询模板（建议中英文双语）
+
+品牌发现查询（找品牌名）：
+1. `"top {vertical_l2} brands"`
+2. `"best {vertical_l2} brands official"`
+3. `"leading {vertical_l2} companies"`
+4. `"热门 {vertical_l2} 品牌"`
+5. `"{vertical_l2} 品牌 排行"`
+
+官方站点确认（找官网域名）：
+1. `"{brand_name} official site"`
+2. `site:{candidate_domain} "{brand_name}"`
+3. `"{brand_name} 官网"`
+
+合作信号补充（后续素材生成时用）：
+1. `"{brand_name} affiliate program"`
+2. `"{brand_name} partners"`
+3. `"{brand_name} referral program"`
+4. `"{brand_name} 联盟"`
+
+#### 10.1.2 搜索批处理策略
+
+1. 每个 `vertical_l2` 先抓前 `100~200` 条结果。
+2. 对品牌名做标准化（大小写、符号、公司后缀清洗）。
+3. 用 `brand_name + domain` 做候选唯一键。
+4. 命中多域名时优先选择：
+   - 有“official site”证据的域名
+   - HTTPS 可访问
+   - 首页标题与品牌名一致
+5. 无法确定官网的条目进入 `manual_review_queue`。
+
+#### 10.1.3 搜索产出物
+
+1. `raw/brand-seeds/search-YYYYMMDD.jsonl`
+2. 每条最少含：
+   - `brand_name`
+   - `candidate_domains[]`
+   - `vertical_l1/l2`
+   - `evidence_queries[]`
+   - `evidence_urls[]`
+   - `source_confidence`
+
+### 10.2 爬虫填充（Creative Material Crawl）怎么做
+
+目标：基于已确认品牌域名，提取可生成两类 creative 的素材。
+
+前置约束：
+1. 只爬“已确认官方域名”的站点。
+2. 遵循 robots 和速率限制（避免封禁和法律风险）。
+3. 仅采集公开信息，不采集登录后内容。
+
+#### 10.2.1 爬虫入口与路径策略
+
+入口页面（优先级）：
+1. `/`
+2. `/shop` `/products` `/collections` `/category`
+3. `/pricing` `/plans`（SaaS 类）
+4. `/deals` `/offers` `/sale`
+5. `/affiliate` `/partners`（若存在）
+
+路径规则：
+1. 最大深度：`2`（首页 -> 一级列表 -> 二级详情）。
+2. 每域最大页面数：`30`（首批阶段）。
+3. 仅保留同域 URL。
+4. 去掉 query tracking 参数后再去重。
+
+#### 10.2.2 字段抽取规则（两类 creative）
+
+链接型 creative 抽取：
+1. `title`：页面标题或主 H1（长度 8~80）。
+2. `description`：meta description 或首段摘要（长度 20~180）。
+3. `target_url`：规范化后的 canonical URL。
+4. `cta_text`：按行业模板生成（如“查看详情”“立即了解”）。
+
+商品推荐型 creative 抽取：
+1. `item_id`：`brand_id + hash(canonical_url)`。
+2. `title`：商品标题/H1。
+3. `snippet`：卖点摘要（价格、用途、风格标签）。
+4. `target_url`：商品或集合页 URL。
+5. `price_hint`：页面可解析价格则填；否则空字符串。
+6. `match_tags`：由标题、类目、面向人群、用途规则化提取。
+
+#### 10.2.3 动态站点处理
+
+1. 静态页面优先用 HTML parser（快）。
+2. 页面空壳或 JS 渲染时，降级到浏览器渲染抓取（Playwright）。
+3. 若仍无法抽取，打标 `crawl_unresolved` 进入人工池。
+
+#### 10.2.4 爬虫产出物
+
+1. `raw/crawl-pages/YYYYMMDD/{brand_id}.jsonl`
+2. `raw/crawl-signals/YYYYMMDD/{brand_id}.json`
+3. 最终写入：
+   - `curated/link-creatives.jsonl`
+   - `curated/product-creatives.jsonl`
+
+### 10.3 除搜索/爬虫外的补充渠道
+
+1. 开放品牌目录（行业协会、公开榜单、商店榜单）。
+2. 现有联盟返回的 merchant/program 列表（可做品牌主数据补全）。
+3. 历史运行日志中已出现的品牌与域名（去重后回灌主库）。
+4. 人工导入白名单（重点行业品牌包）。
+
+补充原则：
+1. 所有外部来源统一走“域名验证 + 字段标准化 + 两类 creative 补齐”。
+2. 不允许绕过主数据合同直接进生产快照。
+
+### 10.4 质量门禁（必须通过才发布）
+
+字段校验：
+1. 必填缺失直接拒绝。
+2. URL 非法或不可规范化直接拒绝。
+3. `brand_id` 未命中主数据直接拒绝。
+
+内容校验：
+1. 重复度高（同品牌标题高度相似）做去重。
+2. 敏感词或违规类目命中则打 `policy_blocked`。
+3. 语言不匹配（非 zh/en）打 `needs_review`。
+
+结构校验：
+1. 每个品牌必须同时存在：
+   - `>=1` 条链接型 creative
+   - `>=1` 条商品推荐型 creative
+2. 任意品牌缺一种格式，整批快照不可发布。
+
+### 10.5 每周执行节奏（含数量配额）
+
+Week 1（打样）：
+1. 搜索发现 `800` 品牌候选。
+2. 确认官网并入库 `500` 品牌。
+3. 500 品牌配齐两类 creative。
+
+Week 2（扩容）：
+1. 搜索新增 `1500` 候选。
+2. 入库累计 `1500` 品牌。
+3. 行业覆盖达到 `>=12`。
+
+Week 3（达标）：
+1. 再新增入库 `1500` 品牌，累计 `>=3000`。
+2. creative 完整率维持 `100%`。
+3. 抽样通过率 `>=98%`。
+
+Week 4（稳定）：
+1. 固化“周更”节奏：每周净增 `300~500` 品牌。
+2. 发布节奏固定为 `weekly snapshot`。
+
+## 11. 最小脚本清单（建议实现）
+
+为避免纯人工执行，建议最小脚本化如下：
+
+1. `scripts/house-ads/build-search-jobs.js`
+   - 输入：行业词表
+   - 输出：搜索任务队列（query 列表）
+2. `scripts/house-ads/merge-search-results.js`
+   - 输入：搜索结果原始文件
+   - 输出：`raw/brand-seeds/*.jsonl`
+3. `scripts/house-ads/verify-brand-domain.js`
+   - 输入：候选品牌 + 域名
+   - 输出：已确认品牌主数据
+4. `scripts/house-ads/crawl-brand-pages.js`
+   - 输入：已确认品牌主数据
+   - 输出：页面与信号原始数据
+5. `scripts/house-ads/generate-creatives.js`
+   - 输入：crawl signals + brand 主数据
+   - 输出：两类 creative 文件
+6. `scripts/house-ads/qa-and-publish.js`
+   - 输入：curated 数据
+   - 输出：快照目录 + 质量报告 + manifest
