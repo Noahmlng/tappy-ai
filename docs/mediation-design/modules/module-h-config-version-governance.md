@@ -155,6 +155,8 @@ optional：
 请求约束：
 1. `appId + placementId + environment + schemaVersion` 组成最小配置定位键。
 2. `If-None-Match` 仅接受强 ETag；非法格式视为未携带。
+3. `sdkVersion` 不参与 `configKey` 计算，也不参与 `resolvedConfigSnapshot` 选择。
+4. `sdkVersion` 仅用于后续 `version gate`（`3.10.21`）与配置决策审计快照（`3.10.43`）输入。
 
 #### 3.10.10 响应最小字段与状态语义（P0，MVP 冻结）
 
@@ -226,6 +228,7 @@ required：
 2. `If-None-Match` 命中时稳定返回 `304`，且不会触发配置内容漂移。
 3. `ttlSec + expireAt` 可直接驱动 SDK 缓存更新，不依赖隐式时钟逻辑。
 4. 过期重验证失败时，`stale_grace` 与 fail-closed 行为可通过原因码稳定区分。
+5. 同一 `appId + placementId + environment + schemaVersion` 下，不同 `sdkVersion` 必须返回同一 `resolvedConfigSnapshot`（门禁与审计结论可不同）。
 
 #### 3.10.15 POST /config/publish 合同（P0，MVP 冻结）
 

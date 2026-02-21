@@ -1,5 +1,11 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.48）
+
+1. 在 `Module H` 的 `GET /config` 请求约束中明确：`sdkVersion` 不参与 `configKey` 与 `resolvedConfigSnapshot` 选择。
+2. 明确 `sdkVersion` 仅用于后续 `version gate` 与配置决策审计输入，避免实现方误用为配置定位因子。
+3. 在 GET 验收基线新增一致性约束：同一配置定位键下，不同 `sdkVersion` 必须返回同一 `resolvedConfigSnapshot`。
+
 ### 2026-02-21（v4.47）
 
 1. 在 `Module H` 的 `POST /config/publish` 合同新增 `publishIdempotencyKeyOrNA`，并冻结服务端 `computedPublishIdempotencyKey` 回退公式。
