@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v1.8
+- 文档版本：v1.9
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -553,6 +553,53 @@ Mediation 当前不负责：
 2. 再增强 `Policy & Safety Governor` 与 `Audit & Replay Controller` 的覆盖深度。
 3. `Optimization Loop Manager` 在保证可追溯前提下逐步从规则驱动演进到模型驱动。
 
+### 3.11.4 核心模块运作方式（模块化整理）
+
+1. `SDK Ingress & Opportunity Sensing`（SDK 接入与机会识别）
+   - 输入：SDK 请求、会话上下文、placement 注册信息、策略快照。
+   - 关键动作：上下文拼装、广告位机会识别、初步可触达判定。
+   - 输出：机会种子对象（含 trace key、placement 语义、初始状态 `received`）。
+2. `Schema Translation & Signal Normalization`（Schema 翻译与信号内容）
+   - 输入：机会种子对象与原始信号。
+   - 关键动作：六块模型映射、枚举归一、冲突裁决（`app > placement > default`）。
+   - 输出：统一机会对象（含 `schemaVersion`、标准状态、映射审计记录）。
+3. `Policy & Safety Governor`
+   - 输入：统一机会对象、策略与合规规则。
+   - 关键动作：合规审查、频控与敏感类目约束、授权范围校验。
+   - 输出：可路由机会或受控拦截结果（含原因码）。
+4. `Supply Orchestrator`
+   - 输入：可路由机会、供给源能力、路由策略版本。
+   - 关键动作：主路由/次路由/fallback 执行、超时与 no-fill/error 处理。
+   - 输出：候选结果与路由决策轨迹。
+5. `Delivery Composer`
+   - 输入：候选结果、placement 展示约束。
+   - 关键动作：Delivery 结构化输出、状态确定（`served/no_fill/error`）。
+   - 输出：当前返回对象（不承载后续行为事件）。
+6. `Event & Attribution Processor`
+   - 输入：事件回传（最小集 `impression/click/failure`）与 `responseReference`。
+   - 关键动作：事件归一、关联、归因与闭环补全。
+   - 输出：事件轨迹与闭环状态更新。
+7. `Audit & Replay Controller`
+   - 输入：映射/路由/返回/回传四段决策记录。
+   - 关键动作：单机会对象审计、全链路回放、异常定位。
+   - 输出：排障报告、审计证据、对账依据。
+8. `Optimization Loop Manager`
+   - 输入：质量、收益、稳定性、审计反馈。
+   - 关键动作：规则参数优化、配置灰度、版本治理与回滚。
+   - 输出：新版本策略与优化建议。
+
+### 3.11.5 链路视角：如何服务两项核心目标
+
+1. 目标一：`SDK 接入与机会识别`
+   - 由 `SDK Ingress & Opportunity Sensing` 主导，`Policy & Safety Governor` 做首层约束。
+   - 关注“是否有机会、机会在哪里、是否可安全触达”。
+2. 目标二：`构建 SSP-like bid request key information`
+   - 由 `Schema Translation & Signal Normalization` 主导，`Supply Orchestrator` 与 `Audit & Replay Controller` 补全交易与可追溯信息。
+   - 关注“机会对象是否可交易、信号是否标准、是否可被外部稳定消费”。
+3. 两者衔接方式：
+   - 机会识别先产出“可解释机会种子”，再进入 schema 翻译形成“可交易标准对象”。
+   - 标准对象继续经过路由、返回、回传，最终沉淀成可优化闭环。
+
 ## 4. 当前版本交付包（Deliverables）
 
 1. 标准接入框架说明。
@@ -568,6 +615,7 @@ Mediation 当前不负责：
 11. 可观测与审计模型说明（单机会对象 + 四段关键决策点）。
 12. 配置与版本治理说明（三线分离：schema/route/placement）。
 13. Media Agents 层核心模块说明。
+14. 模块化链路说明（SDK 接入与机会识别 -> SSP-like 关键信息构建）。
 
 ## 5. 优化项与 SSP 过渡（Plan）
 
@@ -720,7 +768,29 @@ Mediation 当前不负责：
 7. 实验平台化：
    - 建立跨 placement、跨策略、跨供给的统一实验与回收框架。
 
+#### 5.4.3 按核心模块拆分的优化重点
+
+1. `SDK Ingress & Opportunity Sensing`
+   - 当前：提升机会识别准确率、降低误触发、优化入口延迟。
+   - 未来：支持更复杂的 agent workflow 入口与跨平台接入协议。
+2. `Schema Translation & Signal Normalization`
+   - 当前：提升映射覆盖率与冲突裁决一致性，强化信号可解释性。
+   - 未来：补全交易上下文与质量分层字段，形成稳定的 SSP-like request profile。
+3. `Supply Orchestrator` + `Delivery Composer`
+   - 当前：提升路由命中质量与返回稳定性，降低 timeout/no-fill 波动。
+   - 未来：扩展交易接口层，支持拍卖结果通知与结算对账联动。
+4. `Event & Attribution Processor` + `Audit & Replay Controller`
+   - 当前：提升事件关联完整率与分钟级排障效率。
+   - 未来：实现对账自动化与争议回放自动化。
+
 ## 6. 变更记录
+
+### 2026-02-21（v1.9）
+
+1. 以模块链路重构 `3.11`，补充每个核心模块的输入、关键动作与输出。
+2. 新增“链路视角”说明，明确如何服务 `SDK 接入与机会识别` 与 `SSP-like bid request key information` 构建。
+3. 补回并完善当前版本交付包，新增模块化链路说明条目。
+4. 在 `5.4` 增加按核心模块拆分的优化重点，形成可执行的优化路线视图。
 
 ### 2026-02-21（v1.8）
 
