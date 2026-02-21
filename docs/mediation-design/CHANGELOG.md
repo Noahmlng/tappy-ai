@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.17）
+
+1. 在 `Module H` 新增灰度规则合同，冻结灰度输入输出结构与决策字段。
+2. 冻结 app/placement/sdk/adapter 四维选择器与匹配顺序（先 exclude 后 include）。
+3. 新增 `splitKey` 与桶算法定义，明确百分比分流策略与 adapter 级灰度规则。
+4. 冻结熔断触发条件与回退动作，明确 `force_fallback`、冷却与半开探测策略。
+5. 新增灰度原因码与 MVP 验收基线，并将灰度合同纳入当前版本交付项。
+
 ### 2026-02-21（v4.16）
 
 1. 在 `Module H` 新增版本锚点注入合同，冻结必注入版本集合与 `versionAnchorSnapshot` 结构。

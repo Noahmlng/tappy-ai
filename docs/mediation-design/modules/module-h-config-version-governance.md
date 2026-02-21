@@ -565,3 +565,111 @@ required：
 2. 锚点仅允许按冻结点追加，不允许中途覆盖，违反时可稳定拒绝并给出原因码。
 3. F/G 回放可基于 `anchorHash` 复原当时版本集合，dispute 不依赖当前线上版本。
 4. 任一锚点异常可通过 `requestKey + traceKey + anchorHash + reasonCodes` 分钟级定位。
+
+#### 3.10.35 灰度规则合同（P0，MVP 冻结）
+
+灰度接口语义：`evaluateRolloutSelector(requestContext, rolloutPolicy) -> rolloutDecision`。
+
+输入对象：`hRolloutGateInputLite`
+
+required：
+1. `requestKey`
+2. `traceKey`
+3. `appId`
+4. `placementId`
+5. `sdkVersion`
+6. `adapterIds[]`
+7. `environment`
+8. `rolloutPolicyVersion`
+9. `rolloutAt`
+10. `rolloutContractVersion`
+
+optional：
+1. `userBucketHintOrNA`
+2. `extensions`
+
+输出对象：`hRolloutDecisionLite`
+
+required：
+1. `requestKey`
+2. `traceKey`
+3. `rolloutAction`（`in_experiment` / `out_of_experiment` / `force_fallback`）
+4. `selectedPolicyId`
+5. `splitKey`
+6. `bucketValue`（`0-99.99`）
+7. `rolloutPercent`
+8. `allowedAdapters[]`
+9. `blockedAdapters[]`
+10. `reasonCodes[]`
+11. `rolloutAt`
+12. `rolloutContractVersion`
+
+#### 3.10.36 灰度选择器（app/placement/sdk/adapter，P0，MVP 冻结）
+
+选择器维度（全部支持）：
+1. `appSelector`：`includeAppIds[]` / `excludeAppIds[]`
+2. `placementSelector`：`includePlacementIds[]` / `excludePlacementIds[]`
+3. `sdkSelector`：`minSdkVersion` / `maxSdkVersionOrNA`
+4. `adapterSelector`：`includeAdapterIds[]` / `excludeAdapterIds[]`
+
+匹配规则（固定）：
+1. 先 `exclude` 后 `include`；命中 `exclude` 立即 `out_of_experiment`。
+2. 四类选择器均通过才可进入分流。
+3. 任一选择器配置缺失视为“不过滤该维度”，不是失败。
+
+#### 3.10.37 分流键与桶算法（P0，MVP 冻结）
+
+`splitKey` 生成规则（固定）：
+1. `splitKey = sha256(appId + "|" + placementId + "|" + sdkVersion + "|" + stableUserKeyOrDeviceKey + "|" + rolloutPolicyVersion)`。
+2. `stableUserKeyOrDeviceKey` 缺失时回退 `traceKey`（仅当前会话稳定）。
+
+桶算法：
+1. `bucketValue = (uint64(splitKey[0:16]) mod 10000) / 100`，范围 `0.00 ~ 99.99`。
+2. 相同 `splitKey` 必须得到相同 `bucketValue`。
+
+#### 3.10.38 百分比分流策略（P0，MVP 冻结）
+
+策略字段：
+1. `rolloutPercent`（`0.00 ~ 100.00`）
+2. `controlPercent`（默认 `100 - rolloutPercent`）
+3. `adapterRolloutPercentMap`（可选，adapter 级灰度）
+
+判定规则：
+1. `bucketValue < rolloutPercent` -> `in_experiment`。
+2. `bucketValue >= rolloutPercent` -> `out_of_experiment`。
+3. `adapterRolloutPercentMap` 存在时，对每个 adapter 额外执行一次同算法分流。
+4. `rolloutPercent` 非法（<0 或 >100）-> `force_fallback`，原因码 `h_rollout_invalid_percent`.
+
+#### 3.10.39 熔断与回退条件（P0，MVP 冻结）
+
+熔断观察窗口：`5m` 滑动窗口（按 `appId + placementId + rolloutPolicyVersion` 聚合）。
+
+触发条件（任一满足即熔断）：
+1. `error_rate >= errorRateThreshold`
+2. `no_fill_rate >= noFillRateThreshold`
+3. `p95_latency_ms >= latencyP95ThresholdMs`
+4. `critical_reason_code_count >= criticalReasonThreshold`
+
+回退动作：
+1. 熔断后 `rolloutAction=force_fallback`，立即切回上一稳定策略（`lastStablePolicyId`）。
+2. 熔断期间停止扩大灰度比例；仅允许手动恢复或冷却后自动半开。
+3. 半开策略：冷却 `10m` 后以 `rolloutPercent=1%` 重新探测。
+
+#### 3.10.40 灰度原因码（P0，MVP 冻结）
+
+1. `h_rollout_selector_excluded`
+2. `h_rollout_selector_not_matched`
+3. `h_rollout_in_experiment`
+4. `h_rollout_out_of_experiment`
+5. `h_rollout_invalid_percent`
+6. `h_rollout_split_key_missing_fallback_trace`
+7. `h_rollout_circuit_breaker_triggered`
+8. `h_rollout_force_fallback_applied`
+9. `h_rollout_policy_not_found`
+
+#### 3.10.41 MVP 验收基线（灰度规则合同）
+
+1. 相同请求上下文在同一策略版本下始终命中相同桶位与灰度结论。
+2. app/placement/sdk/adapter 四维选择器行为确定性一致，无隐式优先级漂移。
+3. 熔断触发后能在分钟级切回 `lastStablePolicyId`，且不进入“部分生效”状态。
+4. 任一灰度决策可通过 `splitKey + bucketValue + rolloutPolicyVersion + reasonCodes` 分钟级定位。
