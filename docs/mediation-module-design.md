@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v1.7
+- 文档版本：v1.8
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -521,6 +521,38 @@ Mediation 当前不负责：
 3. 接入方在 schema 不破坏兼容时无需改造即可继续运行。
 4. 发布失败可在可控时间内完成降级或回滚。
 
+## 3.11 Media Agents 层核心模块
+
+### 3.11.1 模块定位
+
+1. Media Agents 层负责把“机会识别 -> 交易决策 -> 用户触达 -> 闭环学习”串成可执行链路。
+2. 其核心价值是把多源信号和多步骤动作转成稳定、可审计、可优化的 agent 化执行单元。
+
+### 3.11.2 核心模块清单（当前建议）
+
+1. `Agent Context Manager`
+   - 汇聚会话、任务、用户与环境上下文，输出统一上下文快照。
+2. `Intent & Opportunity Interpreter`
+   - 识别任务意图、交易机会和可触达窗口，生成机会候选。
+3. `Policy & Safety Governor`
+   - 对机会候选执行合规、频控、敏感类目、授权范围等策略约束。
+4. `Supply Orchestrator`
+   - 负责主路由/次路由/fallback 编排与供给调用生命周期管理。
+5. `Delivery Composer`
+   - 生成符合 placement 约束的返回结构，确保 Delivery 与 Event 语义分离。
+6. `Event & Attribution Processor`
+   - 处理 `impression/click/failure` 最小事件与扩展事件，并完成归因关联。
+7. `Audit & Replay Controller`
+   - 以单机会对象为单位沉淀四段关键决策点，支持排障与回放。
+8. `Optimization Loop Manager`
+   - 基于质量、收益、稳定性指标持续更新规则参数和配置版本。
+
+### 3.11.3 当前版本优先落地建议
+
+1. 先稳定 `Intent & Opportunity Interpreter` + `Supply Orchestrator` + `Event & Attribution Processor` 三条主链。
+2. 再增强 `Policy & Safety Governor` 与 `Audit & Replay Controller` 的覆盖深度。
+3. `Optimization Loop Manager` 在保证可追溯前提下逐步从规则驱动演进到模型驱动。
+
 ## 4. 当前版本交付包（Deliverables）
 
 1. 标准接入框架说明。
@@ -535,6 +567,7 @@ Mediation 当前不负责：
 10. 路由与降级策略模型说明（规则 DAG + fallback 顺序 + 阈值策略）。
 11. 可观测与审计模型说明（单机会对象 + 四段关键决策点）。
 12. 配置与版本治理说明（三线分离：schema/route/placement）。
+13. Media Agents 层核心模块说明。
 
 ## 5. 优化项与 SSP 过渡（Plan）
 
@@ -653,7 +686,47 @@ Mediation 当前不负责：
 4. 运营层：
    - 可对账、可追责、可回放，且能按质量分层输出稳定报表。
 
+### 5.4 优化项路线拆分（当前持续优化 + 未来优化项）
+
+#### 5.4.1 当前正在持续优化的部分
+
+1. 映射与归一稳定性：
+   - 冲突裁决一致性、枚举归一覆盖率、异常输入容错能力。
+2. 路由与降级可靠性：
+   - timeout/no-fill/error 处理准确性、fallback 命中质量、延迟控制。
+3. 回传与闭环完整性：
+   - `responseReference` 关联成功率、事件丢失率、归档完整率。
+4. 可观测与审计效率：
+   - 原因码质量、回放成功率、分钟级排障检索能力。
+5. placement 触发质量：
+   - 触发准确度、去重与频控效果、用户体验影响控制。
+6. 配置与版本发布质量：
+   - 灰度稳定性、回滚时效、跨版本兼容一致性。
+
+#### 5.4.2 未来具体优化项
+
+1. 交易接口能力增强：
+   - 补全拍卖结果、结算对账接口与标准差异处理流程。
+2. 流量质量分层体系：
+   - 建立 `placement quality tier`、`view opportunity level` 的统一分层标准。
+3. Agent 场景策略增强：
+   - 增强 human/agent/agent-chain 场景下的触达策略与解释能力。
+4. 预测与排序能力升级：
+   - 从规则加权逐步升级到可解释的模型化排序与收益预测。
+5. 质量信号产品化输出：
+   - 形成可被外部网络消费的质量信号包与稳定 SLA。
+6. 对账与运营自动化：
+   - 建立差异检测、争议处理、账务回溯的自动化闭环。
+7. 实验平台化：
+   - 建立跨 placement、跨策略、跨供给的统一实验与回收框架。
+
 ## 6. 变更记录
+
+### 2026-02-21（v1.8）
+
+1. 新增 `3.11`：补充 Media Agents 层核心模块清单与当前优先落地建议。
+2. 新增 `5.4`：拆分优化项路线，明确“当前持续优化”与“未来具体优化项”。
+3. 在交付包中加入 Media Agents 模块说明项。
 
 ### 2026-02-21（v1.7）
 
