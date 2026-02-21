@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.4
+- 文档版本：v3.5
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -71,6 +71,7 @@ Mediation 当前不负责：
 3. 处理规则（必须冻结的决策逻辑）。
 4. 输出合同（下一模块可直接消费）。
 5. 审计与版本锚点（可回放、可治理）。
+6. 当前版本仅冻结 MVP 必需项；详细设计统一后置到第 5 章索引，不在本章展开。
 
 ### 3.2 模块链路总览（Execution Graph）
 
@@ -198,977 +199,67 @@ flowchart LR
 2. 机会触发解释摘要（用于审计与排障）。
 3. 追踪主键与请求级时间戳。
 
-#### 3.3.5 Ingress Request Envelope（接入请求壳层合同，当前版本冻结）
-
-目标：
-1. 给 SDK 一个稳定、可自检的接入壳层，避免“能发请求但语义不完整”。
-2. 在进入机会识别前完成最小可信与最小可用校验。
-3. 为后续 `Module B` 映射提供结构化输入，不让下游补洞。
-
-Envelope 采用“六块壳层”：
-1. `EnvelopeMeta`（required）
-   - 请求身份、应用身份、接入时间、接入通道、SDK 声明版本。
-2. `PlacementTrigger`（required）
-   - placement 身份、触发位置、触发时机、触发类型。
-3. `ContextSnapshot`（required）
-   - 会话最小上下文、交互主体类型、人/agent 当前阶段。
-4. `UserPolicyHints`（optional）
-   - 用户设置、应用偏好、实验分桶、调试标记。
-5. `TraceBootstrap`（required）
-   - trace 初始化信息、上游引用、请求链路关联键。
-6. `IntegrityHints`（required）
-   - 来源可信信息、签名/令牌校验结果、重放防护标记。
-
-冻结规则：
-1. 先冻结六块结构与 required/optional，不在当前版本冻结细字段枚举。
-2. required 块缺失时不得进入机会识别主流程。
-3. optional 块缺失时走默认策略，不阻断主链路。
-
-#### 3.3.6 Envelope 校验层级与处理动作（当前版本）
-
-Ingress 校验分三层，按顺序执行：
-1. `L1 Structural Validation`
-   - 校验 Envelope 结构完整性（六块壳层是否满足 required）。
-   - 失败动作：直接拒绝并返回结构错误码。
-2. `L2 Semantic Validation`
-   - 校验关键语义可解释性（placement 可识别、触发类型有效、时间窗口合理）。
-   - 失败动作：进入受控降级或受控拒绝（按原因码矩阵）。
-3. `L3 Trust Validation`
-   - 校验来源可信、重放风险、基础鉴权状态。
-   - 失败动作：标记高风险并默认 fail-closed（除非配置显式放行）。
-
-约束：
-1. 校验结果必须结构化输出给后续模块，不允许只输出文本日志。
-2. 同请求在同规则版本下校验结果必须确定性一致。
-
-#### 3.3.7 Envelope 输出与错误语义（当前版本）
-
-`Module A` 输出分两类：
-1. `accepted opportunity seed`
-   - 包含：机会种子、校验摘要、trace key、规则版本、初始状态 `received`。
-2. `rejected/blocked ingress result`
-   - 包含：拒绝类型、原因码、是否可重试、审计关联键。
-
-错误语义最小分类：
-1. `structure_invalid`
-2. `semantic_invalid`
-3. `source_untrusted`
-4. `replay_suspected`
-5. `policy_blocked_at_ingress`
-
-#### 3.3.8 Envelope 版本与兼容规则（当前版本）
-
-1. Envelope 独立版本线：`ingressEnvelopeVersion`。
-2. 向后兼容变更优先走 optional 扩展。
-3. 破坏兼容才升级主版本，并提供迁移窗口。
-4. 单请求必须记录 `ingressEnvelopeVersion`，保证回放可复现。
-
-#### 3.3.9 验收基线（Module A / Envelope）
-
-1. SDK 可在本地按壳层合同完成请求自检。
-2. required 缺失可在 Ingress 层被稳定拦截，不进入 `Module B`。
-3. optional 缺失不会造成主链路不可用。
-4. 同类异常可命中稳定错误码并在分钟级检索。
-5. Ingress 输出可被 `Module B` 直接消费，无需二次补齐。
-
-#### 3.3.10 Auth + Source Trust（仅 Mediation 层，当前版本冻结）
-
-范围边界（避免越界）：
-1. 本设计只定义 Mediation Ingress 的“请求鉴权 + 来源可信分级 + 风险处置”。
-2. 不定义 DSP/SSP 内部竞价风控细节，不替代 Ads Network 的反作弊系统。
-3. 本层目标是“先挡伪流量、再标可信度、再把结果结构化传给下游”。
-
-目标：
-1. 在冷启动阶段降低伪流量进入机会识别主链路的概率。
-2. 统一来源可信口径，避免同来源在不同链路得到不同处理结果。
-3. 给 `Module B/C/D` 输出可消费的可信快照，而非仅日志。
-
-#### 3.3.11 鉴权模型（Ingress Auth Model）
-
-鉴权对象：
-1. `app_identity`：应用身份。
-2. `sdk_identity`：SDK 发行身份与版本声明。
-3. `channel_identity`：接入通道身份。
-4. `request_integrity`：请求完整性与签名一致性。
-
-鉴权结果分级：
-1. `auth_pass_strong`：强通过（身份与完整性均可信）。
-2. `auth_pass_basic`：基础通过（身份可信但完整性能力有限）。
-3. `auth_soft_fail`：软失败（可疑但可受控放行）。
-4. `auth_hard_fail`：硬失败（拒绝进入主链路）。
-
-约束：
-1. 鉴权结果必须落到结构化字段，不允许仅文本备注。
-2. `auth_hard_fail` 默认 fail-closed，禁止进入机会识别。
-3. `auth_soft_fail` 需绑定风险标记和降级策略后才可继续。
-
-#### 3.3.12 来源可信分级（Source Trust Tier）
-
-当前版本冻结四级可信分层：
-1. `T0 Trusted`
-   - 已验证应用/渠道，历史行为稳定。
-   - 处理动作：正常放行。
-2. `T1 Provisionally Trusted`
-   - 新接入或样本不足，但鉴权通过。
-   - 处理动作：放行 + 强审计 + 可选限流。
-3. `T2 Suspect`
-   - 命中异常模式、重放风险或身份不一致。
-   - 处理动作：默认降级（限流/降权/受控 no-fill），保留人工复核入口。
-4. `T3 Blocked`
-   - 明确伪造或高风险来源。
-   - 处理动作：直接拦截并返回标准拒绝结果。
-
-分级原则：
-1. 同请求在同规则版本下分级必须确定性一致。
-2. 分级决策必须记录原因码与证据摘要。
-3. `T2/T3` 不得静默处理，必须可审计可检索。
-
-#### 3.3.13 风险处置矩阵（Mediation 行为）
-
-按“鉴权结果 + 信任等级”执行统一动作：
-1. `auth_pass_strong + T0/T1`
-   - 动作：进入主链路。
-2. `auth_pass_basic + T1`
-   - 动作：进入主链路但附加风险标签与速率控制。
-3. `auth_soft_fail + T2`
-   - 动作：进入受控降级路径（限制触发频率、限制供给路由、强化审计）。
-4. `auth_hard_fail` 或 `T3`
-   - 动作：立即拒绝，不进入 `Module B`。
-
-最小原因码集（当前版本）：
-1. `auth_token_invalid`
-2. `auth_signature_mismatch`
-3. `auth_expired_or_replayed`
-4. `source_identity_mismatch`
-5. `source_trust_blocked`
-
-#### 3.3.14 输出合同与下游消费（A -> B/C/D）
-
-`Module A` 额外输出 `authTrustSnapshot`：
-1. `authResult`（strong/basic/soft/hard）
-2. `trustTier`（T0/T1/T2/T3）
-3. `riskFlags`（重放、身份不一致、异常频率等）
-4. `authReasonCode`（最小原因码）
-5. `authPolicyVersion`（鉴权策略版本）
-
-下游消费约束：
-1. `Module B`：只做映射承载，不改写鉴权结论。
-2. `Module C`：可根据 `authTrustSnapshot` 执行策略加强。
-3. `Module D`：可根据信任等级执行路由降级，但不得放行 `T3`。
-
-#### 3.3.15 观测与验收基线（Auth + Trust）
-
-核心指标：
-1. `auth_pass_rate`
-2. `hard_fail_rate`
-3. `soft_fail_to_block_rate`
-4. `suspect_source_repeat_rate`
-5. `false_block_review_overturn_rate`
-
-验收基线：
-1. 伪造/重放请求可在 Ingress 层稳定拦截。
-2. 来源可信分级可在分钟级检索并回放。
-3. `T2/T3` 请求不会误入正常主链路。
-4. 鉴权模块故障时默认 fail-safe（不放大风险流量）。
-5. Auth/Trust 结果可被下游稳定消费，不引入字段歧义。
-
-#### 3.3.16 Idempotency / De-dup（仅 Mediation Ingress，当前版本冻结）
-
-范围边界：
-1. 本设计只覆盖 Mediation Ingress 的重复请求治理。
-2. 不约束 Ads Network 内部重复请求处理，不依赖 DSP 侧幂等语义。
-3. 目标是“同一业务请求只产生一次有效机会与一次下游调用语义”。
-
-目标：
-1. 解决重试、网络抖动、客户端重复发送导致的重复机会问题。
-2. 保证同请求在同策略版本下结果可复现。
-3. 减少重复下游调用，稳定统计口径与审计口径。
-
-#### 3.3.17 幂等键与去重指纹（冻结）
-
-幂等键优先级（高 -> 低）：
-1. `clientRequestId`（SDK 显式提供，首选）。
-2. `idempotencyKey`（接入方显式提供）。
-3. `canonicalFingerprint`（平台按标准字段计算）。
-
-`canonicalFingerprint` 最小组成：
-1. app identity
-2. session identity
-3. placement identity
-4. trigger type + trigger time bucket
-5. normalized request payload hash
-
-约束：
-1. 同优先级键冲突时按稳定规则裁决（固定排序 + 版本化算法）。
-2. 指纹算法版本化管理：`dedupFingerprintVersion`。
-3. 幂等键缺失时必须回落到平台指纹，不允许直接放弃去重。
-
-#### 3.3.18 去重窗口与状态机（冻结）
-
-去重窗口（当前版本）：
-1. `inflight window`：请求处理中窗口（防并发重复进入）。
-2. `result reuse window`：结果复用窗口（重复请求直接复用结果）。
-3. `late retry window`：迟到重试窗口（超窗口按新请求处理，但保留关联）。
-
-去重状态机：
-1. `new`：首次进入。
-2. `inflight_duplicate`：命中处理中重复请求。
-3. `reused_result`：命中结果复用窗口并返回复用结果。
-4. `expired_retry`：超出去重窗口，按新请求处理并标记重试来源。
-
-状态约束：
-1. 同一幂等键同一时刻只允许一个 `new/inflight` 主处理实例。
-2. `inflight_duplicate` 不得触发新的下游 supply 调用。
-3. 所有状态迁移必须记录时间戳、原因码、策略版本。
-
-#### 3.3.19 重复请求处理动作（Mediation 行为）
-
-动作矩阵：
-1. 命中 `inflight_duplicate`
-   - 动作：挂起等待主实例结果或返回受控“处理中”语义（按接入模式）。
-2. 命中 `reused_result`
-   - 动作：直接复用上次标准输出（含 `responseReference` 关联信息）。
-3. 命中 `expired_retry`
-   - 动作：创建新机会对象，但写入 `retryOf` 关联键用于审计串联。
-4. 幂等校验失败（键异常/格式非法）
-   - 动作：进入受控拒绝或降级路径，返回标准错误码。
-
-最小原因码集：
-1. `duplicate_inflight`
-2. `duplicate_reused_result`
-3. `dedup_window_expired`
-4. `idempotency_key_invalid`
-5. `idempotency_store_unavailable`
-
-#### 3.3.20 存储与一致性约束（Ingress De-dup Store）
-
-1. 幂等与去重依赖独立 `dedup store`，作为 Ingress 基础设施。
-2. `dedup store` 至少保证：原子写入、原子锁定、状态可查询。
-3. 存储异常时默认 fail-safe：
-   - 高风险来源（T2/T3）默认拒绝。
-   - 低风险来源（T0/T1）按配置受控放行并强审计标记。
-4. 任何“受控放行”都必须写入 `dedup_degraded=true` 标记，供后续排查与口径隔离。
-
-#### 3.3.21 输出合同与观测基线（Idempotency / De-dup）
-
-`Module A` 增补输出 `dedupSnapshot`：
-1. `idempotencyKeyType`（client/idempotencyKey/fingerprint）
-2. `dedupState`（new/inflight_duplicate/reused_result/expired_retry）
-3. `dedupReasonCode`
-4. `dedupWindowProfile`
-5. `dedupPolicyVersion`
-
-下游消费约束：
-1. `Module B` 承载 `dedupSnapshot`，不得重算去重结论。
-2. `Module D` 仅当 `dedupState=new/expired_retry` 才允许发起 supply 调用。
-3. 审计层必须能按幂等键回放所有重复请求分支。
-
-核心指标：
-1. `duplicate_request_rate`
-2. `inflight_duplicate_rate`
-3. `reused_result_rate`
-4. `duplicate_supply_call_prevented_rate`
-5. `dedup_degraded_rate`
-
-验收基线：
-1. 同一请求重试不会重复触发供给调用。
-2. 重复请求可稳定复用结果且可审计追溯。
-3. 去重策略异常时不会无痕放大重复流量。
-4. 幂等结果在同策略版本下可复现。
-
-#### 3.3.22 Opportunity Trigger Taxonomy（机会触发类型字典，当前版本冻结）
-
-范围边界：
-1. 本字典只定义 Mediation Ingress 如何识别“机会触发”。
-2. 不定义 DSP/SSP 的投放策略，不替代下游竞价逻辑。
-3. 目标是统一“什么算一次机会”，避免不同 SDK/应用各自解释。
-
-字典目标：
-1. 统一触发语义与命名，保障跨应用、跨 SDK 一致性。
-2. 为去重、策略门禁、路由提供稳定前置标签。
-3. 让机会识别结果可审计、可比较、可复现。
-
-#### 3.3.23 触发类型分层（冻结）
-
-当前版本冻结两级结构：`triggerCategory` + `triggerType`。
-
-`triggerCategory`（一级）：
-1. `explicit_intent`：用户/agent 明确表达商业探索意图。
-2. `workflow_transition`：工作流阶段切换产生可触达窗口。
-3. `contextual_opportunity`：上下文信号触发机会（非明确意图）。
-4. `system_scheduled`：系统按规则定时/定点触发（如 checkpoint）。
-5. `policy_forced`：策略侧强制触发或强制抑制后的替代触发。
-
-`triggerType`（二级最小集）：
-1. `explicit_query_commercial`
-2. `task_stage_entry`
-3. `task_stage_exit`
-4. `result_summary_checkpoint`
-5. `agent_handoff_point`
-6. `context_affinity_hit`
-7. `time_or_frequency_slot`
-8. `policy_override_trigger`
-
-约束：
-1. 每个请求必须命中一个主 `triggerType`。
-2. 可附加次级 trigger 列表，但主 trigger 只能唯一。
-3. 未识别类型统一映射 `unknown_trigger` 并进入受控降级。
-
-#### 3.3.24 机会成立判定（What Counts as Opportunity）
-
-机会成立条件（同时满足）：
-1. `triggerType` 合法且可解释。
-2. placement 与触发类型在兼容矩阵中允许组合。
-3. 当前会话处于可触达窗口（不命中硬抑制策略）。
-4. 去重状态允许新机会产生（非 `inflight_duplicate/reused_result` 主路径）。
-
-机会不成立条件（任一命中）：
-1. 触发类型非法或不在冻结字典。
-2. placement-触发组合不兼容。
-3. 命中强抑制策略（如频控硬阈值、高风险来源封禁）。
-4. 命中重复请求复用路径且不应新建机会对象。
-
-输出结论：
-1. `opportunity_eligible`
-2. `opportunity_ineligible`
-3. `opportunity_blocked_by_policy`
-
-#### 3.3.25 Trigger Metadata 合同（A 层输出）
-
-`Module A` 增补 `triggerSnapshot`：
-1. `triggerCategory`
-2. `triggerType`
-3. `triggerSource`（user/agent/system/policy）
-4. `triggerEvidence`（最小证据摘要）
-5. `triggerConfidenceBand`（high/medium/low）
-6. `triggerDecision`（eligible/ineligible/blocked）
-7. `triggerPolicyVersion`
-8. `triggerTaxonomyVersion`
-
-下游消费约束：
-1. `Module B` 仅承载并映射，不改写主 trigger 决策。
-2. `Module C` 可基于 `triggerDecision` 与 `triggerConfidenceBand` 做策略加强。
-3. `Module D` 仅对 `eligible` 机会进入正常路由；其他状态走受控路径。
-
-#### 3.3.26 版本治理与兼容规则（Trigger Taxonomy）
-
-1. 字典独立版本线：`triggerTaxonomyVersion`。
-2. 新增触发类型优先“追加”，避免重定义已有语义。
-3. 删除或重命名触发类型属于破坏性变更，需主版本升级。
-4. 任一请求都必须记录 `triggerTaxonomyVersion` 以支持回放复现。
-
-#### 3.3.27 观测指标与验收基线（Trigger Taxonomy）
-
-核心指标：
-1. `trigger_coverage_rate`
-2. `unknown_trigger_rate`
-3. `eligible_trigger_rate`
-4. `trigger_to_delivery_conversion_rate`
-5. `cross_sdk_trigger_consistency_rate`
-
-验收基线：
-1. 不同 SDK/应用对同类场景应命中一致 trigger 类型。
-2. `unknown_trigger_rate` 受控并可持续下降。
-3. 触发判定与去重/策略结果无冲突（无同请求多判定）。
-4. 单请求可回放“触发 -> 判定 -> 下游处理”完整链路。
-
-#### 3.3.28 Sensing Decision Output Contract（识别结果输出合同，当前版本冻结）
-
-范围边界：
-1. 本合同只定义 `Module A -> Module B/C` 的结构化识别结果输出。
-2. 不定义下游竞价决策，不替代 `Module C` 的策略裁决。
-3. 目标是让识别结果从“描述性文本”升级为“可计算合同对象”。
-
-合同目标：
-1. 固定命中类型、置信带、阻断原因、版本快照四类关键字段。
-2. 保证同请求同规则版本下识别输出可复现。
-3. 为策略门禁、路由和审计提供统一输入，不做二次猜测。
-
-#### 3.3.29 合同对象结构（`sensingDecision`）
-
-`sensingDecision` 必须作为 `Module A` 标准输出对象，字段分层如下：
-
-required：
-1. `decisionOutcome`
-   - 枚举：`opportunity_eligible` / `opportunity_ineligible` / `opportunity_blocked_by_policy`。
-2. `hitType`
-   - 枚举：`explicit_hit` / `workflow_hit` / `contextual_hit` / `scheduled_hit` / `policy_forced_hit` / `no_hit`。
-3. `confidenceBand`
-   - 枚举：`high` / `medium` / `low`。
-4. `decisionTimestamp`
-   - 识别结果生成时间。
-5. `decisionEngineVersion`
-   - 识别引擎或规则版本。
-6. `sensingDecisionContractVersion`
-   - 合同版本号。
-7. `traceKey`
-   - 关联审计和回放主键。
-
-conditional required：
-1. `blockReasonCode`
-   - 当 `decisionOutcome=opportunity_blocked_by_policy` 时必填。
-2. `ineligibleReasonCode`
-   - 当 `decisionOutcome=opportunity_ineligible` 时必填。
-
-optional：
-1. `evidenceSummary`
-   - 命中证据摘要（不含敏感原文）。
-2. `relatedSnapshotRefs`
-   - 指向 `triggerSnapshot` / `authTrustSnapshot` / `dedupSnapshot` 的引用。
-3. `routingHint`
-   - 给 `Module C/D` 的非强制提示（例如 cautious / normal）。
-
-#### 3.3.30 判定一致性与字段约束（冻结）
-
-一致性约束：
-1. `hitType=no_hit` 时，`decisionOutcome` 不得为 `opportunity_eligible`。
-2. `decisionOutcome=opportunity_blocked_by_policy` 时，必须提供 `blockReasonCode`。
-3. `decisionOutcome=opportunity_ineligible` 时，必须提供 `ineligibleReasonCode`。
-4. 同请求在同版本下 `decisionOutcome/hitType/confidenceBand` 必须确定性一致。
-
-冲突约束：
-1. `triggerSnapshot.triggerDecision` 与 `sensingDecision.decisionOutcome` 不一致时，`sensingDecision` 为主裁决并记录 `decision_conflict_resolved`。
-2. 冲突必须带原因码与版本快照，不得静默覆盖。
-
-#### 3.3.31 下游消费合同（A -> B/C/D）
-
-1. `Module B`
-   - 承载并映射 `sensingDecision`，不得改写核心字段（outcome/hitType/confidenceBand）。
-2. `Module C`
-   - 基于 `decisionOutcome + confidenceBand + blockReasonCode` 执行策略加强或拦截确认。
-3. `Module D`
-   - 仅当 `decisionOutcome=opportunity_eligible` 且未命中硬阻断时允许进入正常供给路由。
-
-消费边界：
-1. 下游可追加派生字段，但不得回写 `Module A` 的原始识别结论。
-2. 任一模块的派生动作都需保留原始 `sensingDecision` 快照。
-
-#### 3.3.32 原因码最小集与版本治理
-
-`blockReasonCode` 最小集：
-1. `blocked_by_policy_hard_cap`
-2. `blocked_by_risk_tier`
-3. `blocked_by_frequency_hard_limit`
-4. `blocked_by_compliance_rule`
-
-`ineligibleReasonCode` 最小集：
-1. `no_valid_trigger`
-2. `trigger_placement_incompatible`
-3. `dedup_reused_path`
-4. `context_window_not_reachable`
-
-版本治理：
-1. 合同独立版本线：`sensingDecisionContractVersion`。
-2. 原因码追加可小版本升级，重命名/删除需主版本升级。
-3. 单请求必须记录：`sensingDecisionContractVersion` + `decisionEngineVersion` + `triggerTaxonomyVersion`。
-
-#### 3.3.33 观测指标与验收基线（Sensing Decision）
-
-核心指标：
-1. `decision_contract_completeness_rate`
-2. `decision_conflict_rate`
-3. `blocked_reason_coverage_rate`
-4. `ineligible_reason_coverage_rate`
-5. `decision_reproducibility_rate`
-
-验收基线：
-1. A 层输出必须结构化完整，禁止以文本替代关键字段。
-2. 同请求重放时 `decisionOutcome/hitType/confidenceBand` 一致。
-3. 被阻断和不成立请求都可追溯到标准原因码。
-4. B/C/D 可直接消费合同字段，无需推断性补齐。
-
-#### 3.3.34 Fail-open / Fail-closed Matrix in A（A 层异常处置矩阵，当前版本冻结）
-
-范围边界：
-1. 仅定义 `Module A` 内部异常处置，不覆盖 `Module C/D` 的独立策略与路由逻辑。
-2. 目标是把“受控降级”变成可执行矩阵，避免线上同类异常出现不一致处理。
-
-处置目标：
-1. 高风险异常默认 fail-closed，优先控制风险扩散。
-2. 低风险或可恢复异常可 fail-open，但必须带降级标记与审计证据。
-3. 同异常、同版本、同风险分级下处置结果必须确定性一致。
-
-#### 3.3.35 处置模式与动作定义（冻结）
-
-处置模式：
-1. `fail_open`：允许请求继续，但必须走受控路径并标记降级。
-2. `fail_closed`：在 A 层终止主路径，不进入正常机会链路。
-
-动作定义：
-1. `continue_normal`：正常继续 A -> B -> C。
-2. `continue_degraded`：降级继续（限制字段、限制策略、强化审计）。
-3. `short_circuit_reuse`：短路复用/等待（用于 dedup 重复请求路径）。
-4. `block_noop`：返回受控不可投放结果（ineligible/blocked）。
-5. `block_reject`：直接拒绝请求（结构/鉴权/高风险失败）。
-
-#### 3.3.36 A 层异常处置矩阵（冻结）
-
-| 异常类型 | 典型原因码 | 默认模式 | 默认动作 | 例外条件 |
-|---|---|---|---|---|
-| 结构缺失/结构非法 | `structure_invalid` | `fail_closed` | `block_reject` | 无 |
-| 鉴权硬失败/来源封禁 | `auth_token_invalid`, `source_trust_blocked` | `fail_closed` | `block_reject` | 无 |
-| 重放高置信命中 | `auth_expired_or_replayed` | `fail_closed` | `block_reject` | 无 |
-| ingress 硬策略阻断 | `policy_blocked_at_ingress` | `fail_closed` | `block_noop` | 无 |
-| 去重命中处理中重复 | `duplicate_inflight` | `fail_open` | `short_circuit_reuse` | 无 |
-| 去重命中结果复用 | `duplicate_reused_result` | `fail_open` | `short_circuit_reuse` | 无 |
-| 语义弱信号/未知触发 | `semantic_invalid`, `no_valid_trigger` | `fail_open` | `continue_degraded` | 若来源为 `T2/T3` 升级为 `fail_closed + block_noop` |
-| 去重存储不可用 | `idempotency_store_unavailable` | `fail_open` | `continue_degraded` | 若来源为 `T2/T3` 升级为 `fail_closed + block_reject` |
-| A 层内部超时/依赖轻故障 | `ingress_internal_timeout` | `fail_open` | `continue_degraded` | 若同时命中高风险标记则升级 `fail_closed` |
-
-执行优先级（高 -> 低）：
-1. 安全与可信阻断（auth/trust/replay）
-2. 合规与硬策略阻断
-3. 去重短路路径
-4. 语义与基础设施降级放行
-5. 正常放行
-
-#### 3.3.37 输出合同与观测基线（A 层异常处置）
-
-`Module A` 增补 `aLayerDispositionSnapshot`：
-1. `dispositionMode`（fail_open/fail_closed）
-2. `dispositionAction`（continue_normal/continue_degraded/short_circuit_reuse/block_noop/block_reject）
-3. `dispositionReasonCode`
-4. `dispositionPriority`
-5. `dispositionPolicyVersion`
-6. `dispositionTimestamp`
-
-下游约束：
-1. `Module B` 仅承载处置快照，不改写处置模式与动作。
-2. `Module C/D` 必须尊重 `fail_closed` 结果，不得强行恢复正常路由。
-3. 审计层必须能按 `traceKey + dispositionPolicyVersion` 回放处置决策。
-
-核心指标：
-1. `a_fail_open_rate`
-2. `a_fail_closed_rate`
-3. `a_disposition_consistency_rate`
-4. `a_degraded_path_rate`
-5. `a_exception_to_supply_leak_rate`
-
-验收基线：
-1. 同类异常在同版本下处置一致，无随机分叉。
-2. `fail_closed` 请求不会误入 `Module D` 正常供给路径。
-3. `fail_open` 请求都带有明确降级标记与原因码。
-4. 异常处置可在分钟级检索并完整回放。
-
-#### 3.3.38 Context Extraction Boundary（上下文抽取边界，当前版本冻结）
-
-范围边界：
-1. 仅定义 `Module A` 在 Ingress 阶段可抽取的上下文范围与处理方式。
-2. 不做跨系统全量数据回拉，不扩展到 DSP/SSP 侧数据处理。
-3. 目标是平衡三件事：隐私安全、时延预算、信号有效性。
-
-设计目标：
-1. 防止过度抽取导致隐私风险与合规风险。
-2. 防止无边界抽取导致时延失控与资源浪费。
-3. 防止信号泛滥导致机会识别噪声过高、判定不稳定。
-
-#### 3.3.39 抽取窗口模型（Window Model）
-
-当前版本冻结三层窗口：
-1. `turn_window`
-   - 当前交互回合的最小必要上下文（优先级最高）。
-2. `session_window`
-   - 当前会话内有限历史窗口（用于意图连续性与去重辅助）。
-3. `task_window`
-   - 当前任务阶段的结构化摘要窗口（不拉取全量历史原文）。
-
-窗口规则：
-1. 默认先用 `turn_window`，仅在证据不足时升级到 `session_window`。
-2. `task_window` 只允许结构化摘要进入，不允许原文大段透传。
-3. 任一窗口升级必须记录原因码与升级层级。
-4. 超出窗口的数据不得进入 A 层识别输入。
-
-#### 3.3.40 脱敏与最小必要原则（Data Minimization + Redaction）
-
-敏感度分层（用于抽取前判定）：
-1. `S0 Public`：可直接使用。
-2. `S1 Internal`：可使用但需最小化。
-3. `S2 Sensitive`：默认摘要化或哈希化后使用。
-4. `S3 Restricted`：默认不进入识别链路，仅保留“存在性标记”。
-
-脱敏规则（冻结）：
-1. 识别链路优先消费“结构化标签/摘要”，不消费高敏原文。
-2. `S2` 数据进入时必须执行脱敏动作（mask/hash/coarse-grain）。
-3. `S3` 数据禁止直接进入 `triggerEvidence` 与 `evidenceSummary`。
-4. 所有脱敏动作必须记录 `redactionPolicyVersion` 与动作类型。
-
-最小必要约束：
-1. 无法证明对触发判定有增益的字段不得抽取。
-2. 同类信号重复抽取时只保留单次有效证据引用。
-3. 抽取字段集合必须可配置并可灰度发布。
-
-#### 3.3.41 负载预算与降级策略（Latency/Volume Guardrail）
-
-预算维度：
-1. `context_token_budget`：上下文处理 token 预算。
-2. `context_time_budget_ms`：A 层上下文抽取时延预算。
-3. `context_field_budget`：允许进入判定的字段数量预算。
-
-预算超限处理（按顺序）：
-1. 优先裁剪低优先级窗口（task -> session -> turn）。
-2. 再降级证据粒度（原文 -> 摘要 -> 标签）。
-3. 仍超限时输出 `continue_degraded`，并附带 `context_budget_exceeded`。
-
-约束：
-1. 超限降级不得破坏必需字段（trigger/decision/dedup/auth 核心字段）。
-2. 降级动作必须写入 `aLayerDispositionSnapshot` 与审计记录。
-
-#### 3.3.42 输出合同与验收基线（Context Boundary）
-
-`Module A` 增补 `contextBoundarySnapshot`：
-1. `windowProfile`（turn/session/task 使用情况）
-2. `extractionScopeVersion`
-3. `redactionPolicyVersion`
-4. `sensitivityStats`（S0-S3 命中分布）
-5. `budgetUsage`（token/time/field）
-6. `budgetDecision`（within_budget/degraded/exceeded_blocked）
-7. `boundaryReasonCode`
-
-下游消费约束：
-1. `Module B` 仅承载边界快照，不反向请求超边界上下文。
-2. `Module C` 可使用 `budgetDecision` 与 `sensitivityStats` 强化策略判断。
-3. 审计层必须可回放“抽取窗口 -> 脱敏动作 -> 预算决策”链路。
-
-核心指标：
-1. `context_budget_exceeded_rate`
-2. `sensitive_data_redaction_coverage_rate`
-3. `window_upgrade_rate`
-4. `context_extraction_latency_p95`
-5. `signal_overload_drop_rate`
-
-验收基线：
-1. 抽取范围可配置、可回放、可审计，且无跨边界泄漏。
-2. `S2/S3` 数据处理满足脱敏约束，不直接进入可识别原文证据。
-3. A 层抽取时延在预算内，超限时按固定策略降级。
-4. 抽取结果可稳定支持 trigger 与 sensing 判定，不引入随机漂移。
-
-#### 3.3.43 A-layer Latency Budget（A 层时延预算，当前版本冻结）
-
-范围边界：
-1. 仅定义 `Module A` 从请求进入到输出 `opportunity seed/sensingDecision` 的时延预算。
-2. 不覆盖 `Module B-D` 的处理预算，但需为主链路预留预算空间。
-3. 目标是防止入口时延扩散，保护 `Request -> Delivery` 总体 SLA。
-
-预算目标：
-1. A 层必须有硬预算（hard cap）与软预算（soft cap）。
-2. 超过软预算触发降级，超过硬预算触发截断。
-3. 同类请求在同预算档位下执行一致的截断策略。
-
-#### 3.3.44 预算模型与档位（冻结）
-
-预算维度：
-1. `a_total_budget_ms`：A 层总预算。
-2. `a_soft_budget_ms`：软预算阈值（触发降级）。
-3. `a_hard_budget_ms`：硬预算阈值（触发截断）。
-
-按请求档位冻结三档（当前版本）：
-1. `L0 critical_path`
-   - 适用于强实时 placement。
-   - 预算策略：最严格，优先稳定低延迟。
-2. `L1 standard_path`
-   - 适用于普通在线请求。
-   - 预算策略：平衡时延与信号完整性。
-3. `L2 relaxed_path`
-   - 适用于非强实时场景。
-   - 预算策略：允许有限额外抽取，但仍受硬预算约束。
-
-约束：
-1. 每个请求进入 A 层时必须绑定一个 `latencyBudgetTier`。
-2. 无档位请求默认降级到 `L1`。
-3. 档位配置版本化：`aLatencyBudgetPolicyVersion`。
-
-#### 3.3.45 分阶段预算拆分与超限处理（冻结）
-
-A 层处理阶段预算拆分：
-1. `ingress_validate_budget_ms`（结构/鉴权/去重前置校验）
-2. `context_extract_budget_ms`（上下文抽取与脱敏）
-3. `sensing_decision_budget_ms`（触发识别与结论输出）
-
-执行规则：
-1. 单阶段超软预算：立即执行该阶段降级动作，不等待总预算耗尽。
-2. 单阶段超硬预算：阶段立即截断并产出受控结果。
-3. 总预算超软预算：启用全局降级（裁剪窗口、降低证据粒度）。
-4. 总预算超硬预算：执行 A 层截断矩阵，禁止继续深度识别。
-
-降级顺序（固定）：
-1. 裁剪 `task_window`
-2. 裁剪 `session_window`
-3. 仅保留 `turn_window` + 核心字段
-4. 若仍超限，返回 `continue_degraded` 或 `block_noop`（按异常矩阵）
-
-#### 3.3.46 截断策略矩阵（A 层）
-
-| 触发条件 | 默认动作 | 输出结果 | 是否允许进入 B |
-|---|---|---|---|
-| 阶段软超时 | `continue_degraded` | 保留最小识别结果 + 降级标记 | 是 |
-| 阶段硬超时 | `block_noop` | `opportunity_ineligible` + `latency_stage_hard_timeout` | 否 |
-| 总软超时 | `continue_degraded` | 降级识别结果 + `latency_budget_exceeded_soft` | 是 |
-| 总硬超时 | `block_noop` | `opportunity_ineligible` + `latency_budget_exceeded_hard` | 否 |
-| 高风险来源 + 任一超时 | `block_reject` | 受控拒绝 + `latency_risk_escalated` | 否 |
-
-一致性约束：
-1. 超时处理动作必须与 `3.3.34-3.3.37` 的异常处置矩阵一致。
-2. 不允许“有时放行、有时拦截”的随机行为。
-3. 截断后必须产出结构化原因码，不允许静默失败。
-
-#### 3.3.47 输出合同与验收基线（A-layer Latency）
-
-`Module A` 增补 `aLatencyBudgetSnapshot`：
-1. `latencyBudgetTier`（L0/L1/L2）
-2. `aLatencyBudgetPolicyVersion`
-3. `aStageLatencyMs`（validate/context/sensing）
-4. `aTotalLatencyMs`
-5. `latencyDecision`（within_soft/soft_exceeded/hard_exceeded）
-6. `latencyDispositionAction`
-7. `latencyReasonCode`
-
-下游消费约束：
-1. `Module B` 仅承载预算快照，不回补被截断上下文。
-2. 审计层必须可按 `traceKey` 回放“预算命中 -> 降级/截断 -> 输出”链路。
-3. 运维监控必须按 `latencyBudgetTier` 分层看板，不混算口径。
-
-核心指标：
-1. `a_total_latency_p95`
-2. `a_soft_budget_exceeded_rate`
-3. `a_hard_budget_exceeded_rate`
-4. `a_latency_cutoff_rate`
-5. `a_sla_protection_effect`（A 层降级后主链路 SLA 保持率）
-
-验收基线：
-1. A 层硬预算可强制生效，超限请求不会无限拖延。
-2. 降级与截断动作可预测、可复现、可审计。
-3. A 层预算策略调整可灰度，且不破坏输出合同兼容性。
-4. 入口预算治理后，主链路 `Request -> Delivery` SLA 波动收敛。
-
-#### 3.3.48 Trace Initialization Contract（追踪主键初始化规则，当前版本冻结）
-
-范围边界：
-1. 仅定义 `Module A` 在 Ingress 阶段初始化追踪主键的规则。
-2. 不替代后续模块的业务字段扩展，但后续必须复用 A 层主键体系。
-3. 目标是保证“单请求从 A 到 Archive 不断链、可回放、可对账”。
-
-合同目标：
-1. 固化主键集合与生成优先级，避免多模块各自造 key。
-2. 保证重试/去重/复用路径下主键继承一致。
-3. 让所有 A 层 snapshot（auth/dedup/trigger/decision/disposition/context/latency）可统一挂接。
-
-#### 3.3.49 主键集合与语义（冻结）
-
-`Module A` 初始化以下最小主键集合：
-1. `traceKey`（主链路主键）
-   - 单次请求主追踪键，后续全链路必传。
-2. `requestKey`（请求身份键）
-   - 标识业务请求身份，可跨重试稳定复用。
-3. `attemptKey`（尝试键）
-   - 每次 ingress 尝试唯一，区分重试与重复进入。
-4. `opportunityKey`（机会对象键）
-   - 表示一次有效机会对象身份；去重复用时可继承。
-5. `lineageKey`（谱系键）
-   - 串联 `retryOf/reusedFrom` 等关系，支撑审计回放。
-
-关系约束：
-1. `requestKey` 可对应多个 `attemptKey`。
-2. `attemptKey` 仅对应一个 `traceKey`。
-3. `opportunityKey` 在 `reused_result` 场景可跨 attempt 复用。
-4. 所有 key 必须关联到同一 `lineageKey` 族谱中。
-
-#### 3.3.50 生成优先级与继承规则（冻结）
-
-生成优先级（高 -> 低）：
-1. 上游显式稳定键（如 `clientRequestId`）映射生成 `requestKey`。
-2. 平台幂等键映射（`idempotencyKey/fingerprint`）生成 `requestKey`。
-3. 无显式键时平台生成确定性 `requestKey`（版本化算法）。
-
-初始化规则：
-1. `attemptKey` 每次请求进入 A 层都新建。
-2. `traceKey` 由 `requestKey + attemptKey + timestamp` 生成且全局唯一。
-3. `opportunityKey` 在 `new/expired_retry` 新建，在 `reused_result` 复用旧值。
-4. `lineageKey` 首次请求创建，后续 retry/reuse 继承。
-
-去重联动规则：
-1. `inflight_duplicate`：继承 `requestKey/lineageKey`，共享主处理 `opportunityKey`。
-2. `reused_result`：继承 `requestKey/opportunityKey/lineageKey`，仅更新 `attemptKey`。
-3. `expired_retry`：继承 `requestKey/lineageKey`，新建 `opportunityKey` 与 `traceKey`。
-
-#### 3.3.51 输出合同与失败兜底（A -> B/C/D）
-
-`Module A` 增补 `traceInitSnapshot`：
-1. `traceInitVersion`
-2. `traceKey`
-3. `requestKey`
-4. `attemptKey`
-5. `opportunityKey`
-6. `lineageKey`
-7. `traceInitMode`（upstream_mapped/platform_generated/mixed）
-8. `traceInitReasonCode`
-
-失败兜底：
-1. 上游 key 缺失或格式异常时，使用平台生成模式并记录 `trace_init_fallback_generated`。
-2. 任何 key 初始化失败不得静默；必须返回受控错误或受控降级。
-3. `traceKey` 生成失败时默认 `fail_closed + block_reject`，禁止进入后续链路。
-
-下游消费约束：
-1. `Module B/C/D` 不得重建 `traceKey/requestKey/attemptKey/opportunityKey/lineageKey`。
-2. 允许追加派生键，但必须保留原始 `traceInitSnapshot` 不变。
-3. `responseReference` 生成后必须能回链到 `traceKey + opportunityKey`。
-
-#### 3.3.52 观测指标与验收基线（Trace Initialization）
-
-核心指标：
-1. `trace_init_success_rate`
-2. `trace_chain_continuity_rate`
-3. `trace_init_fallback_rate`
-4. `orphan_event_rate`（无可回链 trace 的事件率）
-5. `lineage_replay_success_rate`
-
-验收基线：
-1. A 层所有输出都带可用 `traceKey`，后续链路无断链。
-2. 重试/复用场景下 key 继承与新建行为符合冻结规则。
-3. 任何一条 `impression/click/failure` 事件可回溯到 `requestKey + opportunityKey`。
-4. 审计系统可按 `lineageKey` 回放单请求全生命周期。
-
-#### 3.3.53 A-layer Error Code Taxonomy（A 层错误码体系，当前版本冻结）
-
-范围边界：
-1. 本体系只覆盖 `Module A` 的错误与原因码标准化。
-2. 不覆盖 `Module B-D` 的业务错误细节，但允许后续模块按本规范扩展。
-3. 目标是让运维、排障、审计使用同一套可检索、可聚合、可回放的错误码语义。
-
-设计目标：
-1. 统一错误码命名与分类，消除同义不同码。
-2. 每个错误码可映射到固定处置动作（fail-open/fail-closed）。
-3. 错误码与关键快照（auth/dedup/trigger/decision/trace/latency）可交叉检索。
-
-#### 3.3.54 错误码分层与命名规范（冻结）
-
-命名格式：
-1. `A_<DOMAIN>_<SCENARIO>_<RESULT>`
-2. 示例：`A_AUTH_TOKEN_INVALID_HARDFAIL`
-
-分层结构：
-1. `SEV`：严重级别（`INFO/WARN/ERROR/FATAL`）
-2. `DOMAIN`：错误域（`INGRESS/AUTH/TRUST/DEDUP/TRIGGER/DECISION/CONTEXT/LATENCY/TRACE`）
-3. `CLASS`：错误类（`VALIDATION/TIMEOUT/CONFLICT/MISSING/INVALID/BLOCKED/DEGRADED/INTERNAL`）
-4. `ACTION`：默认处置（`CONTINUE_NORMAL/CONTINUE_DEGRADED/SHORT_CIRCUIT/BLOCK_NOOP/BLOCK_REJECT`）
-
-约束：
-1. 一个错误码必须绑定唯一 `DOMAIN + CLASS + ACTION`。
-2. 新增错误码必须声明兼容性等级（新增/替换/废弃）。
-3. 禁止使用自由文本作为主诊断口径，文本仅可作为补充说明。
-
-#### 3.3.55 A 层错误域最小码集（当前版本）
-
-`INGRESS`：
-1. `A_INGRESS_STRUCTURE_MISSING_REJECT`
-2. `A_INGRESS_STRUCTURE_INVALID_REJECT`
-
-`AUTH/TRUST`：
-1. `A_AUTH_TOKEN_INVALID_HARDFAIL`
-2. `A_AUTH_SIGNATURE_MISMATCH_HARDFAIL`
-3. `A_TRUST_SOURCE_BLOCKED_HARDFAIL`
-4. `A_AUTH_SOFTFAIL_DEGRADED`
-
-`DEDUP`：
-1. `A_DEDUP_INFLIGHT_DUPLICATE_SHORTCIRCUIT`
-2. `A_DEDUP_REUSED_RESULT_SHORTCIRCUIT`
-3. `A_DEDUP_WINDOW_EXPIRED_NEWATTEMPT`
-4. `A_DEDUP_STORE_UNAVAILABLE_DEGRADED`
-
-`TRIGGER/DECISION`：
-1. `A_TRIGGER_UNKNOWN_DEGRADED`
-2. `A_TRIGGER_PLACEMENT_INCOMPATIBLE_BLOCKNOOP`
-3. `A_DECISION_CONFLICT_RESOLVED_DEGRADED`
-4. `A_DECISION_POLICY_BLOCKED_BLOCKNOOP`
-
-`CONTEXT/LATENCY`：
-1. `A_CONTEXT_BUDGET_EXCEEDED_DEGRADED`
-2. `A_CONTEXT_REDACTION_REQUIRED_DEGRADED`
-3. `A_LATENCY_SOFT_EXCEEDED_DEGRADED`
-4. `A_LATENCY_HARD_EXCEEDED_BLOCKNOOP`
-
-`TRACE`：
-1. `A_TRACE_INIT_FALLBACK_GENERATED_DEGRADED`
-2. `A_TRACE_INIT_FAILED_HARDFAIL`
-
-#### 3.3.56 错误码映射规则（处置 + 输出 + 审计）
-
-映射规则：
-1. 每个错误码必须映射到 `aLayerDispositionSnapshot.dispositionAction`。
-2. 每个错误码必须映射到 `sensingDecision` 的可解释结果（eligible/ineligible/blocked）。
-3. 每个错误码必须携带 `traceKey + attemptKey + aLatencyBudgetPolicyVersion`。
-4. 同请求出现多错误时按优先级合并：`FATAL > ERROR > WARN > INFO`。
-
-聚合规则：
-1. 主错误码（primary code）只允许一个，用于对账与告警。
-2. 次错误码（secondary codes）可多值，用于深度排障。
-3. 主错误码变更必须写入 `error_resolution_reason`。
-
-#### 3.3.57 输出合同与观测基线（A-layer Error Taxonomy）
-
-`Module A` 增补 `aErrorSnapshot`：
-1. `primaryErrorCode`
-2. `secondaryErrorCodes`
-3. `errorSeverity`
-4. `errorDomain`
-5. `errorClass`
-6. `errorAction`
-7. `errorTaxonomyVersion`
-8. `errorResolutionReason`
-
-下游约束：
-1. `Module B/C/D` 不得改写 `primaryErrorCode`，仅可追加本模块派生码。
-2. 审计层必须支持按 `errorDomain/errorCode/errorSeverity` 检索与聚合。
-3. 运维告警默认以 `primaryErrorCode` 触发，不以文本日志触发。
-
-核心指标：
-1. `a_error_code_coverage_rate`
-2. `a_unknown_error_code_rate`
-3. `a_primary_error_stability_rate`
-4. `a_error_to_disposition_consistency_rate`
-5. `a_mttr_by_error_domain`
-
-验收基线：
-1. A 层异常都有标准错误码，无裸文本主诊断。
-2. 同类异常跨 SDK/应用命中同一主错误码。
-3. 错误码可稳定映射到处置动作，不出现口径冲突。
-4. 运维可按错误域快速定位问题并触发回放。
-
-#### 3.3.58 Module A MVP 裁剪清单（必要模块 vs 优化模块）
-
-目标：
-1. 按“先走通路径，再补系统完整性”原则裁剪当前实现范围。
-2. 保留完整设计文档，但工程实施只做必要模块的最小闭环。
-3. 优化模块全部延后到后续迭代，不进入当前 MVP 开发范围。
-
-当前版本必要模块（Now, MVP 必做）：
-
-| 模块 | 是否必要 | MVP 最小实现边界 |
-|---|---|---|
-| Ingress Request Envelope | 必要 | 仅实现 required 壳层校验与基础版本字段；optional 全部可缺省 |
-| Opportunity Trigger Taxonomy | 必要 | 仅保留最小触发类型集与主 trigger 唯一判定 |
-| Sensing Decision Output Contract | 必要 | 固定 `decisionOutcome/hitType/confidenceBand/reasonCode/version` 最小字段 |
-| Trace Initialization Contract | 必要 | 先落 `traceKey/requestKey/attemptKey` 三键，保证不断链 |
-| A-layer Latency Budget | 必要 | 先落单一软/硬预算与硬超时截断，保护主链路 SLA |
-| Idempotency / De-dup（基础版） | 必要 | 先做 `clientRequestId` + in-flight 去重短路，避免重复供给调用 |
-| A-layer Error Code（基础版） | 必要 | 先做主错误码（primary code）与处置动作映射 |
-
-后续优化模块（Later, 本阶段不做）：
-
-| 模块 | 当前状态 | 延后原因 |
-|---|---|---|
-| Auth + Source Trust（完整分级） | 延后 | 冷启动阶段先做基础鉴权即可，完整 T0-T3 分层可后补 |
-| Fail-open / Fail-closed Matrix（完整矩阵） | 延后 | 先用最小硬编码处置规则，完整异常矩阵后补 |
-| Context Extraction Boundary（完整模型） | 延后 | 先固定小窗口与基础脱敏，复杂窗口升级与敏感分层后补 |
-| Idempotency / De-dup（完整窗口/存储退化） | 延后 | 先保证不重复调用，完整窗口策略与降级治理后补 |
-| Error Code Taxonomy（完整分层与聚合） | 延后 | 先保证 primary code 可定位，再补 secondary 与统计体系 |
-| Trigger Taxonomy 扩展与一致性分析 | 延后 | 先稳定最小触发类型，再扩展长尾类型和跨 SDK 一致性治理 |
-| Latency Budget 分档精细化（L0/L1/L2 全量） | 延后 | 先守住统一预算上限，再做分档调优 |
-| Trace Lineage 高级谱系能力 | 延后 | 先保证链路不断，再补 lineage 级高级回放与分析 |
-
-实施原则（冻结）：
-1. 当前迭代只开发“必要模块”的 MVP 边界，不允许顺手扩展优化模块。
-2. 优化模块保留设计文档，不删不做，统一挂到后续优化 backlog。
-3. 任何新增需求先判断是否影响主链路走通；不影响则默认延后。
+#### 3.3.5 Module A 当前版本范围（MVP）
+
+当前版本仅实现“走通主链路”的最小能力，避免过度工程化。
+
+MVP 必做：
+1. `Ingress Request Envelope`（最小 required 壳层）
+2. `Opportunity Trigger Taxonomy`（最小触发类型集）
+3. `Sensing Decision Output Contract`（最小结构化结论）
+4. `Trace Initialization`（最小三键：`traceKey/requestKey/attemptKey`）
+5. `A-layer Latency Budget`（单一软/硬预算）
+6. `Idempotency / De-dup`（`clientRequestId` + in-flight 去重）
+7. `A-layer Error Code`（primary code + 处置动作映射）
+
+#### 3.3.6 MVP 输入与输出合同（最小）
+
+输入最小集：
+1. 应用/会话基础信息
+2. placement 触发信息
+3. 请求时间与接入通道
+4. `clientRequestId`（缺失可平台生成）
+
+输出最小集（A -> B）：
+1. `opportunity seed`（状态 `received`）
+2. `triggerSnapshotLite`（`triggerType`, `triggerDecision`）
+3. `sensingDecisionLite`（`decisionOutcome`, `hitType`, `confidenceBand`, `reasonCode`）
+4. `traceInitLite`（`traceKey`, `requestKey`, `attemptKey`）
+5. `aLatencyBudgetLite`（`latencyDecision`, `latencyReasonCode`）
+6. `aErrorLite`（`primaryErrorCode`, `errorAction`）
+
+#### 3.3.7 MVP 运行护栏（最小）
+
+1. 去重：
+   - 同 `clientRequestId` 的并发重复请求不重复下游调用。
+2. 时延：
+   - A 层软预算超限执行降级；硬预算超限执行截断。
+3. 错误码：
+   - 每次异常必须产出标准 `primaryErrorCode`，禁止裸文本主诊断。
+4. 处置一致性：
+   - 同异常、同版本必须得到同动作（放行/降级/拦截）。
+
+#### 3.3.8 当前明确延后（不在本阶段实现）
+
+以下内容保留为后续优化项，本阶段不实现细节：
+1. 完整 `Auth + Source Trust` 分级体系
+2. 完整 `Fail-open / Fail-closed` 异常矩阵
+3. 完整 `Context Extraction Boundary`（多窗口 + 完整脱敏策略）
+4. 完整 `Idempotency` 窗口与存储退化治理
+5. 完整 `Error Code Taxonomy` 分层与聚合规则
+6. 触发类型长尾扩展与跨 SDK 一致性分析
+7. 时延预算分档精细化（`L0/L1/L2` 全量策略）
+8. Trace lineage 高级谱系与复杂回放能力
+
+延后模块仅在后置规划章节保留索引，不在当前版本展开详细设计。
+
+#### 3.3.9 MVP 验收基线（Module A）
+
+1. 请求可稳定进入 A 并输出结构化最小结果。
+2. 重试/重复请求不会重复触发供给调用。
+3. A 层超时不会拖垮主链路 `Request -> Delivery` SLA。
+4. 任一异常都能通过 `traceKey + primaryErrorCode` 快速定位。
+5. A -> B 输入合同稳定，无需 B 侧推断补齐关键字段。
 
 ### 3.4 Module B: Schema Translation & Signal Normalization
 
@@ -1436,206 +527,83 @@ A 层处理阶段预算拆分：
 7. Plan-G：`Audit & Replay Controller`
 8. Plan-H：`Config & Version Governance`
 
-## 4. 当前版本交付包（Deliverables）
+## 4. 当前版本交付包（Deliverables, MVP Only）
 
-1. 标准接入框架说明。
-2. 统一机会建模 Schema 说明。
-3. 外部输入映射规则说明。
-4. 两类供给适配说明。
-5. 回传 Schema 边界说明（Delivery vs Event Callback）。
-6. 数据闭环说明。
-7. 旧 SSP vs 新 AI 内容边界说明。
-8. 最小接入指南与最小链路清单。
-9. 联调与发布检查清单。
-10. 路由与降级策略模型说明（规则 DAG + fallback 顺序 + 阈值策略）。
-11. 可观测与审计模型说明（单机会对象 + 四段关键决策点）。
-12. 配置与版本治理说明（三线分离：schema/route/placement）。
-13. Agent Plan 模块框架说明（A-H 模块链路）。
-14. 模块化链路说明（SDK 接入与机会识别 -> SSP-like 关键信息构建）。
-15. Mediation 与 Ads Network 交互边界与流程图说明。
-16. Module A Ingress Request Envelope 合同与校验规则说明。
-17. Module A Auth + Source Trust 鉴权与可信分级说明（Mediation 范围）。
-18. Module A Idempotency / De-dup 幂等与去重规则说明（Mediation 范围）。
-19. Module A Opportunity Trigger Taxonomy 机会触发类型字典说明（Mediation 范围）。
-20. Module A Sensing Decision Output Contract 识别结果输出合同说明（Mediation 范围）。
-21. Module A Fail-open / Fail-closed 异常处置矩阵说明（Mediation 范围）。
-22. Module A Context Extraction Boundary 上下文抽取边界说明（Mediation 范围）。
-23. Module A A-layer Latency Budget 时延预算与截断策略说明（Mediation 范围）。
-24. Module A Trace Initialization Contract 追踪主键初始化规则说明（Mediation 范围）。
-25. Module A Error Code Taxonomy A层错误码体系说明（Mediation 范围）。
-26. Module A MVP 裁剪清单（必要模块 vs 优化模块）说明。
+当前版本只交付“可走通、可联调、可回放”的最小集合，不做一应俱全设计。
 
-## 5. 优化项与 SSP 过渡（Plan）
+1. 模块化主链框架（A-H）与边界说明。
+2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
+3. 外部输入映射与冲突优先级规则（最小可复现口径）。
+4. 两类供给源最小适配合同（adapter 四件事）与编排基线。
+5. Delivery / Event Schema 分离与 `responseReference` 关联口径。
+6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
+7. 可观测与审计最小模型（单机会对象 + 四段决策点）。
+8. 配置与版本治理基线（三线分离：schema/route/placement）。
+9. 最小接入指南 + 最小链路清单 + 联调检查清单。
+10. Module A MVP 裁剪结论（必要模块已实现边界 + 延后模块索引）。
 
-### 5.1 优化项：编排与路由扩展
+## 5. 优化项与 SSP 过渡（后置索引，不展开细节）
 
-1. 扩展 placement 类型与场景覆盖。
-2. 扩展供给路由和回退策略。
-3. 在不破坏当前版本标准前提下提升匹配效率。
+本章只保留后续方向与索引，详细设计后置到专项文档，不在当前版本展开字段级细节。
 
-### 5.2 优化项：返回与回传能力增强
+### 5.1 当前持续优化（运行期）
 
-1. 扩展回传事件体系与追踪能力。
-2. 强化可观测与审计体系。
-3. 为 SSP 过渡准备更完整信号输出结构。
+1. 映射与归一一致性（冲突裁决稳定、异常输入容错）。
+2. 路由与降级稳定性（timeout/no-fill/error 口径一致）。
+3. 回传与闭环完整性（关联成功率、归档完整率）。
+4. 可观测与审计效率（原因码质量、回放效率）。
+5. placement 触发质量（准确度、频控、副作用控制）。
+6. 版本发布稳定性（灰度、回滚、兼容）。
 
-### 5.3 标准化交易接口与 SSP 过渡
+### 5.2 未来优化项（能力扩展）
 
-1. 把当前稳定能力模块化产品化。
-2. 将流量质量、机会分析、意图识别、用户建模逐步升级到 SSP 能力。
+1. 交易接口能力增强（拍卖结果通知、结算对账、差异处理）。
+2. 流量质量分层体系（`placement quality tier` / `view opportunity level`）。
+3. Agent 场景策略增强（human/agent/agent-chain）。
+4. 预测与排序能力升级（从规则到可解释模型）。
+5. 质量信号产品化输出（外部消费 SLA）。
+6. 对账与运营自动化（争议处理、账务回溯）。
+7. 实验平台化（跨 placement/策略/供给）。
 
-#### 5.3.1 标准化交易接口目标（SSP Transition）
+### 5.3 SSP 过渡：标准化交易接口（索引）
 
-1. 将当前 Mediation 的“机会编排接口”升级为“可交易接口”。
-2. 对外提供可被 DSP/Ads Network 稳定消费的标准请求、标准回传、标准结算语义。
-3. 在兼容旧 SSP 输入标准的同时，输出 AI 场景增量信号，形成差异化质量资产。
+1. 交易接口分层：
+   - `Bid Opportunity`
+   - `Bid Decision`
+   - `Auction Result`
+   - `Delivery Callback`
+   - `Event Callback`
+   - `Settlement & Reconciliation`
+2. 信息采集补强方向：
+   - 交易上下文
+   - 供给路径可解释性
+   - 质量与可见性信号
+   - 交互与任务信号
+   - 结算与对账信号
+   - 合规与授权信号
+3. Schema 增补原则：
+   - 保持六块模型不变
+   - 只以 optional 方式后向兼容扩展
 
-#### 5.3.2 交易接口分层（建议标准）
+### 5.4 后置详细设计文档索引（待拆分）
 
-向 SSP 过渡时，接口建议拆成六层并独立版本化：
-
-1. `Bid Opportunity Interface`（请求接口）：
-   - 表达可交易机会、上下文、策略约束、时延预算。
-2. `Bid Decision Interface`（响应接口）：
-   - 表达出价、素材候选、有效期、响应状态与拒绝原因。
-3. `Auction Result Interface`（结果通知接口）：
-   - 表达中标/未中标、价格结果、清算依据、结果时间。
-4. `Delivery Callback Interface`（交付回传接口）：
-   - 表达交付状态与展示确认，不承载行为转化语义。
-5. `Event Callback Interface`（行为事件接口）：
-   - 表达 `impression/click/failure` 最小闭环事件及扩展事件。
-6. `Settlement & Reconciliation Interface`（结算对账接口）：
-   - 表达账单口径、分润规则、对账批次、差异处理状态。
-
-#### 5.3.3 信息采集层面需要补充的关键项
-
-当前版本已有基础闭环，但向 SSP 过渡仍需补强以下采集维度：
-
-1. 交易上下文信号：
-   - `auction_type`、`pricing_model`、`currency`、`floor_policy_snapshot`、`timeout_budget`。
-2. 供给路径信号：
-   - `source_path`、`adapter_hop`、`fallback_path`、`path_latency_breakdown`。
-3. 质量与可见性信号：
-   - `view_opportunity_level`、`placement_quality_tier`、`traffic_quality_flags`。
-4. 交互与任务信号：
-   - `workflow_stage`、`agent_or_human_actor`、`intent_confidence_band`。
-5. 结算与对账信号：
-   - `settlement_reference`、`billing_scope`、`reconciliation_batch_id`、`dispute_reason`。
-6. 合规与授权信号：
-   - `consent_scope`、`policy_decision_code`、`restricted_category_flags`。
-
-#### 5.3.4 Schema 层面增补建议（按六块模型）
-
-保持六块统一模型不变，向 SSP 过渡时以“子结构扩展 + optional 字段”方式增强：
-
-1. `RequestMeta` 增补：
-   - `transactionContext`（auction/pricing/currency/timeout）。
-   - `requestSLA`（tmax、重试预算、降级预算）。
-2. `PlacementMeta` 增补：
-   - `placementQualityProfile`（quality tier、view opportunity、历史稳定性）。
-   - `commercialConstraintProfile`（频控档位、展示密度约束）。
-3. `UserContext` 增补：
-   - `interactionRole`（human/agent/agent-chain）。
-   - `sessionIntentWindow`（多轮意图窗口摘要与置信区间）。
-4. `OpportunityContext` 增补：
-   - `marketabilitySignals`（可交易性标签、推荐可解释信号）。
-   - `executionStageSignals`（任务执行阶段与转化窗口）。
-5. `PolicyContext` 增补：
-   - `complianceSnapshot`（授权范围、敏感类目策略快照）。
-   - `pricingGuardrail`（价格底线策略与策略命中原因）。
-6. `TraceContext` 增补：
-   - `auctionReference`、`settlementReference`、`reconciliationReference`。
-   - `decisionLineage`（映射/路由/拍卖/结算的版本链路）。
-
-#### 5.3.5 当前缺口识别（Collection + Schema）
-
-1. 缺少交易级上下文快照：
-   - 当前侧重机会与回传，交易参数采集不完整。
-2. 缺少供给路径可解释性：
-   - 现有 trace 可回放，但未标准化供给路径拆分指标。
-3. 缺少结算级关联键：
-   - 已有 `responseReference`，但结算/对账 reference 尚未纳入标准最小集。
-4. 缺少质量分层标准：
-   - 已有策略与路由，但缺统一的 `placement quality tier` 与 view-opportunity 档位。
-5. 缺少接口层分离：
-   - Delivery/Event 已分离，但交易结果通知与结算接口仍需单独标准化。
-
-#### 5.3.6 演进落地顺序（建议）
-
-1. Step A（采集与 schema 增强）：
-   - 先补齐交易上下文采集与 schema optional 增量，不改变对外兼容。
-2. Step B（交易接口灰度）：
-   - 引入 `Auction Result Interface` 与 `Settlement/Reconciliation Interface` 草案并灰度。
-3. Step C（质量标准化）：
-   - 建立质量分层标准与供给路径解释标准，形成可外部消费的质量信号包。
-4. Step D（SSP 阶段）：
-   - 将六层交易接口版本化发布，提供稳定 SLA 与兼容矩阵。
-
-#### 5.3.7 过渡验收基线
-
-1. 接口层：
-   - 六层交易接口都有独立版本与回滚策略。
-2. 采集层：
-   - 单机会对象可关联到交易、交付、行为、结算四类 reference。
-3. Schema 层：
-   - 增量字段全部以后向兼容方式引入，接入方无感升级可运行。
-4. 运营层：
-   - 可对账、可追责、可回放，且能按质量分层输出稳定报表。
-
-### 5.4 优化项路线拆分（当前持续优化 + 未来优化项）
-
-#### 5.4.1 当前正在持续优化的部分
-
-1. 映射与归一稳定性：
-   - 冲突裁决一致性、枚举归一覆盖率、异常输入容错能力。
-2. 路由与降级可靠性：
-   - timeout/no-fill/error 处理准确性、fallback 命中质量、延迟控制。
-3. 回传与闭环完整性：
-   - `responseReference` 关联成功率、事件丢失率、归档完整率。
-4. 可观测与审计效率：
-   - 原因码质量、回放成功率、分钟级排障检索能力。
-5. placement 触发质量：
-   - 触发准确度、去重与频控效果、用户体验影响控制。
-6. 配置与版本发布质量：
-   - 灰度稳定性、回滚时效、跨版本兼容一致性。
-
-#### 5.4.2 未来具体优化项
-
-1. 交易接口能力增强：
-   - 补全拍卖结果、结算对账接口与标准差异处理流程。
-2. 流量质量分层体系：
-   - 建立 `placement quality tier`、`view opportunity level` 的统一分层标准。
-3. Agent 场景策略增强：
-   - 增强 human/agent/agent-chain 场景下的触达策略与解释能力。
-4. 预测与排序能力升级：
-   - 从规则加权逐步升级到可解释的模型化排序与收益预测。
-5. 质量信号产品化输出：
-   - 形成可被外部网络消费的质量信号包与稳定 SLA。
-6. 对账与运营自动化：
-   - 建立差异检测、争议处理、账务回溯的自动化闭环。
-7. 实验平台化：
-   - 建立跨 placement、跨策略、跨供给的统一实验与回收框架。
-
-#### 5.4.3 按核心模块拆分的优化重点
-
-1. `SDK Ingress & Opportunity Sensing`
-   - 当前：提升机会识别准确率、降低误触发、优化入口延迟。
-   - 未来：支持更复杂的 agent workflow 入口与跨平台接入协议。
-2. `Schema Translation & Signal Normalization`
-   - 当前：提升映射覆盖率与冲突裁决一致性，强化信号可解释性。
-   - 未来：补全交易上下文与质量分层字段，形成稳定的 SSP-like request profile。
-3. `Supply Orchestrator` + `Delivery Composer`
-   - 当前：提升路由命中质量与返回稳定性，降低 timeout/no-fill 波动。
-   - 未来：扩展交易接口层，支持拍卖结果通知与结算对账联动。
-4. `Event & Attribution Processor` + `Audit & Replay Controller`
-   - 当前：提升事件关联完整率与分钟级排障效率。
-   - 未来：实现对账自动化与争议回放自动化。
+1. Module A 延后项专题（Auth/Trust、异常矩阵、上下文边界、错误码分层等）。
+2. 路由策略与降级策略专题（规则 DAG 深化与策略治理）。
+3. Supply 编排与多源扩展专题（多 adapter 治理与路径优化）。
+4. Delivery/Event 扩展事件专题（归因、回传可靠性与补偿策略）。
+5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
 
+### 2026-02-21（v3.5）
+
+1. 按“当前只做最小可跑通实现”原则，剪枝第 4 章交付包，统一为 MVP-only 交付清单。
+2. 重写第 5 章为“后置索引”结构，仅保留优化方向与专题索引，不展开字段级细节。
+3. 明确文档口径：当前版本聚焦必需能力，详细设计后置到专项文档。
+
 ### 2026-02-21（v3.4）
 
-1. 新增 `3.3.58`，按“先走通路径”原则划分 Module A 的必要模块与优化模块。
+1. 新增 Module A MVP 裁剪章节，按“先走通路径”原则划分必要模块与优化模块。
 2. 为必要模块定义 MVP 最小实现边界，避免过度工程化。
 3. 将完整分级鉴权、完整异常矩阵、完整上下文边界等归入后续优化项。
 4. 冻结当前实施原则：本阶段只做必要模块，优化模块统一延后。
