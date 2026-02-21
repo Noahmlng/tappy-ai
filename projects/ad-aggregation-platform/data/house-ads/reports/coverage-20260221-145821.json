@@ -1,0 +1,12 @@
+{
+  "brand_count": 3000,
+  "link_creative_count": 3000,
+  "product_creative_count": 3000,
+  "brand_with_both_formats": 3000,
+  "creative_completeness": 1,
+  "vertical_count": 20,
+  "missing_link_brand_count": 0,
+  "missing_product_brand_count": 0,
+  "missing_link_brand_ids": [],
+  "missing_product_brand_ids": []
+}

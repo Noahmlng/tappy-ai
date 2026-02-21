@@ -1,0 +1,21 @@
+{
+  "snapshot_id": "house_ads_20260221-145821",
+  "generated_at": "2026-02-21T14:58:21.384Z",
+  "files": {
+    "brands": "brands.jsonl",
+    "link_creatives": "link-creatives.jsonl",
+    "product_creatives": "product-creatives.jsonl",
+    "coverage": "coverage.json",
+    "quality": "quality.json"
+  },
+  "metrics": {
+    "brand_count": 3000,
+    "link_creative_count": 3000,
+    "product_creative_count": 3000,
+    "creative_completeness": 1,
+    "validation_error_count": 0,
+    "vertical_count": 20
+  },
+  "status": "ready",
+  "hard_fail_reasons": []
+}
