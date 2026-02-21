@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.26
+- 文档版本：v3.27
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -1557,7 +1557,7 @@ required：
 1. 返回状态：`served` / `no_fill` / `error`。
 2. `responseReference`（必填）。
 3. 可被下游事件与审计直接关联的最小返回快照。
-4. `render_plan` 详细字段合同见 `3.7.9` ~ `3.7.17`（P0 冻结）。
+4. `render_plan` 详细字段合同见 `3.7.9` ~ `3.7.21`（P0 冻结）。
 
 #### 3.7.4 compose 输入合同（P0，MVP 冻结）
 
@@ -1708,6 +1708,7 @@ optional：
     - `selectedCandidateRefs`（按渲染顺序）
     - `droppedCandidateRefs`（含 `dropReasonCode`）
     - `consumptionReasonCode`
+15. `renderCapabilityGateSnapshotLite`（结构见 `3.7.20`）
 
 optional：
 1. `fallbackReasonCode`
@@ -1855,6 +1856,96 @@ N 计算公式（固定）：
 2. E 的最终状态必须与 `candidateConsumptionDecision` 一致，不得出现 “有候选却 no_fill” 的无因结果。
 3. 同请求同版本下，最终渲染决策必须可复现。
 
+#### 3.7.18 渲染能力门禁矩阵（P0，MVP 冻结）
+
+E 层门禁判定维度固定为：`placement_spec × device_capabilities × mode_contract`。
+
+门禁矩阵（每模式逐一判定）：
+1. `mraid_container`
+   - placement gate：`allowedRenderModes` 包含 `mraid_container`
+   - device gate：`supportedRenderModes` 包含 `mraid_container` 且 `mraidSupported=true`
+   - fail reason：`e_gate_mraid_not_supported`
+2. `webview`
+   - placement gate：`allowedRenderModes` 包含 `webview`
+   - device gate：`supportedRenderModes` 包含 `webview` 且 `webviewSupported=true`
+   - fail reason：`e_gate_webview_not_supported`
+3. `native_card`
+   - placement gate：`allowedRenderModes` 包含 `native_card`
+   - device gate：`supportedRenderModes` 包含 `native_card` 且 `maxRenderSlotCount>=1`
+   - fail reason：`e_gate_native_not_supported`
+4. `video_vast_container`（MVP 占位）
+   - placement gate：`allowedRenderModes` 包含 `video_vast_container`
+   - device gate：`supportedRenderModes` 包含 `video_vast_container` 且 `videoVastSupported=true`
+   - fail reason：`e_gate_video_not_supported`
+
+门禁结果语义：
+1. 任一模式 gate 失败必须给出标准原因码。
+2. 所有模式 gate 失败 -> `deliveryStatus=no_fill`，原因码 `e_gate_all_modes_rejected`。
+3. 同请求同版本下，门禁判定结果必须一致。
+
+#### 3.7.19 格式选择规则与降级顺序（P0）
+
+格式选择规则（固定）：
+1. 先计算 `eligibleModes`：通过 `3.7.18` 门禁的模式集合。
+2. 按固定优先链路选首个可用模式：
+   - 默认：`mraid_container -> webview -> native_card`
+   - 若 `eligibleModes` 含 `video_vast_container` 且 placement 明确允许视频位（通过 `allowedRenderModes` 显式声明），则链路为：
+     `video_vast_container -> mraid_container -> webview -> native_card`
+3. 若无可用模式，输出 `renderMode=none` 并走 no-fill。
+
+降级顺序（固定）：
+1. 发生模式级不支持或运行前校验失败时，严格按链路降级到下一模式。
+2. 任一模式命中后停止继续降级。
+3. 降级轨迹必须写入 `degradePath` 并附原因码。
+
+约束：
+1. 禁止跨链路跳级（例如 `mraid` 直接跳 `native`）。
+2. 禁止无门禁判定直接选模式。
+
+#### 3.7.20 门禁快照（`renderCapabilityGateSnapshotLite`，P0 冻结）
+
+`renderCapabilityGateSnapshotLite` required：
+1. `traceKeys`
+   - `traceKey`
+   - `requestKey`
+   - `attemptKey`
+   - `opportunityKey`
+2. `placementModes`
+   - `allowedRenderModes`
+3. `deviceModes`
+   - `supportedRenderModes`
+   - `webviewSupported`
+   - `mraidSupported`
+   - `videoVastSupported`
+4. `modeEvaluations[]`
+   - `mode`
+   - `gateResult`（`pass` / `fail`）
+   - `gateReasonCode`
+5. `selectionDecision`
+   - `eligibleModes`
+   - `selectedRenderMode`
+   - `degradePath`
+   - `finalGateReasonCode`
+6. `versionSnapshot`
+   - `renderPolicyVersion`
+   - `deviceCapabilityProfileVersion`
+   - `placementConfigVersion`
+   - `gateRuleVersion`
+7. `snapshotAt`
+
+一致性约束：
+1. `selectionDecision.selectedRenderMode` 必须与 `renderPlanLite.renderMode` 一致。
+2. `degradePath` 为空时表示未发生降级。
+3. 任一 `fail` 必须可由 `gateReasonCode` 定位到具体 gate 条件。
+
+#### 3.7.21 MVP 验收基线（渲染能力门禁矩阵）
+
+1. `placement_spec × device_capabilities` 的选型结果在同请求同版本下可复现。
+2. 降级顺序固定且可回放（典型链路：`mraid -> webview -> native`）。
+3. 不支持容器不会进入端侧渲染阶段，避免线上失败。
+4. `renderCapabilityGateSnapshotLite` 可还原“候选模式 -> 门禁判定 -> 最终模式/无模式”全过程。
+5. 任一门禁失败可通过 `traceKey + responseReference + gateReasonCode` 分钟级定位。
+
 ### 3.8 Module F: Event & Attribution Processor
 
 #### 3.8.1 事件合同（当前最小集）
@@ -1989,7 +2080,7 @@ N 计算公式（固定）：
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
 3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同 + Policy 原因码体系 + Policy 审计快照 + D 输入合同 + Adapter 注册与能力声明 + request adapt 子合同 + candidate normalize 子合同 + error normalize 体系）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线（含 Route Plan 触发/裁决/短路口径 + D 输出合同 + 路由审计快照）。
-5. Delivery / Event Schema 分离与 `responseReference` 关联口径（含 E 层 compose 输入合同 + render_plan 输出合同 + 候选消费与最终渲染决策规则）。
+5. Delivery / Event Schema 分离与 `responseReference` 关联口径（含 E 层 compose 输入合同 + render_plan 输出合同 + 候选消费与最终渲染决策规则 + 渲染能力门禁矩阵）。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
 7. 可观测与审计最小模型（单机会对象 + 四段决策点）。
 8. 配置与版本治理基线（三线分离：schema/route/placement）。
@@ -2048,6 +2139,15 @@ N 计算公式（固定）：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.27）
+
+1. 更新 `3.7.9`，将 `renderCapabilityGateSnapshotLite` 升级为 `renderPlanLite` 必填字段。
+2. 新增 `3.7.18`，冻结渲染能力门禁矩阵（`placement_spec × device_capabilities × mode_contract`）。
+3. 新增 `3.7.19`，冻结格式选择规则与降级顺序（含 `mraid -> webview -> native` 链路）。
+4. 新增 `3.7.20`，冻结门禁快照结构与一致性约束。
+5. 新增 `3.7.21`，补充渲染能力门禁矩阵的 MVP 验收基线。
+6. 更新第 4 章交付项，将渲染能力门禁矩阵纳入当前版本交付口径。
 
 ### 2026-02-21（v3.26）
 
