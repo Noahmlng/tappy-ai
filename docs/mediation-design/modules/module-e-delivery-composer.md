@@ -32,7 +32,7 @@
    - `traceKey`
    - `requestKey`
    - `attemptKey`
-   - `auctionResultLite`（D 主语义锚点）
+   - `auctionDecisionLite`（D 主语义锚点）
      - `served`
      - `winner`（`sourceId`, `candidateId`）
      - `price`（`value`, `currency`）
@@ -68,6 +68,26 @@
 4. `composeContextLite`
    - `composeRequestAt`
    - `composeMode`（`sync_delivery`）
+
+`dToEOutputLite.auctionDecisionLite` 字段级 required 矩阵（P0）：
+1. required（所有请求）：
+   - `served`
+   - `winner.sourceId`
+   - `winner.candidateId`
+   - `price.value`
+   - `price.currency`
+   - `creativeHandle.creativeId`
+   - `creativeHandle.landingType`
+   - `debugRef.routePlanId`
+2. required（条件）：
+   - 当 `served=true`：`winner.sourceId/candidateId` 不得为 `none`；`price.value > 0`；`creativeHandle.*` 不得为 `none`。
+   - 当 `served=false`：允许 `winner=none + price=0/NA + creativeHandle=none`，但键必须存在。
+3. optional：
+   - `debugRef.routeAuditSnapshotRef`
+   - `debugRef.decisionVersionRefs`
+4. 缺失动作：
+   - required 缺失 -> `reject`，原因码 `e_compose_missing_auction_required`。
+   - 条件 required 违例 -> `reject`，原因码 `e_compose_winner_binding_invalid`。
 
 optional：
 1. `locale`
@@ -110,7 +130,7 @@ optional：
 4. 输入语义冲突（`hasCandidate=true` 但候选为空等）：
    - 动作：`reject`。
    - 原因码：`e_compose_inconsistent_auction_result`。
-5. winner 绑定冲突（`auctionResultLite.served=true` 但 winner 缺失/不在 `normalizedCandidates`）：
+5. winner 绑定冲突（`auctionDecisionLite.served=true` 但 winner 缺失/不在 `normalizedCandidates`）：
    - 动作：`reject`。
    - 原因码：`e_compose_winner_binding_invalid`。
 
@@ -261,18 +281,18 @@ optional：
 
 E 层消费 `normalizedCandidates` 的规则冻结为：
 1. 输入候选顺序以 D 层排序结果为准，E 不得重排。
-2. 当 `auctionResultLite.served=true` 时，必须先绑定并校验 `auctionResultLite.winner` 指向候选（`sourceId + candidateId`）。
+2. 当 `auctionDecisionLite.served=true` 时，必须先绑定并校验 `auctionDecisionLite.winner` 指向候选（`sourceId + candidateId`）。
 3. 先做可渲染性筛选（render mode 能力、素材完整性、UI 约束兼容、TTL 可用）。
 4. 再按 `selectionMode` 产出最终候选集。
-5. 禁止在 `auctionResultLite.served=true` 时渲染非 winner 候选；唯一允许偏离路径是 `override_by_e` 并降级为 `no_fill/error`。
+5. 禁止在 `auctionDecisionLite.served=true` 时渲染非 winner 候选；唯一允许偏离路径是 `override_by_e` 并降级为 `no_fill/error`。
 
 `selectionMode` 规则：
 1. `top1_strict`（默认）：
-   - 若 `auctionResultLite.served=true`：优先尝试 winner 候选；winner 可渲染则只输出 winner。
+   - 若 `auctionDecisionLite.served=true`：优先尝试 winner 候选；winner 可渲染则只输出 winner。
    - 若 winner 不可渲染：必须 `override_by_e`，原因码 `e_candidate_not_renderable_after_compose`，并进入 no-fill（MVP 不切换到非 winner 候选）。
-   - 若 `auctionResultLite.served=false`：选择首个“可渲染候选”；无可渲染候选则 no-fill。
+   - 若 `auctionDecisionLite.served=false`：选择首个“可渲染候选”；无可渲染候选则 no-fill。
 2. `topN_fill`：
-   - 仅当 `auctionResultLite.served=false` 时启用；从前向后选择前 N 个“可渲染候选”。
+   - 仅当 `auctionDecisionLite.served=false` 时启用；从前向后选择前 N 个“可渲染候选”。
    - N 计算见 `3.7.16`。
 
 审计约束：

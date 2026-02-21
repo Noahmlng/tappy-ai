@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.38）
+
+1. 在 `Module E` 将 D 输出锚点命名统一为 `dToEOutputLite.auctionDecisionLite`，消除 `auctionResultLite` 同名嵌套歧义。
+2. 新增 `auctionDecisionLite` 字段级 required 矩阵，冻结条件必填与缺失动作（`e_compose_missing_auction_required` / `e_compose_winner_binding_invalid`）。
+3. 在 E 的 winner-first 规则中统一替换引用名为 `auctionDecisionLite.served/winner`，保持语义与实现路径一致。
+4. 在 `Module D` 输出合同与约束中同步命名为 `auctionDecisionLite`，确保 D -> E 合同主语义锚点一致。
+5. 更新 MVP 交付清单，将 D 输出锚点命名更新为 `auctionDecisionLite`。
+
 ### 2026-02-21（v4.37）
 
 1. 在 `Module E` 候选消费规则补充强约束：`served=true` 时禁止渲染非 winner 候选。
