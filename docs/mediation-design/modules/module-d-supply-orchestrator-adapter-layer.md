@@ -17,14 +17,27 @@
 1. 私有字段只能进 `extensions`。
 2. `extensions` 不得污染主语义与核心口径。
 
-#### 3.6.3 路由与降级模型（规则 DAG）
+#### 3.6.3 路由与执行策略模型（规则 DAG + Strategy Contract）
 
 1. 当前版本固定规则 DAG，不引入复杂优化器。
-2. 路由顺序固定：`Primary -> Secondary -> Fallback`。
-3. 每次切换必须记录原因：`no_fill/timeout/error/policy_block`。
+2. 执行策略必须通过 `executionStrategyLite` 显式声明，禁止由实现侧隐式推断。
+3. `strategyType` 仅允许：`waterfall` / `bidding` / `hybrid`。
+4. 每次切换必须记录原因：`no_fill/timeout/error/policy_block/strategy_fallback`。
+
+`executionStrategyLite`（MVP 冻结）：
+1. `strategyType`（`waterfall` / `bidding` / `hybrid`）
+2. `parallelFanout`（并发扇出上限；`bidding/hybrid` 下 required，`waterfall` 固定 `1`）
+3. `strategyTimeoutMs`（策略级总时延预算）
+4. `fallbackPolicy`（`on_no_fill_only` / `on_no_fill_or_error` / `disabled`）
+5. `executionStrategyVersion`
+
+策略语义：
+1. `waterfall`：按 `primary -> secondary -> fallback` 顺序串行执行。
+2. `bidding`：在同 tier 内按 `parallelFanout` 并发请求并做统一 winner selection；是否进入 fallback 由 `fallbackPolicy` 决定。
+3. `hybrid`：先执行 `bidding` primary，再按策略降级到顺序 fallback。
 
 超时与状态：
-1. 超时触发下一路由，不阻塞主链路。
+1. source 超时遵循 `timeoutBudgetMs`，策略总超时遵循 `strategyTimeoutMs`。
 2. `no_fill` 为正常无候选。
 3. `error` 为处理异常（可重试/不可重试分类）。
 
@@ -32,7 +45,7 @@
 1. 默认 fail-open。
 2. 强策略场景允许 fail-closed。
 
-详细执行合同见 `3.6.24` ~ `3.6.27`（Route Plan 冻结）。
+详细执行合同见 `3.6.24` ~ `3.6.27`（Route Plan + Strategy 冻结）。
 
 #### 3.6.4 输出合同
 
@@ -73,6 +86,12 @@ required：
    - `routingPolicyVersion`
    - `routeBudgetMs`
    - `fallbackProfileVersion`
+   - `executionStrategyLite`
+     - `strategyType`
+     - `parallelFanout`
+     - `strategyTimeoutMs`
+     - `fallbackPolicy`
+     - `executionStrategyVersion`
 
 optional：
 1. `policyWarnings`
@@ -87,6 +106,7 @@ optional：
 6. `fallbackProfileVersion`
 7. `policySnapshotVersion`
 8. `constraintSetVersion`
+9. `executionStrategyVersion`
 
 #### 3.6.6 缺失字段处置（MVP）
 
@@ -120,6 +140,9 @@ optional：
 4. 供给上下文非法（source 列表为空且无 fallback）：
    - 动作：`reject`。
    - 原因码：`d_invalid_supply_context`。
+5. 执行策略合同非法（`strategyType` 非法、`parallelFanout` 与策略不匹配、`strategyTimeoutMs <= 0`）：
+   - 动作：`reject`。
+   - 原因码：`d_invalid_execution_strategy_contract`。
 
 审计要求：
 1. 记录 `traceKey`、字段路径、原值、处置动作、原因码、规则版本。
@@ -132,6 +155,7 @@ optional：
 4. 同请求在同版本下输入判定与处置动作可复现。
 5. 任一输入拒绝可通过 `traceKey + reasonCode` 分钟级定位。
 6. `sourceConstraints` 缺失或非法时不得进入正常路由执行。
+7. `executionStrategyLite` 缺失或非法时不得进入 Route Plan 生成。
 
 #### 3.6.9 Adapter 注册与能力声明（MVP 冻结）
 
@@ -207,7 +231,7 @@ optional：
    - `sourceSelectionMode`
    - `allowedSourceIds`
    - `blockedSourceIds`
-13. `routeContext`（`routePath`, `routeHop`, `routingPolicyVersion`）
+13. `routeContext`（`routePath`, `routeHop`, `routingPolicyVersion`, `strategyType`, `dispatchMode`）
 14. `timeoutBudgetMs`
 15. `sentAt`
 16. `adapterContractVersion`
@@ -434,9 +458,15 @@ optional：
 5. `attemptKey`
 6. `routingPolicyVersion`
 7. `fallbackProfileVersion`
-8. `routeSteps`（按执行顺序）
-9. `routePlanStatus`（`planned` / `executing` / `completed` / `terminated`）
-10. `plannedAt`
+8. `executionStrategyLite`
+   - `strategyType`
+   - `parallelFanout`
+   - `strategyTimeoutMs`
+   - `fallbackPolicy`
+   - `executionStrategyVersion`
+9. `routeSteps`（按执行顺序）
+10. `routePlanStatus`（`planned` / `executing` / `completed` / `terminated`）
+11. `plannedAt`
 
 `routeSteps` 每项 required：
 1. `stepIndex`
@@ -445,20 +475,23 @@ optional：
 4. `entryCondition`
 5. `timeoutBudgetMs`
 6. `maxRetryCount`
-7. `stepStatus`（`pending` / `running` / `skipped` / `finished`）
+7. `dispatchMode`（`sequential` / `parallel_batch`）
+8. `stepStatus`（`pending` / `running` / `skipped` / `finished`）
 
-#### 3.6.25 主/次/fallback 触发条件（MVP）
+#### 3.6.25 主/次/fallback 触发条件（按 executionStrategyLite，MVP）
 
-触发条件冻结如下：
-1. `primary`：
-   - 条件：source 为 `active`，能力声明覆盖 placement，通过 `sourceConstraints` 过滤，预算可分配（`timeoutBudgetMs > 0`）。
-   - 进入动作：发起首路请求。
-2. `secondary`：
-   - 条件：`primary` 返回 `no_fill`，或返回 `timeout/error + retryClass=non_retryable`，或 `primary` 预算耗尽。
-   - 进入动作：切换到下一优先级 source。
-3. `fallback`：
-   - 条件：`primary + secondary` 均未产生可交付候选，且 fallback 池存在可用 source。
-   - 进入动作：按 fallback 顺序逐个尝试，直到命中可交付候选或预算耗尽。
+触发条件按 `strategyType` 冻结如下：
+1. `waterfall`：
+   - `primary`：source 为 `active`，能力声明覆盖 placement，通过 `sourceConstraints` 过滤，预算可分配（`timeoutBudgetMs > 0`），按序发起首路请求。
+   - `secondary`：`primary` 返回 `no_fill`，或返回 `timeout/error + retryClass=non_retryable`，或预算耗尽时切换下一优先级 source。
+   - `fallback`：`primary + secondary` 均未产生可交付候选，且 fallback 池存在可用 source 时按序尝试。
+2. `bidding`：
+   - `primary`：同 tier source 按 `parallelFanout` 并发发起请求。
+   - `secondary`：默认不启用（除非配置显式定义 secondary bidding pool）。
+   - `fallback`：并发批次无可交付候选时，按 `fallbackPolicy` 决定是否触发 fallback。
+3. `hybrid`：
+   - `primary`：先执行 primary bidding（并发）。
+   - `secondary/fallback`：primary bidding 无可交付候选后，转入顺序 fallback。
 
 阻断条件：
 1. `policy` 指示不可路由（`isRoutable=false`）时，不生成 Route Plan。
@@ -471,6 +504,7 @@ source 过滤规则（MVP 冻结）：
 2. 再应用 `blockedSourceIds` 扣减（优先级高于 allowlist）。
 3. 过滤后为空：直接 `terminal`，原因码 `d_route_no_available_source`。
 4. 过滤决策必须写入 `routeAuditSnapshotLite.sourceFilterSnapshot`，用于回放“哪些 source 被策略剔除”。
+5. 过滤后的 source 池必须满足 `executionStrategyLite` 的并发与降级约束（`parallelFanout/fallbackPolicy`）。
 
 #### 3.6.26 同级 tie-break 规则（MVP，确定性）
 
@@ -513,6 +547,7 @@ Route Plan 仅允许三类短路动作：
 3. 同级 tie-break 决策可审计回放，不出现随机漂移。
 4. 任一短路动作都可定位到触发 step、原因码与版本快照。
 5. Route Plan 输出可被 E/F/G 直接消费，不需要二次推断路由过程。
+6. `routePlanLite.executionStrategyLite.strategyType` 与实际执行行为一致且可回放。
 
 #### 3.6.29 D 输出合同（D -> E，MVP 冻结）
 
@@ -534,6 +569,7 @@ Route Plan 仅允许三类短路动作：
    - `sourceConstraints`（`sourceSelectionMode`, `allowedSourceIds`, `blockedSourceIds`）
 9. `routeConclusion`
    - `routePlanId`
+   - `strategyType`
    - `routeOutcome`（`served_candidate` / `no_fill` / `error`）
    - `finalRouteTier`（`primary` / `secondary` / `fallback` / `none`）
    - `finalAction`（`deliver` / `no_fill` / `terminal_error`）
@@ -552,6 +588,7 @@ Route Plan 仅允许三类短路动作：
    - `candidateNormalizeVersion`
    - `errorNormalizeVersion`
    - `constraintSetVersion`
+   - `executionStrategyVersion`
 
 optional：
 1. `winningCandidateRef`
@@ -570,6 +607,7 @@ optional：
 2. `routeOutcome=no_fill` -> `finalAction=no_fill`，且允许 `finalRouteTier=none`。
 3. `routeOutcome=error` -> `finalAction=terminal_error`，并携带标准化错误原因码。
 4. 任一输出都必须附带唯一 `finalReasonCode`（不可空）。
+5. `routeConclusion.strategyType` 必须与 `routePlanLite.executionStrategyLite.strategyType` 一致。
 
 状态更新约束：
 1. `hasCandidate=true` 必须映射为 `stateUpdate.toState=served`。
@@ -585,6 +623,7 @@ optional：
 4. `stateUpdate` 与路由结论不发生语义冲突（served/no_fill/error 一致）。
 5. 任一 `D -> E` 输出可通过 `traceKey + requestKey + attemptKey` 分钟级定位。
 6. `policyConstraintsLite` 在 C 输入、source request 与 D 输出间逐字段一致（允许仅透传，不允许重写语义）。
+7. `strategyType` 在 D 输入、Route Plan、D 输出、审计快照之间一致。
 
 #### 3.6.32 路由审计快照（`routeAuditSnapshotLite`，MVP 冻结）
 
@@ -598,6 +637,7 @@ required：
    - `opportunityKey`
 2. `routingHitSnapshot`
    - `routePlanId`
+   - `strategyType`
    - `hitRouteTier`（`primary` / `secondary` / `fallback`）
    - `hitSourceId`
    - `hitStepIndex`
@@ -625,6 +665,7 @@ required：
    - `fallbackProfileVersion`
    - `adapterRegistryVersion`
    - `routePlanRuleVersion`
+   - `executionStrategyVersion`
 7. `snapshotMeta`
    - `routeAuditSchemaVersion`
    - `generatedAt`
@@ -635,6 +676,7 @@ required：
 3. `switchEvents` 为空时，`switchCount` 必须为 `0`。
 4. 任一 `switchReasonCode` 必须来自标准原因码集合（不可自由文本）。
 5. `sourceFilterSnapshot.effectiveSourcePoolIds` 必须等于 Route Plan 实际参与选路 source 集。
+6. `routingHitSnapshot.strategyType` 必须与 `routeConclusion.strategyType` 一致。
 
 #### 3.6.33 MVP 验收基线（路由审计快照）
 
@@ -644,3 +686,4 @@ required：
 4. 同请求同版本下快照内容可复现，不出现顺序漂移。
 5. E/G 可直接消费快照，无需额外拼接路由历史。
 6. 可从快照还原 `sourceConstraints` 对 source 池的过滤结果，支持“为何某需求方未被请求”的对账。
+7. 可从快照还原“按哪种 strategyType 执行、何时触发 fallback”的全过程。

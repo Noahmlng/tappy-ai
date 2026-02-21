@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.33）
+
+1. 在 `Module D` 新增一等执行策略合同 `executionStrategyLite`，冻结 `strategyType/parallelFanout/strategyTimeoutMs/fallbackPolicy/executionStrategyVersion`。
+2. 将 D 路由模型从“固定顺序描述”升级为“按 `waterfall/bidding/hybrid` 显式执行语义”，并明确并发与 fallback 触发规则。
+3. 在 D 输入合同中新增 `routingContextLite.executionStrategyLite` 与 `executionStrategyVersion` 版本锚点，补齐非法策略合同拒绝语义。
+4. 在 `routePlanLite` 中强制绑定 `executionStrategyLite.strategyType`，并在 `routeSteps` 增加 `dispatchMode`，支持串行/并行批次回放。
+5. 在 `D -> E` 输出与 `routeAuditSnapshotLite` 中新增 `strategyType/executionStrategyVersion` 一致性约束，保证策略选择可审计、可复现。
+
 ### 2026-02-21（v4.32）
 
 1. 在 `Module C` 输出合同新增 `adDecisionLite`，冻结 `allowAd + decisionSemantic(serve_ad/no_ad) + noAdReasonCode`，显式固化 `allow=false -> no-ad` 语义。
