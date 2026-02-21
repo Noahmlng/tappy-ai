@@ -1,5 +1,13 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.18）
+
+1. 在 `Module H` 新增配置决策原因码体系，冻结 `hit/degrade/reject` 三类标准 reasonCode。
+2. 新增 `hConfigDecisionAuditSnapshotLite`，冻结配置决策审计快照最小字段（决策路径、版本快照、selector/gate/cache/anchor 摘要）。
+3. 冻结主原因码裁决顺序与一致性约束，明确同请求同版本下 `primaryReasonCode` 的确定性。
+4. 新增审计写入与关联规则，要求 `configDecisionAuditSnapshotRef` 与 `primaryReasonCode` 贯穿到闭环审计链路。
+5. 更新闭环与 MVP 交付项，将“配置决策原因码 + 审计快照”纳入当前版本交付口径。
+
 ### 2026-02-21（v4.17）
 
 1. 在 `Module H` 新增灰度规则合同，冻结灰度输入输出结构与决策字段。

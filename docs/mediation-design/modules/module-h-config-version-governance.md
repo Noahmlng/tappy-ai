@@ -673,3 +673,118 @@ required：
 2. app/placement/sdk/adapter 四维选择器行为确定性一致，无隐式优先级漂移。
 3. 熔断触发后能在分钟级切回 `lastStablePolicyId`，且不进入“部分生效”状态。
 4. 任一灰度决策可通过 `splitKey + bucketValue + rolloutPolicyVersion + reasonCodes` 分钟级定位。
+
+#### 3.10.42 配置决策原因码体系（P0，MVP 冻结）
+
+配置决策动作（统一）：
+1. `hit`（命中可用配置）
+2. `degrade`（命中降级配置）
+3. `reject`（拒绝进入主链路）
+
+标准原因码（最小集）：
+1. `h_cfg_decision_hit_exact_match`
+2. `h_cfg_decision_hit_override_applied`
+3. `h_cfg_decision_hit_cache_revalidated_304`
+4. `h_cfg_decision_degrade_scope_unavailable`
+5. `h_cfg_decision_degrade_stale_grace_served`
+6. `h_cfg_decision_degrade_partial_adapter_compatible`
+7. `h_cfg_decision_degrade_rollout_force_fallback`
+8. `h_cfg_decision_reject_missing_required`
+9. `h_cfg_decision_reject_schema_incompatible`
+10. `h_cfg_decision_reject_version_gate_failed`
+11. `h_cfg_decision_reject_anchor_invalid`
+12. `h_cfg_decision_reject_policy_not_found`
+13. `h_cfg_decision_reject_contract_invalid`
+
+动作映射约束：
+1. `hit` 仅允许使用 `h_cfg_decision_hit_*`。
+2. `degrade` 仅允许使用 `h_cfg_decision_degrade_*`。
+3. `reject` 仅允许使用 `h_cfg_decision_reject_*`。
+4. 每次决策必须有一个 `primaryReasonCode`，可选多个 `secondaryReasonCodes[]`。
+
+#### 3.10.43 配置决策审计快照合同（P0，MVP 冻结）
+
+审计对象：`hConfigDecisionAuditSnapshotLite`
+
+required：
+1. `snapshotId`
+2. `requestKey`
+3. `traceKey`
+4. `resolveId`
+5. `configKey`
+6. `decisionAction`（`hit` / `degrade` / `reject`）
+7. `primaryReasonCode`
+8. `secondaryReasonCodes[]`
+9. `decisionPath[]`
+   - `stageName`（`resolve` / `version_gate` / `rollout` / `cache` / `finalize`）
+   - `stageResult`（`pass` / `degrade` / `reject`）
+   - `stageReasonCodeOrNA`
+10. `selectedVersionSnapshot`
+    - `schemaVersion`
+    - `routingStrategyVersion`
+    - `placementConfigVersion`
+    - `globalConfigVersion`
+    - `appConfigVersionOrNA`
+    - `placementSourceVersionOrNA`
+    - `rolloutPolicyVersionOrNA`
+11. `selectorDigest`
+    - `appSelectorMatched`
+    - `placementSelectorMatched`
+    - `sdkSelectorMatched`
+    - `adapterSelectorMatched`
+    - `splitKeyOrNA`
+    - `bucketValueOrNA`
+12. `gateDigest`
+    - `gateAction`
+    - `blockedAdapters[]`
+13. `cacheDigest`
+    - `cacheDecision`
+    - `etagOrNA`
+    - `ttlSecOrNA`
+    - `expireAtOrNA`
+14. `anchorDigest`
+    - `anchorHash`
+    - `freezeState`
+    - `versionAnchorContractVersion`
+15. `generatedAt`
+16. `auditSnapshotContractVersion`
+
+optional：
+1. `operatorIdOrNA`
+2. `changeSetIdOrNA`
+3. `extensions`
+
+#### 3.10.44 主原因码裁决与一致性规则（P0，MVP 冻结）
+
+主原因码裁决顺序（固定）：
+1. `resolve`
+2. `version_gate`
+3. `rollout`
+4. `cache`
+5. `finalize`
+
+裁决规则：
+1. 若存在任一 `reject`，`primaryReasonCode` 取第一个触发 `reject` 的 stage 原因码。
+2. 否则若存在任一 `degrade`，`primaryReasonCode` 取第一个触发 `degrade` 的 stage 原因码。
+3. 否则取 `h_cfg_decision_hit_exact_match` 或 `h_cfg_decision_hit_cache_revalidated_304`。
+4. 同请求同版本下，`primaryReasonCode` 必须确定性一致。
+
+一致性约束：
+1. `decisionAction=reject` 时不得出现 `h_cfg_decision_hit_*` 原因码。
+2. `decisionAction=hit` 时 `decisionPath` 不得包含 `stageResult=reject`。
+3. `secondaryReasonCodes[]` 不得与 `primaryReasonCode` 冲突（动作前缀必须一致或为辅助信息）。
+
+#### 3.10.45 审计写入与关联规则（P0，MVP 冻结）
+
+1. H 在生成最终配置决策后、进入 B 之前，必须写出 `hConfigDecisionAuditSnapshotLite`。
+2. 快照必须挂载到 `TraceContext.configDecisionAuditSnapshotRef` 并沿 `A -> G` 透传。
+3. F 输出到 G/Archive 时必须携带 `primaryReasonCode + configDecisionAuditSnapshotRef`（或可还原引用）。
+4. 重试请求必须复用同一 `snapshotId`（若输入和版本锚点未变化）。
+5. 快照写入失败默认 `reject`，原因码 `h_cfg_decision_reject_contract_invalid`（避免无审计决策进入主链路）。
+
+#### 3.10.46 MVP 验收基线（配置决策原因码 + 审计快照）
+
+1. 每个配置决策都可稳定映射到 `hit/degrade/reject + primaryReasonCode`。
+2. 任一请求都能回放出完整 `decisionPath + selectedVersionSnapshot + anchorDigest`。
+3. F/G 对账可通过 `snapshotId + primaryReasonCode + anchorHash` 对齐“为什么用了这份配置”。
+4. 任一解释争议可通过 `requestKey + traceKey + configDecisionAuditSnapshotRef` 分钟级定位。
