@@ -183,12 +183,15 @@ required：
 
 #### 3.10.11 ETag / If-None-Match 规则（P0，MVP 冻结）
 
-1. `etag` 生成规则：`etag = sha256(configHash + "|" + placementConfigVersion + "|" + routingStrategyVersion)`。
+1. `etagV2` 生成规则（冻结）：
+   - `versionSnapshotForEtag = schemaVersion + "|" + globalConfigVersion + "|" + appConfigVersionOrNA + "|" + placementSourceVersionOrNA + "|" + placementConfigVersion + "|" + routingStrategyVersion`
+   - `etagV2 = sha256(configHash + "|" + versionSnapshotForEtag)`
+   - `etag = etagV2`（MVP 统一以 v2 作为唯一实现口径）
 2. 命中规则：
    - `If-None-Match == current etag` -> `304 Not Modified`。
    - 不相等或未携带 -> 返回 `200` + 最新 `resolvedConfigSnapshot`。
-3. 同一 `configHash + version snapshot` 必须生成同一 `etag`。
-4. 任一版本锚点变化必须导致 `etag` 变化。
+3. 同一 `configHash + versionSnapshotForEtag` 必须生成同一 `etag`（canonical 串接顺序固定，不可重排）。
+4. 任一参与 `versionSnapshotForEtag` 的版本锚点变化必须导致 `etag` 变化。
 
 #### 3.10.12 TTL 与缓存过期动作（P0，MVP 冻结）
 

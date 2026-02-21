@@ -1,5 +1,12 @@
 # Mediation Design Changelog
 
+### 2026-02-21（v4.44）
+
+1. 在 `Module H` 将 ETag 规则冻结为 `etagV2`，由 `configHash + 完整 versionSnapshotForEtag` 计算，消除旧公式与锚点规则冲突。
+2. 明确 `versionSnapshotForEtag` 包含：`schema/global/app/placement source/placement config/routing` 六类版本锚点。
+3. 固化 canonical 串接顺序，要求同一 `configHash + versionSnapshotForEtag` 必须生成同一 `etag`。
+4. 明确仅当参与 `versionSnapshotForEtag` 的任一锚点变化时才触发 `etag` 变化。
+
 ### 2026-02-21（v4.43）
 
 1. 在 `Module G` 的 replay 合同中统一主键命名为 `opportunityKey`，替换原 `opportunityId` 主字段口径。
