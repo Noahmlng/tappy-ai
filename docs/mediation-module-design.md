@@ -1,6 +1,6 @@
 # Mediation 模块设计文档（当前版本）
 
-- 文档版本：v3.12
+- 文档版本：v3.13
 - 最近更新：2026-02-21
 - 文档类型：Design Doc（策略分析 + 具体设计 + 演进规划）
 - 当前焦点：当前版本（接入与适配基线）
@@ -770,6 +770,61 @@ optional：
 4. `block` 结论不会进入 D 正常路由。
 5. 任一最终动作都可通过 `traceKey + winningGate + reasonCode` 快速回放。
 
+#### 3.5.12 C 输出合同（C -> D/E，MVP 冻结）
+
+`Module C` 输出统一对象 `cPolicyDecisionLite`，并按 `isRoutable` 分流到 D 或 E。
+
+统一 required 字段：
+1. `opportunityKey`
+2. `traceKey`
+3. `requestKey`
+4. `attemptKey`
+5. `finalPolicyAction`（`allow` / `degrade` / `block`）
+6. `isRoutable`（bool）
+7. `policyDecisionReasonCode`
+8. `winningGate`
+9. `winningRuleId`
+10. `decisionTimestamp`
+11. `policyPackVersion`
+12. `policyRuleVersion`
+13. `stateUpdate`（`fromState`, `toState`, `stateReasonCode`）
+14. `policyAuditSnapshotLite`
+
+输出路径：
+1. `isRoutable=true`：
+   - 输出 `routableOpportunityLite` 给 D（包含可路由机会对象与策略降级标记）。
+2. `isRoutable=false`：
+   - 输出 `policyBlockedResultLite` 给 E（包含阻断摘要与返回原因）。
+
+optional：
+1. `policyWarnings`
+2. `extensions`
+
+#### 3.5.13 状态更新与可路由标记规则（MVP）
+
+`isRoutable` 冻结规则：
+1. `finalPolicyAction=allow/degrade` 且未命中硬阻断时，`isRoutable=true`。
+2. `finalPolicyAction=block` 或命中 `short_circuit_block` 时，`isRoutable=false`。
+
+`stateUpdate` 冻结规则：
+1. 路由路径（`isRoutable=true`）：
+   - `fromState=received`，`toState=routed`，`stateReasonCode=policy_passed` 或 `policy_degraded_pass`。
+2. 阻断路径（`isRoutable=false`）：
+   - `fromState=received`，`toState=error`，`stateReasonCode=policy_blocked`。
+
+消费约束：
+1. D 仅消费 `isRoutable=true` 输出，禁止接收阻断对象。
+2. E 必须可消费 `isRoutable=false` 输出并返回标准错误语义。
+3. C 输出必须显式给出 `isRoutable`，禁止下游二次推断。
+
+#### 3.5.14 MVP 验收基线（C 输出合同）
+
+1. C 到 D/E 的分流由 `isRoutable` 唯一决定，不存在双路或空路输出。
+2. 每个 C 输出都带完整 `stateUpdate`，状态迁移可审计回放。
+3. `block` 结论一定走 E，且状态更新为 `error`。
+4. `allow/degrade` 结论一定走 D，且状态更新为 `routed`。
+5. 同请求在同版本下输出字段、分流结果、状态更新均可复现。
+
 ### 3.6 Module D: Supply Orchestrator & Adapter Layer
 
 #### 3.6.1 供给范围（当前最小）
@@ -962,7 +1017,7 @@ optional：
 
 1. 模块化主链框架（A-H）与边界说明。
 2. 统一 Opportunity Schema（六块骨架 + 状态机）基线说明。
-3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制）。
+3. 外部输入映射与冲突优先级规则（含 B 输入/输出合同 + 六块 required 矩阵 + Canonical 枚举字典 + 字段级冲突裁决引擎 + mappingAudit 快照 + C 输入合同 + C 执行顺序/短路机制 + C 输出合同）。
 4. 两类供给源最小适配合同（adapter 四件事）与编排基线。
 5. Delivery / Event Schema 分离与 `responseReference` 关联口径。
 6. Request -> Delivery -> Event -> Archive 最小闭环与回放基线。
@@ -1023,6 +1078,13 @@ optional：
 5. SSP 交易接口专题（六层接口 + 采集与结算模型）。
 
 ## 6. 变更记录
+
+### 2026-02-21（v3.13）
+
+1. 新增 `3.5.12`，冻结 Module C 的 `C -> D/E` 输出合同（最小输出字段与双路径输出）。
+2. 新增 `3.5.13`，明确 `isRoutable` 判定与 `stateUpdate` 状态更新规则。
+3. 新增 `3.5.14`，补充 C 输出合同的 MVP 验收基线。
+4. 更新第 4 章交付项，纳入 C 输出合同交付口径。
 
 ### 2026-02-21（v3.12）
 
