@@ -1,6 +1,6 @@
 {
   "suite": "qa-e2e-closed-loop",
-  "generatedAt": "2026-02-21T20:08:04.704Z",
+  "generatedAt": "2026-02-22T08:09:37.564Z",
   "summary": {
     "total": 8,
     "passed": 8,
@@ -12,7 +12,7 @@
       "id": "E2E-001",
       "name": "happy",
       "status": "PASS",
-      "durationMs": 16,
+      "durationMs": 17,
       "details": {
         "deliveryStatus": "served",
         "terminalState": "closed_success",
@@ -23,7 +23,7 @@
       "id": "E2E-002",
       "name": "policy_block",
       "status": "PASS",
-      "durationMs": 1,
+      "durationMs": 0,
       "details": {
         "policyAction": "block",
         "deliveryStatus": "no_fill",
@@ -55,7 +55,7 @@
       "id": "E2E-005",
       "name": "duplicate",
       "status": "PASS",
-      "durationMs": 2,
+      "durationMs": 1,
       "details": {
         "fDedupSecondAck": "duplicate",
         "gDedupReason": "g_append_duplicate_accepted_noop",
@@ -78,7 +78,7 @@
       "id": "E2E-007",
       "name": "version",
       "status": "PASS",
-      "durationMs": 0,
+      "durationMs": 1,
       "details": {
         "degradeReasons": [
           "h_gate_schema_compatible_degrade",
