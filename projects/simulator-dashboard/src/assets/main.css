@@ -144,6 +144,13 @@ a {
   gap: 8px;
 }
 
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
 .button {
   border: 1px solid #bfdbfe;
   border-radius: 8px;
@@ -196,6 +203,48 @@ a {
   gap: 6px;
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.status-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.status-item {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+  background: #fbfdff;
+}
+
+.status-pill {
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.status-pill.good {
+  color: #14532d;
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.status-pill.warn {
+  color: #92400e;
+  border-color: #fdba74;
+  background: #fff7ed;
+}
+
+.status-pill.bad {
+  color: #b91c1c;
+  border-color: #fca5a5;
+  background: #fef2f2;
 }
 
 .kv-grid {
