@@ -1,58 +1,66 @@
-# 02 - Quickstart (First Ad in 15 Minutes)
+# 02 - Quickstart (Production API Path)
 
-- Owner:
-- Last Updated:
-- Scope: local dev / staging
+- Owner: Integrations Team
+- Last Updated: 2026-02-22
+- Scope: external developer / staging -> prod
 
-## 1. Prerequisites
+## 1. Objective
 
-- Node version:
-- Access requirements:
-- Required env vars:
+在 15 分钟内跑通：`config -> evaluate -> events`。
 
-## 2. Start Services
+## 2. Prerequisites
 
-```bash
-# Example (replace with your exact startup commands)
-npm ci
-npm run infra:up
-npm run dev:gateway
-```
+1. `MEDIATION_API_BASE_URL`
+2. `MEDIATION_API_KEY`
+3. `APP_ID`
+4. `PLACEMENT_ID`
 
-## 3. Send First Evaluate Request
+## 3. Run First Call
 
 ```bash
-# Example request payload
-curl -X POST "$MEDIATION_BASE_URL/api/v1/sdk/evaluate" \
+curl -sS -X POST "$MEDIATION_API_BASE_URL/api/v1/sdk/evaluate" \
+  -H "Authorization: Bearer $MEDIATION_API_KEY" \
   -H 'Content-Type: application/json' \
-  -d '{"appId":"","sessionId":"","turnId":"","query":"","answerText":"","intentScore":0.9,"locale":"en-US"}'
+  -d '{
+    "appId":"<app_id>",
+    "sessionId":"quickstart_session_001",
+    "turnId":"quickstart_turn_001",
+    "query":"Recommend running shoes",
+    "answerText":"Focus on grip.",
+    "intentScore":0.9,
+    "locale":"en-US"
+  }'
 ```
 
 Expected:
 
-- `requestId` returned
-- `decision.result` is present
+1. `requestId` 非空
+2. `decision.result` 存在
 
-## 4. Send Event Callback
+## 4. Report Event
 
 ```bash
-curl -X POST "$MEDIATION_BASE_URL/api/v1/sdk/events" \
+curl -sS -X POST "$MEDIATION_API_BASE_URL/api/v1/sdk/events" \
+  -H "Authorization: Bearer $MEDIATION_API_KEY" \
   -H 'Content-Type: application/json' \
-  -d '{"requestId":"..."}'
+  -d '{
+    "requestId":"<request_id>",
+    "appId":"<app_id>",
+    "sessionId":"quickstart_session_001",
+    "turnId":"quickstart_turn_001",
+    "query":"Recommend running shoes",
+    "answerText":"Focus on grip.",
+    "intentScore":0.9,
+    "locale":"en-US"
+  }'
 ```
 
 Expected:
 
-- `{ "ok": true }`
+1. `{ "ok": true }`
 
-## 5. Verify in Dashboard/Logs
+## 5. Pass Criteria
 
-- Request log location:
-- Event log location:
-- What success looks like:
-
-## 6. Common Setup Failures
-
-| Symptom | Likely Cause | Fix |
-| --- | --- | --- |
-|  |  |  |
+- [ ] `evaluate` 成功返回 requestId
+- [ ] `events` 成功 ack
+- [ ] 失败不阻塞主业务路径（fail-open）

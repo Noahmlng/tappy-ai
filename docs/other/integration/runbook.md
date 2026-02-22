@@ -1,255 +1,106 @@
-# Mediation Runbook 与排障手册
+# External Integration Workflow Runbook
 
-- Version: v0.1
-- Last Updated: 2026-02-21
-- Scope: 接入方运行 `evaluate/events/config/replay` 时的常见故障闭环排查。
+- Version: v1.0
+- Last Updated: 2026-02-22
+- Scope: 外部开发者从开通到生产上线的标准对接流程
 
-## 0. 统一分诊入口
+## 1. Workflow Overview
 
-先准备环境变量：
+标准流程分 5 个阶段：
 
-```bash
-export MEDIATION_BASE_URL="http://127.0.0.1:3100"
-export APP_ID="simulator-chatbot"
-export PLACEMENT_ID="chat_inline_v1"
-```
+1. 开通与合同对齐
+2. Sandbox / Staging 接入
+3. 联调与验收
+4. 生产灰度上线
+5. 运营与变更管理
 
-基础连通性：
+## 2. Phase 1: 开通与合同对齐
 
-```bash
-curl -sS "$MEDIATION_BASE_URL/api/health"
-```
+输入：业务目标、使用场景、目标 placement。
 
-如果健康检查失败，先确认：
+动作：
 
-```bash
-npm --prefix ./projects/ad-aggregation-platform run dev:gateway
-```
+1. 双方确认 API 版本与字段契约。
+2. 发放 `APP_ID`、`MEDIATION_API_KEY`、环境 base URL。
+3. 定义故障 SLA、升级通道、值班联系人。
 
----
+产出物：
 
-## 1. 故障卡片：`no_fill` 比例升高
+1. 集成参数表（appId/placementId/env）。
+2. 对接群与升级通讯录。
+3. 里程碑日期（联调开始、UAT、上线窗口）。
 
-### 现象
+## 3. Phase 2: Sandbox / Staging 接入
 
-- `POST /api/v1/sdk/evaluate` 大量返回 `decision.result = no_fill`。
-- 业务层点击率下降，但没有明显 `error`。
+动作：
 
-### 可能原因
+1. 实现 `config -> evaluate -> events` 三接口。
+2. 接入 requestId 全链路日志。
+3. 实现 fail-open（广告失败不阻塞主流程）。
 
-- D 路由阶段无可用 source（例如 allowlist/blockedSourceIds 冲突）。
-- 上游 adapter 健康度下降导致候选为空。
-- E 阶段渲染门禁触发降级，最终落到 `no_fill`。
+退出条件：
 
-### 检查步骤
+1. 能稳定返回 `requestId`。
+2. 事件上报成功率达到约定阈值。
+3. 错误重试符合策略（仅网络/5xx）。
 
-1. 抽样一次 evaluate，记录 `requestId` 与 `decision.reasonDetail`。
+## 4. Phase 3: 联调与验收
 
-```bash
-curl -sS -X POST "$MEDIATION_BASE_URL/api/v1/sdk/evaluate" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "appId":"simulator-chatbot",
-    "sessionId":"rb_nf_001",
-    "turnId":"rb_nf_001",
-    "query":"recommend shoes",
-    "answerText":"need waterproof options",
-    "intentScore":0.9,
-    "locale":"en-US"
-  }'
-```
+动作：
 
-2. 检查近 15 分钟 `no_fill` 日志。
+1. 按测试计划执行 P0/P1 用例。
+2. 核对 `served/blocked/no_fill/error` 分布。
+3. 做一次降级演练（模拟 API 超时）。
 
-```bash
-curl -sS "$MEDIATION_BASE_URL/api/v1/dashboard/decisions?result=no_fill&placementId=$PLACEMENT_ID"
-```
+退出条件：
 
-3. 跑模块回归，确认是 D/E 逻辑还是接入参数问题。
+1. P0 全通过。
+2. 无 Sev-1 / Sev-2 未闭环问题。
+3. 已完成上线与回滚预案签字。
 
-```bash
-npm --prefix ./projects/ad-aggregation-platform run test:integration -- d-route-plan
-npm --prefix ./projects/ad-aggregation-platform run test:integration -- e-output
-```
+## 5. Phase 4: 生产灰度上线
 
-### 修复动作
+动作：
 
-- 若 `reasonDetail` 指向路由无候选：修正 placement 的 source allow/deny 配置。
-- 若 adapter 健康度异常：恢复对应 adapter 或启用 fallback source。
-- 若渲染门禁过严：按配置治理流程降低 gate 严格度并保留审计记录。
+1. 小流量灰度（建议 5% -> 20% -> 50% -> 100%）。
+2. 每个阶段观察核心指标：错误率、延迟、事件上报成功率。
+3. 任一阈值越线时立即停止放量。
 
-### 验证方式
+建议阈值（可按业务调整）：
 
-- 连续 20+ 次 evaluate 抽样中，`no_fill` 比例回到预期区间。
-- `d-route-plan`、`e-output` 集成测试通过。
-- 决策日志中 `no_fill` 的 `reasonDetail` 分布符合预期（不再集中于单一异常码）。
+1. `evaluate` 5xx > 1%（5 分钟窗口）触发暂停。
+2. `events` ack 成功率 < 99% 触发回退。
+3. p95 延迟超过基线 30% 持续 10 分钟触发回退。
 
----
+## 6. Phase 5: 运营与变更管理
 
-## 2. 故障卡片：`blocked` 比例异常升高
+动作：
 
-### 现象
+1. 版本升级采用提前公告 + 双版本兼容窗口。
+2. 每次字段新增/弃用有明确生效日期。
+3. 每周复盘：fill/CTR/no_fill 结构与异常类型。
 
-- evaluate 返回 `decision.result = blocked` 明显增加。
-- 常见 `reasonDetail` 包括 `blocked_topic:*`、`intent_below_threshold`、`intent_non_commercial`。
+## 7. Incident Escalation
 
-### 可能原因
+分级建议：
 
-- C 策略门禁规则变更后更严格（话题/合规/同意域）。
-- placement 阈值或策略配置发布后未按预期生效。
-- 上游请求信号质量下降（intent score/上下文缺失）。
+1. Sev-1：全量不可用或严重收入损失，15 分钟内拉齐双方 on-call。
+2. Sev-2：部分功能退化，30 分钟内响应。
+3. Sev-3：单场景异常，工作日处理。
 
-### 检查步骤
+事件模板（最少字段）：
 
-1. 拉取 blocked 样本并统计 `reasonDetail`。
+1. 发生时间（UTC）
+2. 影响范围（appId / placementId / region）
+3. 关键 requestId 示例
+4. 当前缓解动作
+5. 下一次更新时间
 
-```bash
-curl -sS "$MEDIATION_BASE_URL/api/v1/dashboard/decisions?result=blocked&placementId=$PLACEMENT_ID" > /tmp/blocked.json
-node -e 'const fs=require("node:fs");const j=JSON.parse(fs.readFileSync("/tmp/blocked.json","utf8"));const items=j.items||[];const c={};for(const x of items){const k=x.reasonDetail||"NA";c[k]=(c[k]||0)+1;}console.log(c)'
-```
+## 8. Ready-for-Production Checklist
 
-2. 运行策略短路与输出合同测试。
-
-```bash
-npm --prefix ./projects/ad-aggregation-platform run test:integration -- c-short-circuit
-npm --prefix ./projects/ad-aggregation-platform run test:contracts -- c-output
-```
-
-3. 如怀疑配置发布导致，联动检查 H 发布记录与版本。
-
-```bash
-npm --prefix ./projects/ad-aggregation-platform run test:integration -- h-publish
-```
-
-### 修复动作
-
-- 若为 `blocked_topic:*`：校准策略中的敏感类目配置，避免误伤正常流量。
-- 若为 `intent_below_threshold`：按 placement 调整阈值，避免与目标流量特征错配。
-- 若为同意域阻断：修正 SDK 上传的 consent/上下文字段。
-
-### 验证方式
-
-- blocked 分布恢复到预期结构（单一异常 reasonDetail 不再占主导）。
-- `c-short-circuit` 与 `c-output` 均通过。
-- 业务关键 placement 的 served/no_fill/blocked 结构恢复稳定。
-
----
-
-## 3. 故障卡片：回放结果不一致（Replay Determinism）
-
-### 现象
-
-- 同一 `opportunityKey`、同一 `replayAsOfAt` 回放结果不一致。
-- `determinismStatus = non_deterministic` 或 diff 状态为 `diverged`。
-
-### 可能原因
-
-- 查询参数漂移（尤其 cursor 与 `replayAsOfAt` 不一致）。
-- 回放记录缺失版本锚点，触发 `g_replay_missing_version_anchor`。
-- `rule_recompute` 的 pinned versions 与记录锚点冲突。
-
-### 检查步骤
-
-1. 先跑 replay 确定性 E2E。
-
-```bash
-npm --prefix ./projects/ad-aggregation-platform run test:e2e -- g-replay-determinism
-```
-
-2. 若接了标准 replay API，复现同查询两次并对比输出。
-
-```bash
-cat <<'JSON' >/tmp/replay-query.json
-{
-  "queryMode": "by_opportunity",
-  "outputMode": "summary",
-  "opportunityKey": "opp_replay_001",
-  "pagination": { "pageSize": 10, "pageTokenOrNA": "NA" },
-  "sort": { "sortBy": "auditAt", "sortOrder": "desc" },
-  "replayContractVersion": "g_replay_v1",
-  "replayAsOfAt": "2026-02-22T12:00:00.000Z",
-  "replayExecutionMode": "snapshot_replay"
-}
-JSON
-
-curl -sS -X POST "$MEDIATION_BASE_URL/api/v1/mediation/audit/replay" -H 'Content-Type: application/json' -d @/tmp/replay-query.json > /tmp/replay-1.json
-curl -sS -X POST "$MEDIATION_BASE_URL/api/v1/mediation/audit/replay" -H 'Content-Type: application/json' -d @/tmp/replay-query.json > /tmp/replay-2.json
-node -e 'const fs=require("node:fs");const a=fs.readFileSync("/tmp/replay-1.json","utf8");const b=fs.readFileSync("/tmp/replay-2.json","utf8");console.log(a===b?"IDENTICAL":"DIFF")'
-```
-
-3. 排查是否出现以下原因码：
-- `g_replay_invalid_cursor`
-- `g_replay_missing_version_anchor`
-- `g_replay_version_anchor_conflict`
-
-### 修复动作
-
-- 固定 `replayAsOfAt`，分页时复用返回 cursor，禁止客户端重算 cursor。
-- 补齐 append 入库记录的版本锚点字段（schema/mapping/routing/policy/delivery/event/dedup）。
-- 规则重算时使用与生产一致的 pinned versions 或切回 `snapshot_replay` 做紧急止血。
-
-### 验证方式
-
-- 同查询重复执行结果 byte-level 一致。
-- `g-replay-determinism` 测试通过。
-- diff summary 中 `fieldDiffCount = 0` 且 determinism 为 `deterministic`。
-
----
-
-## 4. 故障卡片：配置发布失败（H Publish）
-
-### 现象
-
-- `POST /api/v1/mediation/config/publish` 返回 `publishState = failed`。
-- 常见状态码：`400/403/404/409`。
-
-### 可能原因
-
-- 权限问题：`h_publish_auth_*`。
-- 版本冲突：`h_publish_base_version_conflict`。
-- 幂等键冲突：`h_publish_idempotency_payload_conflict`。
-- 回滚目标不存在：`h_publish_rollback_target_not_found`。
-
-### 检查步骤
-
-1. 先跑 H 发布集成用例确认系统行为。
-
-```bash
-npm --prefix ./projects/ad-aggregation-platform run test:integration -- h-publish
-```
-
-2. 对照返回体重点看：
-- `publishState`
-- `ackReasonCode`
-- `retryable`
-- `publishOperationId`
-
-3. 若为幂等冲突，核对同 `publishIdempotencyKeyOrNA` 的 payload 是否完全一致。
-
-### 修复动作
-
-- `403` 类：修正 `authContextLite`（actor/role/scopeBindings）并确保 `operatorId` 对齐。
-- `409` 基线冲突：刷新最新 `baseVersionSnapshot` 后重新发布。
-- `409` 幂等 payload 冲突：同键必须同 payload；若 payload 变更请换新幂等键。
-- `404` 回滚目标不存在：先确认目标版本确实已发布并可回滚。
-
-### 验证方式
-
-- 再次发布返回 `publishState = published|rolled_back`。
-- 预期幂等重放时返回 `h_publish_duplicate_reused_operation`。
-- `h-publish` 集成测试通过。
-
----
-
-## 5. 发布前总体验证（建议）
-
-```bash
-npm --prefix ./projects/ad-aggregation-platform run test:functional:p0
-npm --prefix ./projects/ad-aggregation-platform run test:e2e
-```
-
-判定标准：
-
-- P0 matrix = 100%
-- E2E = 100%
-- 关键故障卡片（本手册 1~4）均可复现、可修复、可验证。
+- [ ] 三接口已接通：`config/evaluate/events`
+- [ ] requestId 全链路可追踪
+- [ ] fail-open 已验证
+- [ ] 重试策略与幂等策略已上线
+- [ ] 灰度与回滚计划已确认
+- [ ] 值班通讯录与升级机制已生效

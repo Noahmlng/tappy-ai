@@ -1,132 +1,110 @@
-# Mediation SDK Quickstart (Minimal Runnable)
+# Mediation SDK Quickstart (External Developer, Production Path)
 
-- Version: v0.1
-- Last Updated: 2026-02-21
-- Scope: 用最小 HTTP 接入方式在 10 分钟内跑通首条链路（init -> evaluate -> events -> verify）
+- Version: v1.0
+- Last Updated: 2026-02-22
+- Scope: 15 分钟完成首条生产风格链路（config -> evaluate -> events）
 
 ## 1. Prerequisites
 
-- Node.js 20+
-- 在仓库根目录执行命令：`/Users/zeming/Documents/chat-ads-main`
-- 已安装依赖：`npm ci`
+你需要先从平台侧拿到：
 
-## 2. Init（最小初始化）
+1. `MEDIATION_API_BASE_URL`（按环境发放，例如 `https://api.<env>.example.com`）
+2. `MEDIATION_API_KEY`（服务端调用凭证）
+3. `APP_ID`（你的应用标识）
+4. `PLACEMENT_ID`（例如 `chat_inline_v1`）
+5. 允许的回调域名或调用来源（如果平台要求）
 
-先准备最小接入配置（Hosted API 模式）：
+## 2. Minimal Client Init
 
 ```bash
-export MEDIATION_BASE_URL="http://127.0.0.1:3100"
-export APP_ID="simulator-chatbot"
+export MEDIATION_API_BASE_URL="https://api.<env>.example.com"
+export MEDIATION_API_KEY="<issued_api_key>"
+export APP_ID="<your_app_id>"
 ```
 
-最小客户端初始化示例（Node.js）：
+Node.js client baseline:
 
 ```js
 const mediationClient = {
-  baseUrl: process.env.MEDIATION_BASE_URL,
+  baseUrl: process.env.MEDIATION_API_BASE_URL,
+  apiKey: process.env.MEDIATION_API_KEY,
   appId: process.env.APP_ID,
   timeoutMs: 2500,
 }
 ```
 
-启动本地网关（一个终端保持运行）：
+## 3. Pull Runtime Config
 
 ```bash
-npm --prefix ./projects/ad-aggregation-platform run dev:gateway
+curl -sS "$MEDIATION_API_BASE_URL/api/v1/mediation/config?appId=$APP_ID&placementId=chat_inline_v1&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z" \
+  -H "Authorization: Bearer $MEDIATION_API_KEY"
 ```
 
-健康检查（新开终端）：
+成功标准：
+
+1. 返回 `200` 或 `304`。
+2. 可拿到 `etag`、`ttlSec` 或配置快照。
+
+## 4. Send Evaluate Request
 
 ```bash
-curl -sS "$MEDIATION_BASE_URL/api/health"
-```
-
-期望响应包含：`{"ok":true}`。
-
-## 3. Evaluate（首条请求）
-
-发送最小请求到 `/api/v1/sdk/evaluate`：
-
-```bash
-EVAL_RESP=$(curl -sS -X POST "$MEDIATION_BASE_URL/api/v1/sdk/evaluate" \
+EVAL_RESP=$(curl -sS -X POST "$MEDIATION_API_BASE_URL/api/v1/sdk/evaluate" \
+  -H "Authorization: Bearer $MEDIATION_API_KEY" \
   -H 'Content-Type: application/json' \
-  -d '{
-    "appId":"simulator-chatbot",
-    "sessionId":"qs_session_001",
-    "turnId":"qs_turn_001",
-    "query":"Recommend running shoes for rainy days",
-    "answerText":"Consider grip and waterproof materials.",
-    "intentScore":0.91,
-    "locale":"en-US"
-  }')
+  -d "{
+    \"appId\":\"$APP_ID\",
+    \"sessionId\":\"ext_session_001\",
+    \"turnId\":\"ext_turn_001\",
+    \"query\":\"Recommend running shoes for rainy days\",
+    \"answerText\":\"Focus on grip and waterproof materials.\",
+    \"intentScore\":0.91,
+    \"locale\":\"en-US\"
+  }")
 
 echo "$EVAL_RESP"
 ```
 
-提取 `requestId`：
+成功标准：
+
+1. `requestId` 非空。
+2. `decision.result` 在 `served|blocked|no_fill|error` 里。
+
+## 5. Report Events
 
 ```bash
 REQUEST_ID=$(echo "$EVAL_RESP" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const j=JSON.parse(s);process.stdout.write(j.requestId||"")})')
-echo "$REQUEST_ID"
-```
 
-成功条件：
-
-- `requestId` 非空
-- `decision.result` 属于 `blocked|served|no_fill|error`
-
-## 4. Events（事件回传）
-
-将同一次请求的 `requestId` 回传到 `/api/v1/sdk/events`：
-
-```bash
-curl -sS -X POST "$MEDIATION_BASE_URL/api/v1/sdk/events" \
+curl -sS -X POST "$MEDIATION_API_BASE_URL/api/v1/sdk/events" \
+  -H "Authorization: Bearer $MEDIATION_API_KEY" \
   -H 'Content-Type: application/json' \
   -d "{
     \"requestId\":\"$REQUEST_ID\",
-    \"appId\":\"simulator-chatbot\",
-    \"sessionId\":\"qs_session_001\",
-    \"turnId\":\"qs_turn_001\",
+    \"appId\":\"$APP_ID\",
+    \"sessionId\":\"ext_session_001\",
+    \"turnId\":\"ext_turn_001\",
     \"query\":\"Recommend running shoes for rainy days\",
-    \"answerText\":\"Consider grip and waterproof materials.\",
+    \"answerText\":\"Focus on grip and waterproof materials.\",
     \"intentScore\":0.91,
     \"locale\":\"en-US\"
   }"
 ```
 
-成功条件：响应包含 `{"ok":true}`。
+成功标准：响应包含 `{ "ok": true }`。
 
-## 5. Verify（链路验证）
+## 6. Verify and Signoff
 
-查询决策日志：
+验收必看字段：
 
-```bash
-curl -sS "$MEDIATION_BASE_URL/api/v1/dashboard/decisions?requestId=$REQUEST_ID"
-```
+1. `evaluate.requestId`
+2. `evaluate.decision.result`
+3. `evaluate.decision.reasonDetail`
+4. `events.ok`
 
-查询事件日志：
+建议把以上结果纳入你的接入验收报告（可直接贴 JSON 响应片段）。
 
-```bash
-curl -sS "$MEDIATION_BASE_URL/api/v1/dashboard/events?requestId=$REQUEST_ID"
-```
+## 7. External-Mode Self-check
 
-首条链路通过判定：
-
-- 决策日志中存在该 `requestId`
-- 事件日志中存在 `eventType = sdk_event`
-
-## 6. Smoke（文档验收命令）
-
-建议用最小 E2E 用例做一次自动校验：
-
-```bash
-node --test ./projects/ad-aggregation-platform/tests/e2e/minimal-closed-loop.spec.js
-```
-
-如果测试通过，说明 init/evaluate/events/archive 的最小闭环可运行。
-
-## 7. 常见自检
-
-- 健康检查失败：确认 `dev:gateway` 进程还在运行，端口是否被占用。
-- `requestId` 为空：检查 `appId/sessionId/turnId/query/answerText/intentScore/locale` 是否完整。
-- 看不到 `sdk_event`：确认 events 请求中的 `requestId` 与 evaluate 返回值一致。
+1. 不要调用任何 `/api/v1/dashboard/*` 内部接口。
+2. 不要依赖本地 `127.0.0.1` 网关路径。
+3. 失败重试只对网络/5xx，`blocked|no_fill` 不应当作传输失败重试。
+4. 广告调用失败时主回答必须继续（fail-open）。
