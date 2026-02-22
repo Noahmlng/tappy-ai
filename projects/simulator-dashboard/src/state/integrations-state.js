@@ -19,7 +19,6 @@ function defaultTemplates() {
       environment: 'staging',
       surface: 'CHAT_INLINE',
       enabled: true,
-      routingMode: 'managed_mediation',
       updatedAt: nowIso(),
     },
   ]
@@ -35,7 +34,6 @@ function normalizeTemplate(item) {
     environment: String(item.environment || item.env || 'staging'),
     surface: String(item.surface || 'CHAT_INLINE'),
     enabled: Boolean(item.enabled),
-    routingMode: 'managed_mediation',
     updatedAt: String(item.updatedAt || item.updated_at || nowIso()),
   }
 }
@@ -125,7 +123,6 @@ export async function hydrateIntegrations() {
 export async function savePlacementTemplate(draft) {
   const normalized = normalizeTemplate({
     ...draft,
-    routingMode: 'managed_mediation',
     updatedAt: nowIso(),
   })
   if (!normalized) return

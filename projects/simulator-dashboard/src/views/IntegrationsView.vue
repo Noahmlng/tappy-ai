@@ -86,7 +86,7 @@ onMounted(() => {
       <p class="eyebrow">Integration</p>
       <h2>Integrations</h2>
       <p class="subtitle">
-        Minimal placement template. Routing is fixed to `managed_mediation` in v1.
+        Minimal placement template only. Provider routing/config is platform-managed in v1.
       </p>
     </header>
 
@@ -152,7 +152,6 @@ onMounted(() => {
             <th>Environment</th>
             <th>Surface</th>
             <th>Status</th>
-            <th>Routing</th>
             <th>Updated At</th>
             <th>Actions</th>
           </tr>
@@ -167,7 +166,6 @@ onMounted(() => {
                 {{ row.enabled ? 'enabled' : 'disabled' }}
               </span>
             </td>
-            <td>{{ row.routingMode }}</td>
             <td>{{ formatDate(row.updatedAt) }}</td>
             <td>
               <div class="toolbar-actions">
@@ -181,7 +179,7 @@ onMounted(() => {
             </td>
           </tr>
           <tr v-if="rows.length === 0">
-            <td colspan="7" class="muted">No placement templates found.</td>
+            <td colspan="6" class="muted">No placement templates found.</td>
           </tr>
         </tbody>
       </table>
