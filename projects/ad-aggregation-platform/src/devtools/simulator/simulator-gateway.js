@@ -1583,7 +1583,10 @@ function recordRuntimeNetworkStats(decisionResult, runtimeDebug, meta = {}) {
   const hasSnapshotFallback = Object.values(snapshotUsage).some(Boolean)
   const healthSummary = summarizeNetworkHealthMap(networkHealth)
   const hasNetworkError = networkErrors.length > 0
-  const isDegraded = hasNetworkError || hasSnapshotFallback || healthSummary.degraded > 0 || healthSummary.open > 0
+  const runtimeError = meta.runtimeError === true
+  const failOpenApplied = meta.failOpenApplied === true || runtimeError
+  const isDegraded =
+    runtimeError || hasNetworkError || hasSnapshotFallback || healthSummary.degraded > 0 || healthSummary.open > 0
 
   if (isDegraded) {
     stats.degradedRuntimeEvaluations += 1
@@ -1601,7 +1604,7 @@ function recordRuntimeNetworkStats(decisionResult, runtimeDebug, meta = {}) {
     stats.noFillWithNetworkErrors += 1
   }
 
-  if (decisionResult === 'error') {
+  if (decisionResult === 'error' || runtimeError) {
     stats.runtimeErrors += 1
   }
 
@@ -1613,6 +1616,8 @@ function recordRuntimeNetworkStats(decisionResult, runtimeDebug, meta = {}) {
     requestId: meta.requestId || '',
     placementId: meta.placementId || '',
     decisionResult: decisionResult || '',
+    runtimeError,
+    failOpenApplied,
     networkErrors,
     snapshotUsage,
     networkHealthSummary: healthSummary,
@@ -2184,10 +2189,13 @@ async function evaluateRequest(payload) {
   try {
     runtimeResult = await runAdsRetrievalPipeline(runtimeAdRequest)
   } catch (error) {
-    const decision = createDecision('error', 'runtime_pipeline_error', intentScore)
+    const errorMessage = error instanceof Error ? error.message : 'Runtime pipeline failed'
+    const decision = createDecision('no_fill', 'runtime_pipeline_fail_open', intentScore)
     recordRuntimeNetworkStats(decision.result, null, {
       requestId,
       placementId: placement.placementId,
+      runtimeError: true,
+      failOpenApplied: true,
     })
     recordBlockedOrNoFill(placement)
     recordDecisionForRequest({
@@ -2196,7 +2204,9 @@ async function evaluateRequest(payload) {
       requestId,
       decision,
       runtime: {
-        message: error instanceof Error ? error.message : 'Runtime pipeline failed',
+        failOpenApplied: true,
+        failureMode: 'runtime_pipeline_exception',
+        message: errorMessage,
       },
       ads: [],
     })
