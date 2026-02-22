@@ -8,6 +8,7 @@ import {
   domainToBrandName,
   readJsonl,
   writeJson,
+  writeJsonl,
   timestampTag,
   registrableDomain,
 } from './lib/common.js'
@@ -438,6 +439,57 @@ async function main() {
       sample_non_brand: row.sample_non_brand.join(' | '),
     }))
 
+  const identifiedByBrandId = new Map(identifiedRows.map((row) => [row.brand_id, row]))
+  const approvedBrands = brands
+    .filter((brand) => identifiedByBrandId.get(brand.brand_id)?.entity_decision === 'brand_ad_eligible')
+    .map((brand) => {
+      const identified = identifiedByBrandId.get(brand.brand_id)
+      return {
+        ...brand,
+        brand_name: identified?.cleaned_brand_name || brand.brand_name,
+        status: 'active',
+        evidence: {
+          ...(brand.evidence || {}),
+          cleaning: {
+            entity_decision: identified?.entity_decision || '',
+            final_score: identified?.final_score || 0,
+            domain_entity_type: identified?.domain_entity_type || '',
+            reasons: identified?.reasons || '',
+          },
+        },
+      }
+    })
+
+  const approvedBrandRows = approvedBrands.map((brand) => {
+    const identified = identifiedByBrandId.get(brand.brand_id)
+    return {
+      brand_id: brand.brand_id,
+      brand_name: brand.brand_name,
+      official_domain: brand.official_domain,
+      vertical_l1: brand.vertical_l1,
+      vertical_l2: brand.vertical_l2,
+      final_score: identified?.final_score || 0,
+      domain_entity_type: identified?.domain_entity_type || '',
+      reasons: identified?.reasons || '',
+    }
+  })
+
+  const avgEligibleTarget = Math.max(
+    30,
+    Math.round(categoryRows.reduce((sum, row) => sum + row.ad_eligible_brands, 0) / Math.max(1, categoryRows.length)),
+  )
+  const categoryGapRows = categoryRows
+    .map((row) => ({
+      vertical_l1: row.vertical_l1,
+      vertical_l2: row.vertical_l2,
+      ad_eligible_brands: row.ad_eligible_brands,
+      target_brands: avgEligibleTarget,
+      brands_to_fill: Math.max(0, avgEligibleTarget - row.ad_eligible_brands),
+      non_brand_entities: row.non_brand_entities,
+      ad_eligible_ratio: row.ad_eligible_ratio,
+    }))
+    .sort((a, b) => b.brands_to_fill - a.brands_to_fill || a.vertical_l1.localeCompare(b.vertical_l1))
+
   const summary = {
     generated_at: new Date().toISOString(),
     total_records: identifiedRows.length,
@@ -454,29 +506,45 @@ async function main() {
       'generic-bucket': identifiedRows.filter((row) => row.domain_entity_type === 'generic-bucket').length,
     },
     categories: categoryRows.length,
+    category_fill_target_per_vertical: avgEligibleTarget,
+    pruned_out_brands: identifiedRows.length - approvedBrands.length,
     output_files: {
       identified_brand_list_csv: `data/house-ads/reports/house-ads-brand-identified-list-${tag}.csv`,
       category_report_csv: `data/house-ads/reports/house-ads-brand-category-report-${tag}.csv`,
       summary_json: `data/house-ads/reports/house-ads-brand-category-summary-${tag}.json`,
+      approved_brand_list_csv: `data/house-ads/reports/house-ads-approved-brand-list-${tag}.csv`,
+      category_gap_report_csv: `data/house-ads/reports/house-ads-category-gap-report-${tag}.csv`,
       latest_identified_brand_list_csv: 'data/house-ads/reports/house-ads-brand-identified-list-latest.csv',
       latest_category_report_csv: 'data/house-ads/reports/house-ads-brand-category-report-latest.csv',
       latest_summary_json: 'data/house-ads/reports/house-ads-brand-category-summary-latest.json',
+      latest_approved_brand_list_csv: 'data/house-ads/reports/house-ads-approved-brand-list-latest.csv',
+      latest_category_gap_report_csv: 'data/house-ads/reports/house-ads-category-gap-report-latest.csv',
+      curated_approved_brands_jsonl: 'data/house-ads/curated/brands.jsonl',
     },
   }
 
   const identifiedPath = path.join(REPORT_ROOT, `house-ads-brand-identified-list-${tag}.csv`)
   const categoryPath = path.join(REPORT_ROOT, `house-ads-brand-category-report-${tag}.csv`)
   const summaryPath = path.join(REPORT_ROOT, `house-ads-brand-category-summary-${tag}.json`)
+  const approvedPath = path.join(REPORT_ROOT, `house-ads-approved-brand-list-${tag}.csv`)
+  const gapPath = path.join(REPORT_ROOT, `house-ads-category-gap-report-${tag}.csv`)
   const latestIdentifiedPath = path.join(REPORT_ROOT, 'house-ads-brand-identified-list-latest.csv')
   const latestCategoryPath = path.join(REPORT_ROOT, 'house-ads-brand-category-report-latest.csv')
   const latestSummaryPath = path.join(REPORT_ROOT, 'house-ads-brand-category-summary-latest.json')
+  const latestApprovedPath = path.join(REPORT_ROOT, 'house-ads-approved-brand-list-latest.csv')
+  const latestGapPath = path.join(REPORT_ROOT, 'house-ads-category-gap-report-latest.csv')
 
   await writeCsv(identifiedPath, identifiedRows)
   await writeCsv(categoryPath, categoryRows)
+  await writeCsv(approvedPath, approvedBrandRows)
+  await writeCsv(gapPath, categoryGapRows)
   await writeJson(summaryPath, summary)
+  await writeJsonl(BRANDS_FILE, approvedBrands)
 
   await fs.copyFile(identifiedPath, latestIdentifiedPath)
   await fs.copyFile(categoryPath, latestCategoryPath)
+  await fs.copyFile(approvedPath, latestApprovedPath)
+  await fs.copyFile(gapPath, latestGapPath)
   await fs.copyFile(summaryPath, latestSummaryPath)
 
   console.log(JSON.stringify(summary, null, 2))
