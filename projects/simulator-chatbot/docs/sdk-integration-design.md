@@ -1,12 +1,12 @@
-# Chatbot Simulator SDK Integration Design
+# Chatbot Simulator Ads Platform Client Integration Design
 
 - Version: v0.1 (Draft)
 - Last Updated: 2026-02-17
-- Scope: `projects/simulator-chatbot` 如何接入广告 SDK 与 Dashboard 配置体系
+- Scope: `projects/simulator-chatbot` 如何接入广告平台官方 SDK client 与 Dashboard 配置体系
 
 ## 1. 目标
 
-1. Simulator 在不破坏主对话体验的前提下接入广告 SDK。
+1. Simulator 在不破坏主对话体验的前提下接入广告平台官方 SDK client。
 2. 接入方可在 Dashboard 修改 placement/trigger 参数并在 Simulator 生效。
 3. 每次广告触发都可追踪到 requestId 与 decision reason。
 
@@ -23,7 +23,7 @@
 
 ```mermaid
 flowchart LR
-  A["Chatbot Simulator (Vue)"] --> B["Ads SDK Adapter"]
+  A["Chatbot Simulator (Vue)"] --> B["Ads Platform Client Wrapper"]
   B --> C["Simulator Gateway API"]
   C --> D["ad-aggregation-platform runtime"]
   C --> E["Placement Config Store"]
@@ -64,13 +64,14 @@ flowchart LR
 
 建议新增以下文件，不直接把 SDK 逻辑塞进 `ChatView.vue`：
 
-1. `src/sdk/ads-sdk-adapter.js`
-- 封装 `evaluatePlacement`、`queryAds`、`reportEvent`。
+1. `src/api/adsPlatformClient.js`
+- Simulator 侧 wrapper，仅调用官方 shared client：`ad-aggregation-platform/src/sdk/client.js`。
+- 对外暴露 `runAttachPlacementFlow`、`runNextStepIntentCardPlacementFlow`、`reportAdsEvent`。
 
-2. `src/sdk/intent-scoring.js`
+2. `src/sdk/intent-scoring.js`（可选）
 - 生成 `intentScore`（MVP 可先启发式 + 关键词）。
 
-3. `src/sdk/ads-decision-store.js`
+3. `src/sdk/ads-decision-store.js`（可选）
 - 存储当前会话广告决策与请求结果（便于 UI 和 trace）。
 
 4. `src/components/SponsoredBlock.vue`
@@ -120,7 +121,7 @@ interface AssistantMessage {
 sequenceDiagram
   participant U as User
   participant C as ChatView
-  participant S as Ads Adapter
+  participant S as Ads Platform Client Wrapper
   participant G as Gateway API
   participant R as Ads Runtime
 
@@ -139,7 +140,7 @@ sequenceDiagram
 
 ## 8.1 读取配置
 
-1. `GET /api/v1/sdk/config?appId=...`
+1. `GET /api/v1/mediation/config?appId=...`
 - 返回 placements 与 trigger 参数（来自 dashboard 配置）。
 
 ## 8.2 评估并拉广告
@@ -199,7 +200,7 @@ sequenceDiagram
 
 ## 8.4 MVP Frozen Contract (Attach Only)
 
-For the current production-connect phase, freeze the SDK contract to:
+For the current production-connect phase, freeze the official client contract to:
 
 1. `placement = attach.post_answer_render` (server-side fixed)
 2. `event = answer_completed` (server-side fixed)
@@ -259,7 +260,7 @@ Dashboard 的核心职责：
 
 ## 11. 容错与降级
 
-1. SDK/Gateway 超时：跳过广告渲染，主回答正常完成。
+1. Ads Platform Client/Gateway 超时：跳过广告渲染，主回答正常完成。
 2. 参数异常：使用本地安全默认值（如 intentThreshold=0.8）。
 3. no-fill：记录 `reason=no_offer`，不展示广告。
 4. click 上报失败：不影响跳转，异步重试。
@@ -268,7 +269,7 @@ Dashboard 的核心职责：
 
 ## Phase 1（1-2 天）
 
-1. 在 Simulator 中接入 `ads-sdk-adapter`（mock 返回）。
+1. 在 Simulator 中接入 `adsPlatformClient`（先走 mock 返回）。
 2. 完成 attach 与 next-step 的 UI 插槽。
 3. 将广告事件写入 turn trace。
 
@@ -294,7 +295,7 @@ Dashboard 的核心职责：
 1. `answer_completed` 到 assistant 消息 `status=done` 的主链路不等待广告结果。
 
 验收方式：
-1. 在 SDK 正常、慢响应、超时三种场景各抽样 30 轮。
+1. 在官方 client 正常、慢响应、超时三种场景各抽样 30 轮。
 2. 对比“接入前基线”和“接入后”主回答完成时延（P50/P95）。
 
 通过标准：
@@ -305,7 +306,7 @@ Dashboard 的核心职责：
 ## 13.2 Gate B: 广告失败不影响聊天（Fail-open）
 
 目标：
-1. 当 `sdk/config`、`sdk/evaluate`、`sdk/events` 任一失败时，会话仍可继续。
+1. 当 `mediation/config`、`sdk/evaluate`、`sdk/events` 任一失败时，会话仍可继续。
 
 验收方式：
 1. 人为制造 Gateway 超时/5xx/网络中断。
@@ -339,7 +340,7 @@ Dashboard 的核心职责：
 
 ## 14. 当前建议的“先做清单”
 
-1. 先完成 Phase 1（前端 adapter + UI 插槽 + trace）。
+1. 先完成 Phase 1（前端 adsPlatformClient wrapper + UI 插槽 + trace）。
 2. 立即定义 Gateway `evaluate` 和 `events` 协议（即使先 mock）。
 3. 用你已有的 Dashboard 原型先消费 decision logs mock，验证运营流程。
 
@@ -354,7 +355,7 @@ Dashboard 的核心职责：
 
 统一做法：
 
-1. 配置由 Gateway 下发（`GET /api/v1/sdk/config`）。
+1. 配置由 Gateway 下发（`GET /api/v1/mediation/config`）。
 2. 前端只负责执行与渲染，不做策略常量固化。
 3. 地址通过环境变量注入（`VITE_SIMULATOR_API_BASE_URL` / `SIMULATOR_API_PROXY_TARGET`）。
 
