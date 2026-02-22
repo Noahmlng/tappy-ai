@@ -99,7 +99,7 @@ function normalizePriceBand(job) {
 function targetProductCount(job, existingProductCount, options) {
   const stage = (Array.isArray(job.stages) ? job.stages : []).find((item) => item?.stage === 'synthesize_offer_fallback')
   const stageMin = toInteger(stage?.min_product_offers, 0)
-  const desired = Math.max(1, stageMin || options.minProductOffers)
+  const desired = Math.max(1, options.minProductOffers, stageMin)
 
   if (options.fillMode === 'all') return desired
   if (options.fillMode === 'topup') return Math.max(0, desired - existingProductCount)
@@ -274,10 +274,18 @@ async function main() {
   const minProductOffers = toInteger(args['min-product-offers'], 6)
   const fillModeRaw = cleanText(args['fill-mode'] || 'missing').toLowerCase()
   const fillMode = ['missing', 'topup', 'all'].includes(fillModeRaw) ? fillModeRaw : 'missing'
+  const categoryAllowlist = cleanText(args['category-allowlist'])
+    .split(',')
+    .map((item) => cleanText(item))
+    .filter(Boolean)
 
   const jobs = await loadJobs(args)
   const realOffers = await loadRealOffers(args)
-  const scopedJobs = maxBrands > 0 ? jobs.slice(0, Math.max(1, maxBrands)) : jobs
+  const allowlistSet = new Set(categoryAllowlist.map((item) => item.toLowerCase()))
+  const filteredJobs = allowlistSet.size === 0
+    ? jobs
+    : jobs.filter((job) => allowlistSet.has(`${cleanText(job.vertical_l1)}::${cleanText(job.vertical_l2)}`.toLowerCase()))
+  const scopedJobs = maxBrands > 0 ? filteredJobs.slice(0, Math.max(1, maxBrands)) : filteredJobs
 
   const realProductCountByBrand = new Map()
   for (const offer of realOffers) {
@@ -307,8 +315,9 @@ async function main() {
     }
 
     const priceBand = normalizePriceBand(job)
+    const startIndex = fillMode === 'topup' ? Math.max(0, existingProduct) : 0
     for (let i = 0; i < targetCount; i += 1) {
-      const offer = buildSyntheticOffer(job, i, priceBand)
+      const offer = buildSyntheticOffer(job, startIndex + i, priceBand)
       const errors = validateProductOffer(offer)
       if (errors.length > 0) {
         rejected.push({
@@ -341,6 +350,7 @@ async function main() {
     generatedAt: new Date().toISOString(),
     fillMode,
     minProductOffers,
+    categoryAllowlist,
     inputJobs: scopedJobs.length,
     realOffers: realOffers.length,
     brandsWithRealProductOffers: realProductCountByBrand.size,

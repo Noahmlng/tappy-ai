@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-02-22T11:05:21.473Z",
+  "generated_at": "2026-02-22T11:18:44.698Z",
   "input_file": "data/house-ads/offers/curated/offers-merged.jsonl",
   "brands_file": "data/house-ads/curated/brands.jsonl",
   "thresholds": {
@@ -7,29 +7,27 @@
     "min_confidence_synthetic": 0.6
   },
   "counts": {
-    "input_offers": 19098,
-    "deduped_offers": 19098,
-    "accepted_offers": 19092,
-    "rejected_offers": 6,
+    "input_offers": 20194,
+    "deduped_offers": 20194,
+    "accepted_offers": 20194,
+    "rejected_offers": 0,
     "duplicate_rejected": 0
   },
   "accepted_by_type": {
     "link": 174,
-    "product": 18918
+    "product": 20020
   },
   "accepted_by_source": {
     "real": 174,
     "partner": 0,
-    "synthetic": 18918
+    "synthetic": 20020
   },
   "accepted_unique_brands": 3153,
-  "rejected_reason_distribution": {
-    "contains_risky_term": 6
-  },
+  "rejected_reason_distribution": {},
   "output_files": {
     "accepted_offers_jsonl": "data/house-ads/offers/curated/offers.jsonl",
-    "rejected_csv": "data/house-ads/offers/reports/offers-rejected-20260222-110521.csv",
-    "summary_json": "data/house-ads/offers/reports/offers-quality-summary-20260222-110521.json",
+    "rejected_csv": "data/house-ads/offers/reports/offers-rejected-20260222-111844.csv",
+    "summary_json": "data/house-ads/offers/reports/offers-quality-summary-20260222-111844.json",
     "latest_rejected_csv": "data/house-ads/offers/reports/offers-rejected-latest.csv",
     "latest_summary_json": "data/house-ads/offers/reports/offers-quality-summary-latest.json"
   }

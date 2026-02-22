@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-02-22T11:06:54.402Z",
+  "generatedAt": "2026-02-22T11:18:45.144Z",
   "inputFile": "data/house-ads/offers/curated/offers.jsonl",
-  "inputOffers": 19092,
-  "activeOffers": 19092,
+  "inputOffers": 20194,
+  "activeOffers": 20194,
   "output": {
     "link_offers": "data/house-ads/offers/curated/link-offers.jsonl",
     "product_offers": "data/house-ads/offers/curated/product-offers.jsonl"
   },
   "counts": {
     "link_offers": 174,
-    "product_offers": 18918,
+    "product_offers": 20020,
     "dropped": 0
   },
   "dropped_sample": []
