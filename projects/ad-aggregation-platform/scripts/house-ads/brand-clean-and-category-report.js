@@ -65,6 +65,42 @@ const SHORTLINK_DOMAINS = new Set([
   'goo.gl',
 ])
 
+const PUBLISHER_DOMAINS = new Set([
+  'bbc.com',
+  'cnn.com',
+  'nytimes.com',
+  'washingtonpost.com',
+  'reuters.com',
+  'forbes.com',
+  'theguardian.com',
+  'wsj.com',
+  'bloomberg.com',
+  'cnbc.com',
+  'huffpost.com',
+  'techcrunch.com',
+  'wired.com',
+  'apnews.com',
+  'latimes.com',
+  'npr.org',
+  'usatoday.com',
+  'foxnews.com',
+  'aljazeera.com',
+  'digitalspy.com',
+  'msn.com',
+])
+
+const PUBLISHER_ROOT_HINTS = [
+  'news',
+  'media',
+  'times',
+  'post',
+  'journal',
+  'press',
+  'tribune',
+  'herald',
+  'daily',
+]
+
 const HOSTING_HINTS = [
   'cloudfront',
   'googleusercontent',
@@ -164,26 +200,32 @@ function getDomainMeta(domain) {
 function classifyDomain(meta) {
   const host = meta.host.toLowerCase()
   const root = meta.root.toLowerCase()
-  if (!host) return { domain_class: 'invalid_domain', domain_score: 0, reasons: ['missing_domain'] }
+  if (!host) return { domain_entity_type: 'generic-bucket', domain_score: 0, reasons: ['missing_domain'] }
   if (SHORTLINK_DOMAINS.has(host)) {
-    return { domain_class: 'shortlink_redirect', domain_score: 0.25, reasons: ['known_shortlink_domain'] }
-  }
-  if (GENERIC_DOMAINS.has(host)) {
-    return { domain_class: 'generic_domain_bucket', domain_score: 0.2, reasons: ['generic_bucket_domain'] }
+    return { domain_entity_type: 'shortlink', domain_score: 0.25, reasons: ['known_shortlink_domain'] }
   }
   if (INSTITUTIONAL_TLDS.has(meta.tld)) {
-    return { domain_class: 'institutional_domain', domain_score: 0.5, reasons: ['institutional_tld'] }
+    return { domain_entity_type: 'institution', domain_score: 0.5, reasons: ['institutional_tld'] }
   }
   if (HOSTING_HINTS.some((hint) => host.includes(hint))) {
-    return { domain_class: 'hosting_or_infra_domain', domain_score: 0.3, reasons: ['hosting_or_infra_hint'] }
+    return { domain_entity_type: 'infra-hosting', domain_score: 0.3, reasons: ['hosting_or_infra_hint'] }
+  }
+  if (GENERIC_DOMAINS.has(host)) {
+    return { domain_entity_type: 'generic-bucket', domain_score: 0.2, reasons: ['generic_bucket_domain'] }
   }
   if (GENERIC_ROOTS.has(root)) {
-    return { domain_class: 'generic_domain_root', domain_score: 0.35, reasons: ['generic_domain_root'] }
+    return { domain_entity_type: 'generic-bucket', domain_score: 0.35, reasons: ['generic_domain_root'] }
   }
   if (root.length <= 1) {
-    return { domain_class: 'weak_domain_root', domain_score: 0.32, reasons: ['domain_root_too_short'] }
+    return { domain_entity_type: 'generic-bucket', domain_score: 0.32, reasons: ['domain_root_too_short'] }
   }
-  return { domain_class: 'commercial_domain', domain_score: 0.82, reasons: [] }
+  if (
+    PUBLISHER_DOMAINS.has(host)
+    || PUBLISHER_ROOT_HINTS.some((hint) => root.includes(hint))
+  ) {
+    return { domain_entity_type: 'publisher', domain_score: 0.62, reasons: ['publisher_domain_pattern'] }
+  }
+  return { domain_entity_type: 'commercial', domain_score: 0.82, reasons: [] }
 }
 
 function scoreName(name, domainRoot) {
@@ -251,6 +293,10 @@ function chooseEntity(brand) {
   const cleanedName = useOriginal ? name.normalized_name : meta.brandCandidate
   const finalScore = Number((name.name_score * 0.3 + domain.domain_score * 0.5 + Number(brand.source_confidence || 0) * 0.2).toFixed(4))
   const queryContaminatedName = name.reasons.includes('non_brand_hint') && name.name_score <= 0.2
+  const hardGate =
+    domain.domain_entity_type === 'institution'
+    || domain.domain_entity_type === 'shortlink'
+    || domain.domain_entity_type === 'infra-hosting'
 
   let entityDecision = 'brand_ad_eligible'
   const reasons = [...new Set([...name.reasons, ...domain.reasons])]
@@ -258,23 +304,21 @@ function chooseEntity(brand) {
   if (!cleanedName) {
     entityDecision = 'non_brand_entity'
     reasons.push('empty_cleaned_name')
+  } else if (hardGate) {
+    entityDecision = 'non_brand_entity'
+    reasons.push('domain_hard_gate_blocked')
   } else if (queryContaminatedName) {
     entityDecision = 'non_brand_entity'
     reasons.push('query_title_not_brand')
-  } else if (domain.domain_class === 'commercial_domain' && finalScore >= 0.6) {
+  } else if (domain.domain_entity_type === 'commercial' && finalScore >= 0.6) {
     entityDecision = 'brand_ad_eligible'
-  } else if (domain.domain_class === 'institutional_domain') {
-    entityDecision = 'non_brand_entity'
-    reasons.push('institutional_not_ad_brand')
-  } else if (domain.domain_class === 'shortlink_redirect' || domain.domain_class === 'hosting_or_infra_domain') {
-    entityDecision = 'non_brand_entity'
-    reasons.push('infra_or_redirect_not_brand')
-  } else if (domain.domain_class === 'generic_domain_bucket' || domain.domain_class === 'generic_domain_root') {
+  } else if (domain.domain_entity_type === 'publisher' && finalScore >= 0.55) {
+    entityDecision = 'brand_ad_eligible'
+  } else if (domain.domain_entity_type === 'generic-bucket') {
     entityDecision = 'non_brand_entity'
     reasons.push('generic_domain_not_brand')
-  } else if (domain.domain_class === 'weak_domain_root') {
+  } else if (domain.domain_entity_type === 'commercial' && finalScore >= 0.45) {
     entityDecision = 'brand_suspect'
-    reasons.push('weak_domain_root')
   } else if (finalScore < 0.45) {
     entityDecision = 'non_brand_entity'
     reasons.push('low_final_score')
@@ -285,7 +329,8 @@ function chooseEntity(brand) {
   return {
     cleaned_brand_name: cleanedName,
     selected_source: useOriginal ? 'original_name' : 'domain_candidate',
-    domain_class: domain.domain_class,
+    domain_entity_type: domain.domain_entity_type,
+    domain_hard_gate: hardGate,
     name_score: name.name_score,
     domain_score: domain.domain_score,
     final_score: finalScore,
@@ -327,7 +372,8 @@ async function main() {
       original_brand_name: brand.brand_name,
       cleaned_brand_name: picked.cleaned_brand_name,
       selected_source: picked.selected_source,
-      domain_class: picked.domain_class,
+      domain_entity_type: picked.domain_entity_type,
+      domain_hard_gate: picked.domain_hard_gate,
       entity_decision: picked.entity_decision,
       final_score: picked.final_score,
       name_score: picked.name_score,
@@ -347,12 +393,25 @@ async function main() {
         ad_eligible_brands: 0,
         suspect_brands: 0,
         non_brand_entities: 0,
+        domain_type_commercial: 0,
+        domain_type_publisher: 0,
+        domain_type_institution: 0,
+        domain_type_infra_hosting: 0,
+        domain_type_shortlink: 0,
+        domain_type_generic_bucket: 0,
         sample_ad_eligible: [],
         sample_non_brand: [],
       })
     }
     const bucket = categoryMap.get(key)
     bucket.total_records += 1
+    if (row.domain_entity_type === 'commercial') bucket.domain_type_commercial += 1
+    else if (row.domain_entity_type === 'publisher') bucket.domain_type_publisher += 1
+    else if (row.domain_entity_type === 'institution') bucket.domain_type_institution += 1
+    else if (row.domain_entity_type === 'infra-hosting') bucket.domain_type_infra_hosting += 1
+    else if (row.domain_entity_type === 'shortlink') bucket.domain_type_shortlink += 1
+    else if (row.domain_entity_type === 'generic-bucket') bucket.domain_type_generic_bucket += 1
+
     if (row.entity_decision === 'brand_ad_eligible') {
       bucket.ad_eligible_brands += 1
       if (bucket.sample_ad_eligible.length < 10) bucket.sample_ad_eligible.push(row.cleaned_brand_name)
@@ -385,6 +444,15 @@ async function main() {
     ad_eligible_brands: identifiedRows.filter((row) => row.entity_decision === 'brand_ad_eligible').length,
     suspect_brands: identifiedRows.filter((row) => row.entity_decision === 'brand_suspect').length,
     non_brand_entities: identifiedRows.filter((row) => row.entity_decision === 'non_brand_entity').length,
+    hard_gate_blocked_count: identifiedRows.filter((row) => row.domain_hard_gate).length,
+    domain_entity_type_distribution: {
+      commercial: identifiedRows.filter((row) => row.domain_entity_type === 'commercial').length,
+      publisher: identifiedRows.filter((row) => row.domain_entity_type === 'publisher').length,
+      institution: identifiedRows.filter((row) => row.domain_entity_type === 'institution').length,
+      'infra-hosting': identifiedRows.filter((row) => row.domain_entity_type === 'infra-hosting').length,
+      shortlink: identifiedRows.filter((row) => row.domain_entity_type === 'shortlink').length,
+      'generic-bucket': identifiedRows.filter((row) => row.domain_entity_type === 'generic-bucket').length,
+    },
     categories: categoryRows.length,
     output_files: {
       identified_brand_list_csv: `data/house-ads/reports/house-ads-brand-identified-list-${tag}.csv`,
