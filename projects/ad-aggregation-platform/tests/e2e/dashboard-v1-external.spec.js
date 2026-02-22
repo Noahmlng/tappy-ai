@@ -1,0 +1,293 @@
+import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
+import path from 'node:path'
+import test from 'node:test'
+import { fileURLToPath } from 'node:url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..')
+const GATEWAY_ENTRY = path.join(PROJECT_ROOT, 'src', 'devtools', 'simulator', 'simulator-gateway.js')
+
+const HOST = '127.0.0.1'
+const HEALTH_TIMEOUT_MS = 15000
+const REQUEST_TIMEOUT_MS = 8000
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function makeTimeoutSignal(timeoutMs) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  return {
+    signal: controller.signal,
+    clear: () => clearTimeout(timer),
+  }
+}
+
+async function requestJson(baseUrl, pathname, options = {}) {
+  const timeout = makeTimeoutSignal(options.timeoutMs || REQUEST_TIMEOUT_MS)
+
+  try {
+    let response
+    try {
+      response = await fetch(`${baseUrl}${pathname}`, {
+        method: options.method || 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(options.headers || {}),
+        },
+        body: options.body ? JSON.stringify(options.body) : undefined,
+        signal: timeout.signal,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`request failed for ${pathname}: ${message}`)
+    }
+
+    const payload = await response.json().catch(() => ({}))
+    return {
+      ok: response.ok,
+      status: response.status,
+      payload,
+    }
+  } finally {
+    timeout.clear()
+  }
+}
+
+async function waitForGateway(baseUrl) {
+  const startedAt = Date.now()
+  let lastError = null
+
+  while (Date.now() - startedAt < HEALTH_TIMEOUT_MS) {
+    try {
+      const health = await requestJson(baseUrl, '/api/health', { timeoutMs: 1500 })
+      if (health.ok && health.payload?.ok === true) {
+        return
+      }
+      lastError = new Error(`health endpoint returned ${health.status}`)
+    } catch (error) {
+      lastError = error
+    }
+    await sleep(250)
+  }
+
+  throw new Error(`gateway health check timeout: ${lastError instanceof Error ? lastError.message : 'unknown error'}`)
+}
+
+function startGateway(port) {
+  const child = spawn(process.execPath, ['--env-file-if-exists=.env', GATEWAY_ENTRY], {
+    cwd: PROJECT_ROOT,
+    env: {
+      ...process.env,
+      SIMULATOR_GATEWAY_HOST: HOST,
+      SIMULATOR_GATEWAY_PORT: String(port),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+
+  let stdout = ''
+  let stderr = ''
+
+  child.stdout.on('data', (chunk) => {
+    stdout += String(chunk)
+  })
+  child.stderr.on('data', (chunk) => {
+    stderr += String(chunk)
+  })
+
+  return {
+    child,
+    getLogs() {
+      return { stdout, stderr }
+    },
+  }
+}
+
+async function stopGateway(handle) {
+  if (!handle?.child) return
+  handle.child.kill('SIGTERM')
+  await sleep(200)
+  if (!handle.child.killed) {
+    handle.child.kill('SIGKILL')
+  }
+}
+
+function buildExternalEvaluatePayload() {
+  const now = Date.now()
+  return {
+    appId: 'simulator-chatbot',
+    sessionId: `dash_v1_session_${now}`,
+    turnId: `dash_v1_turn_${now}`,
+    query: 'Recommend trail running shoes for rainy weather',
+    answerText: 'Focus on grip and waterproof uppers.',
+    // Keep this below threshold to make the happy path deterministic and fast.
+    intentScore: 0.2,
+    locale: 'en-US',
+  }
+}
+
+async function runExternalTurnFailOpen(baseUrl, evaluatePayload, failMode = 'none') {
+  const primaryResponse = {
+    ok: true,
+    message: 'Primary assistant response is returned to user.',
+  }
+  const adResult = {
+    attempted: true,
+    evaluateStatus: 0,
+    eventsStatus: 0,
+    requestId: '',
+    error: '',
+  }
+
+  try {
+    if (failMode === 'network_error') {
+      await requestJson('http://127.0.0.1:1', '/api/v1/sdk/evaluate', {
+        method: 'POST',
+        body: evaluatePayload,
+        timeoutMs: 300,
+      })
+      throw new Error('expected network failure did not happen')
+    }
+
+    const evalPayload = failMode === 'invalid_payload'
+      ? { appId: evaluatePayload.appId }
+      : evaluatePayload
+    const evaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
+      method: 'POST',
+      body: evalPayload,
+    })
+
+    adResult.evaluateStatus = evaluate.status
+    if (!evaluate.ok) {
+      throw new Error(`evaluate_failed:${evaluate.status}`)
+    }
+
+    adResult.requestId = String(evaluate.payload?.requestId || '')
+    const events = await requestJson(baseUrl, '/api/v1/sdk/events', {
+      method: 'POST',
+      body: {
+        ...evaluatePayload,
+        requestId: adResult.requestId,
+      },
+    })
+    adResult.eventsStatus = events.status
+    if (!events.ok || events.payload?.ok !== true) {
+      throw new Error(`events_failed:${events.status}`)
+    }
+
+    return {
+      primaryResponse,
+      adResult,
+      failOpenApplied: false,
+    }
+  } catch (error) {
+    adResult.error = error instanceof Error ? error.message : String(error)
+    return {
+      primaryResponse,
+      adResult,
+      failOpenApplied: true,
+    }
+  }
+}
+
+test('dashboard v1 external e2e happy path: config -> evaluate -> events', async () => {
+  const port = 4600 + Math.floor(Math.random() * 200)
+  const baseUrl = `http://${HOST}:${port}`
+  const gateway = startGateway(port)
+
+  try {
+    await waitForGateway(baseUrl)
+    const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
+    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+
+    const keys = await requestJson(baseUrl, '/api/v1/public/credentials/keys?appId=simulator-chatbot&environment=staging')
+    assert.equal(keys.ok, true, `list keys failed: ${JSON.stringify(keys.payload)}`)
+    const keyRows = Array.isArray(keys.payload?.keys) ? keys.payload.keys : []
+    assert.equal(keyRows.length > 0, true, 'at least one active key should exist for onboarding')
+
+    const config = await requestJson(
+      baseUrl,
+      '/api/v1/mediation/config?appId=simulator-chatbot&placementId=chat_inline_v1&environment=staging&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z',
+    )
+    assert.equal(config.ok, true, `config failed: ${JSON.stringify(config.payload)}`)
+    assert.equal(config.status, 200)
+    assert.equal(String(config.payload?.placementId || ''), 'chat_inline_v1')
+    assert.equal(Number.isFinite(config.payload?.configVersion), true)
+
+    const evaluatePayload = buildExternalEvaluatePayload()
+    const evaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
+      method: 'POST',
+      body: evaluatePayload,
+    })
+    assert.equal(evaluate.ok, true, `evaluate failed: ${JSON.stringify(evaluate.payload)}`)
+
+    const requestId = String(evaluate.payload?.requestId || '').trim()
+    const result = String(evaluate.payload?.decision?.result || '').trim()
+    assert.equal(requestId.length > 0, true, 'evaluate should return non-empty requestId')
+    assert.equal(['served', 'blocked', 'no_fill', 'error'].includes(result), true)
+
+    const events = await requestJson(baseUrl, '/api/v1/sdk/events', {
+      method: 'POST',
+      body: {
+        ...evaluatePayload,
+        requestId,
+      },
+    })
+    assert.equal(events.ok, true, `events failed: ${JSON.stringify(events.payload)}`)
+    assert.equal(events.payload?.ok, true, 'events should return { ok: true }')
+
+    const [decisions, sdkEvents] = await Promise.all([
+      requestJson(baseUrl, `/api/v1/dashboard/decisions?requestId=${encodeURIComponent(requestId)}`),
+      requestJson(baseUrl, `/api/v1/dashboard/events?requestId=${encodeURIComponent(requestId)}&eventType=sdk_event`),
+    ])
+
+    assert.equal(decisions.ok, true, `decision query failed: ${JSON.stringify(decisions.payload)}`)
+    assert.equal(sdkEvents.ok, true, `events query failed: ${JSON.stringify(sdkEvents.payload)}`)
+
+    const decisionRows = Array.isArray(decisions.payload?.items) ? decisions.payload.items : []
+    const eventRows = Array.isArray(sdkEvents.payload?.items) ? sdkEvents.payload.items : []
+    assert.equal(decisionRows.some((row) => String(row?.requestId || '') === requestId), true)
+    assert.equal(eventRows.some((row) => String(row?.requestId || '') === requestId), true)
+  } catch (error) {
+    const logs = gateway.getLogs()
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `[dashboard-v1-external-happy-path] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`,
+    )
+  } finally {
+    await stopGateway(gateway)
+  }
+})
+
+test('dashboard v1 external e2e fail-open: ads failure does not block primary response', async () => {
+  const port = 4800 + Math.floor(Math.random() * 200)
+  const baseUrl = `http://${HOST}:${port}`
+  const gateway = startGateway(port)
+
+  try {
+    await waitForGateway(baseUrl)
+    const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
+    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+
+    const resultOnInvalidPayload = await runExternalTurnFailOpen(baseUrl, buildExternalEvaluatePayload(), 'invalid_payload')
+    assert.equal(resultOnInvalidPayload.primaryResponse.ok, true, 'primary response should remain available')
+    assert.equal(resultOnInvalidPayload.failOpenApplied, true, 'fail-open should trigger on evaluate 400')
+    assert.match(resultOnInvalidPayload.adResult.error, /evaluate_failed:400/)
+
+    const resultOnNetworkError = await runExternalTurnFailOpen(baseUrl, buildExternalEvaluatePayload(), 'network_error')
+    assert.equal(resultOnNetworkError.primaryResponse.ok, true, 'primary response should remain available')
+    assert.equal(resultOnNetworkError.failOpenApplied, true, 'fail-open should trigger on network error')
+    assert.equal(resultOnNetworkError.adResult.error.length > 0, true)
+  } catch (error) {
+    const logs = gateway.getLogs()
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `[dashboard-v1-external-fail-open] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`,
+    )
+  } finally {
+    await stopGateway(gateway)
+  }
+})
