@@ -33,3 +33,26 @@ export async function updateDashboardPlacement(placementId, patch) {
 export async function pingGatewayHealth() {
   return request('/health')
 }
+
+export async function fetchPublicApiKeys() {
+  return request('/v1/public/credentials/keys')
+}
+
+export async function createPublicApiKey(payload) {
+  return request('/v1/public/credentials/keys', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  })
+}
+
+export async function rotatePublicApiKey(keyId) {
+  return request(`/v1/public/credentials/keys/${encodeURIComponent(keyId)}/rotate`, {
+    method: 'POST',
+  })
+}
+
+export async function revokePublicApiKey(keyId) {
+  return request(`/v1/public/credentials/keys/${encodeURIComponent(keyId)}/revoke`, {
+    method: 'POST',
+  })
+}
