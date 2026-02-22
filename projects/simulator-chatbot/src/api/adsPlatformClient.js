@@ -35,14 +35,14 @@ const DEFAULT_SCHEMA_VERSION = cleanText(
   import.meta.env.MEDIATION_SCHEMA_VERSION ||
   'schema_v1'
 ) || 'schema_v1'
-const DEFAULT_SDK_VERSION = cleanText(
+const DEFAULT_CLIENT_VERSION = cleanText(
   import.meta.env.VITE_MEDIATION_SDK_VERSION ||
   import.meta.env.MEDIATION_SDK_VERSION ||
   '1.0.0'
 ) || '1.0.0'
 const DEFAULT_EVALUATE_TIMEOUT_MS = 20000
 
-const sdkClient = createAdsSdkClient({
+const adsPlatformClient = createAdsSdkClient({
   apiBaseUrl: API_BASE,
   apiKey: MEDIATION_API_KEY,
   timeouts: {
@@ -52,19 +52,19 @@ const sdkClient = createAdsSdkClient({
   },
 })
 
-export async function fetchSdkConfig(appId, options = {}) {
+export async function fetchAdsConfig(appId, options = {}) {
   const normalizedAppId = String(appId || '').trim() || DEFAULT_APP_ID
   if (!normalizedAppId) {
     throw new Error('appId is required')
   }
 
   const placementId = String(options.placementId || DEFAULT_PLACEMENT_ID).trim() || DEFAULT_PLACEMENT_ID
-  const response = await sdkClient.fetchConfig({
+  const response = await adsPlatformClient.fetchConfig({
     appId: normalizedAppId,
     placementId,
     environment: MEDIATION_ENV,
     schemaVersion: DEFAULT_SCHEMA_VERSION,
-    sdkVersion: DEFAULT_SDK_VERSION,
+    sdkVersion: DEFAULT_CLIENT_VERSION,
     requestAt: new Date().toISOString(),
   })
   return response?.payload || {}
@@ -119,7 +119,7 @@ function normalizeNextStepIntentCardPayload(payload = {}) {
 
 export async function evaluateAttachPlacement(payload) {
   const body = normalizeAttachPayload(payload)
-  const response = await sdkClient.evaluate(body, {
+  const response = await adsPlatformClient.evaluate(body, {
     timeoutMs: DEFAULT_EVALUATE_TIMEOUT_MS,
   })
   return response?.payload || {}
@@ -127,15 +127,15 @@ export async function evaluateAttachPlacement(payload) {
 
 export async function evaluateNextStepIntentCardPlacement(payload) {
   const body = normalizeNextStepIntentCardPayload(payload)
-  const response = await sdkClient.evaluate(body, {
+  const response = await adsPlatformClient.evaluate(body, {
     timeoutMs: DEFAULT_EVALUATE_TIMEOUT_MS,
   })
   return response?.payload || {}
 }
 
-export async function reportSdkEvent(payload) {
+export async function reportAdsEvent(payload) {
   const body = payload?.context ? normalizeNextStepIntentCardPayload(payload) : normalizeAttachPayload(payload)
-  const response = await sdkClient.reportEvent(body, {
+  const response = await adsPlatformClient.reportEvent(body, {
     timeoutMs: 2500,
   })
   return response?.payload || {}
@@ -143,13 +143,13 @@ export async function reportSdkEvent(payload) {
 
 export async function runAttachPlacementFlow(payload = {}) {
   const body = normalizeAttachPayload(payload)
-  return sdkClient.runAttachFlow({
+  return adsPlatformClient.runAttachFlow({
     appId: body.appId || DEFAULT_APP_ID,
     placementId: DEFAULT_PLACEMENT_ID,
     placementKey: 'attach.post_answer_render',
     environment: MEDIATION_ENV,
     schemaVersion: DEFAULT_SCHEMA_VERSION,
-    sdkVersion: DEFAULT_SDK_VERSION,
+    sdkVersion: DEFAULT_CLIENT_VERSION,
     sessionId: body.sessionId,
     turnId: body.turnId,
     query: body.query,
@@ -161,13 +161,13 @@ export async function runAttachPlacementFlow(payload = {}) {
 
 export async function runNextStepIntentCardPlacementFlow(payload = {}) {
   const body = normalizeNextStepIntentCardPayload(payload)
-  return sdkClient.runNextStepFlow({
+  return adsPlatformClient.runNextStepFlow({
     appId: body.appId || DEFAULT_APP_ID,
     placementId: body.placementId || 'chat_followup_v1',
     placementKey: body.placementKey || 'next_step.intent_card',
     environment: MEDIATION_ENV,
     schemaVersion: DEFAULT_SCHEMA_VERSION,
-    sdkVersion: DEFAULT_SDK_VERSION,
+    sdkVersion: DEFAULT_CLIENT_VERSION,
     sessionId: body.sessionId,
     turnId: body.turnId,
     userId: body.userId,

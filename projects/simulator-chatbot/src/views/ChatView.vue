@@ -512,10 +512,10 @@ import {
 import { sendMessageStream } from '../api/deepseek'
 import { shouldUseWebSearchTool, runWebSearchTool, buildWebSearchContext } from '../api/webSearchTool'
 import {
-  reportSdkEvent,
+  reportAdsEvent,
   runAttachPlacementFlow,
   runNextStepIntentCardPlacementFlow,
-} from '../api/adsSdk'
+} from '../api/adsPlatformClient'
 import CitationSources from '../components/CitationSources.vue'
 import FollowUpSuggestions from '../components/FollowUpSuggestions.vue'
 import IntentCard from '../components/IntentCard.vue'
@@ -529,7 +529,7 @@ const MAX_SESSIONS = 50
 const MAX_TURN_LOGS = 400
 const TOOL_STATES = ['planning', 'running', 'done', 'error']
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant. Be accurate, concise, and explicit about uncertainty.'
-const SDK_APP_ID = import.meta.env.VITE_SIMULATOR_APP_ID || import.meta.env.APP_ID || 'simulator-chatbot'
+const ADS_PLATFORM_APP_ID = import.meta.env.VITE_SIMULATOR_APP_ID || import.meta.env.APP_ID || 'simulator-chatbot'
 const ATTACH_LINK_PLACEMENT_KEY = 'attach.post_answer_render'
 const ENABLE_NEXT_STEP_FLOW = false
 
@@ -1731,7 +1731,7 @@ async function runAttachAdsFlow({ session, userContent, assistantMessageId, turn
   if (!currentMessage) return
 
   const reportPayload = {
-    appId: SDK_APP_ID,
+    appId: ADS_PLATFORM_APP_ID,
     sessionId: session.id,
     turnId: turnTrace.turnId,
     query: userContent,
@@ -1831,7 +1831,7 @@ async function runAttachAdsFlow({ session, userContent, assistantMessageId, turn
   if (flow?.failOpenApplied) {
     appendTurnTraceEvent(turnTrace, 'ads_fail_open_applied', {
       requestId: flow?.requestId || '',
-      reason: flow?.error || flow?.evidence?.events?.error || 'sdk_fail_open',
+      reason: flow?.error || flow?.evidence?.events?.error || 'ads_platform_fail_open',
     })
   }
   upsertTurnTrace(turnTrace)
@@ -1894,7 +1894,7 @@ async function runNextStepIntentCardFlow({ session, userContent, assistantMessag
   const intentScore = estimateIntentScore(userContent)
   const preferenceFacets = extractPreferenceFacets(userContent)
   const reportPayload = {
-    appId: SDK_APP_ID,
+    appId: ADS_PLATFORM_APP_ID,
     sessionId: session.id,
     turnId: turnTrace.turnId,
     event: 'followup_generation',
@@ -2003,7 +2003,7 @@ async function runNextStepIntentCardFlow({ session, userContent, assistantMessag
     appendTurnTraceEvent(turnTrace, 'ads_fail_open_applied', {
       placementKey: reportPayload.placementKey,
       requestId: flow?.requestId || '',
-      reason: flow?.error || flow?.evidence?.events?.error || 'sdk_fail_open',
+      reason: flow?.error || flow?.evidence?.events?.error || 'ads_platform_fail_open',
     })
   }
   upsertTurnTrace(turnTrace)
@@ -2076,7 +2076,7 @@ function handleSponsoredAdClick(message, ad) {
     return nextTrace
   })
 
-  reportSdkEvent(slot.reportPayload).catch((error) => {
+  reportAdsEvent(slot.reportPayload).catch((error) => {
     updateTurnTrace(message.sourceTurnId, (trace) => {
       const nextTrace = { ...trace }
       nextTrace.events = [
@@ -2131,7 +2131,7 @@ function handleNextStepAdClick(message, ad) {
     return nextTrace
   })
 
-  reportSdkEvent(slot.reportPayload).catch((error) => {
+  reportAdsEvent(slot.reportPayload).catch((error) => {
     updateTurnTrace(message.sourceTurnId, (trace) => {
       const nextTrace = { ...trace }
       nextTrace.events = [
@@ -2184,7 +2184,7 @@ function handleNextStepAdDismiss(message) {
 
   if (!slot.reportPayload) return
 
-  reportSdkEvent(slot.reportPayload)
+  reportAdsEvent(slot.reportPayload)
     .then(() => {
       updateTurnTrace(message.sourceTurnId, (trace) => {
         const nextTrace = { ...trace }

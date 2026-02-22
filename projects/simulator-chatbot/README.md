@@ -44,6 +44,8 @@ npm run dev
 - Sidebar 内置 Turn Trace 面板，可按轮查看链路事件。
 - Sidebar 内置 System Prompt 面板，可实时编辑当前会话提示词。
 
-## SDK 接入设计
+## Ads Platform 接入设计
 
-- `docs/sdk-integration-design.md`：Chatbot Simulator 接入广告 SDK 的完整设计（架构、触发点、数据模型、分阶段计划）
+- `docs/sdk-integration-design.md`：Chatbot Simulator 接入广告平台官方 SDK client 的完整设计（架构、触发点、数据模型、分阶段计划）
+- Simulator 侧仅调用平台 client wrapper：`src/api/adsPlatformClient.js`
+- 官方 shared client 来源：`../ad-aggregation-platform/src/sdk/client.js`（统一处理 `config -> evaluate -> events` 与 fail-open）
