@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import fs from 'node:fs/promises'
 import path from 'node:path'
 import {
   RAW_ROOT,
@@ -24,6 +25,12 @@ import {
 } from './lib/common.js'
 
 const BRAND_SEEDS_DIR = path.join(RAW_ROOT, 'brand-seeds')
+const KNOWLEDGE_ROOT = path.join(RAW_ROOT, 'knowledge')
+const DEFAULT_KB_FILES = {
+  whitelist: path.join(KNOWLEDGE_ROOT, 'brand-whitelist.jsonl'),
+  wikidata: path.join(KNOWLEDGE_ROOT, 'wikidata-brand-index.jsonl'),
+  opencorporates: path.join(KNOWLEDGE_ROOT, 'opencorporates-brand-index.jsonl'),
+}
 
 function brandId(domain, brandName) {
   const slug = slugify(domain || brandName || 'brand')
@@ -220,6 +227,152 @@ function resolveCanonicalFromSiteSignals(probe, domain) {
   }
 }
 
+async function fileExists(filePath) {
+  try {
+    await fs.access(filePath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function loadKnowledgeFile(filePath) {
+  if (!filePath) return []
+  const resolved = path.resolve(process.cwd(), filePath)
+  if (!(await fileExists(resolved))) return []
+  if (resolved.endsWith('.jsonl')) return readJsonl(resolved)
+  const payload = await readJson(resolved, [])
+  return Array.isArray(payload) ? payload : []
+}
+
+function normalizeKnowledgeRecord(row, sourceType) {
+  if (!row || typeof row !== 'object') return null
+  const domain = registrableDomain(row.domain || row.official_domain || row.website || row.homepage || '')
+  const canonical = cleanText(row.canonical_name || row.brand_name || row.name || row.legal_name || '')
+  const identifier = cleanText(row.id || row.wikidata_id || row.opencorporates_id || '')
+  if (!domain) return null
+  return {
+    domain,
+    canonical_name: canonical,
+    canonical_key: normalizeBrandKey(canonical),
+    source: cleanText(row.source || sourceType) || sourceType,
+    id: identifier,
+  }
+}
+
+async function loadKnowledgeBase(args) {
+  const kbPaths = {
+    whitelist: cleanText(args['kb-whitelist-file']) || DEFAULT_KB_FILES.whitelist,
+    wikidata: cleanText(args['kb-wikidata-file']) || DEFAULT_KB_FILES.wikidata,
+    opencorporates: cleanText(args['kb-opencorporates-file']) || DEFAULT_KB_FILES.opencorporates,
+  }
+  const [whitelistRows, wikidataRows, opencorporatesRows] = await Promise.all([
+    loadKnowledgeFile(kbPaths.whitelist),
+    loadKnowledgeFile(kbPaths.wikidata),
+    loadKnowledgeFile(kbPaths.opencorporates),
+  ])
+  const allRecords = [
+    ...whitelistRows.map((row) => normalizeKnowledgeRecord(row, 'whitelist')),
+    ...wikidataRows.map((row) => normalizeKnowledgeRecord(row, 'wikidata')),
+    ...opencorporatesRows.map((row) => normalizeKnowledgeRecord(row, 'opencorporates')),
+  ].filter(Boolean)
+  const byDomain = new Map()
+  for (const record of allRecords) {
+    if (!byDomain.has(record.domain)) byDomain.set(record.domain, [])
+    byDomain.get(record.domain).push(record)
+  }
+  return {
+    byDomain,
+    counts: {
+      whitelist: whitelistRows.length,
+      wikidata: wikidataRows.length,
+      opencorporates: opencorporatesRows.length,
+      total: allRecords.length,
+    },
+    hasAnyRecords: allRecords.length > 0,
+  }
+}
+
+function alignBrandWithKnowledge(domain, canonicalCandidate, fallbackBrandName, knowledgeBase) {
+  if (!knowledgeBase?.hasAnyRecords) {
+    return {
+      matched: false,
+      matched_source: '',
+      matched_id: '',
+      matched_canonical_name: '',
+      mode: 'kb_disabled',
+      reason: 'knowledge_base_empty',
+    }
+  }
+  const records = knowledgeBase.byDomain.get(domain) || []
+  if (records.length === 0) {
+    return {
+      matched: false,
+      matched_source: '',
+      matched_id: '',
+      matched_canonical_name: '',
+      mode: 'none',
+      reason: 'no_domain_match',
+    }
+  }
+
+  const candidate = cleanText(canonicalCandidate || fallbackBrandName)
+  const candidateKey = normalizeBrandKey(candidate)
+  if (candidateKey) {
+    const exact = records.find((record) => record.canonical_key && record.canonical_key === candidateKey)
+    if (exact) {
+      return {
+        matched: true,
+        matched_source: exact.source,
+        matched_id: exact.id,
+        matched_canonical_name: exact.canonical_name || candidate,
+        mode: 'domain_name_exact',
+        reason: '',
+      }
+    }
+  }
+
+  const nonEmptyNamed = records.filter((record) => record.canonical_key)
+  const uniqueNameKeys = [...new Set(nonEmptyNamed.map((record) => record.canonical_key))]
+  if (!candidateKey && uniqueNameKeys.length === 1) {
+    const target = nonEmptyNamed.find((record) => record.canonical_key === uniqueNameKeys[0]) || nonEmptyNamed[0]
+    return {
+      matched: true,
+      matched_source: target.source,
+      matched_id: target.id,
+      matched_canonical_name: target.canonical_name,
+      mode: 'domain_unique_name',
+      reason: '',
+    }
+  }
+
+  if (candidateKey && uniqueNameKeys.length === 1) {
+    return {
+      matched: false,
+      matched_source: '',
+      matched_id: '',
+      matched_canonical_name: '',
+      mode: 'none',
+      reason: 'domain_match_name_mismatch',
+    }
+  }
+
+  return {
+    matched: false,
+    matched_source: '',
+    matched_id: '',
+    matched_canonical_name: '',
+    mode: 'none',
+    reason: 'domain_match_ambiguous_name',
+  }
+}
+
+function shouldMarkSuspect(knowledgeAlignment, resolvedCanonical, sourceNameCheck, probe) {
+  const evidenceInsufficient =
+    !resolvedCanonical.canonicalConfirmed || sourceNameCheck.invalid || !probe.reachable
+  return Boolean(!knowledgeAlignment.matched && evidenceInsufficient)
+}
+
 async function probeDomain(domain, timeoutMs) {
   if (!domain) return { reachable: false, protocol: '', url: '', title: '', siteSignals: {} }
   const candidates = [`https://${domain}`, `http://${domain}`]
@@ -245,17 +398,16 @@ async function probeDomain(domain, timeoutMs) {
   return { reachable: false, protocol: '', url: '', title: '', siteSignals: {} }
 }
 
-function scoreSeed(seed, probe, resolvedCanonical) {
+function scoreSeed(seed, probe, resolvedCanonical, knowledgeAlignment, knowledgeBaseEnabled) {
   const base = Number(seed.source_confidence) || 0
   const availabilityBoost = probe.reachable ? 0.2 : -0.15
   const canonicalHint = resolvedCanonical.canonicalBrand || resolvedCanonical.domainFallbackBrand
   const titleMatch = tokenMatchScore(canonicalHint, probe.title || '') * 0.2
   const canonicalConsensusBoost = resolvedCanonical.canonicalConfirmed ? 0.08 : -0.05
+  const knowledgeBoost = knowledgeAlignment.matched ? 0.12 : (knowledgeBaseEnabled ? -0.06 : 0)
   const httpsBoost = probe.protocol === 'https' ? 0.05 : 0
   return Number(
-    Math.max(0, Math.min(1, base + availabilityBoost + titleMatch + httpsBoost + canonicalConsensusBoost)).toFixed(
-      4,
-    ),
+    Math.max(0, Math.min(1, base + availabilityBoost + titleMatch + httpsBoost + canonicalConsensusBoost + knowledgeBoost)).toFixed(4),
   )
 }
 
@@ -313,6 +465,7 @@ async function main() {
 
   await ensureDir(CURATED_ROOT)
   const seeds = await loadSeeds(args)
+  const knowledgeBase = await loadKnowledgeBase(args)
 
   const inspected = await asyncPool(concurrency, seeds, async (seed) => {
     const domain = pickSeedDomain(seed)
@@ -320,12 +473,19 @@ async function main() {
       ? { reachable: true, protocol: 'https', url: `https://${domain}`, title: '', siteSignals: {} }
       : await probeDomain(domain, timeoutMs)
     const resolvedCanonical = resolveCanonicalFromSiteSignals(probe, domain)
-    const confidence = scoreSeed(seed, probe, resolvedCanonical)
+    const knowledgeAlignment = alignBrandWithKnowledge(
+      domain,
+      resolvedCanonical.canonicalBrand,
+      resolvedCanonical.domainFallbackBrand,
+      knowledgeBase,
+    )
+    const confidence = scoreSeed(seed, probe, resolvedCanonical, knowledgeAlignment, knowledgeBase.hasAnyRecords)
     return {
       seed,
       domain,
       probe,
       resolvedCanonical,
+      knowledgeAlignment,
       confidence,
     }
   })
@@ -336,8 +496,16 @@ async function main() {
     .map((item) => {
       const sourceTitle = cleanText(item.seed.brand_name)
       const sourceNameCheck = detectSourceTitlePollution(sourceTitle)
-      const canonicalBrandName = item.resolvedCanonical.canonicalBrand
+      const canonicalBrandName = cleanText(
+        item.resolvedCanonical.canonicalBrand || item.knowledgeAlignment.matched_canonical_name || '',
+      )
       const brandName = canonicalBrandName || item.resolvedCanonical.domainFallbackBrand
+      const suspect = shouldMarkSuspect(
+        item.knowledgeAlignment,
+        item.resolvedCanonical,
+        sourceNameCheck,
+        item.probe,
+      )
       return {
         brand_id: brandId(item.domain, brandName),
         brand_name: brandName,
@@ -348,7 +516,9 @@ async function main() {
         market: cleanText(item.seed.market) || 'US',
         official_domain: item.domain,
         source_confidence: item.confidence,
-        status: 'active',
+        status: suspect ? 'suspect' : 'active',
+        alignment_status: item.knowledgeAlignment.matched ? 'aligned' : 'unaligned',
+        alignment_source: item.knowledgeAlignment.matched_source || '',
         evidence: {
           seed_id: item.seed.seed_id || '',
           search_hit_count: Number(item.seed.search_hit_count) || 0,
@@ -360,6 +530,15 @@ async function main() {
           canonical_confirmed: Boolean(canonicalBrandName),
           canonical_sources: item.resolvedCanonical.canonicalSources,
           site_signals: item.resolvedCanonical.signals,
+          kb_alignment: {
+            matched: item.knowledgeAlignment.matched,
+            source: item.knowledgeAlignment.matched_source,
+            id: item.knowledgeAlignment.matched_id,
+            mode: item.knowledgeAlignment.mode,
+            reason: item.knowledgeAlignment.reason,
+            canonical_name: item.knowledgeAlignment.matched_canonical_name,
+          },
+          suspect_reason: suspect ? 'kb_unaligned_and_evidence_insufficient' : '',
           verified_reachable: Boolean(item.probe.reachable),
           homepage_title: cleanText(item.probe.title).slice(0, 180),
           homepage_url: item.probe.url,
@@ -378,9 +557,12 @@ async function main() {
     inspectedSeeds: seeds.length,
     candidateBrands: candidates.length,
     selectedBrands: selected.length,
+    selectedAlignedBrands: selected.filter((item) => item.alignment_status === 'aligned').length,
+    selectedSuspectBrands: selected.filter((item) => item.status === 'suspect').length,
     maxBrands,
     skipNetwork,
     strictReachable,
+    knowledgeBase: knowledgeBase.counts,
     output: path.relative(process.cwd(), brandsPath),
   })
 
