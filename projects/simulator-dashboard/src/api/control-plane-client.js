@@ -108,6 +108,14 @@ export const controlPlaneClient = {
       })
     },
   },
+  quickStart: {
+    verify(payload) {
+      return request('/v1/public/quick-start/verify', {
+        method: 'POST',
+        body: payload || {},
+      })
+    },
+  },
   placements: {
     list() {
       return request('/v1/public/placements')

@@ -1971,6 +1971,105 @@ function getDashboardStatePayload() {
   }
 }
 
+function resolveMediationConfigSnapshot(query = {}) {
+  const appId = requiredNonEmptyString(query.appId, 'appId')
+  const placementId = requiredNonEmptyString(query.placementId, 'placementId')
+  const rawEnvironment = requiredNonEmptyString(query.environment, 'environment')
+  const environment = normalizeControlPlaneEnvironment(rawEnvironment, '')
+  if (!CONTROL_PLANE_ENVIRONMENTS.has(environment)) {
+    throw new Error(`environment must be one of: ${Array.from(CONTROL_PLANE_ENVIRONMENTS).join(', ')}`)
+  }
+  const schemaVersion = requiredNonEmptyString(query.schemaVersion, 'schemaVersion')
+  const sdkVersion = requiredNonEmptyString(query.sdkVersion, 'sdkVersion')
+  const requestAt = requiredNonEmptyString(query.requestAt, 'requestAt')
+  const ifNoneMatch = String(query.ifNoneMatch || query.if_none_match || '').trim()
+
+  const placement = state.placements.find((item) => item.placementId === placementId)
+  if (!placement) {
+    const error = new Error(`placementId not found: ${placementId}`)
+    error.code = 'PLACEMENT_NOT_FOUND'
+    throw error
+  }
+
+  const etag = `W/"placement:${placement.placementId}:v${placement.configVersion}"`
+  if (ifNoneMatch && ifNoneMatch === etag) {
+    return {
+      statusCode: 304,
+      payload: null,
+      etag,
+    }
+  }
+
+  return {
+    statusCode: 200,
+    etag,
+    payload: {
+      appId,
+      environment,
+      placementId: placement.placementId,
+      placementKey: placement.placementKey,
+      schemaVersion,
+      sdkVersion,
+      requestAt,
+      configVersion: placement.configVersion,
+      ttlSec: 300,
+      placement,
+    },
+  }
+}
+
+function buildQuickStartVerifyRequest(input = {}) {
+  const appId = String(input.appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const environment = normalizeControlPlaneEnvironment(input.environment || 'staging')
+  const placementId = String(input.placementId || '').trim() || 'chat_inline_v1'
+  return {
+    appId,
+    environment,
+    placementId,
+    sessionId: String(input.sessionId || '').trim() || `quickstart_session_${randomToken(8)}`,
+    turnId: String(input.turnId || '').trim() || `quickstart_turn_${randomToken(8)}`,
+    query: String(input.query || '').trim() || 'Recommend waterproof running shoes',
+    answerText: String(input.answerText || '').trim() || 'Prioritize grip and breathable waterproof upper.',
+    intentScore: clampNumber(input.intentScore, 0, 1, 0.91),
+    locale: String(input.locale || '').trim() || 'en-US',
+  }
+}
+
+function findActiveApiKey({ appId, environment, keyId = '' }) {
+  const normalizedAppId = String(appId || '').trim()
+  const normalizedEnvironment = normalizeControlPlaneEnvironment(environment)
+  const normalizedKeyId = String(keyId || '').trim()
+
+  let rows = state.controlPlane.apiKeys.filter((item) => (
+    item.appId === normalizedAppId
+    && item.environment === normalizedEnvironment
+    && item.status === 'active'
+  ))
+
+  if (normalizedKeyId) {
+    rows = rows.filter((item) => item.keyId === normalizedKeyId)
+  }
+
+  rows.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
+  return rows[0] || null
+}
+
+function recordAttachSdkEvent(request) {
+  recordEvent({
+    eventType: 'sdk_event',
+    requestId: request.requestId || '',
+    appId: request.appId,
+    sessionId: request.sessionId,
+    turnId: request.turnId,
+    query: request.query,
+    answerText: request.answerText,
+    intentScore: request.intentScore,
+    locale: request.locale,
+    event: ATTACH_MVP_EVENT,
+    placementKey: ATTACH_MVP_PLACEMENT_KEY,
+  })
+}
+
 async function requestHandler(req, res) {
   const requestUrl = new URL(req.url || '/', `http://${req.headers.host || `${HOST}:${PORT}`}`)
   const pathname = requestUrl.pathname
@@ -2003,6 +2102,141 @@ async function requestHandler(req, res) {
       now: nowIso(),
     })
     return
+  }
+
+  if (pathname === '/api/v1/mediation/config' && req.method === 'GET') {
+    try {
+      const resolved = resolveMediationConfigSnapshot({
+        appId: requestUrl.searchParams.get('appId'),
+        placementId: requestUrl.searchParams.get('placementId'),
+        environment: requestUrl.searchParams.get('environment'),
+        schemaVersion: requestUrl.searchParams.get('schemaVersion'),
+        sdkVersion: requestUrl.searchParams.get('sdkVersion'),
+        requestAt: requestUrl.searchParams.get('requestAt'),
+        ifNoneMatch: requestUrl.searchParams.get('ifNoneMatch'),
+      })
+
+      if (resolved.statusCode === 304) {
+        withCors(res)
+        res.statusCode = 304
+        res.setHeader('ETag', resolved.etag)
+        res.end()
+        return
+      }
+
+      res.setHeader('ETag', resolved.etag)
+      sendJson(res, 200, resolved.payload)
+      return
+    } catch (error) {
+      const code = error instanceof Error && error.code === 'PLACEMENT_NOT_FOUND'
+        ? 'PLACEMENT_NOT_FOUND'
+        : 'INVALID_REQUEST'
+      sendJson(res, code === 'PLACEMENT_NOT_FOUND' ? 404 : 400, {
+        error: {
+          code,
+          message: error instanceof Error ? error.message : 'Invalid request',
+        },
+      })
+      return
+    }
+  }
+
+  if (pathname === '/api/v1/public/quick-start/verify' && req.method === 'POST') {
+    try {
+      const payload = await readJsonBody(req)
+      const request = buildQuickStartVerifyRequest(payload)
+      const activeKey = findActiveApiKey({
+        appId: request.appId,
+        environment: request.environment,
+      })
+
+      if (!activeKey) {
+        sendJson(res, 409, {
+          error: {
+            code: 'PRECONDITION_FAILED',
+            message: `No active API key for appId=${request.appId} environment=${request.environment}.`,
+          },
+        })
+        return
+      }
+
+      const configStartedAt = Date.now()
+      const configResult = resolveMediationConfigSnapshot({
+        appId: request.appId,
+        placementId: request.placementId,
+        environment: request.environment,
+        schemaVersion: 'schema_v1',
+        sdkVersion: '1.0.0',
+        requestAt: nowIso(),
+      })
+      const configLatencyMs = Math.max(0, Date.now() - configStartedAt)
+
+      const evaluateStartedAt = Date.now()
+      const evaluate = await evaluateRequest({
+        appId: request.appId,
+        sessionId: request.sessionId,
+        turnId: request.turnId,
+        event: ATTACH_MVP_EVENT,
+        placementId: request.placementId,
+        placementKey: ATTACH_MVP_PLACEMENT_KEY,
+        context: {
+          query: request.query,
+          answerText: request.answerText,
+          intentScore: request.intentScore,
+          locale: request.locale,
+        },
+      })
+      const evaluateLatencyMs = Math.max(0, Date.now() - evaluateStartedAt)
+
+      const eventStartedAt = Date.now()
+      recordAttachSdkEvent({
+        requestId: evaluate.requestId || '',
+        appId: request.appId,
+        sessionId: request.sessionId,
+        turnId: request.turnId,
+        query: request.query,
+        answerText: request.answerText,
+        intentScore: request.intentScore,
+        locale: request.locale,
+      })
+      persistState(state)
+      const eventLatencyMs = Math.max(0, Date.now() - eventStartedAt)
+
+      sendJson(res, 200, {
+        ok: true,
+        requestId: evaluate.requestId || '',
+        status: String(evaluate?.decision?.result || ''),
+        evidence: {
+          config: {
+            status: configResult.statusCode,
+            placementId: request.placementId,
+            configVersion: configResult.payload?.configVersion || 0,
+            latencyMs: configLatencyMs,
+          },
+          evaluate: {
+            status: 200,
+            requestId: evaluate.requestId || '',
+            result: String(evaluate?.decision?.result || ''),
+            reasonDetail: String(evaluate?.decision?.reasonDetail || ''),
+            latencyMs: evaluateLatencyMs,
+          },
+          events: {
+            status: 200,
+            ok: true,
+            latencyMs: eventLatencyMs,
+          },
+        },
+      })
+      return
+    } catch (error) {
+      sendJson(res, 400, {
+        error: {
+          code: 'INVALID_REQUEST',
+          message: error instanceof Error ? error.message : 'Invalid request',
+        },
+      })
+      return
+    }
   }
 
   if (pathname === '/api/v1/public/credentials/keys' && req.method === 'GET') {
