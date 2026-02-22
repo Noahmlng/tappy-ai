@@ -34,6 +34,21 @@ const CONTROL_PLANE_ENVIRONMENTS = new Set(['sandbox', 'staging', 'prod'])
 const CONTROL_PLANE_KEY_STATUS = new Set(['active', 'revoked'])
 const DEFAULT_CONTROL_PLANE_APP_ID = 'simulator-chatbot'
 const DEFAULT_CONTROL_PLANE_ORG_ID = 'org_simulator'
+const MIN_AGENT_ACCESS_TTL_SECONDS = 60
+const MAX_AGENT_ACCESS_TTL_SECONDS = 900
+const TOKEN_EXCHANGE_FORBIDDEN_FIELDS = new Set([
+  'appId',
+  'app_id',
+  'environment',
+  'env',
+  'placementId',
+  'placement_id',
+  'scope',
+  'sourceTokenId',
+  'source_token_id',
+  'tokenType',
+  'token_type',
+])
 
 const PLACEMENT_KEY_BY_ID = {
   chat_inline_v1: 'attach.post_answer_render',
@@ -200,6 +215,23 @@ function randomToken(length = 12) {
   return token.slice(0, length)
 }
 
+function hashToken(value) {
+  return createHash('sha256').update(String(value || '')).digest('hex')
+}
+
+function tokenFingerprint(value) {
+  const digest = hashToken(value)
+  return digest ? digest.slice(0, 16) : ''
+}
+
+function createMinimalAgentScope() {
+  return {
+    mediationConfigRead: true,
+    sdkEvaluate: true,
+    sdkEvents: true,
+  }
+}
+
 function buildApiKeySecret(environment = 'staging') {
   const env = normalizeControlPlaneEnvironment(environment)
   return `sk_${env}_${randomToken(24)}`
@@ -342,7 +374,7 @@ function createIntegrationTokenRecord(input = {}) {
   const expiresAtMs = (Number.isFinite(issuedAtMs) ? issuedAtMs : Date.now()) + ttlSeconds * 1000
   const expiresAt = new Date(expiresAtMs).toISOString()
   const token = `itk_${environment}_${randomToken(30)}`
-  const tokenHash = createHash('sha256').update(token).digest('hex')
+  const tokenHash = hashToken(token)
 
   return {
     tokenRecord: {
@@ -354,11 +386,7 @@ function createIntegrationTokenRecord(input = {}) {
       tokenType: 'integration_token',
       oneTime: true,
       status: 'active',
-      scope: {
-        mediationConfigRead: true,
-        sdkEvaluate: true,
-        sdkEvents: true,
-      },
+      scope: createMinimalAgentScope(),
       issuedAt,
       expiresAt,
       usedAt: '',
@@ -391,11 +419,7 @@ function normalizeIntegrationTokenRecord(raw) {
     status: ['active', 'used', 'expired', 'revoked'].includes(status) ? status : 'active',
     scope: raw.scope && typeof raw.scope === 'object'
       ? raw.scope
-      : {
-          mediationConfigRead: true,
-          sdkEvaluate: true,
-          sdkEvents: true,
-        },
+      : createMinimalAgentScope(),
     issuedAt: String(raw.issuedAt || raw.issued_at || nowIso()),
     expiresAt: String(raw.expiresAt || raw.expires_at || nowIso()),
     usedAt: String(raw.usedAt || raw.used_at || ''),
@@ -443,7 +467,7 @@ function createAgentAccessTokenRecord(input = {}) {
   const expiresAtMs = (Number.isFinite(issuedAtMs) ? issuedAtMs : Date.now()) + ttlSeconds * 1000
   const expiresAt = new Date(expiresAtMs).toISOString()
   const accessToken = `atk_${environment}_${randomToken(30)}`
-  const tokenHash = createHash('sha256').update(accessToken).digest('hex')
+  const tokenHash = hashToken(accessToken)
 
   return {
     tokenRecord: {
@@ -457,11 +481,7 @@ function createAgentAccessTokenRecord(input = {}) {
       status: 'active',
       scope: input.scope && typeof input.scope === 'object'
         ? input.scope
-        : {
-            mediationConfigRead: true,
-            sdkEvaluate: true,
-            sdkEvents: true,
-          },
+        : createMinimalAgentScope(),
       issuedAt,
       expiresAt,
       metadata: input.metadata && typeof input.metadata === 'object' ? input.metadata : {},
@@ -492,11 +512,7 @@ function normalizeAgentAccessTokenRecord(raw) {
     status: ['active', 'expired', 'revoked'].includes(status) ? status : 'active',
     scope: raw.scope && typeof raw.scope === 'object'
       ? raw.scope
-      : {
-          mediationConfigRead: true,
-          sdkEvaluate: true,
-          sdkEvents: true,
-        },
+      : createMinimalAgentScope(),
     issuedAt: String(raw.issuedAt || raw.issued_at || nowIso()),
     expiresAt: String(raw.expiresAt || raw.expires_at || nowIso()),
     metadata: raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : {},
@@ -561,9 +577,26 @@ function cleanupExpiredAgentAccessTokens() {
 function findIntegrationTokenByPlaintext(integrationToken) {
   const token = String(integrationToken || '').trim()
   if (!token) return null
-  const tokenHash = createHash('sha256').update(token).digest('hex')
+  const tokenHash = hashToken(token)
   const rows = Array.isArray(state?.controlPlane?.integrationTokens) ? state.controlPlane.integrationTokens : []
   return rows.find((item) => String(item?.tokenHash || '') === tokenHash) || null
+}
+
+function findAgentAccessTokenByPlaintext(accessToken) {
+  const token = String(accessToken || '').trim()
+  if (!token) return null
+  const tokenHash = hashToken(token)
+  const rows = Array.isArray(state?.controlPlane?.agentAccessTokens) ? state.controlPlane.agentAccessTokens : []
+  return rows.find((item) => String(item?.tokenHash || '') === tokenHash) || null
+}
+
+function parseBearerToken(req) {
+  if (!req || !req.headers) return ''
+  const authorization = String(req.headers.authorization || '').trim()
+  if (!authorization) return ''
+  const matched = authorization.match(/^bearer\s+(.+)$/i)
+  if (!matched) return ''
+  return String(matched[1] || '').trim()
 }
 
 function createInitialControlPlaneState() {
@@ -1371,7 +1404,7 @@ function resetGatewayState() {
 function withCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,x-dashboard-actor,x-user-id')
 }
 
 function sendJson(res, statusCode, payload) {
@@ -2348,6 +2381,19 @@ function buildQuickStartVerifyRequest(input = {}) {
   }
 }
 
+function findActiveApiKeyBySecret(secret) {
+  const value = String(secret || '').trim()
+  if (!value) return null
+  const digest = hashToken(value)
+  const rows = Array.isArray(state?.controlPlane?.apiKeys) ? state.controlPlane.apiKeys : []
+  const matched = rows.filter((item) => (
+    String(item?.status || '').toLowerCase() === 'active'
+    && String(item?.secretHash || '') === digest
+  ))
+  matched.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
+  return matched[0] || null
+}
+
 function findActiveApiKey({ appId, environment, keyId = '' }) {
   const normalizedAppId = String(appId || '').trim()
   const normalizedEnvironment = normalizeControlPlaneEnvironment(environment)
@@ -2365,6 +2411,318 @@ function findActiveApiKey({ appId, environment, keyId = '' }) {
 
   rows.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
   return rows[0] || null
+}
+
+function hasRequiredAgentScope(scope, requiredScope) {
+  if (!requiredScope) return true
+  if (!scope || typeof scope !== 'object') return false
+  return scope[requiredScope] === true
+}
+
+function getExchangeForbiddenFields(payload) {
+  if (!payload || typeof payload !== 'object') return []
+  return [...TOKEN_EXCHANGE_FORBIDDEN_FIELDS].filter((key) => Object.prototype.hasOwnProperty.call(payload, key))
+}
+
+function recordSecurityDenyAudit({
+  req,
+  action,
+  reason,
+  code,
+  httpStatus,
+  appId = '',
+  environment = '',
+  resourceType = '',
+  resourceId = '',
+  metadata = {},
+}) {
+  recordControlPlaneAudit({
+    action,
+    actor: resolveAuditActor(req, 'security'),
+    appId: String(appId || '').trim(),
+    environment: String(environment || '').trim(),
+    resourceType: String(resourceType || '').trim(),
+    resourceId: String(resourceId || '').trim(),
+    metadata: {
+      reason: String(reason || '').trim(),
+      code: String(code || '').trim(),
+      httpStatus: Number(httpStatus || 0),
+      ...metadata,
+    },
+  })
+}
+
+function resolveRuntimeCredential(req) {
+  const token = parseBearerToken(req)
+  if (!token) {
+    return { kind: 'none' }
+  }
+
+  if (token.startsWith('sk_')) {
+    const key = findActiveApiKeyBySecret(token)
+    if (!key) {
+      return {
+        kind: 'invalid',
+        status: 401,
+        code: 'INVALID_API_KEY',
+        message: 'API key is invalid or revoked.',
+      }
+    }
+    return {
+      kind: 'api_key',
+      key,
+    }
+  }
+
+  if (token.startsWith('atk_')) {
+    cleanupExpiredAgentAccessTokens()
+    const access = findAgentAccessTokenByPlaintext(token)
+    if (!access) {
+      return {
+        kind: 'invalid',
+        status: 401,
+        code: 'INVALID_ACCESS_TOKEN',
+        message: 'Agent access token is invalid.',
+      }
+    }
+
+    const status = String(access.status || '').trim().toLowerCase()
+    if (status !== 'active') {
+      return {
+        kind: 'invalid',
+        status: 401,
+        code: status === 'expired' ? 'ACCESS_TOKEN_EXPIRED' : 'ACCESS_TOKEN_INACTIVE',
+        message: status === 'expired'
+          ? 'Agent access token has expired.'
+          : `Agent access token is not active (${status || 'unknown'}).`,
+        access,
+      }
+    }
+
+    const expiresAtMs = Date.parse(String(access.expiresAt || ''))
+    if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+      access.status = 'expired'
+      access.updatedAt = nowIso()
+      persistState(state)
+      return {
+        kind: 'invalid',
+        status: 401,
+        code: 'ACCESS_TOKEN_EXPIRED',
+        message: 'Agent access token has expired.',
+        access,
+      }
+    }
+
+    return {
+      kind: 'agent_access_token',
+      access,
+    }
+  }
+
+  if (token.startsWith('itk_')) {
+    return {
+      kind: 'invalid',
+      status: 401,
+      code: 'UNSUPPORTED_TOKEN_TYPE',
+      message: 'integration token cannot be used for runtime API calls.',
+    }
+  }
+
+  return {
+    kind: 'invalid',
+    status: 401,
+    code: 'UNSUPPORTED_BEARER_TOKEN',
+    message: 'Unsupported bearer token.',
+  }
+}
+
+function authorizeRuntimeCredential(req, options = {}) {
+  const requirement = options && typeof options === 'object' ? options : {}
+  const requiredScope = String(requirement.requiredScope || '').trim()
+  const requiredAppId = String(requirement.appId || '').trim()
+  const requiredEnvironment = String(requirement.environment || '').trim()
+  const requiredPlacementId = String(requirement.placementId || '').trim()
+  const operation = String(requirement.operation || '').trim() || 'runtime_call'
+
+  const resolved = resolveRuntimeCredential(req)
+  if (resolved.kind === 'none') {
+    return { ok: true, mode: 'anonymous' }
+  }
+
+  if (resolved.kind === 'invalid') {
+    if (resolved.access) {
+      recordSecurityDenyAudit({
+        req,
+        action: 'agent_access_deny',
+        reason: 'invalid_or_expired_token',
+        code: resolved.code,
+        httpStatus: resolved.status,
+        appId: resolved.access.appId,
+        environment: resolved.access.environment,
+        resourceType: 'agent_access_token',
+        resourceId: resolved.access.tokenId,
+        metadata: {
+          operation,
+        },
+      })
+      persistState(state)
+    }
+    return {
+      ok: false,
+      status: resolved.status,
+      error: {
+        code: resolved.code,
+        message: resolved.message,
+      },
+    }
+  }
+
+  if (resolved.kind === 'api_key') {
+    const key = resolved.key
+    if (requiredAppId && key.appId && key.appId !== requiredAppId) {
+      return {
+        ok: false,
+        status: 403,
+        error: {
+          code: 'API_KEY_SCOPE_VIOLATION',
+          message: 'API key does not match requested appId.',
+        },
+      }
+    }
+    if (requiredEnvironment && key.environment && key.environment !== normalizeControlPlaneEnvironment(requiredEnvironment, '')) {
+      return {
+        ok: false,
+        status: 403,
+        error: {
+          code: 'API_KEY_SCOPE_VIOLATION',
+          message: 'API key does not match requested environment.',
+        },
+      }
+    }
+    key.lastUsedAt = nowIso()
+    key.updatedAt = key.lastUsedAt
+    persistState(state)
+    return { ok: true, mode: 'api_key', credential: key }
+  }
+
+  const access = resolved.access
+  if (!hasRequiredAgentScope(access.scope, requiredScope)) {
+    recordSecurityDenyAudit({
+      req,
+      action: 'agent_access_deny',
+      reason: 'scope_missing',
+      code: 'ACCESS_TOKEN_SCOPE_VIOLATION',
+      httpStatus: 403,
+      appId: access.appId,
+      environment: access.environment,
+      resourceType: 'agent_access_token',
+      resourceId: access.tokenId,
+      metadata: {
+        operation,
+        requiredScope,
+      },
+    })
+    persistState(state)
+    return {
+      ok: false,
+      status: 403,
+      error: {
+        code: 'ACCESS_TOKEN_SCOPE_VIOLATION',
+        message: `Missing required scope: ${requiredScope}`,
+      },
+    }
+  }
+
+  if (requiredAppId && access.appId && access.appId !== requiredAppId) {
+    recordSecurityDenyAudit({
+      req,
+      action: 'agent_access_deny',
+      reason: 'app_mismatch',
+      code: 'ACCESS_TOKEN_SCOPE_VIOLATION',
+      httpStatus: 403,
+      appId: access.appId,
+      environment: access.environment,
+      resourceType: 'agent_access_token',
+      resourceId: access.tokenId,
+      metadata: {
+        operation,
+        requiredAppId,
+      },
+    })
+    persistState(state)
+    return {
+      ok: false,
+      status: 403,
+      error: {
+        code: 'ACCESS_TOKEN_SCOPE_VIOLATION',
+        message: 'Agent access token does not match requested appId.',
+      },
+    }
+  }
+
+  if (
+    requiredEnvironment
+    && access.environment
+    && access.environment !== normalizeControlPlaneEnvironment(requiredEnvironment, '')
+  ) {
+    recordSecurityDenyAudit({
+      req,
+      action: 'agent_access_deny',
+      reason: 'environment_mismatch',
+      code: 'ACCESS_TOKEN_SCOPE_VIOLATION',
+      httpStatus: 403,
+      appId: access.appId,
+      environment: access.environment,
+      resourceType: 'agent_access_token',
+      resourceId: access.tokenId,
+      metadata: {
+        operation,
+        requiredEnvironment,
+      },
+    })
+    persistState(state)
+    return {
+      ok: false,
+      status: 403,
+      error: {
+        code: 'ACCESS_TOKEN_SCOPE_VIOLATION',
+        message: 'Agent access token does not match requested environment.',
+      },
+    }
+  }
+
+  if (requiredPlacementId && access.placementId && access.placementId !== requiredPlacementId) {
+    recordSecurityDenyAudit({
+      req,
+      action: 'agent_access_deny',
+      reason: 'placement_mismatch',
+      code: 'ACCESS_TOKEN_SCOPE_VIOLATION',
+      httpStatus: 403,
+      appId: access.appId,
+      environment: access.environment,
+      resourceType: 'agent_access_token',
+      resourceId: access.tokenId,
+      metadata: {
+        operation,
+        requiredPlacementId,
+      },
+    })
+    persistState(state)
+    return {
+      ok: false,
+      status: 403,
+      error: {
+        code: 'ACCESS_TOKEN_SCOPE_VIOLATION',
+        message: 'Agent access token does not match requested placementId.',
+      },
+    }
+  }
+
+  access.updatedAt = nowIso()
+  access.metadata = access.metadata && typeof access.metadata === 'object' ? access.metadata : {}
+  access.metadata.lastUsedAt = access.updatedAt
+  persistState(state)
+  return { ok: true, mode: 'agent_access_token', credential: access }
 }
 
 function recordAttachSdkEvent(request) {
@@ -2419,6 +2777,20 @@ async function requestHandler(req, res) {
 
   if (pathname === '/api/v1/mediation/config' && req.method === 'GET') {
     try {
+      const auth = authorizeRuntimeCredential(req, {
+        operation: 'mediation_config_read',
+        requiredScope: 'mediationConfigRead',
+        appId: String(requestUrl.searchParams.get('appId') || '').trim(),
+        environment: String(requestUrl.searchParams.get('environment') || '').trim(),
+        placementId: String(requestUrl.searchParams.get('placementId') || '').trim(),
+      })
+      if (!auth.ok) {
+        sendJson(res, auth.status, {
+          error: auth.error,
+        })
+        return
+      }
+
       const resolved = resolveMediationConfigSnapshot({
         appId: requestUrl.searchParams.get('appId'),
         placementId: requestUrl.searchParams.get('placementId'),
@@ -2635,15 +3007,56 @@ async function requestHandler(req, res) {
   if (pathname === '/api/v1/public/agent/token-exchange' && req.method === 'POST') {
     try {
       const payload = await readJsonBody(req)
+      cleanupExpiredIntegrationTokens()
+      cleanupExpiredAgentAccessTokens()
+      const forbiddenFields = getExchangeForbiddenFields(payload)
+      if (forbiddenFields.length > 0) {
+        const providedToken = String(payload?.integrationToken || payload?.integration_token || '').trim()
+        const sourceToken = providedToken ? findIntegrationTokenByPlaintext(providedToken) : null
+        recordSecurityDenyAudit({
+          req,
+          action: 'integration_token_exchange_deny',
+          reason: 'privilege_escalation_attempt',
+          code: 'TOKEN_EXCHANGE_SCOPE_VIOLATION',
+          httpStatus: 403,
+          appId: sourceToken?.appId || '',
+          environment: sourceToken?.environment || '',
+          resourceType: 'integration_token',
+          resourceId: sourceToken?.tokenId || '',
+          metadata: {
+            forbiddenFields,
+            tokenFingerprint: providedToken ? tokenFingerprint(providedToken) : '',
+          },
+        })
+        persistState(state)
+        sendJson(res, 403, {
+          error: {
+            code: 'TOKEN_EXCHANGE_SCOPE_VIOLATION',
+            message: 'token exchange payload contains forbidden privilege fields.',
+          },
+        })
+        return
+      }
+
       const integrationToken = requiredNonEmptyString(
         payload?.integrationToken || payload?.integration_token,
         'integrationToken',
       )
-      cleanupExpiredIntegrationTokens()
-      cleanupExpiredAgentAccessTokens()
 
       const sourceToken = findIntegrationTokenByPlaintext(integrationToken)
       if (!sourceToken) {
+        recordSecurityDenyAudit({
+          req,
+          action: 'integration_token_exchange_deny',
+          reason: 'invalid_integration_token',
+          code: 'INVALID_INTEGRATION_TOKEN',
+          httpStatus: 401,
+          resourceType: 'integration_token',
+          metadata: {
+            tokenFingerprint: tokenFingerprint(integrationToken),
+          },
+        })
+        persistState(state)
         sendJson(res, 401, {
           error: {
             code: 'INVALID_INTEGRATION_TOKEN',
@@ -2655,6 +3068,18 @@ async function requestHandler(req, res) {
 
       const sourceStatus = String(sourceToken.status || '').toLowerCase()
       if (sourceStatus === 'used') {
+        recordSecurityDenyAudit({
+          req,
+          action: 'integration_token_exchange_deny',
+          reason: 'integration_token_replay',
+          code: 'INTEGRATION_TOKEN_ALREADY_USED',
+          httpStatus: 409,
+          appId: sourceToken.appId,
+          environment: sourceToken.environment,
+          resourceType: 'integration_token',
+          resourceId: sourceToken.tokenId,
+        })
+        persistState(state)
         sendJson(res, 409, {
           error: {
             code: 'INTEGRATION_TOKEN_ALREADY_USED',
@@ -2664,6 +3089,21 @@ async function requestHandler(req, res) {
         return
       }
       if (sourceStatus !== 'active') {
+        recordSecurityDenyAudit({
+          req,
+          action: 'integration_token_exchange_deny',
+          reason: 'integration_token_inactive',
+          code: 'INTEGRATION_TOKEN_INACTIVE',
+          httpStatus: 401,
+          appId: sourceToken.appId,
+          environment: sourceToken.environment,
+          resourceType: 'integration_token',
+          resourceId: sourceToken.tokenId,
+          metadata: {
+            sourceStatus,
+          },
+        })
+        persistState(state)
         sendJson(res, 401, {
           error: {
             code: 'INTEGRATION_TOKEN_INACTIVE',
@@ -2678,6 +3118,17 @@ async function requestHandler(req, res) {
       if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
         sourceToken.status = 'expired'
         sourceToken.updatedAt = now
+        recordSecurityDenyAudit({
+          req,
+          action: 'integration_token_exchange_deny',
+          reason: 'integration_token_expired',
+          code: 'INTEGRATION_TOKEN_EXPIRED',
+          httpStatus: 401,
+          appId: sourceToken.appId,
+          environment: sourceToken.environment,
+          resourceType: 'integration_token',
+          resourceId: sourceToken.tokenId,
+        })
         persistState(state)
         sendJson(res, 401, {
           error: {
@@ -2688,13 +3139,128 @@ async function requestHandler(req, res) {
         return
       }
 
-      const requestedTtl = toPositiveInteger(payload?.ttlSeconds ?? payload?.ttl_seconds, 300)
-      const ttlSeconds = clampNumber(requestedTtl, 60, 900, 300)
-      const minimalScope = {
-        mediationConfigRead: true,
-        sdkEvaluate: true,
-        sdkEvents: true,
+      if (
+        sourceToken.tokenType !== 'integration_token'
+        || sourceToken.oneTime !== true
+        || !hasRequiredAgentScope(sourceToken.scope, 'mediationConfigRead')
+        || !hasRequiredAgentScope(sourceToken.scope, 'sdkEvaluate')
+        || !hasRequiredAgentScope(sourceToken.scope, 'sdkEvents')
+      ) {
+        sourceToken.status = 'revoked'
+        sourceToken.updatedAt = now
+        recordSecurityDenyAudit({
+          req,
+          action: 'integration_token_exchange_deny',
+          reason: 'source_token_scope_invalid',
+          code: 'INTEGRATION_TOKEN_SCOPE_INVALID',
+          httpStatus: 403,
+          appId: sourceToken.appId,
+          environment: sourceToken.environment,
+          resourceType: 'integration_token',
+          resourceId: sourceToken.tokenId,
+        })
+        persistState(state)
+        sendJson(res, 403, {
+          error: {
+            code: 'INTEGRATION_TOKEN_SCOPE_INVALID',
+            message: 'integration token scope is invalid.',
+          },
+        })
+        return
       }
+
+      const replayBySource = state.controlPlane.agentAccessTokens.find((item) => (
+        String(item?.sourceTokenId || '') === sourceToken.tokenId
+      ))
+      if (replayBySource) {
+        sourceToken.status = 'used'
+        sourceToken.usedAt = now
+        sourceToken.updatedAt = now
+        recordSecurityDenyAudit({
+          req,
+          action: 'integration_token_exchange_deny',
+          reason: 'integration_token_replay_by_source',
+          code: 'INTEGRATION_TOKEN_ALREADY_USED',
+          httpStatus: 409,
+          appId: sourceToken.appId,
+          environment: sourceToken.environment,
+          resourceType: 'integration_token',
+          resourceId: sourceToken.tokenId,
+          metadata: {
+            existingAccessTokenId: String(replayBySource.tokenId || ''),
+          },
+        })
+        persistState(state)
+        sendJson(res, 409, {
+          error: {
+            code: 'INTEGRATION_TOKEN_ALREADY_USED',
+            message: 'integration token has already been exchanged.',
+          },
+        })
+        return
+      }
+
+      const requestedTtl = toPositiveInteger(payload?.ttlSeconds ?? payload?.ttl_seconds, 300)
+      if (
+        requestedTtl < MIN_AGENT_ACCESS_TTL_SECONDS
+        || requestedTtl > MAX_AGENT_ACCESS_TTL_SECONDS
+      ) {
+        recordSecurityDenyAudit({
+          req,
+          action: 'integration_token_exchange_deny',
+          reason: 'ttl_out_of_range',
+          code: 'INVALID_TTL_SECONDS',
+          httpStatus: 400,
+          appId: sourceToken.appId,
+          environment: sourceToken.environment,
+          resourceType: 'integration_token',
+          resourceId: sourceToken.tokenId,
+          metadata: {
+            requestedTtlSeconds: requestedTtl,
+            minTtlSeconds: MIN_AGENT_ACCESS_TTL_SECONDS,
+            maxTtlSeconds: MAX_AGENT_ACCESS_TTL_SECONDS,
+          },
+        })
+        persistState(state)
+        sendJson(res, 400, {
+          error: {
+            code: 'INVALID_TTL_SECONDS',
+            message: `ttlSeconds must be between ${MIN_AGENT_ACCESS_TTL_SECONDS} and ${MAX_AGENT_ACCESS_TTL_SECONDS}.`,
+          },
+        })
+        return
+      }
+
+      const remainingTtlSeconds = Math.floor((expiresAtMs - Date.now()) / 1000)
+      if (remainingTtlSeconds < MIN_AGENT_ACCESS_TTL_SECONDS) {
+        sourceToken.status = 'expired'
+        sourceToken.updatedAt = now
+        recordSecurityDenyAudit({
+          req,
+          action: 'integration_token_exchange_deny',
+          reason: 'integration_token_remaining_ttl_too_short',
+          code: 'INTEGRATION_TOKEN_EXPIRED',
+          httpStatus: 401,
+          appId: sourceToken.appId,
+          environment: sourceToken.environment,
+          resourceType: 'integration_token',
+          resourceId: sourceToken.tokenId,
+          metadata: {
+            remainingTtlSeconds,
+          },
+        })
+        persistState(state)
+        sendJson(res, 401, {
+          error: {
+            code: 'INTEGRATION_TOKEN_EXPIRED',
+            message: 'integration token has expired.',
+          },
+        })
+        return
+      }
+
+      const ttlSeconds = Math.min(requestedTtl, remainingTtlSeconds)
+      const minimalScope = createMinimalAgentScope()
 
       const { tokenRecord, accessToken } = createAgentAccessTokenRecord({
         appId: sourceToken.appId,
@@ -2725,6 +3291,7 @@ async function requestHandler(req, res) {
         resourceId: tokenRecord.tokenId,
         metadata: {
           sourceTokenId: sourceToken.tokenId,
+          requestedTtlSeconds: requestedTtl,
           ttlSeconds,
           placementId: tokenRecord.placementId,
         },
@@ -3154,6 +3721,19 @@ async function requestHandler(req, res) {
       const payload = await readJsonBody(req)
       if (isNextStepIntentCardPayload(payload)) {
         const request = normalizeNextStepIntentCardPayload(payload, 'sdk/evaluate')
+        const auth = authorizeRuntimeCredential(req, {
+          operation: 'sdk_evaluate',
+          requiredScope: 'sdkEvaluate',
+          appId: request.appId,
+          placementId: request.placementId,
+        })
+        if (!auth.ok) {
+          sendJson(res, auth.status, {
+            error: auth.error,
+          })
+          return
+        }
+
         const inferenceStartedAt = Date.now()
         const { inference, resolvedContext } = await resolveIntentInferenceForNextStep(request)
         const inferenceLatencyMs = Math.max(0, Date.now() - inferenceStartedAt)
@@ -3197,6 +3777,19 @@ async function requestHandler(req, res) {
       }
 
       const request = normalizeAttachMvpPayload(payload, 'sdk/evaluate')
+      const auth = authorizeRuntimeCredential(req, {
+        operation: 'sdk_evaluate',
+        requiredScope: 'sdkEvaluate',
+        appId: request.appId,
+        placementId: 'chat_inline_v1',
+      })
+      if (!auth.ok) {
+        sendJson(res, auth.status, {
+          error: auth.error,
+        })
+        return
+      }
+
       const result = await evaluateRequest({
         appId: request.appId,
         sessionId: request.sessionId,
@@ -3228,6 +3821,19 @@ async function requestHandler(req, res) {
       const payload = await readJsonBody(req)
       if (isNextStepIntentCardPayload(payload)) {
         const request = normalizeNextStepIntentCardPayload(payload, 'sdk/events')
+        const auth = authorizeRuntimeCredential(req, {
+          operation: 'sdk_events',
+          requiredScope: 'sdkEvents',
+          appId: request.appId,
+          placementId: request.placementId,
+        })
+        if (!auth.ok) {
+          sendJson(res, auth.status, {
+            error: auth.error,
+          })
+          return
+        }
+
         const inferredIntentClass = String(request.context.intentHints?.intent_class || '').trim().toLowerCase()
         const inferredIntentScore = clampNumber(request.context.intentHints?.intent_score, 0, 1, NaN)
         const inferredPreferenceFacets = normalizeNextStepPreferenceFacets(
@@ -3253,6 +3859,18 @@ async function requestHandler(req, res) {
         })
       } else {
         const request = normalizeAttachMvpPayload(payload, 'sdk/events')
+        const auth = authorizeRuntimeCredential(req, {
+          operation: 'sdk_events',
+          requiredScope: 'sdkEvents',
+          appId: request.appId,
+          placementId: 'chat_inline_v1',
+        })
+        if (!auth.ok) {
+          sendJson(res, auth.status, {
+            error: auth.error,
+          })
+          return
+        }
 
         recordEvent({
           eventType: 'sdk_event',
