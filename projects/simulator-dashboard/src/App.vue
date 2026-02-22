@@ -1,56 +1,60 @@
 <script setup>
-import { onMounted } from 'vue'
+import { computed } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 
-import { dashboardState, hydrateDashboardState } from './state/dashboard-state'
+import { featureFlags } from './config/feature-flags'
 
 const route = useRoute()
 
-const navItems = [
-  { label: 'Overview', to: '/overview' },
-  { label: 'Placements', to: '/placements' },
-  { label: 'Triggers', to: '/triggers' },
-  { label: 'Decision Logs', to: '/decision-logs' },
-]
+const navItems = computed(() => {
+  const items = [
+    { to: '/home', label: 'Home' },
+    { to: '/quick-start', label: 'Quick Start' },
+    { to: '/api-keys', label: 'API Keys' },
+    { to: '/integrations', label: 'Integrations' },
+    { to: '/usage', label: 'Usage' },
+  ]
 
-onMounted(() => {
-  hydrateDashboardState()
+  if (featureFlags.enableInternalReset) {
+    items.push({ to: '/internal-reset', label: 'Internal Reset' })
+  }
+
+  return items
 })
 </script>
 
 <template>
   <div class="app-shell">
-    <aside class="side-nav card">
+    <aside class="side-nav">
       <div>
         <p class="eyebrow">AI Native Network</p>
-        <h1 class="title">Integrator Console</h1>
+        <h1 class="title">Developer Dashboard</h1>
       </div>
-      <nav>
+
+      <nav class="nav-list">
         <RouterLink
           v-for="item in navItems"
           :key="item.to"
           :to="item.to"
           class="nav-link"
-          :class="{ active: route.path === item.to }"
+          :class="{ active: route.path === item.to || route.path.startsWith(`${item.to}/`) }"
         >
           {{ item.label }}
         </RouterLink>
       </nav>
+
       <p class="muted">
-        Tenant mode: user-defined parameters
+        Mode:
+        <strong>{{ featureFlags.dashboardV1Minimal ? 'v1 minimal' : 'legacy' }}</strong>
       </p>
-      <p class="muted status-row">
-        Gateway:
-        <span :class="{ ok: dashboardState.meta.connected, bad: !dashboardState.meta.connected }">
-          {{ dashboardState.meta.connected ? 'connected' : 'offline fallback' }}
-        </span>
-      </p>
-      <p v-if="dashboardState.meta.error" class="muted">
-        {{ dashboardState.meta.error }}
+
+      <p class="muted">
+        Internal reset:
+        <strong>{{ featureFlags.enableInternalReset ? 'enabled' : 'disabled' }}</strong>
       </p>
     </aside>
 
-    <main class="content-pane">
+    <main class="content-pane card">
       <RouterView />
     </main>
   </div>
