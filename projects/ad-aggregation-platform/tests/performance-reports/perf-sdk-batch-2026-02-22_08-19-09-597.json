@@ -1,0 +1,1184 @@
+{
+  "startedAt": "2026-02-22T08:19:09.597Z",
+  "endedAt": "2026-02-22T09:29:35.728Z",
+  "options": {
+    "baseUrl": "http://127.0.0.1:3100",
+    "appId": "simulator-chatbot",
+    "locale": "en-US",
+    "timeoutMs": 12000,
+    "maxInflight": 100,
+    "gatewayPid": 51043,
+    "rssSampleIntervalSec": 30,
+    "phaseConfigs": [
+      {
+        "name": "baseline",
+        "durationSec": 300,
+        "qps": 5
+      },
+      {
+        "name": "burst",
+        "durationSec": 300,
+        "qps": 10
+      },
+      {
+        "name": "soak",
+        "durationSec": 3600,
+        "qps": 5
+      }
+    ]
+  },
+  "phases": [
+    {
+      "name": "baseline",
+      "qpsTarget": 5,
+      "durationTargetSec": 300,
+      "durationActualSec": 308,
+      "totalClosedLoop": 1500,
+      "passedClosedLoop": 1469,
+      "failedClosedLoop": 31,
+      "errorRatePct": 2.0667,
+      "actualQps": 4.8701,
+      "evaluateLatency": {
+        "count": 1500,
+        "meanMs": 599.439,
+        "p50Ms": 68.188,
+        "p95Ms": 4105.503,
+        "p99Ms": 12001,
+        "minMs": 46.204,
+        "maxMs": 12012.622
+      },
+      "eventsLatency": {
+        "count": 1469,
+        "meanMs": 12.039,
+        "p50Ms": 11.212,
+        "p95Ms": 17.423,
+        "p99Ms": 35.709,
+        "minMs": 6.355,
+        "maxMs": 113.607
+      },
+      "errorSamples": [
+        {
+          "sequence": 46,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 53,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 60,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 152,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 187,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 193,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 301,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 375,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 394,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 398,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 464,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 465,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 540,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 547,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 586,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 704,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 707,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 779,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 853,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 927,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        }
+      ]
+    },
+    {
+      "name": "burst",
+      "qpsTarget": 10,
+      "durationTargetSec": 300,
+      "durationActualSec": 306,
+      "totalClosedLoop": 3000,
+      "passedClosedLoop": 2962,
+      "failedClosedLoop": 38,
+      "errorRatePct": 1.2667,
+      "actualQps": 9.8039,
+      "evaluateLatency": {
+        "count": 3000,
+        "meanMs": 623.417,
+        "p50Ms": 60.096,
+        "p95Ms": 4702.25,
+        "p99Ms": 12000.011,
+        "minMs": 42.45,
+        "maxMs": 12120.47
+      },
+      "eventsLatency": {
+        "count": 2962,
+        "meanMs": 100.175,
+        "p50Ms": 9.056,
+        "p95Ms": 257.448,
+        "p99Ms": 2024.886,
+        "minMs": 5.813,
+        "maxMs": 9857.307
+      },
+      "errorSamples": [
+        {
+          "sequence": 1,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 77,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 169,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 230,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 413,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 435,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 456,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 605,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 706,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 770,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 868,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 975,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 995,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 1183,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 1343,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 1466,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 1536,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 1541,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 1650,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 1787,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        }
+      ]
+    },
+    {
+      "name": "soak",
+      "qpsTarget": 5,
+      "durationTargetSec": 3600,
+      "durationActualSec": 3612,
+      "totalClosedLoop": 18000,
+      "passedClosedLoop": 17820,
+      "failedClosedLoop": 180,
+      "errorRatePct": 1,
+      "actualQps": 4.9834,
+      "evaluateLatency": {
+        "count": 18000,
+        "meanMs": 585.703,
+        "p50Ms": 67.091,
+        "p95Ms": 4718.37,
+        "p99Ms": 11996.752,
+        "minMs": 42.697,
+        "maxMs": 12046.578
+      },
+      "eventsLatency": {
+        "count": 17820,
+        "meanMs": 12.415,
+        "p50Ms": 11.336,
+        "p95Ms": 17.01,
+        "p99Ms": 36.054,
+        "minMs": 5.702,
+        "maxMs": 686.014
+      },
+      "errorSamples": [
+        {
+          "sequence": 39,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 54,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 72,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 165,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 180,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 235,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 260,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 293,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 326,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 345,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 400,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 401,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 438,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 496,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 564,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 883,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 1088,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 1093,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 1187,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        },
+        {
+          "sequence": 1351,
+          "reason": "evaluate_failed",
+          "evaluateStatus": null,
+          "eventsStatus": null,
+          "evaluateError": "This operation was aborted",
+          "eventsError": null
+        }
+      ]
+    }
+  ],
+  "overall": {
+    "totalClosedLoop": 22500,
+    "failedClosedLoop": 249,
+    "errorRatePct": 1.1067
+  },
+  "rss": {
+    "samples": [
+      {
+        "at": "2026-02-22T08:19:09.623Z",
+        "rssMb": 49.359
+      },
+      {
+        "at": "2026-02-22T08:19:39.630Z",
+        "rssMb": 112.016
+      },
+      {
+        "at": "2026-02-22T08:20:09.647Z",
+        "rssMb": 108.328
+      },
+      {
+        "at": "2026-02-22T08:20:39.634Z",
+        "rssMb": 124.813
+      },
+      {
+        "at": "2026-02-22T08:21:09.633Z",
+        "rssMb": 88.063
+      },
+      {
+        "at": "2026-02-22T08:21:39.630Z",
+        "rssMb": 96.422
+      },
+      {
+        "at": "2026-02-22T08:22:09.632Z",
+        "rssMb": 95.344
+      },
+      {
+        "at": "2026-02-22T08:22:39.634Z",
+        "rssMb": 125.578
+      },
+      {
+        "at": "2026-02-22T08:23:09.640Z",
+        "rssMb": 139.813
+      },
+      {
+        "at": "2026-02-22T08:23:39.572Z",
+        "rssMb": 122.469
+      },
+      {
+        "at": "2026-02-22T08:24:09.572Z",
+        "rssMb": 93.031
+      },
+      {
+        "at": "2026-02-22T08:24:39.573Z",
+        "rssMb": 119.438
+      },
+      {
+        "at": "2026-02-22T08:25:09.573Z",
+        "rssMb": 109.109
+      },
+      {
+        "at": "2026-02-22T08:25:39.573Z",
+        "rssMb": 106.531
+      },
+      {
+        "at": "2026-02-22T08:26:09.571Z",
+        "rssMb": 122.953
+      },
+      {
+        "at": "2026-02-22T08:26:39.572Z",
+        "rssMb": 109.703
+      },
+      {
+        "at": "2026-02-22T08:27:09.570Z",
+        "rssMb": 115.781
+      },
+      {
+        "at": "2026-02-22T08:27:39.573Z",
+        "rssMb": 95.875
+      },
+      {
+        "at": "2026-02-22T08:28:09.673Z",
+        "rssMb": 113.609
+      },
+      {
+        "at": "2026-02-22T08:28:39.612Z",
+        "rssMb": 123.25
+      },
+      {
+        "at": "2026-02-22T08:29:09.605Z",
+        "rssMb": 142.984
+      },
+      {
+        "at": "2026-02-22T08:29:39.605Z",
+        "rssMb": 127.016
+      },
+      {
+        "at": "2026-02-22T08:30:09.605Z",
+        "rssMb": 119.328
+      },
+      {
+        "at": "2026-02-22T08:30:39.611Z",
+        "rssMb": 133.844
+      },
+      {
+        "at": "2026-02-22T08:31:09.606Z",
+        "rssMb": 139.016
+      },
+      {
+        "at": "2026-02-22T08:31:39.607Z",
+        "rssMb": 87.656
+      },
+      {
+        "at": "2026-02-22T08:32:09.608Z",
+        "rssMb": 112.125
+      },
+      {
+        "at": "2026-02-22T08:32:39.607Z",
+        "rssMb": 122.281
+      },
+      {
+        "at": "2026-02-22T08:33:09.608Z",
+        "rssMb": 109.109
+      },
+      {
+        "at": "2026-02-22T08:33:39.652Z",
+        "rssMb": 89.813
+      },
+      {
+        "at": "2026-02-22T08:34:09.619Z",
+        "rssMb": 96.891
+      },
+      {
+        "at": "2026-02-22T08:34:39.620Z",
+        "rssMb": 151.766
+      },
+      {
+        "at": "2026-02-22T08:35:09.619Z",
+        "rssMb": 129.484
+      },
+      {
+        "at": "2026-02-22T08:35:39.623Z",
+        "rssMb": 130
+      },
+      {
+        "at": "2026-02-22T08:36:09.619Z",
+        "rssMb": 109.047
+      },
+      {
+        "at": "2026-02-22T08:36:39.621Z",
+        "rssMb": 143.938
+      },
+      {
+        "at": "2026-02-22T08:37:09.620Z",
+        "rssMb": 119.234
+      },
+      {
+        "at": "2026-02-22T08:37:39.622Z",
+        "rssMb": 127.656
+      },
+      {
+        "at": "2026-02-22T08:38:09.618Z",
+        "rssMb": 110.75
+      },
+      {
+        "at": "2026-02-22T08:38:39.632Z",
+        "rssMb": 145.344
+      },
+      {
+        "at": "2026-02-22T08:39:09.661Z",
+        "rssMb": 138.188
+      },
+      {
+        "at": "2026-02-22T08:39:39.658Z",
+        "rssMb": 148
+      },
+      {
+        "at": "2026-02-22T08:40:09.662Z",
+        "rssMb": 138.563
+      },
+      {
+        "at": "2026-02-22T08:40:39.664Z",
+        "rssMb": 124.563
+      },
+      {
+        "at": "2026-02-22T08:41:09.664Z",
+        "rssMb": 125.031
+      },
+      {
+        "at": "2026-02-22T08:41:39.659Z",
+        "rssMb": 128.328
+      },
+      {
+        "at": "2026-02-22T08:42:09.662Z",
+        "rssMb": 139.125
+      },
+      {
+        "at": "2026-02-22T08:42:39.661Z",
+        "rssMb": 105.453
+      },
+      {
+        "at": "2026-02-22T08:43:09.661Z",
+        "rssMb": 82.203
+      },
+      {
+        "at": "2026-02-22T08:43:39.664Z",
+        "rssMb": 130.078
+      },
+      {
+        "at": "2026-02-22T08:44:09.660Z",
+        "rssMb": 141.922
+      },
+      {
+        "at": "2026-02-22T08:44:39.665Z",
+        "rssMb": 127.297
+      },
+      {
+        "at": "2026-02-22T08:45:09.662Z",
+        "rssMb": 100.391
+      },
+      {
+        "at": "2026-02-22T08:45:39.781Z",
+        "rssMb": 105.391
+      },
+      {
+        "at": "2026-02-22T08:46:09.698Z",
+        "rssMb": 105.391
+      },
+      {
+        "at": "2026-02-22T08:46:39.694Z",
+        "rssMb": 121.422
+      },
+      {
+        "at": "2026-02-22T08:47:09.695Z",
+        "rssMb": 94.469
+      },
+      {
+        "at": "2026-02-22T08:47:39.694Z",
+        "rssMb": 126.156
+      },
+      {
+        "at": "2026-02-22T08:48:09.694Z",
+        "rssMb": 131.766
+      },
+      {
+        "at": "2026-02-22T08:48:39.692Z",
+        "rssMb": 101.531
+      },
+      {
+        "at": "2026-02-22T08:49:09.695Z",
+        "rssMb": 149.891
+      },
+      {
+        "at": "2026-02-22T08:49:39.696Z",
+        "rssMb": 114.766
+      },
+      {
+        "at": "2026-02-22T08:50:09.697Z",
+        "rssMb": 123.453
+      },
+      {
+        "at": "2026-02-22T08:50:39.698Z",
+        "rssMb": 140.484
+      },
+      {
+        "at": "2026-02-22T08:51:09.700Z",
+        "rssMb": 138.484
+      },
+      {
+        "at": "2026-02-22T08:51:39.695Z",
+        "rssMb": 130.594
+      },
+      {
+        "at": "2026-02-22T08:52:09.698Z",
+        "rssMb": 111.203
+      },
+      {
+        "at": "2026-02-22T08:52:39.696Z",
+        "rssMb": 142.688
+      },
+      {
+        "at": "2026-02-22T08:53:09.696Z",
+        "rssMb": 136.797
+      },
+      {
+        "at": "2026-02-22T08:53:39.699Z",
+        "rssMb": 120.938
+      },
+      {
+        "at": "2026-02-22T08:54:09.699Z",
+        "rssMb": 122.906
+      },
+      {
+        "at": "2026-02-22T08:54:39.699Z",
+        "rssMb": 131.188
+      },
+      {
+        "at": "2026-02-22T08:55:09.700Z",
+        "rssMb": 108.625
+      },
+      {
+        "at": "2026-02-22T08:55:39.699Z",
+        "rssMb": 87.109
+      },
+      {
+        "at": "2026-02-22T08:56:09.700Z",
+        "rssMb": 114.5
+      },
+      {
+        "at": "2026-02-22T08:56:39.700Z",
+        "rssMb": 119.906
+      },
+      {
+        "at": "2026-02-22T08:57:09.697Z",
+        "rssMb": 108.719
+      },
+      {
+        "at": "2026-02-22T08:57:39.700Z",
+        "rssMb": 93.641
+      },
+      {
+        "at": "2026-02-22T08:58:09.702Z",
+        "rssMb": 107.906
+      },
+      {
+        "at": "2026-02-22T08:58:39.701Z",
+        "rssMb": 140.969
+      },
+      {
+        "at": "2026-02-22T08:59:09.704Z",
+        "rssMb": 129.188
+      },
+      {
+        "at": "2026-02-22T08:59:39.699Z",
+        "rssMb": 99.063
+      },
+      {
+        "at": "2026-02-22T09:00:09.703Z",
+        "rssMb": 101.75
+      },
+      {
+        "at": "2026-02-22T09:00:39.703Z",
+        "rssMb": 135.406
+      },
+      {
+        "at": "2026-02-22T09:01:09.704Z",
+        "rssMb": 112.125
+      },
+      {
+        "at": "2026-02-22T09:01:39.700Z",
+        "rssMb": 98.047
+      },
+      {
+        "at": "2026-02-22T09:02:09.704Z",
+        "rssMb": 139.078
+      },
+      {
+        "at": "2026-02-22T09:02:39.701Z",
+        "rssMb": 126.547
+      },
+      {
+        "at": "2026-02-22T09:03:09.709Z",
+        "rssMb": 110.703
+      },
+      {
+        "at": "2026-02-22T09:03:39.702Z",
+        "rssMb": 127.641
+      },
+      {
+        "at": "2026-02-22T09:04:09.704Z",
+        "rssMb": 113.906
+      },
+      {
+        "at": "2026-02-22T09:04:39.706Z",
+        "rssMb": 115.672
+      },
+      {
+        "at": "2026-02-22T09:05:09.702Z",
+        "rssMb": 107.406
+      },
+      {
+        "at": "2026-02-22T09:05:39.704Z",
+        "rssMb": 102.688
+      },
+      {
+        "at": "2026-02-22T09:06:09.712Z",
+        "rssMb": 103.047
+      },
+      {
+        "at": "2026-02-22T09:06:39.710Z",
+        "rssMb": 145.766
+      },
+      {
+        "at": "2026-02-22T09:07:09.711Z",
+        "rssMb": 135.109
+      },
+      {
+        "at": "2026-02-22T09:07:39.709Z",
+        "rssMb": 103.609
+      },
+      {
+        "at": "2026-02-22T09:08:09.709Z",
+        "rssMb": 104.094
+      },
+      {
+        "at": "2026-02-22T09:08:39.708Z",
+        "rssMb": 107.438
+      },
+      {
+        "at": "2026-02-22T09:09:09.714Z",
+        "rssMb": 132.813
+      },
+      {
+        "at": "2026-02-22T09:09:39.709Z",
+        "rssMb": 134.719
+      },
+      {
+        "at": "2026-02-22T09:10:09.718Z",
+        "rssMb": 126.344
+      },
+      {
+        "at": "2026-02-22T09:10:39.713Z",
+        "rssMb": 133.344
+      },
+      {
+        "at": "2026-02-22T09:11:09.712Z",
+        "rssMb": 135.5
+      },
+      {
+        "at": "2026-02-22T09:11:39.714Z",
+        "rssMb": 140.25
+      },
+      {
+        "at": "2026-02-22T09:12:09.713Z",
+        "rssMb": 130.313
+      },
+      {
+        "at": "2026-02-22T09:12:39.709Z",
+        "rssMb": 97.313
+      },
+      {
+        "at": "2026-02-22T09:13:09.707Z",
+        "rssMb": 114.969
+      },
+      {
+        "at": "2026-02-22T09:13:39.713Z",
+        "rssMb": 122.297
+      },
+      {
+        "at": "2026-02-22T09:14:09.720Z",
+        "rssMb": 140.766
+      },
+      {
+        "at": "2026-02-22T09:14:39.722Z",
+        "rssMb": 134.797
+      },
+      {
+        "at": "2026-02-22T09:15:09.709Z",
+        "rssMb": 120.141
+      },
+      {
+        "at": "2026-02-22T09:15:39.716Z",
+        "rssMb": 119.766
+      },
+      {
+        "at": "2026-02-22T09:16:09.710Z",
+        "rssMb": 110.375
+      },
+      {
+        "at": "2026-02-22T09:16:39.709Z",
+        "rssMb": 126.047
+      },
+      {
+        "at": "2026-02-22T09:17:09.712Z",
+        "rssMb": 119.5
+      },
+      {
+        "at": "2026-02-22T09:17:39.711Z",
+        "rssMb": 110.219
+      },
+      {
+        "at": "2026-02-22T09:18:09.711Z",
+        "rssMb": 111.672
+      },
+      {
+        "at": "2026-02-22T09:18:39.708Z",
+        "rssMb": 129.984
+      },
+      {
+        "at": "2026-02-22T09:19:09.713Z",
+        "rssMb": 128.203
+      },
+      {
+        "at": "2026-02-22T09:19:39.714Z",
+        "rssMb": 137.109
+      },
+      {
+        "at": "2026-02-22T09:20:09.719Z",
+        "rssMb": 128.563
+      },
+      {
+        "at": "2026-02-22T09:20:39.716Z",
+        "rssMb": 125.281
+      },
+      {
+        "at": "2026-02-22T09:21:09.718Z",
+        "rssMb": 132.891
+      },
+      {
+        "at": "2026-02-22T09:21:39.718Z",
+        "rssMb": 151.828
+      },
+      {
+        "at": "2026-02-22T09:22:09.716Z",
+        "rssMb": 143.484
+      },
+      {
+        "at": "2026-02-22T09:22:39.713Z",
+        "rssMb": 129.453
+      },
+      {
+        "at": "2026-02-22T09:23:09.710Z",
+        "rssMb": 109.281
+      },
+      {
+        "at": "2026-02-22T09:23:39.723Z",
+        "rssMb": 135.109
+      },
+      {
+        "at": "2026-02-22T09:24:09.743Z",
+        "rssMb": 135.063
+      },
+      {
+        "at": "2026-02-22T09:24:39.731Z",
+        "rssMb": 119.516
+      },
+      {
+        "at": "2026-02-22T09:25:09.736Z",
+        "rssMb": 123.344
+      },
+      {
+        "at": "2026-02-22T09:25:39.729Z",
+        "rssMb": 127.234
+      },
+      {
+        "at": "2026-02-22T09:26:09.727Z",
+        "rssMb": 98.594
+      },
+      {
+        "at": "2026-02-22T09:26:39.730Z",
+        "rssMb": 101.766
+      },
+      {
+        "at": "2026-02-22T09:27:09.735Z",
+        "rssMb": 148.25
+      },
+      {
+        "at": "2026-02-22T09:27:39.729Z",
+        "rssMb": 139.609
+      },
+      {
+        "at": "2026-02-22T09:28:10.514Z",
+        "rssMb": 54.969
+      },
+      {
+        "at": "2026-02-22T09:28:40.016Z",
+        "rssMb": 113.641
+      },
+      {
+        "at": "2026-02-22T09:29:10.021Z",
+        "rssMb": 140.516
+      }
+    ],
+    "summary": {
+      "startMb": 49.359,
+      "endMb": 140.516,
+      "growthMb": 91.157,
+      "growthPct": 184.6816
+    }
+  }
+}

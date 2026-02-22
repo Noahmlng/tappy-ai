@@ -39,12 +39,11 @@ Results:
 
 ## 4. Open Gaps (Not Yet Executed in This Run)
 
-- Performance thresholds (`p95 latency`, burst error rate, soak stability)
-- Rollback drill timing (`RTO <= 15 min`)
+- Performance batch: executed (see `docs/execution-plans/implementation/perf-run-2026-02-22-dev.md`)
+- Rollback drill: executed, RTO validated (see `docs/execution-plans/implementation/rollback-drill-record-2026-02-22-dev.md`)
 - Reconciliation mismatch thresholds in live-like traffic window
 
 ## 5. Next Recommended Test Batch
 
-1. Run a 30-60 min load/soak profile and record p95/p99 + error rate.
-2. Execute rollback drill once and log recovery time.
-3. Run reconciliation script against a full-day sample.
+1. Run reconciliation script against a full-day sample.
+2. Tune evaluate path latency and memory usage, then rerun the same performance batch profile.
