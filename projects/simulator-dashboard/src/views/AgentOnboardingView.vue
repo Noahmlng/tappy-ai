@@ -1,7 +1,7 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { controlPlaneClient } from '../api/control-plane-client'
-import { AGENT_TEMPLATE_ITEMS, buildAgentTemplates } from '../lib/agent-templates'
+import { AGENT_TEMPLATE_ITEMS, AUTO_PR_POLICY, buildAgentTemplates } from '../lib/agent-templates'
 import { validateAgentOutputContract } from '../lib/agent-output-contract'
 
 const activeTab = ref('codex')
@@ -38,6 +38,12 @@ const contractEvidence = computed(() => {
   const evidence = contractValidation.value?.checks?.evidence?.evidence
   return evidence ? JSON.stringify(evidence, null, 2) : ''
 })
+const prPolicyStatusClass = computed(() => (
+  AUTO_PR_POLICY.enabled ? 'status-pill warn' : 'status-pill good'
+))
+const prPolicyLabel = computed(() => (
+  AUTO_PR_POLICY.enabled ? 'auto pr on' : 'auto pr off'
+))
 
 async function copyText(value) {
   try {
@@ -187,12 +193,27 @@ function contractCheckClass(ok) {
     </article>
 
     <article class="panel">
+      <div class="panel-head">
+        <h3>PR Policy</h3>
+        <span :class="prPolicyStatusClass">{{ prPolicyLabel }}</span>
+      </div>
+      <p class="subtitle">{{ AUTO_PR_POLICY.summary }}</p>
+      <ul class="checklist">
+        <li v-for="rule in AUTO_PR_POLICY.rules" :key="rule">
+          {{ rule }}
+        </li>
+      </ul>
+      <p class="muted">Required output line: <code>{{ AUTO_PR_POLICY.acknowledgement }}</code></p>
+    </article>
+
+    <article class="panel">
       <h3>Output Contract</h3>
       <ul class="checklist">
         <li>Patch only, no auto PR submission.</li>
         <li>Must run `token exchange -> config -> evaluate -> events` smoke.</li>
         <li>Evidence includes `requestId`, `decisionResult`, and `eventsOk`.</li>
         <li>Fail-open is explicitly preserved.</li>
+        <li>{{ AUTO_PR_POLICY.acknowledgement }}</li>
       </ul>
     </article>
 
@@ -232,6 +253,10 @@ function contractCheckClass(ok) {
           <span :class="contractCheckClass(contractValidation.checks.evidence.ok)">evidence</span>
           {{ contractValidation.checks.evidence.message }}
         </p>
+        <p>
+          <span :class="contractCheckClass(contractValidation.checks.prPolicy.ok)">pr policy</span>
+          {{ contractValidation.checks.prPolicy.message }}
+        </p>
         <div v-if="contractValidation.checks.files.files.length">
           <p class="muted">Detected files</p>
           <pre class="code-block">{{ contractValidation.checks.files.files.join('\n') }}</pre>
@@ -239,6 +264,10 @@ function contractCheckClass(ok) {
         <div v-if="contractEvidence">
           <p class="muted">Parsed evidence</p>
           <pre class="code-block">{{ contractEvidence }}</pre>
+        </div>
+        <div v-if="contractValidation.checks.prPolicy.matches.length">
+          <p class="muted">PR policy matches</p>
+          <pre class="code-block">{{ contractValidation.checks.prPolicy.matches.join('\n') }}</pre>
         </div>
       </div>
     </article>

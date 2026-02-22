@@ -4,6 +4,18 @@ export const AGENT_TEMPLATE_ITEMS = Object.freeze([
   { id: 'cursor', label: 'Cursor' },
 ])
 
+export const AUTO_PR_POLICY = Object.freeze({
+  enabled: false,
+  label: 'OFF',
+  summary: 'Patch-only handoff. Agent must not open or auto-submit PR.',
+  acknowledgement: 'PR action: skipped (auto PR disabled).',
+  rules: Object.freeze([
+    'Auto-submit PR is OFF by default and cannot be enabled in v1.',
+    'Do not run PR automation commands (`gh pr create`, `hub pull-request`).',
+    'Stop at patch + commands + smoke evidence; hand over to developer for PR timing.',
+  ]),
+})
+
 function text(value, fallback) {
   const normalized = String(value || '').trim()
   return normalized || fallback
@@ -79,12 +91,14 @@ function buildSharedInstruction(input) {
     '2. Only use public production-ready network endpoints.',
     '3. Never call /api/v1/dashboard/* or /api/v1/dev/*.',
     '4. Keep fail-open: ad failure must not block primary response.',
-    '5. Do not auto-submit PR.',
+    `5. Auto-submit PR: ${AUTO_PR_POLICY.label} (hard rule).`,
+    '6. Never execute PR automation commands (`gh pr create`, `hub pull-request`).',
     '',
     'Required output:',
     '1. Changed files list.',
     '2. Commands executed.',
     '3. Smoke evidence JSON: requestId, decisionResult, eventsOk.',
+    `4. ${AUTO_PR_POLICY.acknowledgement}`,
   ].join('\n')
 }
 

@@ -1,3 +1,5 @@
+import { AUTO_PR_POLICY } from '../agent-templates/index.js'
+
 const FILE_SECTION_PATTERN = /(^|\n)\s*(#{1,6}\s*)?(files?\s*(changed|updated|modified|list)|changed files?)\s*:?\s*($|\n)/i
 
 const FILE_PATH_PATTERN = /(?:^|[\s`'"])((?:\.{0,2}\/)?(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+(?:\.[A-Za-z0-9._-]+)?)(?=$|[\s`'":,)\]])/g
@@ -23,6 +25,14 @@ const SMOKE_STEPS = [
     label: 'events',
     markers: ['/api/v1/sdk/events', 'sdk/events'],
   },
+]
+
+const AUTO_PR_VIOLATION_PATTERNS = [
+  /gh\s+pr\s+create/i,
+  /hub\s+pull-request/i,
+  /auto[-\s]?submit\s+pr/i,
+  /open\s+(a|the)\s+pr/i,
+  /create\s+(a|the)\s+pull\s+request/i,
 ]
 
 function asText(value) {
@@ -281,21 +291,55 @@ function validateEvidence(text) {
   }
 }
 
+function validatePrPolicy(text) {
+  const source = asText(text)
+  const matches = AUTO_PR_VIOLATION_PATTERNS
+    .filter((pattern) => pattern.test(source))
+    .map((pattern) => pattern.toString())
+
+  if (matches.length > 0) {
+    return {
+      ok: false,
+      message: 'Detected possible auto-PR behavior in output text.',
+      matches,
+    }
+  }
+
+  const hasAcknowledgement = source.toLowerCase().includes(
+    AUTO_PR_POLICY.acknowledgement.toLowerCase(),
+  )
+  if (!hasAcknowledgement) {
+    return {
+      ok: false,
+      message: 'PR policy acknowledgement line is missing in output.',
+      matches: [],
+    }
+  }
+
+  return {
+    ok: true,
+    message: 'No auto-PR behavior detected and acknowledgement is present.',
+    matches: [],
+  }
+}
+
 export function validateAgentOutputContract(agentOutput) {
   const text = asText(agentOutput)
   const files = validateFilesSection(text)
   const smoke = validateSmokeChain(text)
   const evidence = validateEvidence(text)
-  const checks = [files, smoke, evidence]
+  const prPolicy = validatePrPolicy(text)
+  const checks = [files, smoke, evidence, prPolicy]
   const passed = checks.filter((item) => item.ok).length
 
   return {
     ok: checks.every((item) => item.ok),
-    score: `${passed}/3`,
+    score: `${passed}/4`,
     checks: {
       files,
       smoke,
       evidence,
+      prPolicy,
     },
   }
 }
