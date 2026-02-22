@@ -26,6 +26,7 @@ const MAX_DECISION_LOGS = 500
 const MAX_EVENT_LOGS = 500
 const MAX_PLACEMENT_AUDIT_LOGS = 500
 const MAX_NETWORK_FLOW_LOGS = 300
+const MAX_CONTROL_PLANE_AUDIT_LOGS = 800
 const DECISION_REASON_ENUM = new Set(['served', 'no_fill', 'blocked', 'error'])
 const CONTROL_PLANE_ENVIRONMENTS = new Set(['sandbox', 'staging', 'prod'])
 const CONTROL_PLANE_KEY_STATUS = new Set(['active', 'revoked'])
@@ -992,11 +993,12 @@ function createInitialState() {
   const placementConfigVersion = Math.max(1, ...placements.map((placement) => placement.configVersion || 1))
 
   return {
-    version: 2,
+    version: 3,
     updatedAt: nowIso(),
     placementConfigVersion,
     placements,
     placementAuditLogs: [],
+    controlPlaneAuditLogs: [],
     networkFlowStats: createInitialNetworkFlowStats(),
     networkFlowLogs: [],
     decisionLogs: [],
@@ -1047,12 +1049,15 @@ function loadState() {
     }
 
     return {
-      version: toPositiveInteger(parsed?.version, 2),
+      version: toPositiveInteger(parsed?.version, 3),
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : nowIso(),
       placementConfigVersion,
       placements,
       placementAuditLogs: Array.isArray(parsed.placementAuditLogs)
         ? parsed.placementAuditLogs.slice(0, MAX_PLACEMENT_AUDIT_LOGS)
+        : [],
+      controlPlaneAuditLogs: Array.isArray(parsed.controlPlaneAuditLogs)
+        ? parsed.controlPlaneAuditLogs.slice(0, MAX_CONTROL_PLANE_AUDIT_LOGS)
         : [],
       networkFlowStats: normalizeNetworkFlowStats(parsed?.networkFlowStats),
       networkFlowLogs: Array.isArray(parsed.networkFlowLogs)
@@ -1207,6 +1212,55 @@ function recordPlacementAudit(payload) {
     },
     ...state.placementAuditLogs,
   ].slice(0, MAX_PLACEMENT_AUDIT_LOGS)
+}
+
+function resolveAuditActor(req, fallback = 'dashboard') {
+  if (!req || !req.headers) return fallback
+  const actor = String(req.headers['x-dashboard-actor'] || req.headers['x-user-id'] || '').trim()
+  return actor || fallback
+}
+
+function recordControlPlaneAudit(payload) {
+  state.controlPlaneAuditLogs = [
+    {
+      id: createId('cp_audit'),
+      createdAt: nowIso(),
+      ...payload,
+    },
+    ...state.controlPlaneAuditLogs,
+  ].slice(0, MAX_CONTROL_PLANE_AUDIT_LOGS)
+}
+
+function queryControlPlaneAudits(searchParams) {
+  const action = String(searchParams.get('action') || '').trim().toLowerCase()
+  const appId = String(searchParams.get('appId') || '').trim()
+  const resourceType = String(searchParams.get('resourceType') || '').trim().toLowerCase()
+  const resourceId = String(searchParams.get('resourceId') || '').trim()
+  const environment = String(searchParams.get('environment') || '').trim().toLowerCase()
+  const actor = String(searchParams.get('actor') || '').trim().toLowerCase()
+  const limit = clampNumber(searchParams.get('limit'), 1, 500, 100)
+
+  let rows = [...state.controlPlaneAuditLogs]
+  if (action) {
+    rows = rows.filter((row) => String(row?.action || '').toLowerCase() === action)
+  }
+  if (appId) {
+    rows = rows.filter((row) => String(row?.appId || '') === appId)
+  }
+  if (resourceType) {
+    rows = rows.filter((row) => String(row?.resourceType || '').toLowerCase() === resourceType)
+  }
+  if (resourceId) {
+    rows = rows.filter((row) => String(row?.resourceId || '') === resourceId)
+  }
+  if (environment) {
+    rows = rows.filter((row) => String(row?.environment || '').toLowerCase() === environment)
+  }
+  if (actor) {
+    rows = rows.filter((row) => String(row?.actor || '').toLowerCase() === actor)
+  }
+
+  return rows.slice(0, Math.floor(limit))
 }
 
 function recordNetworkFlowObservation(payload) {
@@ -1962,6 +2016,7 @@ function getDashboardStatePayload() {
     metricsByPlacement: computeMetricsByPlacement(),
     placements: state.placements,
     placementAuditLogs: state.placementAuditLogs,
+    controlPlaneAuditLogs: state.controlPlaneAuditLogs,
     networkHealth,
     networkHealthSummary: summarizeNetworkHealthMap(networkHealth),
     networkFlowStats: state.networkFlowStats,
@@ -2239,6 +2294,13 @@ async function requestHandler(req, res) {
     }
   }
 
+  if (pathname === '/api/v1/public/audit/logs' && req.method === 'GET') {
+    sendJson(res, 200, {
+      items: queryControlPlaneAudits(requestUrl.searchParams),
+    })
+    return
+  }
+
   if (pathname === '/api/v1/public/credentials/keys' && req.method === 'GET') {
     const appId = String(requestUrl.searchParams.get('appId') || '').trim()
     const statusQuery = String(requestUrl.searchParams.get('status') || '').trim().toLowerCase()
@@ -2305,6 +2367,18 @@ async function requestHandler(req, res) {
       })
 
       state.controlPlane.apiKeys.unshift(keyRecord)
+      recordControlPlaneAudit({
+        action: 'key_create',
+        actor: resolveAuditActor(req, 'public_api'),
+        appId: keyRecord.appId,
+        environment: keyRecord.environment,
+        resourceType: 'api_key',
+        resourceId: keyRecord.keyId,
+        metadata: {
+          keyName: keyRecord.keyName,
+          status: keyRecord.status,
+        },
+      })
       persistState(state)
 
       sendJson(res, 201, {
@@ -2355,6 +2429,18 @@ async function requestHandler(req, res) {
     target.maskedKey = keyRecord.maskedKey
     target.updatedAt = keyRecord.updatedAt
 
+    recordControlPlaneAudit({
+      action: 'key_rotate',
+      actor: resolveAuditActor(req, 'public_api'),
+      appId: target.appId,
+      environment: target.environment,
+      resourceType: 'api_key',
+      resourceId: target.keyId,
+      metadata: {
+        keyName: target.keyName,
+        status: target.status,
+      },
+    })
     persistState(state)
     sendJson(res, 200, {
       key: toPublicApiKeyRecord(target),
@@ -2382,6 +2468,19 @@ async function requestHandler(req, res) {
       target.status = 'revoked'
       target.revokedAt = revokedAt
       target.updatedAt = revokedAt
+      recordControlPlaneAudit({
+        action: 'key_revoke',
+        actor: resolveAuditActor(req, 'public_api'),
+        appId: target.appId,
+        environment: target.environment,
+        resourceType: 'api_key',
+        resourceId: target.keyId,
+        metadata: {
+          keyName: target.keyName,
+          status: target.status,
+          revokedAt,
+        },
+      })
       persistState(state)
     }
 
@@ -2425,13 +2524,26 @@ async function requestHandler(req, res) {
         const nextConfigVersion = state.placementConfigVersion + 1
         applyPlacementPatch(target, payload, nextConfigVersion)
         state.placementConfigVersion = nextConfigVersion
+        const actor = resolveAuditActor(req, 'dashboard')
         recordPlacementAudit({
           placementId: placementId,
           configVersion: nextConfigVersion,
-          actor: String(req.headers['x-dashboard-actor'] || req.headers['x-user-id'] || 'dashboard').trim(),
+          actor,
           patch: payload && typeof payload === 'object' ? payload : {},
           before,
           after: JSON.parse(JSON.stringify(target)),
+        })
+        recordControlPlaneAudit({
+          action: 'config_publish',
+          actor,
+          appId: DEFAULT_CONTROL_PLANE_APP_ID,
+          environment: 'staging',
+          resourceType: 'placement',
+          resourceId: placementId,
+          metadata: {
+            configVersion: nextConfigVersion,
+            patch: payload && typeof payload === 'object' ? payload : {},
+          },
         })
       }
 
@@ -2512,6 +2624,13 @@ async function requestHandler(req, res) {
     }
 
     sendJson(res, 200, { items: rows })
+    return
+  }
+
+  if (pathname === '/api/v1/dashboard/audit/logs' && req.method === 'GET') {
+    sendJson(res, 200, {
+      items: queryControlPlaneAudits(requestUrl.searchParams),
+    })
     return
   }
 
