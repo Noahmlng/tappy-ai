@@ -77,6 +77,29 @@ function sourceTitleLooksWeak(sourceTitle = '') {
   return false
 }
 
+function detectSourceTitlePollution(sourceTitle = '') {
+  const raw = cleanText(sourceTitle)
+  const value = raw.toLowerCase()
+  if (!value) return { invalid: true, reason: 'empty_source_title' }
+
+  const rules = [
+    { pattern: /是什么意思|什么意思|怎么读|翻译|例句|用法/, reason: 'dictionary_query' },
+    { pattern: /百度知道|知乎|问答|问一问|qa\b|q&a/, reason: 'qa_content' },
+    { pattern: /教程|指南|攻略|guide|tutorial|how to|tips/, reason: 'tutorial_content' },
+    { pattern: /论坛|贴吧|forum|thread|帖子|讨论/, reason: 'forum_thread' },
+    { pattern: /下载|资源|合集|破解|网盘/, reason: 'resource_post' },
+  ]
+  for (const rule of rules) {
+    if (rule.pattern.test(value)) return { invalid: true, reason: rule.reason }
+  }
+
+  const noisySeparators = (raw.match(/[_|｜-]/g) || []).length
+  if (raw.length >= 36 && noisySeparators >= 3) {
+    return { invalid: true, reason: 'seo_like_title' }
+  }
+  return { invalid: false, reason: '' }
+}
+
 function canonicalBrandNameFromDomain(domain = '') {
   const candidate = cleanText(domainToBrandName(domain))
   if (!candidate) return ''
@@ -312,6 +335,7 @@ async function main() {
     .filter((item) => (strictReachable ? item.probe.reachable : true))
     .map((item) => {
       const sourceTitle = cleanText(item.seed.brand_name)
+      const sourceNameCheck = detectSourceTitlePollution(sourceTitle)
       const canonicalBrandName = item.resolvedCanonical.canonicalBrand
       const brandName = canonicalBrandName || item.resolvedCanonical.domainFallbackBrand
       return {
@@ -330,6 +354,9 @@ async function main() {
           search_hit_count: Number(item.seed.search_hit_count) || 0,
           source_title: sourceTitle,
           source_title_is_weak: sourceTitleLooksWeak(sourceTitle),
+          source_name_invalid: sourceNameCheck.invalid,
+          source_name_invalid_reason: sourceNameCheck.reason,
+          source_name_trusted: !sourceNameCheck.invalid,
           canonical_confirmed: Boolean(canonicalBrandName),
           canonical_sources: item.resolvedCanonical.canonicalSources,
           site_signals: item.resolvedCanonical.signals,
