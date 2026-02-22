@@ -21,6 +21,8 @@
 - `execution-plans/mediation-atomic-task-pack.md`
 - `execution-plans/stage1-house-ads-resource-fill-plan.md`
 - `execution-plans/implementation/`（基础设施基线、任务板、门禁、上线准备）
+- `execution-plans/implementation/dashboard-v1-task-breakdown.md`
+- `execution-plans/implementation/dashboard-v1-task-board-seed.csv`
 - `execution-plans/implementation/templates/mediation-reliability-test-matrix.md`
 
 ## 3) 其他资料（`other/`）
