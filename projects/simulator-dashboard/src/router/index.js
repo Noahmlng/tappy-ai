@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 import { isFeatureEnabled } from '../config/feature-flags'
 import ApiKeysView from '../views/ApiKeysView.vue'
+import AgentOnboardingView from '../views/AgentOnboardingView.vue'
 import HomeView from '../views/HomeView.vue'
 import IntegrationsView from '../views/IntegrationsView.vue'
 import InternalResetView from '../views/InternalResetView.vue'
@@ -42,6 +43,12 @@ const routes = [
     name: 'usage',
     component: UsageView,
     meta: { navLabel: 'Usage' },
+  },
+  {
+    path: '/agent-onboarding',
+    name: 'agentOnboarding',
+    component: AgentOnboardingView,
+    meta: { navLabel: 'Agent Onboarding' },
   },
 ]
 

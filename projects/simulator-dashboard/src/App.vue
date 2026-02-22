@@ -10,6 +10,7 @@ const navItems = computed(() => {
   const items = [
     { to: '/home', label: 'Home' },
     { to: '/quick-start', label: 'Quick Start' },
+    { to: '/agent-onboarding', label: 'Agent Onboarding' },
     { to: '/api-keys', label: 'API Keys' },
     { to: '/integrations', label: 'Integrations' },
     { to: '/usage', label: 'Usage' },
