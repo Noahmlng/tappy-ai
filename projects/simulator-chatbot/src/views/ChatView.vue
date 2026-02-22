@@ -324,33 +324,6 @@
                   </template>
 
                   <div
-                    v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.attachAdSlot?.ads?.length"
-                    class="mt-3 rounded-xl border border-[#dbe3ff] bg-[#f7f9ff] p-3"
-                  >
-                    <div class="mb-2 flex items-center justify-between">
-                      <span class="text-[11px] font-semibold uppercase tracking-wide text-[#5b6acb]">Sponsored Links</span>
-                      <span class="text-[10px] text-[#7d87b7]">{{ msg.attachAdSlot.placementId || 'chat_inline_v1' }}</span>
-                    </div>
-                    <ul class="space-y-2">
-                      <li
-                        v-for="ad in msg.attachAdSlot.ads"
-                        :key="ad.adId"
-                        class="rounded-lg border border-[#dfe5ff] bg-white p-2"
-                      >
-                        <a
-                          :href="resolveAdHref(ad)"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          class="text-sm font-medium text-[#1d4ed8] underline"
-                          @click="handleSponsoredAdClick(msg, ad)"
-                        >
-                          {{ ad.entityText || ad.title || 'Open sponsored link' }}
-                        </a>
-                      </li>
-                    </ul>
-                  </div>
-
-                  <div
                     v-if="msg.kind !== 'tool' && msg.role === 'assistant' && msg.status === 'done' && msg.sourceUserContent"
                     class="mt-2 flex items-center gap-2"
                   >
@@ -369,6 +342,48 @@
                     :sources="msg.sources"
                     @source-click="(source) => handleSourceClick(msg, source)"
                   />
+
+                  <div
+                    v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.attachAdSlot?.ads?.length"
+                    class="mt-3 rounded-2xl border border-[#dfe3f2] bg-[#f8f9ff] p-3"
+                  >
+                    <div class="mb-2 flex items-center justify-between">
+                      <span class="rounded-full bg-[#eef2ff] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#4758c7]">
+                        Sponsored
+                      </span>
+                      <span class="text-[10px] text-[#7b839f]">{{ msg.attachAdSlot.placementId || 'chat_inline_v1' }}</span>
+                    </div>
+                    <ul class="space-y-2">
+                      <li
+                        v-for="ad in msg.attachAdSlot.ads"
+                        :key="ad.adId"
+                        class="rounded-xl border border-[#e5e9f7] bg-white p-2.5"
+                      >
+                        <div class="flex items-start justify-between gap-3">
+                          <div class="min-w-0">
+                            <p class="truncate text-sm font-semibold text-[#1f2937]">
+                              {{ ad.entityText || ad.title || 'Sponsored result' }}
+                            </p>
+                            <p v-if="ad.description" class="mt-1 text-xs text-[#566176]">
+                              {{ ad.description }}
+                            </p>
+                            <p v-if="ad.sourceNetwork" class="mt-1 text-[10px] uppercase tracking-wide text-[#8b93ab]">
+                              {{ ad.sourceNetwork }}
+                            </p>
+                          </div>
+                          <a
+                            :href="resolveAdHref(ad)"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="shrink-0 rounded-lg border border-[#cad3f3] bg-[#f3f6ff] px-2 py-1 text-[11px] font-medium text-[#2d4fd8] hover:bg-[#e9efff]"
+                            @click="handleSponsoredAdClick(msg, ad)"
+                          >
+                            Open
+                          </a>
+                        </div>
+                      </li>
+                    </ul>
+                  </div>
 
                   <!--
                     Temporarily disabled ad link rendering in simulator UI.
