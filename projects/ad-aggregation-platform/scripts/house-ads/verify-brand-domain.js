@@ -113,6 +113,17 @@ function canonicalBrandNameFromDomain(domain = '') {
   return candidate
 }
 
+function isValidDomainSyntax(domain = '') {
+  const host = cleanText(domain).toLowerCase()
+  if (!host) return false
+  if (host.length > 253) return false
+  const labels = host.split('.').filter(Boolean)
+  if (labels.length < 2) return false
+  const tld = labels[labels.length - 1]
+  if (!/^[a-z]{2,24}$/.test(tld)) return false
+  return labels.every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))
+}
+
 function normalizeBrandKey(name = '') {
   return cleanText(name)
     .toLowerCase()
@@ -382,6 +393,14 @@ async function probeDomain(domain, timeoutMs) {
       if (!response.ok && response.status >= 500) continue
       const html = await response.text().catch(() => '')
       const title = extractHtmlTitle(html)
+      const finalUrl = cleanText(response.url || '')
+      const finalDomain = registrableDomain(finalUrl)
+      const redirected = Boolean(finalUrl && finalUrl !== url)
+      const validRedirect =
+        redirected
+        && Boolean(finalDomain)
+        && finalDomain !== domain
+        && /^https?:\/\//i.test(finalUrl)
       const ogSiteName = extractMetaContent(html, 'og:site_name')
       const schemaNames = extractSchemaOrgOrganizationNames(html)
       const siteSignals = {
@@ -390,12 +409,32 @@ async function probeDomain(domain, timeoutMs) {
         title_brand_segment: titleBrandSegment(title),
         logo_alt: extractLogoAltCandidate(html),
       }
-      return { reachable: true, protocol: url.startsWith('https') ? 'https' : 'http', url, title, siteSignals }
+      return {
+        reachable: true,
+        protocol: url.startsWith('https') ? 'https' : 'http',
+        url,
+        title,
+        siteSignals,
+        final_url: finalUrl,
+        final_domain: finalDomain,
+        redirected,
+        valid_redirect: validRedirect,
+      }
     } catch {
       // continue probing fallback protocol
     }
   }
-  return { reachable: false, protocol: '', url: '', title: '', siteSignals: {} }
+  return {
+    reachable: false,
+    protocol: '',
+    url: '',
+    title: '',
+    siteSignals: {},
+    final_url: '',
+    final_domain: '',
+    redirected: false,
+    valid_redirect: false,
+  }
 }
 
 function scoreSeed(seed, probe, resolvedCanonical, knowledgeAlignment, knowledgeBaseEnabled) {
@@ -469,8 +508,19 @@ async function main() {
 
   const inspected = await asyncPool(concurrency, seeds, async (seed) => {
     const domain = pickSeedDomain(seed)
+    const domainSyntaxValid = isValidDomainSyntax(domain)
     const probe = skipNetwork
-      ? { reachable: true, protocol: 'https', url: `https://${domain}`, title: '', siteSignals: {} }
+      ? {
+          reachable: true,
+          protocol: 'https',
+          url: `https://${domain}`,
+          title: '',
+          siteSignals: {},
+          final_url: `https://${domain}`,
+          final_domain: domain,
+          redirected: false,
+          valid_redirect: false,
+        }
       : await probeDomain(domain, timeoutMs)
     const resolvedCanonical = resolveCanonicalFromSiteSignals(probe, domain)
     const knowledgeAlignment = alignBrandWithKnowledge(
@@ -483,6 +533,7 @@ async function main() {
     return {
       seed,
       domain,
+      domainSyntaxValid,
       probe,
       resolvedCanonical,
       knowledgeAlignment,
@@ -490,9 +541,16 @@ async function main() {
     }
   })
 
+  const domainGateOut = inspected.filter((item) => {
+    if (!item.domain) return true
+    if (!item.domainSyntaxValid) return true
+    if (!(item.probe.reachable || item.probe.valid_redirect)) return true
+    if (strictReachable && !item.probe.reachable) return true
+    return false
+  })
+
   const candidates = inspected
-    .filter((item) => item.domain)
-    .filter((item) => (strictReachable ? item.probe.reachable : true))
+    .filter((item) => !domainGateOut.includes(item))
     .map((item) => {
       const sourceTitle = cleanText(item.seed.brand_name)
       const sourceNameCheck = detectSourceTitlePollution(sourceTitle)
@@ -540,6 +598,9 @@ async function main() {
           },
           suspect_reason: suspect ? 'kb_unaligned_and_evidence_insufficient' : '',
           verified_reachable: Boolean(item.probe.reachable),
+          valid_redirect: Boolean(item.probe.valid_redirect),
+          redirect_final_url: item.probe.final_url,
+          redirect_final_domain: item.probe.final_domain,
           homepage_title: cleanText(item.probe.title).slice(0, 180),
           homepage_url: item.probe.url,
         },
@@ -555,6 +616,22 @@ async function main() {
   await writeJson(summaryPath, {
     generatedAt: new Date().toISOString(),
     inspectedSeeds: seeds.length,
+    domainGateOut: domainGateOut.length,
+    domainGateOutByReason: {
+      missing_domain: domainGateOut.filter((item) => !item.domain).length,
+      invalid_domain_syntax: domainGateOut.filter((item) => item.domain && !item.domainSyntaxValid).length,
+      unreachable_or_invalid_redirect: domainGateOut.filter(
+        (item) => item.domain && item.domainSyntaxValid && !(item.probe.reachable || item.probe.valid_redirect),
+      ).length,
+      strict_reachable_failed: domainGateOut.filter(
+        (item) =>
+          strictReachable
+          && item.domain
+          && item.domainSyntaxValid
+          && !item.probe.reachable
+          && item.probe.valid_redirect,
+      ).length,
+    },
     candidateBrands: candidates.length,
     selectedBrands: selected.length,
     selectedAlignedBrands: selected.filter((item) => item.alignment_status === 'aligned').length,
