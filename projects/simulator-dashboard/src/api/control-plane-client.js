@@ -123,6 +123,12 @@ export const controlPlaneClient = {
         body: payload || {},
       })
     },
+    exchangeIntegrationToken(payload) {
+      return request('/v1/public/agent/token-exchange', {
+        method: 'POST',
+        body: payload || {},
+      })
+    },
   },
   placements: {
     list() {

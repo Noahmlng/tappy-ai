@@ -28,6 +28,7 @@ const MAX_PLACEMENT_AUDIT_LOGS = 500
 const MAX_NETWORK_FLOW_LOGS = 300
 const MAX_CONTROL_PLANE_AUDIT_LOGS = 800
 const MAX_INTEGRATION_TOKENS = 500
+const MAX_AGENT_ACCESS_TOKENS = 1200
 const DECISION_REASON_ENUM = new Set(['served', 'no_fill', 'blocked', 'error'])
 const CONTROL_PLANE_ENVIRONMENTS = new Set(['sandbox', 'staging', 'prod'])
 const CONTROL_PLANE_KEY_STATUS = new Set(['active', 'revoked'])
@@ -336,6 +337,7 @@ function createIntegrationTokenRecord(input = {}) {
   const ttlMinutes = toPositiveInteger(input.ttlMinutes, 10)
   const ttlSeconds = ttlMinutes * 60
   const issuedAt = typeof input.issuedAt === 'string' ? input.issuedAt : nowIso()
+  const updatedAt = typeof input.updatedAt === 'string' ? input.updatedAt : issuedAt
   const issuedAtMs = Date.parse(issuedAt)
   const expiresAtMs = (Number.isFinite(issuedAtMs) ? issuedAtMs : Date.now()) + ttlSeconds * 1000
   const expiresAt = new Date(expiresAtMs).toISOString()
@@ -362,6 +364,7 @@ function createIntegrationTokenRecord(input = {}) {
       usedAt: '',
       revokedAt: '',
       metadata: input.metadata && typeof input.metadata === 'object' ? input.metadata : {},
+      updatedAt,
     },
     token,
   }
@@ -398,6 +401,7 @@ function normalizeIntegrationTokenRecord(raw) {
     usedAt: String(raw.usedAt || raw.used_at || ''),
     revokedAt: String(raw.revokedAt || raw.revoked_at || ''),
     metadata: raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : {},
+    updatedAt: String(raw.updatedAt || raw.updated_at || raw.issuedAt || raw.issued_at || nowIso()),
   }
 }
 
@@ -428,6 +432,104 @@ function toPublicIntegrationTokenRecord(record, plainToken = '') {
   }
 }
 
+function createAgentAccessTokenRecord(input = {}) {
+  const appId = String(input.appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const environment = normalizeControlPlaneEnvironment(input.environment)
+  const placementId = String(input.placementId || '').trim() || 'chat_inline_v1'
+  const ttlSeconds = toPositiveInteger(input.ttlSeconds, 300)
+  const issuedAt = typeof input.issuedAt === 'string' ? input.issuedAt : nowIso()
+  const updatedAt = typeof input.updatedAt === 'string' ? input.updatedAt : issuedAt
+  const issuedAtMs = Date.parse(issuedAt)
+  const expiresAtMs = (Number.isFinite(issuedAtMs) ? issuedAtMs : Date.now()) + ttlSeconds * 1000
+  const expiresAt = new Date(expiresAtMs).toISOString()
+  const accessToken = `atk_${environment}_${randomToken(30)}`
+  const tokenHash = createHash('sha256').update(accessToken).digest('hex')
+
+  return {
+    tokenRecord: {
+      tokenId: String(input.tokenId || '').trim() || `atk_${randomToken(16)}`,
+      appId,
+      environment,
+      placementId,
+      sourceTokenId: String(input.sourceTokenId || '').trim(),
+      tokenHash,
+      tokenType: 'agent_access_token',
+      status: 'active',
+      scope: input.scope && typeof input.scope === 'object'
+        ? input.scope
+        : {
+            mediationConfigRead: true,
+            sdkEvaluate: true,
+            sdkEvents: true,
+          },
+      issuedAt,
+      expiresAt,
+      metadata: input.metadata && typeof input.metadata === 'object' ? input.metadata : {},
+      updatedAt,
+    },
+    accessToken,
+  }
+}
+
+function normalizeAgentAccessTokenRecord(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const tokenId = String(raw.tokenId || raw.token_id || raw.id || '').trim()
+  if (!tokenId) return null
+
+  const appId = String(raw.appId || raw.app_id || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const environment = normalizeControlPlaneEnvironment(raw.environment)
+  const placementId = String(raw.placementId || raw.placement_id || '').trim() || 'chat_inline_v1'
+  const status = String(raw.status || '').trim().toLowerCase() || 'active'
+
+  return {
+    tokenId,
+    appId,
+    environment,
+    placementId,
+    sourceTokenId: String(raw.sourceTokenId || raw.source_token_id || '').trim(),
+    tokenHash: String(raw.tokenHash || raw.token_hash || '').trim(),
+    tokenType: 'agent_access_token',
+    status: ['active', 'expired', 'revoked'].includes(status) ? status : 'active',
+    scope: raw.scope && typeof raw.scope === 'object'
+      ? raw.scope
+      : {
+          mediationConfigRead: true,
+          sdkEvaluate: true,
+          sdkEvents: true,
+        },
+    issuedAt: String(raw.issuedAt || raw.issued_at || nowIso()),
+    expiresAt: String(raw.expiresAt || raw.expires_at || nowIso()),
+    metadata: raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : {},
+    updatedAt: String(raw.updatedAt || raw.updated_at || raw.issuedAt || raw.issued_at || nowIso()),
+  }
+}
+
+function toPublicAgentAccessTokenRecord(record, plainToken = '') {
+  const item = normalizeAgentAccessTokenRecord(record)
+  if (!item) return null
+  const issuedAtMs = Date.parse(item.issuedAt)
+  const expiresAtMs = Date.parse(item.expiresAt)
+  const ttlSeconds = (
+    Number.isFinite(issuedAtMs) && Number.isFinite(expiresAtMs) && expiresAtMs > issuedAtMs
+      ? Math.floor((expiresAtMs - issuedAtMs) / 1000)
+      : 0
+  )
+  return {
+    tokenId: item.tokenId,
+    tokenType: item.tokenType,
+    accessToken: plainToken || undefined,
+    sourceTokenId: item.sourceTokenId,
+    appId: item.appId,
+    environment: item.environment,
+    placementId: item.placementId,
+    status: item.status,
+    scope: item.scope,
+    issuedAt: item.issuedAt,
+    expiresAt: item.expiresAt,
+    ttlSeconds,
+  }
+}
+
 function cleanupExpiredIntegrationTokens() {
   const nowMs = Date.now()
   const rows = Array.isArray(state?.controlPlane?.integrationTokens) ? state.controlPlane.integrationTokens : []
@@ -440,6 +542,28 @@ function cleanupExpiredIntegrationTokens() {
     row.status = 'expired'
     row.updatedAt = nowIso()
   }
+}
+
+function cleanupExpiredAgentAccessTokens() {
+  const nowMs = Date.now()
+  const rows = Array.isArray(state?.controlPlane?.agentAccessTokens) ? state.controlPlane.agentAccessTokens : []
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue
+    if (String(row.status || '').toLowerCase() !== 'active') continue
+    const expiresAtMs = Date.parse(String(row.expiresAt || ''))
+    if (!Number.isFinite(expiresAtMs)) continue
+    if (expiresAtMs > nowMs) continue
+    row.status = 'expired'
+    row.updatedAt = nowIso()
+  }
+}
+
+function findIntegrationTokenByPlaintext(integrationToken) {
+  const token = String(integrationToken || '').trim()
+  if (!token) return null
+  const tokenHash = createHash('sha256').update(token).digest('hex')
+  const rows = Array.isArray(state?.controlPlane?.integrationTokens) ? state.controlPlane.integrationTokens : []
+  return rows.find((item) => String(item?.tokenHash || '') === tokenHash) || null
 }
 
 function createInitialControlPlaneState() {
@@ -463,6 +587,7 @@ function createInitialControlPlaneState() {
     appEnvironments,
     apiKeys: [keyRecord],
     integrationTokens: [],
+    agentAccessTokens: [],
   }
 }
 
@@ -532,11 +657,20 @@ function ensureControlPlaneState(raw) {
     .filter((item) => item && appIdSet.has(item.appId))
     .slice(0, MAX_INTEGRATION_TOKENS)
 
+  const agentTokenRows = Array.isArray(raw.agentAccessTokens || raw.accessTokens)
+    ? (raw.agentAccessTokens || raw.accessTokens)
+    : []
+  const agentAccessTokens = agentTokenRows
+    .map((item) => normalizeAgentAccessTokenRecord(item))
+    .filter((item) => item && appIdSet.has(item.appId))
+    .slice(0, MAX_AGENT_ACCESS_TOKENS)
+
   return {
     apps,
     appEnvironments,
     apiKeys,
     integrationTokens,
+    agentAccessTokens,
   }
 }
 
@@ -1117,7 +1251,7 @@ function createInitialState() {
   const placementConfigVersion = Math.max(1, ...placements.map((placement) => placement.configVersion || 1))
 
   return {
-    version: 3,
+    version: 4,
     updatedAt: nowIso(),
     placementConfigVersion,
     placements,
@@ -1173,7 +1307,7 @@ function loadState() {
     }
 
     return {
-      version: toPositiveInteger(parsed?.version, 3),
+      version: toPositiveInteger(parsed?.version, 4),
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : nowIso(),
       placementConfigVersion,
       placements,
@@ -2486,6 +2620,118 @@ async function requestHandler(req, res) {
       persistState(state)
 
       sendJson(res, 201, toPublicIntegrationTokenRecord(tokenRecord, token))
+      return
+    } catch (error) {
+      sendJson(res, 400, {
+        error: {
+          code: 'INVALID_REQUEST',
+          message: error instanceof Error ? error.message : 'Invalid request',
+        },
+      })
+      return
+    }
+  }
+
+  if (pathname === '/api/v1/public/agent/token-exchange' && req.method === 'POST') {
+    try {
+      const payload = await readJsonBody(req)
+      const integrationToken = requiredNonEmptyString(
+        payload?.integrationToken || payload?.integration_token,
+        'integrationToken',
+      )
+      cleanupExpiredIntegrationTokens()
+      cleanupExpiredAgentAccessTokens()
+
+      const sourceToken = findIntegrationTokenByPlaintext(integrationToken)
+      if (!sourceToken) {
+        sendJson(res, 401, {
+          error: {
+            code: 'INVALID_INTEGRATION_TOKEN',
+            message: 'integration token is invalid.',
+          },
+        })
+        return
+      }
+
+      const sourceStatus = String(sourceToken.status || '').toLowerCase()
+      if (sourceStatus === 'used') {
+        sendJson(res, 409, {
+          error: {
+            code: 'INTEGRATION_TOKEN_ALREADY_USED',
+            message: 'integration token has already been exchanged.',
+          },
+        })
+        return
+      }
+      if (sourceStatus !== 'active') {
+        sendJson(res, 401, {
+          error: {
+            code: 'INTEGRATION_TOKEN_INACTIVE',
+            message: `integration token is not active (${sourceStatus || 'unknown'}).`,
+          },
+        })
+        return
+      }
+
+      const now = nowIso()
+      const expiresAtMs = Date.parse(String(sourceToken.expiresAt || ''))
+      if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+        sourceToken.status = 'expired'
+        sourceToken.updatedAt = now
+        persistState(state)
+        sendJson(res, 401, {
+          error: {
+            code: 'INTEGRATION_TOKEN_EXPIRED',
+            message: 'integration token has expired.',
+          },
+        })
+        return
+      }
+
+      const requestedTtl = toPositiveInteger(payload?.ttlSeconds ?? payload?.ttl_seconds, 300)
+      const ttlSeconds = clampNumber(requestedTtl, 60, 900, 300)
+      const minimalScope = {
+        mediationConfigRead: true,
+        sdkEvaluate: true,
+        sdkEvents: true,
+      }
+
+      const { tokenRecord, accessToken } = createAgentAccessTokenRecord({
+        appId: sourceToken.appId,
+        environment: sourceToken.environment,
+        placementId: sourceToken.placementId,
+        sourceTokenId: sourceToken.tokenId,
+        ttlSeconds,
+        issuedAt: now,
+        scope: minimalScope,
+        metadata: {
+          exchangedFromTokenType: sourceToken.tokenType,
+        },
+      })
+
+      sourceToken.status = 'used'
+      sourceToken.usedAt = now
+      sourceToken.updatedAt = now
+
+      state.controlPlane.agentAccessTokens = [tokenRecord, ...state.controlPlane.agentAccessTokens]
+        .slice(0, MAX_AGENT_ACCESS_TOKENS)
+
+      recordControlPlaneAudit({
+        action: 'integration_token_exchange',
+        actor: resolveAuditActor(req, 'agent_exchange'),
+        appId: tokenRecord.appId,
+        environment: tokenRecord.environment,
+        resourceType: 'agent_access_token',
+        resourceId: tokenRecord.tokenId,
+        metadata: {
+          sourceTokenId: sourceToken.tokenId,
+          ttlSeconds,
+          placementId: tokenRecord.placementId,
+        },
+      })
+      persistState(state)
+
+      sendJson(res, 201, toPublicAgentAccessTokenRecord(tokenRecord, accessToken))
       return
     } catch (error) {
       sendJson(res, 400, {
