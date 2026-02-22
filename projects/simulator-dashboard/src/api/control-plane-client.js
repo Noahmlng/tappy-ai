@@ -116,6 +116,14 @@ export const controlPlaneClient = {
       })
     },
   },
+  agent: {
+    issueIntegrationToken(payload) {
+      return request('/v1/public/agent/integration-token', {
+        method: 'POST',
+        body: payload || {},
+      })
+    },
+  },
   placements: {
     list() {
       return request('/v1/public/placements')

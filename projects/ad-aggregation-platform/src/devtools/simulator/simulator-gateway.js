@@ -27,6 +27,7 @@ const MAX_EVENT_LOGS = 500
 const MAX_PLACEMENT_AUDIT_LOGS = 500
 const MAX_NETWORK_FLOW_LOGS = 300
 const MAX_CONTROL_PLANE_AUDIT_LOGS = 800
+const MAX_INTEGRATION_TOKENS = 500
 const DECISION_REASON_ENUM = new Set(['served', 'no_fill', 'blocked', 'error'])
 const CONTROL_PLANE_ENVIRONMENTS = new Set(['sandbox', 'staging', 'prod'])
 const CONTROL_PLANE_KEY_STATUS = new Set(['active', 'revoked'])
@@ -328,6 +329,119 @@ function toPublicApiKeyRecord(record) {
   }
 }
 
+function createIntegrationTokenRecord(input = {}) {
+  const appId = String(input.appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const environment = normalizeControlPlaneEnvironment(input.environment)
+  const placementId = String(input.placementId || '').trim() || 'chat_inline_v1'
+  const ttlMinutes = toPositiveInteger(input.ttlMinutes, 10)
+  const ttlSeconds = ttlMinutes * 60
+  const issuedAt = typeof input.issuedAt === 'string' ? input.issuedAt : nowIso()
+  const issuedAtMs = Date.parse(issuedAt)
+  const expiresAtMs = (Number.isFinite(issuedAtMs) ? issuedAtMs : Date.now()) + ttlSeconds * 1000
+  const expiresAt = new Date(expiresAtMs).toISOString()
+  const token = `itk_${environment}_${randomToken(30)}`
+  const tokenHash = createHash('sha256').update(token).digest('hex')
+
+  return {
+    tokenRecord: {
+      tokenId: String(input.tokenId || '').trim() || `itk_${randomToken(16)}`,
+      appId,
+      environment,
+      placementId,
+      tokenHash,
+      tokenType: 'integration_token',
+      oneTime: true,
+      status: 'active',
+      scope: {
+        mediationConfigRead: true,
+        sdkEvaluate: true,
+        sdkEvents: true,
+      },
+      issuedAt,
+      expiresAt,
+      usedAt: '',
+      revokedAt: '',
+      metadata: input.metadata && typeof input.metadata === 'object' ? input.metadata : {},
+    },
+    token,
+  }
+}
+
+function normalizeIntegrationTokenRecord(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const tokenId = String(raw.tokenId || raw.token_id || raw.id || '').trim()
+  if (!tokenId) return null
+
+  const appId = String(raw.appId || raw.app_id || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const environment = normalizeControlPlaneEnvironment(raw.environment)
+  const placementId = String(raw.placementId || raw.placement_id || '').trim() || 'chat_inline_v1'
+  const status = String(raw.status || '').trim().toLowerCase() || 'active'
+
+  return {
+    tokenId,
+    appId,
+    environment,
+    placementId,
+    tokenHash: String(raw.tokenHash || raw.token_hash || '').trim(),
+    tokenType: 'integration_token',
+    oneTime: true,
+    status: ['active', 'used', 'expired', 'revoked'].includes(status) ? status : 'active',
+    scope: raw.scope && typeof raw.scope === 'object'
+      ? raw.scope
+      : {
+          mediationConfigRead: true,
+          sdkEvaluate: true,
+          sdkEvents: true,
+        },
+    issuedAt: String(raw.issuedAt || raw.issued_at || nowIso()),
+    expiresAt: String(raw.expiresAt || raw.expires_at || nowIso()),
+    usedAt: String(raw.usedAt || raw.used_at || ''),
+    revokedAt: String(raw.revokedAt || raw.revoked_at || ''),
+    metadata: raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : {},
+  }
+}
+
+function toPublicIntegrationTokenRecord(record, plainToken = '') {
+  const item = normalizeIntegrationTokenRecord(record)
+  if (!item) return null
+  const issuedAtMs = Date.parse(item.issuedAt)
+  const expiresAtMs = Date.parse(item.expiresAt)
+  const ttlSeconds = (
+    Number.isFinite(issuedAtMs) && Number.isFinite(expiresAtMs) && expiresAtMs > issuedAtMs
+      ? Math.floor((expiresAtMs - issuedAtMs) / 1000)
+      : 0
+  )
+
+  return {
+    tokenId: item.tokenId,
+    tokenType: item.tokenType,
+    integrationToken: plainToken || undefined,
+    appId: item.appId,
+    environment: item.environment,
+    placementId: item.placementId,
+    oneTime: item.oneTime,
+    status: item.status,
+    scope: item.scope,
+    issuedAt: item.issuedAt,
+    expiresAt: item.expiresAt,
+    ttlSeconds,
+  }
+}
+
+function cleanupExpiredIntegrationTokens() {
+  const nowMs = Date.now()
+  const rows = Array.isArray(state?.controlPlane?.integrationTokens) ? state.controlPlane.integrationTokens : []
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue
+    if (String(row.status || '').toLowerCase() !== 'active') continue
+    const expiresAtMs = Date.parse(String(row.expiresAt || ''))
+    if (!Number.isFinite(expiresAtMs)) continue
+    if (expiresAtMs > nowMs) continue
+    row.status = 'expired'
+    row.updatedAt = nowIso()
+  }
+}
+
 function createInitialControlPlaneState() {
   const app = buildControlPlaneAppRecord({
     appId: DEFAULT_CONTROL_PLANE_APP_ID,
@@ -348,6 +462,7 @@ function createInitialControlPlaneState() {
     apps: [app],
     appEnvironments,
     apiKeys: [keyRecord],
+    integrationTokens: [],
   }
 }
 
@@ -409,10 +524,19 @@ function ensureControlPlaneState(raw) {
     apiKeys = fallback.apiKeys
   }
 
+  const tokenRows = Array.isArray(raw.integrationTokens || raw.tokens)
+    ? (raw.integrationTokens || raw.tokens)
+    : []
+  const integrationTokens = tokenRows
+    .map((item) => normalizeIntegrationTokenRecord(item))
+    .filter((item) => item && appIdSet.has(item.appId))
+    .slice(0, MAX_INTEGRATION_TOKENS)
+
   return {
     apps,
     appEnvironments,
     apiKeys,
+    integrationTokens,
   }
 }
 
@@ -2299,6 +2423,79 @@ async function requestHandler(req, res) {
       items: queryControlPlaneAudits(requestUrl.searchParams),
     })
     return
+  }
+
+  if (pathname === '/api/v1/public/agent/integration-token' && req.method === 'POST') {
+    try {
+      const payload = await readJsonBody(req)
+      const appId = String(payload?.appId || payload?.app_id || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+      const requestedEnvironment = String(payload?.environment || payload?.env || '').trim().toLowerCase()
+      const environment = requestedEnvironment || 'staging'
+      if (!CONTROL_PLANE_ENVIRONMENTS.has(environment)) {
+        throw new Error(`environment must be one of: ${Array.from(CONTROL_PLANE_ENVIRONMENTS).join(', ')}`)
+      }
+
+      const ttlMinutes = toPositiveInteger(payload?.ttlMinutes ?? payload?.ttl_minutes, 10)
+      if (ttlMinutes < 10 || ttlMinutes > 15) {
+        throw new Error('ttlMinutes must be between 10 and 15.')
+      }
+
+      const placementId = String(payload?.placementId || payload?.placement_id || '').trim() || 'chat_inline_v1'
+      const activeKey = findActiveApiKey({
+        appId,
+        environment,
+      })
+      if (!activeKey) {
+        sendJson(res, 409, {
+          error: {
+            code: 'PRECONDITION_FAILED',
+            message: `No active API key for appId=${appId} environment=${environment}.`,
+          },
+        })
+        return
+      }
+
+      ensureControlPlaneAppAndEnvironment(appId, environment)
+      cleanupExpiredIntegrationTokens()
+
+      const { tokenRecord, token } = createIntegrationTokenRecord({
+        appId,
+        environment,
+        placementId,
+        ttlMinutes,
+        metadata: {
+          issuedFor: 'agent_onboarding',
+        },
+      })
+
+      state.controlPlane.integrationTokens = [tokenRecord, ...state.controlPlane.integrationTokens]
+        .slice(0, MAX_INTEGRATION_TOKENS)
+
+      recordControlPlaneAudit({
+        action: 'integration_token_issue',
+        actor: resolveAuditActor(req, 'dashboard'),
+        appId: tokenRecord.appId,
+        environment: tokenRecord.environment,
+        resourceType: 'integration_token',
+        resourceId: tokenRecord.tokenId,
+        metadata: {
+          placementId: tokenRecord.placementId,
+          ttlSeconds: ttlMinutes * 60,
+        },
+      })
+      persistState(state)
+
+      sendJson(res, 201, toPublicIntegrationTokenRecord(tokenRecord, token))
+      return
+    } catch (error) {
+      sendJson(res, 400, {
+        error: {
+          code: 'INVALID_REQUEST',
+          message: error instanceof Error ? error.message : 'Invalid request',
+        },
+      })
+      return
+    }
   }
 
   if (pathname === '/api/v1/public/credentials/keys' && req.method === 'GET') {

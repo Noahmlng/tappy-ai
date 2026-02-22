@@ -1,8 +1,12 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
+import { controlPlaneClient } from '../api/control-plane-client'
 
 const activeTab = ref('codex')
 const copyState = ref('')
+const tokenIssuing = ref(false)
+const tokenError = ref('')
+const tokenMeta = ref(null)
 
 const draft = reactive({
   appId: 'simulator-chatbot',
@@ -10,6 +14,7 @@ const draft = reactive({
   placementId: 'chat_inline_v1',
   repoPath: '/path/to/your/repo',
   integrationToken: '<ONE_TIME_INTEGRATION_TOKEN>',
+  tokenTtlMinutes: 10,
 })
 
 const environmentOptions = ['sandbox', 'staging', 'prod']
@@ -72,6 +77,34 @@ async function copyText(value) {
     copyState.value = ''
   }, 1200)
 }
+
+async function issueIntegrationToken() {
+  tokenIssuing.value = true
+  tokenError.value = ''
+  tokenMeta.value = null
+
+  try {
+    const payload = await controlPlaneClient.agent.issueIntegrationToken({
+      appId: draft.appId.trim() || 'simulator-chatbot',
+      environment: draft.environment,
+      placementId: draft.placementId.trim() || 'chat_inline_v1',
+      ttlMinutes: Number(draft.tokenTtlMinutes) || 10,
+    })
+    const token = String(payload?.integrationToken || payload?.token || '').trim()
+    if (token) {
+      draft.integrationToken = token
+    }
+    tokenMeta.value = {
+      tokenId: String(payload?.tokenId || ''),
+      expiresAt: String(payload?.expiresAt || ''),
+      ttlSeconds: Number(payload?.ttlSeconds || 0),
+    }
+  } catch (error) {
+    tokenError.value = error instanceof Error ? error.message : 'Failed to issue integration token'
+  } finally {
+    tokenIssuing.value = false
+  }
+}
 </script>
 
 <template>
@@ -111,7 +144,29 @@ async function copyText(value) {
           One-time Integration Token
           <input v-model="draft.integrationToken" class="input" type="text">
         </label>
+        <label>
+          Token TTL (minutes)
+          <select v-model.number="draft.tokenTtlMinutes" class="input">
+            <option :value="10">10</option>
+            <option :value="11">11</option>
+            <option :value="12">12</option>
+            <option :value="13">13</option>
+            <option :value="14">14</option>
+            <option :value="15">15</option>
+          </select>
+        </label>
       </div>
+      <div class="toolbar-actions">
+        <button class="button" type="button" :disabled="tokenIssuing" @click="issueIntegrationToken">
+          {{ tokenIssuing ? 'Issuing...' : 'Issue one-time token' }}
+        </button>
+      </div>
+      <p v-if="tokenError" class="muted">{{ tokenError }}</p>
+      <p v-if="tokenMeta" class="muted">
+        Token issued: <code>{{ tokenMeta.tokenId }}</code>
+        · expires {{ tokenMeta.expiresAt ? new Date(tokenMeta.expiresAt).toLocaleString() : '-' }}
+        · ttl {{ tokenMeta.ttlSeconds }}s
+      </p>
       <p class="muted">
         Agent-first flow should use one-time token only. Long-lived API key must not be pasted in prompt.
       </p>
