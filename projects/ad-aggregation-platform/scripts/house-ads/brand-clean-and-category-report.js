@@ -9,13 +9,15 @@ import {
   readJsonl,
   writeJson,
   timestampTag,
+  registrableDomain,
 } from './lib/common.js'
 
 const BRANDS_FILE = path.join(CURATED_ROOT, 'brands.jsonl')
-const NON_BRAND_HINTS = [
+
+const NON_BRAND_NAME_HINTS = [
+  '什么意思',
   '是什么意思',
   '怎么读',
-  '什么是',
   '怎么',
   '如何',
   '翻译',
@@ -25,21 +27,58 @@ const NON_BRAND_HINTS = [
   '百度知道',
   '盘点',
   '热门',
-  '第几个',
   '教程',
-  '官网',
   'thread',
   'forum',
   'rating',
-  'hidden',
-  'future of',
   'guide',
   'tips',
   'review',
+  'future of',
   'popular with',
-  'part ',
-  '首页',
+  'hidden',
 ]
+
+const INSTITUTIONAL_TLDS = new Set(['gov', 'edu', 'mil', 'int'])
+const GENERIC_DOMAINS = new Set([
+  'com.pl',
+  'com.cn',
+  'com.hk',
+  'co.uk',
+  'co.jp',
+])
+
+const SHORTLINK_DOMAINS = new Set([
+  't.co',
+  't.me',
+  'wa.me',
+  'm.me',
+  'g.co',
+  'g.page',
+  'a.co',
+  't.cn',
+  't.ly',
+  'bit.ly',
+  'lnkd.in',
+  'tinyurl.com',
+  'ow.ly',
+  'goo.gl',
+])
+
+const HOSTING_HINTS = [
+  'cloudfront',
+  'googleusercontent',
+  'googletagmanager',
+  'appspot',
+  'blogspot',
+  'github.io',
+  'wordpress.com',
+  'wixsite',
+  'wixstatic',
+  'azurewebsites',
+  'amazonaws',
+]
+
 const GENERIC_ROOTS = new Set([
   'www',
   'home',
@@ -53,15 +92,14 @@ const GENERIC_ROOTS = new Set([
   'support',
   'store',
   'shop',
-  'web',
   'online',
   'official',
-  'app',
-  'api',
   'site',
+  'api',
+  'web',
 ])
 
-function decodeBasicHtmlEntities(text) {
+function decodeHtmlEntities(text) {
   return text
     .replace(/&amp;/gi, '&')
     .replace(/&quot;/gi, '"')
@@ -70,156 +108,199 @@ function decodeBasicHtmlEntities(text) {
     .replace(/&gt;/gi, '>')
 }
 
-function normalizeBrandName(name) {
-  const raw = decodeBasicHtmlEntities(cleanText(name))
-    .replace(/[_|]+/g, ' ')
-    .replace(/[“”"']/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-  const trimmed = raw
-    .replace(/^[\[\]【】()（）\-\s]+/, '')
-    .replace(/[\[\]【】()（）\-\s]+$/, '')
-    .trim()
-  return cleanText(trimmed)
+function normalizeName(value) {
+  return cleanText(
+    decodeHtmlEntities(cleanText(value))
+      .replace(/[_|]+/g, ' ')
+      .replace(/[“”"']/g, '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  )
 }
 
-function punctuationRatio(text) {
+function normalizedAlphaNum(value) {
+  return cleanText(value).toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '')
+}
+
+function tokenCount(value) {
+  return normalizeName(value)
+    .split(/\s+/g)
+    .filter(Boolean).length
+}
+
+function punctuationRatio(value) {
+  const text = normalizeName(value)
   if (!text) return 1
   const punctuation = (text.match(/[^\p{L}\p{N}\s]/gu) || []).length
-  return punctuation / text.length
+  return punctuation / Math.max(1, text.length)
 }
 
-function tokenCount(text) {
-  return text.split(/\s+/g).filter(Boolean).length
+function cjkSentenceLike(value) {
+  const text = normalizeName(value)
+  const cjkCount = (text.match(/[\u4e00-\u9fff]/g) || []).length
+  if (cjkCount < 6) return false
+  return /(什么|如何|怎么|之间|用法|翻译|例句|盘点|热门)/.test(text)
 }
 
-function containsHint(text) {
-  const lower = text.toLowerCase()
-  return NON_BRAND_HINTS.some((hint) => lower.includes(hint))
+function nameHasHint(value) {
+  const lower = normalizeName(value).toLowerCase()
+  if (!lower) return false
+  return NON_BRAND_NAME_HINTS.some((hint) => lower.includes(hint))
 }
 
-function domainRoot(domain = '') {
-  const root = cleanText(domain).toLowerCase().split('.')[0] || ''
-  return root.replace(/[^a-z0-9-]/g, '')
+function getDomainMeta(domain) {
+  const host = registrableDomain(domain || '')
+  const parts = host.split('.').filter(Boolean)
+  const root = parts[0] || ''
+  const tld = parts[parts.length - 1] || ''
+  return {
+    host,
+    root,
+    tld,
+    brandCandidate: domainToBrandName(host),
+  }
 }
 
-function scoreOriginalName(name) {
-  const value = normalizeBrandName(name)
-  if (!value) return { score: 0, reasons: ['empty_name'], normalized: '' }
+function classifyDomain(meta) {
+  const host = meta.host.toLowerCase()
+  const root = meta.root.toLowerCase()
+  if (!host) return { domain_class: 'invalid_domain', domain_score: 0, reasons: ['missing_domain'] }
+  if (SHORTLINK_DOMAINS.has(host)) {
+    return { domain_class: 'shortlink_redirect', domain_score: 0.25, reasons: ['known_shortlink_domain'] }
+  }
+  if (GENERIC_DOMAINS.has(host)) {
+    return { domain_class: 'generic_domain_bucket', domain_score: 0.2, reasons: ['generic_bucket_domain'] }
+  }
+  if (INSTITUTIONAL_TLDS.has(meta.tld)) {
+    return { domain_class: 'institutional_domain', domain_score: 0.5, reasons: ['institutional_tld'] }
+  }
+  if (HOSTING_HINTS.some((hint) => host.includes(hint))) {
+    return { domain_class: 'hosting_or_infra_domain', domain_score: 0.3, reasons: ['hosting_or_infra_hint'] }
+  }
+  if (GENERIC_ROOTS.has(root)) {
+    return { domain_class: 'generic_domain_root', domain_score: 0.35, reasons: ['generic_domain_root'] }
+  }
+  if (root.length <= 1) {
+    return { domain_class: 'weak_domain_root', domain_score: 0.32, reasons: ['domain_root_too_short'] }
+  }
+  return { domain_class: 'commercial_domain', domain_score: 0.82, reasons: [] }
+}
+
+function scoreName(name, domainRoot) {
+  const normalized = normalizeName(name)
+  const compactName = normalizedAlphaNum(normalized)
+  const compactRoot = normalizedAlphaNum(domainRoot)
   let score = 1
   const reasons = []
-  const len = value.length
-  const tokens = tokenCount(value)
-  const punct = punctuationRatio(value)
-  const cjkChars = (value.match(/[\u4e00-\u9fff]/g) || []).length
 
-  if (len < 2) {
-    score -= 0.6
+  if (!normalized) {
+    return { name_score: 0, normalized_name: '', reasons: ['empty_name'] }
+  }
+  if (normalized.length < 2) {
+    score -= 0.55
     reasons.push('too_short')
   }
-  if (len > 48) {
-    score -= 0.35
+  if (normalized.length > 48) {
+    score -= 0.3
     reasons.push('too_long')
   }
-  if (tokens > 4) {
-    score -= 0.3
+  if (tokenCount(normalized) > 4) {
+    score -= 0.25
     reasons.push('too_many_tokens')
   }
-  if (containsHint(value)) {
+  if (punctuationRatio(normalized) > 0.2) {
+    score -= 0.22
+    reasons.push('high_punctuation_ratio')
+  }
+  if (nameHasHint(normalized)) {
     score -= 0.45
     reasons.push('non_brand_hint')
   }
-  if (/[?？!！:：。]/.test(value)) {
-    score -= 0.3
+  if (cjkSentenceLike(normalized)) {
+    score -= 0.35
+    reasons.push('cjk_sentence_like')
+  }
+  if (/[?？!！:：。]/.test(normalized)) {
+    score -= 0.25
     reasons.push('sentence_punctuation')
   }
-  if (cjkChars >= 6 && /(什么|如何|怎么|之间|用法|翻译|例句|盘点|热门)/.test(value)) {
-    score -= 0.4
-    reasons.push('cjk_sentence_pattern')
-  }
-  if (cjkChars >= 10) {
-    score -= 0.2
-    reasons.push('cjk_too_long_for_brand')
-  }
-  if (value.includes('...')) {
-    score -= 0.15
+  if (normalized.includes('...')) {
+    score -= 0.1
     reasons.push('ellipsis')
   }
-  if (punct > 0.2) {
-    score -= 0.25
-    reasons.push('high_punctuation_ratio')
-  }
-  const normalizedScore = Number(Math.max(0, Math.min(1, score)).toFixed(4))
-  return { score: normalizedScore, reasons, normalized: value }
-}
 
-function scoreDomainCandidate(domain = '') {
-  const root = domainRoot(domain)
-  const candidate = domainToBrandName(domain)
-  let score = 0.75
-  const reasons = []
-  if (!root || !candidate) return { score: 0, reasons: ['invalid_domain_candidate'], candidate: '' }
-  if (GENERIC_ROOTS.has(root)) {
-    score -= 0.45
-    reasons.push('generic_domain_root')
+  // Name/domain consistency: if name has no overlap with domain root, reduce confidence.
+  if (compactName && compactRoot && !(compactName.includes(compactRoot) || compactRoot.includes(compactName))) {
+    score -= 0.22
+    reasons.push('name_domain_mismatch')
   }
-  if (root.length <= 1) {
-    score -= 0.35
-    reasons.push('domain_root_too_short')
-  }
-  if (root.length >= 30) {
-    score -= 0.2
-    reasons.push('domain_root_too_long')
-  }
-  if (/^\d+$/.test(root)) {
-    score -= 0.4
-    reasons.push('numeric_domain_root')
-  }
+
   return {
-    score: Number(Math.max(0, Math.min(1, score)).toFixed(4)),
+    name_score: Number(Math.max(0, Math.min(1, score)).toFixed(4)),
+    normalized_name: normalized,
     reasons,
-    candidate,
   }
 }
 
-function chooseBrandName(brand) {
-  const original = scoreOriginalName(brand.brand_name)
-  const domain = scoreDomainCandidate(brand.official_domain)
-  const useOriginal = original.score >= 0.72
-  const cleanedBrandName = useOriginal ? original.normalized : domain.candidate || original.normalized
-  const finalScore = Number(((useOriginal ? original.score : domain.score) * 0.7 + Number(brand.source_confidence || 0) * 0.3).toFixed(4))
+function chooseEntity(brand) {
+  const meta = getDomainMeta(brand.official_domain)
+  const domain = classifyDomain(meta)
+  const name = scoreName(brand.brand_name, meta.root)
 
-  let quality = 'valid'
-  if (!cleanedBrandName) {
-    quality = 'invalid'
+  const useOriginal = name.name_score >= 0.72
+  const cleanedName = useOriginal ? name.normalized_name : meta.brandCandidate
+  const finalScore = Number((name.name_score * 0.3 + domain.domain_score * 0.5 + Number(brand.source_confidence || 0) * 0.2).toFixed(4))
+
+  let entityDecision = 'brand_ad_eligible'
+  const reasons = [...new Set([...name.reasons, ...domain.reasons])]
+
+  if (!cleanedName) {
+    entityDecision = 'non_brand_entity'
+    reasons.push('empty_cleaned_name')
+  } else if (domain.domain_class === 'commercial_domain' && finalScore >= 0.6) {
+    entityDecision = 'brand_ad_eligible'
+  } else if (domain.domain_class === 'institutional_domain') {
+    entityDecision = 'non_brand_entity'
+    reasons.push('institutional_not_ad_brand')
+  } else if (domain.domain_class === 'shortlink_redirect' || domain.domain_class === 'hosting_or_infra_domain') {
+    entityDecision = 'non_brand_entity'
+    reasons.push('infra_or_redirect_not_brand')
+  } else if (domain.domain_class === 'generic_domain_bucket' || domain.domain_class === 'generic_domain_root') {
+    entityDecision = 'non_brand_entity'
+    reasons.push('generic_domain_not_brand')
+  } else if (domain.domain_class === 'weak_domain_root') {
+    entityDecision = 'brand_suspect'
+    reasons.push('weak_domain_root')
   } else if (finalScore < 0.45) {
-    quality = 'invalid'
-  } else if (finalScore < 0.65 || (!useOriginal && domain.score < 0.5)) {
-    quality = 'suspect'
+    entityDecision = 'non_brand_entity'
+    reasons.push('low_final_score')
+  } else {
+    entityDecision = 'brand_suspect'
   }
 
   return {
-    cleaned_brand_name: cleanedBrandName,
-    selected_source: useOriginal ? 'original_brand_name' : 'domain_candidate',
-    original_name_score: original.score,
-    domain_candidate_score: domain.score,
-    final_brand_score: finalScore,
-    brand_quality: quality,
-    reasons: [...new Set([...original.reasons, ...domain.reasons])],
+    cleaned_brand_name: cleanedName,
+    selected_source: useOriginal ? 'original_name' : 'domain_candidate',
+    domain_class: domain.domain_class,
+    name_score: name.name_score,
+    domain_score: domain.domain_score,
+    final_score: finalScore,
+    entity_decision: entityDecision,
+    reasons: [...new Set(reasons)],
   }
 }
 
 function toCsv(rows = []) {
-  if (!Array.isArray(rows) || rows.length === 0) return ''
+  if (!rows.length) return ''
   const headers = Object.keys(rows[0])
-  const escape = (value) => {
+  const esc = (value) => {
     const text = String(value ?? '')
     if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`
     return text
   }
   const lines = [headers.join(',')]
   for (const row of rows) {
-    lines.push(headers.map((header) => escape(row[header])).join(','))
+    lines.push(headers.map((header) => esc(row[header])).join(','))
   }
   return `${lines.join('\n')}\n`
 }
@@ -232,92 +313,99 @@ async function main() {
   const brands = await readJsonl(BRANDS_FILE)
   const tag = timestampTag()
 
-  const cleaned = brands.map((brand) => {
-    const result = chooseBrandName(brand)
+  const identifiedRows = brands.map((brand) => {
+    const picked = chooseEntity(brand)
     return {
       brand_id: brand.brand_id,
       official_domain: brand.official_domain,
       vertical_l1: brand.vertical_l1,
       vertical_l2: brand.vertical_l2,
       original_brand_name: brand.brand_name,
-      cleaned_brand_name: result.cleaned_brand_name,
-      selected_source: result.selected_source,
-      brand_quality: result.brand_quality,
-      final_brand_score: result.final_brand_score,
-      original_name_score: result.original_name_score,
-      domain_candidate_score: result.domain_candidate_score,
-      reasons: result.reasons.join('|'),
+      cleaned_brand_name: picked.cleaned_brand_name,
+      selected_source: picked.selected_source,
+      domain_class: picked.domain_class,
+      entity_decision: picked.entity_decision,
+      final_score: picked.final_score,
+      name_score: picked.name_score,
+      domain_score: picked.domain_score,
+      reasons: picked.reasons.join('|'),
     }
   })
 
-  const byCategory = new Map()
-  for (const row of cleaned) {
+  const categoryMap = new Map()
+  for (const row of identifiedRows) {
     const key = `${row.vertical_l1}::${row.vertical_l2}`
-    if (!byCategory.has(key)) {
-      byCategory.set(key, {
+    if (!categoryMap.has(key)) {
+      categoryMap.set(key, {
         vertical_l1: row.vertical_l1,
         vertical_l2: row.vertical_l2,
-        total_brands: 0,
-        valid_brands: 0,
+        total_records: 0,
+        ad_eligible_brands: 0,
         suspect_brands: 0,
-        invalid_brands: 0,
-        sample_brands: [],
+        non_brand_entities: 0,
+        sample_ad_eligible: [],
+        sample_non_brand: [],
       })
     }
-    const bucket = byCategory.get(key)
-    bucket.total_brands += 1
-    if (row.brand_quality === 'valid') bucket.valid_brands += 1
-    else if (row.brand_quality === 'suspect') bucket.suspect_brands += 1
-    else bucket.invalid_brands += 1
-    if (bucket.sample_brands.length < 12 && row.cleaned_brand_name) {
-      bucket.sample_brands.push(row.cleaned_brand_name)
+    const bucket = categoryMap.get(key)
+    bucket.total_records += 1
+    if (row.entity_decision === 'brand_ad_eligible') {
+      bucket.ad_eligible_brands += 1
+      if (bucket.sample_ad_eligible.length < 10) bucket.sample_ad_eligible.push(row.cleaned_brand_name)
+    } else if (row.entity_decision === 'brand_suspect') {
+      bucket.suspect_brands += 1
+    } else {
+      bucket.non_brand_entities += 1
+      if (bucket.sample_non_brand.length < 10) {
+        bucket.sample_non_brand.push(`${row.original_brand_name} -> ${row.cleaned_brand_name}`)
+      }
     }
   }
 
-  const categoryRows = [...byCategory.values()]
+  const categoryRows = [...categoryMap.values()]
     .sort((a, b) => {
       if (a.vertical_l1 !== b.vertical_l1) return a.vertical_l1.localeCompare(b.vertical_l1)
       return a.vertical_l2.localeCompare(b.vertical_l2)
     })
     .map((row) => ({
       ...row,
-      valid_ratio: Number((row.valid_brands / Math.max(1, row.total_brands)).toFixed(4)),
-      suspect_ratio: Number((row.suspect_brands / Math.max(1, row.total_brands)).toFixed(4)),
-      invalid_ratio: Number((row.invalid_brands / Math.max(1, row.total_brands)).toFixed(4)),
-      sample_brands: row.sample_brands.join(' | '),
+      ad_eligible_ratio: Number((row.ad_eligible_brands / Math.max(1, row.total_records)).toFixed(4)),
+      non_brand_ratio: Number((row.non_brand_entities / Math.max(1, row.total_records)).toFixed(4)),
+      sample_ad_eligible: row.sample_ad_eligible.join(' | '),
+      sample_non_brand: row.sample_non_brand.join(' | '),
     }))
 
   const summary = {
     generated_at: new Date().toISOString(),
-    total_brands: cleaned.length,
-    valid_brands: cleaned.filter((row) => row.brand_quality === 'valid').length,
-    suspect_brands: cleaned.filter((row) => row.brand_quality === 'suspect').length,
-    invalid_brands: cleaned.filter((row) => row.brand_quality === 'invalid').length,
-    category_count: categoryRows.length,
+    total_records: identifiedRows.length,
+    ad_eligible_brands: identifiedRows.filter((row) => row.entity_decision === 'brand_ad_eligible').length,
+    suspect_brands: identifiedRows.filter((row) => row.entity_decision === 'brand_suspect').length,
+    non_brand_entities: identifiedRows.filter((row) => row.entity_decision === 'non_brand_entity').length,
+    categories: categoryRows.length,
     output_files: {
-      cleaned_brand_list_csv: `data/house-ads/reports/house-ads-cleaned-brand-list-${tag}.csv`,
+      identified_brand_list_csv: `data/house-ads/reports/house-ads-brand-identified-list-${tag}.csv`,
       category_report_csv: `data/house-ads/reports/house-ads-brand-category-report-${tag}.csv`,
       summary_json: `data/house-ads/reports/house-ads-brand-category-summary-${tag}.json`,
-      latest_cleaned_brand_list_csv: 'data/house-ads/reports/house-ads-cleaned-brand-list-latest.csv',
+      latest_identified_brand_list_csv: 'data/house-ads/reports/house-ads-brand-identified-list-latest.csv',
       latest_category_report_csv: 'data/house-ads/reports/house-ads-brand-category-report-latest.csv',
       latest_summary_json: 'data/house-ads/reports/house-ads-brand-category-summary-latest.json',
     },
   }
 
-  const cleanedCsvPath = path.join(REPORT_ROOT, `house-ads-cleaned-brand-list-${tag}.csv`)
-  const categoryCsvPath = path.join(REPORT_ROOT, `house-ads-brand-category-report-${tag}.csv`)
-  const summaryJsonPath = path.join(REPORT_ROOT, `house-ads-brand-category-summary-${tag}.json`)
-  const latestCleaned = path.join(REPORT_ROOT, 'house-ads-cleaned-brand-list-latest.csv')
-  const latestCategory = path.join(REPORT_ROOT, 'house-ads-brand-category-report-latest.csv')
-  const latestSummary = path.join(REPORT_ROOT, 'house-ads-brand-category-summary-latest.json')
+  const identifiedPath = path.join(REPORT_ROOT, `house-ads-brand-identified-list-${tag}.csv`)
+  const categoryPath = path.join(REPORT_ROOT, `house-ads-brand-category-report-${tag}.csv`)
+  const summaryPath = path.join(REPORT_ROOT, `house-ads-brand-category-summary-${tag}.json`)
+  const latestIdentifiedPath = path.join(REPORT_ROOT, 'house-ads-brand-identified-list-latest.csv')
+  const latestCategoryPath = path.join(REPORT_ROOT, 'house-ads-brand-category-report-latest.csv')
+  const latestSummaryPath = path.join(REPORT_ROOT, 'house-ads-brand-category-summary-latest.json')
 
-  await writeCsv(cleanedCsvPath, cleaned)
-  await writeCsv(categoryCsvPath, categoryRows)
-  await writeJson(summaryJsonPath, summary)
+  await writeCsv(identifiedPath, identifiedRows)
+  await writeCsv(categoryPath, categoryRows)
+  await writeJson(summaryPath, summary)
 
-  await fs.copyFile(cleanedCsvPath, latestCleaned)
-  await fs.copyFile(categoryCsvPath, latestCategory)
-  await fs.copyFile(summaryJsonPath, latestSummary)
+  await fs.copyFile(identifiedPath, latestIdentifiedPath)
+  await fs.copyFile(categoryPath, latestCategoryPath)
+  await fs.copyFile(summaryPath, latestSummaryPath)
 
   console.log(JSON.stringify(summary, null, 2))
 }
