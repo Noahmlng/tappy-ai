@@ -66,6 +66,7 @@ const EVENT_SURFACE_MAP = {
 const ATTACH_MVP_PLACEMENT_KEY = 'attach.post_answer_render'
 const ATTACH_MVP_EVENT = 'answer_completed'
 const NEXT_STEP_INTENT_CARD_PLACEMENT_KEY = 'next_step.intent_card'
+const MANAGED_ROUTING_MODE = 'managed_mediation'
 const NEXT_STEP_INTENT_CARD_EVENTS = new Set(['followup_generation', 'follow_up_generation'])
 const NEXT_STEP_INTENT_POST_RULES = Object.freeze({
   intentThresholdFloor: 0.35,
@@ -265,6 +266,7 @@ function buildControlPlaneEnvironmentRecord(raw = {}) {
     environmentId: String(raw.environmentId || '').trim() || `env_${appId}_${environment}`,
     appId,
     environment,
+    routingMode: MANAGED_ROUTING_MODE,
     apiBaseUrl: String(raw.apiBaseUrl || '').trim() || '/api/v1/sdk',
     status: String(raw.status || '').trim() || 'active',
     metadata: raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : {},
@@ -1213,6 +1215,7 @@ function normalizePlacement(raw) {
     enabled: raw?.enabled !== false,
     disclosure: normalizeDisclosure(raw?.disclosure),
     priority: toPositiveInteger(raw?.priority, 100),
+    routingMode: MANAGED_ROUTING_MODE,
     surface: String(raw?.surface || 'CHAT_INLINE'),
     format: String(raw?.format || 'CARD'),
     trigger: {
