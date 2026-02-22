@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import http from 'node:http'
+import { createHash } from 'node:crypto'
 
 import defaultPlacements from '../../../config/default-placements.json' with { type: 'json' }
 import { runAdsRetrievalPipeline } from '../../runtime/index.js'
@@ -26,6 +27,10 @@ const MAX_EVENT_LOGS = 500
 const MAX_PLACEMENT_AUDIT_LOGS = 500
 const MAX_NETWORK_FLOW_LOGS = 300
 const DECISION_REASON_ENUM = new Set(['served', 'no_fill', 'blocked', 'error'])
+const CONTROL_PLANE_ENVIRONMENTS = new Set(['sandbox', 'staging', 'prod'])
+const CONTROL_PLANE_KEY_STATUS = new Set(['active', 'revoked'])
+const DEFAULT_CONTROL_PLANE_APP_ID = 'simulator-chatbot'
+const DEFAULT_CONTROL_PLANE_ORG_ID = 'org_simulator'
 
 const PLACEMENT_KEY_BY_ID = {
   chat_inline_v1: 'attach.post_answer_render',
@@ -170,6 +175,276 @@ function normalizeDisclosure(value) {
   const text = String(value || '').trim()
   if (text === 'Ad' || text === 'Sponsored') return text
   return 'Sponsored'
+}
+
+function normalizeControlPlaneEnvironment(value, fallback = 'staging') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (CONTROL_PLANE_ENVIRONMENTS.has(normalized)) return normalized
+  return fallback
+}
+
+function normalizeControlPlaneKeyStatus(value, fallback = 'active') {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (CONTROL_PLANE_KEY_STATUS.has(normalized)) return normalized
+  return fallback
+}
+
+function randomToken(length = 12) {
+  let token = ''
+  while (token.length < length) {
+    token += Math.random().toString(36).slice(2)
+  }
+  return token.slice(0, length)
+}
+
+function buildApiKeySecret(environment = 'staging') {
+  const env = normalizeControlPlaneEnvironment(environment)
+  return `sk_${env}_${randomToken(24)}`
+}
+
+function maskApiKeySecret(secret) {
+  const value = String(secret || '')
+  if (value.length < 10) return '****'
+  return `${value.slice(0, 6)}...${value.slice(-4)}`
+}
+
+function buildControlPlaneAppRecord(raw = {}) {
+  const timestamp = typeof raw.createdAt === 'string' ? raw.createdAt : nowIso()
+  const appId = String(raw.appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  return {
+    appId,
+    organizationId: String(raw.organizationId || '').trim() || DEFAULT_CONTROL_PLANE_ORG_ID,
+    displayName: String(raw.displayName || '').trim() || 'Simulator Chatbot',
+    status: String(raw.status || '').trim() || 'active',
+    metadata: raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : {},
+    createdAt: timestamp,
+    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : timestamp,
+  }
+}
+
+function buildControlPlaneEnvironmentRecord(raw = {}) {
+  const timestamp = typeof raw.createdAt === 'string' ? raw.createdAt : nowIso()
+  const appId = String(raw.appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const environment = normalizeControlPlaneEnvironment(raw.environment)
+  return {
+    environmentId: String(raw.environmentId || '').trim() || `env_${appId}_${environment}`,
+    appId,
+    environment,
+    apiBaseUrl: String(raw.apiBaseUrl || '').trim() || '/api/v1/sdk',
+    status: String(raw.status || '').trim() || 'active',
+    metadata: raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : {},
+    createdAt: timestamp,
+    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : timestamp,
+  }
+}
+
+function createControlPlaneKeyRecord(input = {}) {
+  const appId = String(input.appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const environment = normalizeControlPlaneEnvironment(input.environment)
+  const keyName = String(input.keyName || '').trim() || `primary-${environment}`
+  const keyId = String(input.keyId || '').trim() || `key_${randomToken(18)}`
+  const createdAt = typeof input.createdAt === 'string' ? input.createdAt : nowIso()
+  const updatedAt = typeof input.updatedAt === 'string' ? input.updatedAt : createdAt
+  const secret = buildApiKeySecret(environment)
+  const keyPrefix = secret.slice(0, 14)
+  const secretHash = createHash('sha256').update(secret).digest('hex')
+  const status = normalizeControlPlaneKeyStatus(input.status, 'active')
+  const revokedAt = status === 'revoked'
+    ? (typeof input.revokedAt === 'string' ? input.revokedAt : updatedAt)
+    : ''
+
+  return {
+    keyRecord: {
+      keyId,
+      appId,
+      environment,
+      keyName,
+      keyPrefix,
+      secretHash,
+      status,
+      revokedAt,
+      lastUsedAt: typeof input.lastUsedAt === 'string' ? input.lastUsedAt : '',
+      metadata: input.metadata && typeof input.metadata === 'object' ? input.metadata : {},
+      maskedKey: maskApiKeySecret(secret),
+      createdAt,
+      updatedAt,
+    },
+    secret,
+  }
+}
+
+function normalizeControlPlaneKeyRecord(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const keyId = String(raw.keyId || raw.key_id || raw.id || '').trim()
+  if (!keyId) return null
+
+  const appId = String(raw.appId || raw.app_id || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const environment = normalizeControlPlaneEnvironment(raw.environment)
+  const keyName = String(raw.keyName || raw.key_name || raw.name || '').trim() || `primary-${environment}`
+  const status = normalizeControlPlaneKeyStatus(raw.status, 'active')
+  const createdAt = typeof raw.createdAt === 'string'
+    ? raw.createdAt
+    : (typeof raw.created_at === 'string' ? raw.created_at : nowIso())
+  const updatedAt = typeof raw.updatedAt === 'string'
+    ? raw.updatedAt
+    : (typeof raw.updated_at === 'string' ? raw.updated_at : createdAt)
+  const keyPrefix = String(raw.keyPrefix || raw.key_prefix || '').trim()
+  const maskedKey = String(raw.maskedKey || raw.keyMasked || raw.preview || '').trim() || (
+    keyPrefix ? `${keyPrefix}...****` : '****'
+  )
+  const revokedAt = status === 'revoked'
+    ? String(raw.revokedAt || raw.revoked_at || updatedAt)
+    : ''
+
+  return {
+    keyId,
+    appId,
+    environment,
+    keyName,
+    keyPrefix,
+    secretHash: String(raw.secretHash || raw.secret_hash || '').trim(),
+    status,
+    revokedAt,
+    lastUsedAt: String(raw.lastUsedAt || raw.last_used_at || '').trim(),
+    metadata: raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : {},
+    maskedKey,
+    createdAt,
+    updatedAt,
+  }
+}
+
+function toPublicApiKeyRecord(record) {
+  const item = normalizeControlPlaneKeyRecord(record)
+  if (!item) return null
+  return {
+    keyId: item.keyId,
+    name: item.keyName,
+    environment: item.environment,
+    status: item.status,
+    maskedKey: item.maskedKey,
+    createdAt: item.createdAt,
+    lastUsedAt: item.lastUsedAt,
+  }
+}
+
+function createInitialControlPlaneState() {
+  const app = buildControlPlaneAppRecord({
+    appId: DEFAULT_CONTROL_PLANE_APP_ID,
+    displayName: 'Simulator Chatbot',
+    organizationId: DEFAULT_CONTROL_PLANE_ORG_ID,
+  })
+  const appEnvironments = ['sandbox', 'staging', 'prod'].map((environment) => buildControlPlaneEnvironmentRecord({
+    appId: app.appId,
+    environment,
+  }))
+  const { keyRecord } = createControlPlaneKeyRecord({
+    appId: app.appId,
+    environment: 'staging',
+    keyName: 'primary-staging',
+  })
+
+  return {
+    apps: [app],
+    appEnvironments,
+    apiKeys: [keyRecord],
+  }
+}
+
+function ensureControlPlaneState(raw) {
+  const fallback = createInitialControlPlaneState()
+  if (!raw || typeof raw !== 'object') return fallback
+
+  const appRows = Array.isArray(raw.apps) ? raw.apps : []
+  const apps = appRows
+    .map((item) => buildControlPlaneAppRecord(item))
+    .filter((item) => Boolean(item.appId))
+  if (apps.length === 0) {
+    apps.push(...fallback.apps)
+  }
+
+  const appIdSet = new Set(apps.map((item) => item.appId))
+  if (!appIdSet.has(DEFAULT_CONTROL_PLANE_APP_ID)) {
+    const app = buildControlPlaneAppRecord({
+      appId: DEFAULT_CONTROL_PLANE_APP_ID,
+      displayName: 'Simulator Chatbot',
+      organizationId: DEFAULT_CONTROL_PLANE_ORG_ID,
+    })
+    apps.push(app)
+    appIdSet.add(app.appId)
+  }
+
+  const environmentRows = Array.isArray(raw.appEnvironments || raw.environments)
+    ? (raw.appEnvironments || raw.environments)
+    : []
+  const appEnvironments = []
+  const envDedup = new Set()
+
+  for (const row of environmentRows) {
+    const normalized = buildControlPlaneEnvironmentRecord(row)
+    if (!appIdSet.has(normalized.appId)) continue
+    const dedupKey = `${normalized.appId}::${normalized.environment}`
+    if (envDedup.has(dedupKey)) continue
+    envDedup.add(dedupKey)
+    appEnvironments.push(normalized)
+  }
+
+  for (const app of apps) {
+    for (const environment of CONTROL_PLANE_ENVIRONMENTS) {
+      const dedupKey = `${app.appId}::${environment}`
+      if (envDedup.has(dedupKey)) continue
+      envDedup.add(dedupKey)
+      appEnvironments.push(buildControlPlaneEnvironmentRecord({
+        appId: app.appId,
+        environment,
+      }))
+    }
+  }
+
+  const keyRows = Array.isArray(raw.apiKeys || raw.keys) ? (raw.apiKeys || raw.keys) : []
+  let apiKeys = keyRows
+    .map((item) => normalizeControlPlaneKeyRecord(item))
+    .filter((item) => item && appIdSet.has(item.appId))
+  if (apiKeys.length === 0) {
+    apiKeys = fallback.apiKeys
+  }
+
+  return {
+    apps,
+    appEnvironments,
+    apiKeys,
+  }
+}
+
+function ensureControlPlaneAppAndEnvironment(appId, environment) {
+  const normalizedAppId = String(appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const normalizedEnvironment = normalizeControlPlaneEnvironment(environment)
+  const controlPlane = state.controlPlane
+
+  let app = controlPlane.apps.find((item) => item.appId === normalizedAppId)
+  if (!app) {
+    app = buildControlPlaneAppRecord({
+      appId: normalizedAppId,
+      displayName: normalizedAppId,
+      organizationId: DEFAULT_CONTROL_PLANE_ORG_ID,
+    })
+    controlPlane.apps.push(app)
+  }
+
+  const dedupKey = `${normalizedAppId}::${normalizedEnvironment}`
+  const hasEnvironment = controlPlane.appEnvironments.some((item) => (
+    `${item.appId}::${item.environment}` === dedupKey
+  ))
+  if (!hasEnvironment) {
+    controlPlane.appEnvironments.push(buildControlPlaneEnvironmentRecord({
+      appId: normalizedAppId,
+      environment: normalizedEnvironment,
+    }))
+  }
+
+  return {
+    appId: normalizedAppId,
+    environment: normalizedEnvironment,
+  }
 }
 
 function createDecision(result, reasonDetail, intentScore) {
@@ -717,7 +992,7 @@ function createInitialState() {
   const placementConfigVersion = Math.max(1, ...placements.map((placement) => placement.configVersion || 1))
 
   return {
-    version: 1,
+    version: 2,
     updatedAt: nowIso(),
     placementConfigVersion,
     placements,
@@ -735,6 +1010,7 @@ function createInitialState() {
     },
     placementStats: initialPlacementStats(placements),
     dailyMetrics: createDailyMetricsSeed(7),
+    controlPlane: createInitialControlPlaneState(),
   }
 }
 
@@ -771,7 +1047,7 @@ function loadState() {
     }
 
     return {
-      version: 1,
+      version: toPositiveInteger(parsed?.version, 2),
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : nowIso(),
       placementConfigVersion,
       placements,
@@ -793,6 +1069,7 @@ function loadState() {
       },
       placementStats,
       dailyMetrics: ensureDailyMetricsWindow(parsed.dailyMetrics),
+      controlPlane: ensureControlPlaneState(parsed.controlPlane),
     }
   } catch (error) {
     console.error('[simulator-gateway] Failed to load state, fallback to initial state:', error)
@@ -1724,6 +2001,158 @@ async function requestHandler(req, res) {
       service: 'simulator-gateway',
       updatedAt: state.updatedAt,
       now: nowIso(),
+    })
+    return
+  }
+
+  if (pathname === '/api/v1/public/credentials/keys' && req.method === 'GET') {
+    const appId = String(requestUrl.searchParams.get('appId') || '').trim()
+    const statusQuery = String(requestUrl.searchParams.get('status') || '').trim().toLowerCase()
+    const environmentQuery = String(
+      requestUrl.searchParams.get('environment') || requestUrl.searchParams.get('env') || '',
+    ).trim().toLowerCase()
+
+    if (statusQuery && !CONTROL_PLANE_KEY_STATUS.has(statusQuery)) {
+      sendJson(res, 400, {
+        error: {
+          code: 'INVALID_STATUS',
+          message: `status must be one of: ${Array.from(CONTROL_PLANE_KEY_STATUS).join(', ')}`,
+        },
+      })
+      return
+    }
+
+    if (environmentQuery && !CONTROL_PLANE_ENVIRONMENTS.has(environmentQuery)) {
+      sendJson(res, 400, {
+        error: {
+          code: 'INVALID_ENVIRONMENT',
+          message: `environment must be one of: ${Array.from(CONTROL_PLANE_ENVIRONMENTS).join(', ')}`,
+        },
+      })
+      return
+    }
+
+    let keys = [...state.controlPlane.apiKeys]
+    if (appId) {
+      keys = keys.filter((row) => row.appId === appId)
+    }
+    if (statusQuery) {
+      keys = keys.filter((row) => row.status === statusQuery)
+    }
+    if (environmentQuery) {
+      keys = keys.filter((row) => row.environment === environmentQuery)
+    }
+
+    keys.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+
+    sendJson(res, 200, {
+      keys: keys.map((row) => toPublicApiKeyRecord(row)).filter(Boolean),
+    })
+    return
+  }
+
+  if (pathname === '/api/v1/public/credentials/keys' && req.method === 'POST') {
+    try {
+      const payload = await readJsonBody(req)
+      const appId = String(payload?.appId || payload?.app_id || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+      const requestedEnvironment = String(payload?.environment || payload?.env || '').trim().toLowerCase()
+      const environment = requestedEnvironment || 'staging'
+      if (!CONTROL_PLANE_ENVIRONMENTS.has(environment)) {
+        throw new Error(`environment must be one of: ${Array.from(CONTROL_PLANE_ENVIRONMENTS).join(', ')}`)
+      }
+      const keyName = String(payload?.name || payload?.keyName || payload?.key_name || '').trim()
+        || `primary-${environment}`
+
+      const ensured = ensureControlPlaneAppAndEnvironment(appId, environment)
+      const { keyRecord, secret } = createControlPlaneKeyRecord({
+        appId: ensured.appId,
+        environment: ensured.environment,
+        keyName,
+      })
+
+      state.controlPlane.apiKeys.unshift(keyRecord)
+      persistState(state)
+
+      sendJson(res, 201, {
+        key: toPublicApiKeyRecord(keyRecord),
+        secret,
+      })
+      return
+    } catch (error) {
+      sendJson(res, 400, {
+        error: {
+          code: 'INVALID_REQUEST',
+          message: error instanceof Error ? error.message : 'Invalid request',
+        },
+      })
+      return
+    }
+  }
+
+  const rotateKeyMatch = pathname.match(/^\/api\/v1\/public\/credentials\/keys\/([^/]+)\/rotate$/)
+  if (rotateKeyMatch && req.method === 'POST') {
+    const keyId = decodeURIComponent(rotateKeyMatch[1] || '').trim()
+    const target = state.controlPlane.apiKeys.find((item) => item.keyId === keyId)
+    if (!target) {
+      sendJson(res, 404, {
+        error: {
+          code: 'KEY_NOT_FOUND',
+          message: `API key not found: ${keyId}`,
+        },
+      })
+      return
+    }
+
+    const { keyRecord, secret } = createControlPlaneKeyRecord({
+      keyId: target.keyId,
+      appId: target.appId,
+      environment: target.environment,
+      keyName: target.keyName,
+      createdAt: target.createdAt,
+      lastUsedAt: target.lastUsedAt,
+      metadata: target.metadata,
+      status: 'active',
+    })
+
+    target.keyPrefix = keyRecord.keyPrefix
+    target.secretHash = keyRecord.secretHash
+    target.status = 'active'
+    target.revokedAt = ''
+    target.maskedKey = keyRecord.maskedKey
+    target.updatedAt = keyRecord.updatedAt
+
+    persistState(state)
+    sendJson(res, 200, {
+      key: toPublicApiKeyRecord(target),
+      secret,
+    })
+    return
+  }
+
+  const revokeKeyMatch = pathname.match(/^\/api\/v1\/public\/credentials\/keys\/([^/]+)\/revoke$/)
+  if (revokeKeyMatch && req.method === 'POST') {
+    const keyId = decodeURIComponent(revokeKeyMatch[1] || '').trim()
+    const target = state.controlPlane.apiKeys.find((item) => item.keyId === keyId)
+    if (!target) {
+      sendJson(res, 404, {
+        error: {
+          code: 'KEY_NOT_FOUND',
+          message: `API key not found: ${keyId}`,
+        },
+      })
+      return
+    }
+
+    if (target.status !== 'revoked') {
+      const revokedAt = nowIso()
+      target.status = 'revoked'
+      target.revokedAt = revokedAt
+      target.updatedAt = revokedAt
+      persistState(state)
+    }
+
+    sendJson(res, 200, {
+      key: toPublicApiKeyRecord(target),
     })
     return
   }
