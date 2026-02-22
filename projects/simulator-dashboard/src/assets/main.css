@@ -323,7 +323,25 @@ a {
   font-size: 0.9rem;
 }
 
+.textarea-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111827;
+  padding: 10px;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  font-family: "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+  resize: vertical;
+}
+
 .input:focus {
+  outline: 2px solid #bfdbfe;
+  border-color: #bfdbfe;
+}
+
+.textarea-input:focus {
   outline: 2px solid #bfdbfe;
   border-color: #bfdbfe;
 }

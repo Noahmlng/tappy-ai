@@ -2,12 +2,15 @@
 import { computed, reactive, ref } from 'vue'
 import { controlPlaneClient } from '../api/control-plane-client'
 import { AGENT_TEMPLATE_ITEMS, buildAgentTemplates } from '../lib/agent-templates'
+import { validateAgentOutputContract } from '../lib/agent-output-contract'
 
 const activeTab = ref('codex')
 const copyState = ref('')
 const tokenIssuing = ref(false)
 const tokenError = ref('')
 const tokenMeta = ref(null)
+const contractOutput = ref('')
+const contractValidation = ref(null)
 
 const draft = reactive({
   appId: 'simulator-chatbot',
@@ -31,6 +34,10 @@ const templates = computed(() => buildAgentTemplates({
 }))
 
 const activeSnippet = computed(() => templates.value[activeTab.value] || templates.value.codex)
+const contractEvidence = computed(() => {
+  const evidence = contractValidation.value?.checks?.evidence?.evidence
+  return evidence ? JSON.stringify(evidence, null, 2) : ''
+})
 
 async function copyText(value) {
   try {
@@ -70,6 +77,14 @@ async function issueIntegrationToken() {
   } finally {
     tokenIssuing.value = false
   }
+}
+
+function runContractValidation() {
+  contractValidation.value = validateAgentOutputContract(contractOutput.value)
+}
+
+function contractCheckClass(ok) {
+  return ok ? 'status-pill good' : 'status-pill bad'
 }
 </script>
 
@@ -179,6 +194,53 @@ async function issueIntegrationToken() {
         <li>Evidence includes `requestId`, `decisionResult`, and `eventsOk`.</li>
         <li>Fail-open is explicitly preserved.</li>
       </ul>
+    </article>
+
+    <article class="panel">
+      <div class="panel-toolbar">
+        <h3>Output Contract Validator</h3>
+        <button class="button" type="button" @click="runContractValidation">
+          Validate output
+        </button>
+      </div>
+      <p class="subtitle">
+        Paste agent final output and validate `files + smoke + evidence` in one check.
+      </p>
+      <textarea
+        v-model="contractOutput"
+        class="textarea-input"
+        rows="14"
+        placeholder="Paste final agent output here"
+      />
+
+      <div v-if="contractValidation" class="status-grid">
+        <p>
+          <span :class="contractValidation.ok ? 'status-pill good' : 'status-pill bad'">
+            {{ contractValidation.ok ? 'pass' : 'fail' }}
+          </span>
+          Score {{ contractValidation.score }}
+        </p>
+        <p>
+          <span :class="contractCheckClass(contractValidation.checks.files.ok)">files</span>
+          {{ contractValidation.checks.files.message }}
+        </p>
+        <p>
+          <span :class="contractCheckClass(contractValidation.checks.smoke.ok)">smoke</span>
+          {{ contractValidation.checks.smoke.message }}
+        </p>
+        <p>
+          <span :class="contractCheckClass(contractValidation.checks.evidence.ok)">evidence</span>
+          {{ contractValidation.checks.evidence.message }}
+        </p>
+        <div v-if="contractValidation.checks.files.files.length">
+          <p class="muted">Detected files</p>
+          <pre class="code-block">{{ contractValidation.checks.files.files.join('\n') }}</pre>
+        </div>
+        <div v-if="contractEvidence">
+          <p class="muted">Parsed evidence</p>
+          <pre class="code-block">{{ contractEvidence }}</pre>
+        </div>
+      </div>
     </article>
   </section>
 </template>
