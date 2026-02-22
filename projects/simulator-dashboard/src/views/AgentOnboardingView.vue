@@ -1,6 +1,7 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { controlPlaneClient } from '../api/control-plane-client'
+import { AGENT_TEMPLATE_ITEMS, buildAgentTemplates } from '../lib/agent-templates'
 
 const activeTab = ref('codex')
 const copyState = ref('')
@@ -15,54 +16,19 @@ const draft = reactive({
   repoPath: '/path/to/your/repo',
   integrationToken: '<ONE_TIME_INTEGRATION_TOKEN>',
   tokenTtlMinutes: 10,
+  exchangeTtlSeconds: 300,
 })
 
 const environmentOptions = ['sandbox', 'staging', 'prod']
-const tabs = [
-  { id: 'codex', label: 'Codex' },
-  { id: 'cloudcode', label: 'CloudCode' },
-  { id: 'cursor', label: 'Cursor' },
-]
-
-function buildSharedInstruction() {
-  return [
-    `App ID: ${draft.appId.trim() || 'simulator-chatbot'}`,
-    `Environment: ${draft.environment}`,
-    `Placement ID: ${draft.placementId.trim() || 'chat_inline_v1'}`,
-    `Repo: ${draft.repoPath.trim() || '/path/to/your/repo'}`,
-    '',
-    'Rules:',
-    '1. Use only public production-ready API path:',
-    '   - GET /api/v1/mediation/config',
-    '   - POST /api/v1/sdk/evaluate',
-    '   - POST /api/v1/sdk/events',
-    '2. Never call internal endpoints: /api/v1/dashboard/*, /api/v1/dev/*.',
-    `3. Use one-time token only: ${draft.integrationToken.trim() || '<ONE_TIME_INTEGRATION_TOKEN>'}.`,
-    '4. Keep fail-open behavior: ad call failure must not block primary response.',
-    '5. Do not auto-submit PR; output patch + run steps + evidence only.',
-    '',
-    'Deliverables:',
-    '1. Minimal integration patch (config -> evaluate -> events).',
-    '2. Smoke run command.',
-    '3. Evidence JSON: requestId, decision.result, events.ok.',
-  ].join('\n')
-}
-
-const templates = computed(() => {
-  const shared = buildSharedInstruction()
-  const envVars = [
-    `MEDIATION_API_BASE_URL=https://api.${draft.environment}.example.com`,
-    `INTEGRATION_TOKEN=${draft.integrationToken.trim() || '<ONE_TIME_INTEGRATION_TOKEN>'}`,
-    `APP_ID=${draft.appId.trim() || 'simulator-chatbot'}`,
-    `PLACEMENT_ID=${draft.placementId.trim() || 'chat_inline_v1'}`,
-  ].join('\n')
-
-  return {
-    codex: `Use this exact task:\n\n${shared}\n\nRunbook:\n1. Open repo at ${draft.repoPath.trim() || '/path/to/your/repo'}.\n2. Add env template:\n${envVars}\n3. Implement a single helper to call config -> evaluate -> events.\n4. Fail-open wrapper: return primary response when ad request fails.\n5. Run smoke curl and print evidence JSON.\n`,
-    cloudcode: `Task for CloudCode agent:\n\n${shared}\n\nExecution plan:\n1. Prepare .env with:\n${envVars}\n2. Generate minimal server-side integration code.\n3. Add smoke script that prints requestId + decision.result + events.ok.\n4. Stop at patch and command output; do not auto-open PR.\n`,
-    cursor: `Cursor instruction block:\n\n${shared}\n\nRequired output format:\n1. Files changed\n2. Commands executed\n3. Smoke evidence JSON\n4. Risk notes (if any)\n\nContext vars:\n${envVars}\n`,
-  }
-})
+const tabs = AGENT_TEMPLATE_ITEMS
+const templates = computed(() => buildAgentTemplates({
+  appId: draft.appId,
+  environment: draft.environment,
+  placementId: draft.placementId,
+  repoPath: draft.repoPath,
+  integrationToken: draft.integrationToken,
+  exchangeTtlSeconds: draft.exchangeTtlSeconds,
+}))
 
 const activeSnippet = computed(() => templates.value[activeTab.value] || templates.value.codex)
 
@@ -155,6 +121,16 @@ async function issueIntegrationToken() {
             <option :value="15">15</option>
           </select>
         </label>
+        <label>
+          Exchange TTL (seconds)
+          <select v-model.number="draft.exchangeTtlSeconds" class="input">
+            <option :value="120">120</option>
+            <option :value="180">180</option>
+            <option :value="300">300</option>
+            <option :value="600">600</option>
+            <option :value="900">900</option>
+          </select>
+        </label>
       </div>
       <div class="toolbar-actions">
         <button class="button" type="button" :disabled="tokenIssuing" @click="issueIntegrationToken">
@@ -199,8 +175,8 @@ async function issueIntegrationToken() {
       <h3>Output Contract</h3>
       <ul class="checklist">
         <li>Patch only, no auto PR submission.</li>
-        <li>Public endpoint chain must be `config -> evaluate -> events`.</li>
-        <li>Evidence includes `requestId`, `decision.result`, and `events.ok`.</li>
+        <li>Must run `token exchange -> config -> evaluate -> events` smoke.</li>
+        <li>Evidence includes `requestId`, `decisionResult`, and `eventsOk`.</li>
         <li>Fail-open is explicitly preserved.</li>
       </ul>
     </article>
