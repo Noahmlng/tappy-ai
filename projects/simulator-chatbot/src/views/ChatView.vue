@@ -515,7 +515,7 @@ const MAX_SESSIONS = 50
 const MAX_TURN_LOGS = 400
 const TOOL_STATES = ['planning', 'running', 'done', 'error']
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant. Be accurate, concise, and explicit about uncertainty.'
-const SDK_APP_ID = import.meta.env.VITE_SIMULATOR_APP_ID || 'simulator-chatbot'
+const SDK_APP_ID = import.meta.env.VITE_SIMULATOR_APP_ID || import.meta.env.APP_ID || 'simulator-chatbot'
 const ATTACH_LINK_PLACEMENT_KEY = 'attach.post_answer_render'
 const ENABLE_NEXT_STEP_FLOW = false
 

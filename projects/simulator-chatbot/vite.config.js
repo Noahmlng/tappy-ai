@@ -11,6 +11,7 @@ export default defineConfig(({ mode }) => {
   const proxyTarget = env.SIMULATOR_API_PROXY_TARGET || 'http://127.0.0.1:3100'
 
   return {
+    envPrefix: ['VITE_', 'MEDIATION_', 'APP_', 'PLACEMENT_'],
     plugins: [vue(), vueJsx(), vueDevTools()],
     resolve: {
       alias: {
