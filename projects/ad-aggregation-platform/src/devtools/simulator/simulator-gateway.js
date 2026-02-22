@@ -22,6 +22,8 @@ const STATE_FILE = path.join(STATE_DIR, 'simulator-gateway-state.json')
 
 const PORT = Number(process.env.SIMULATOR_GATEWAY_PORT || 3100)
 const HOST = process.env.SIMULATOR_GATEWAY_HOST || '127.0.0.1'
+const DEV_RESET_ENABLED = String(process.env.SIMULATOR_DEV_RESET_ENABLED || 'true').trim().toLowerCase() !== 'false'
+const DEV_RESET_TOKEN = String(process.env.SIMULATOR_DEV_RESET_TOKEN || '').trim()
 const MAX_DECISION_LOGS = 500
 const MAX_EVENT_LOGS = 500
 const MAX_PLACEMENT_AUDIT_LOGS = 500
@@ -1514,6 +1516,58 @@ function resolveAuditActor(req, fallback = 'dashboard') {
   return actor || fallback
 }
 
+function normalizeHost(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^\[(.*)\]$/, '$1')
+}
+
+function isLoopbackHost(value) {
+  const host = normalizeHost(value)
+  if (!host) return false
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true
+  if (host.startsWith('127.')) return true
+  return false
+}
+
+function requiresProtectedReset() {
+  return !isLoopbackHost(HOST)
+}
+
+function authorizeDevReset(req) {
+  if (!DEV_RESET_ENABLED) {
+    return {
+      ok: false,
+      status: 403,
+      error: {
+        code: 'RESET_DISABLED',
+        message: 'Reset endpoint is disabled by simulator policy.',
+      },
+    }
+  }
+
+  if (!requiresProtectedReset()) {
+    return { ok: true, mode: 'loopback_bind' }
+  }
+
+  const providedToken = String(req?.headers?.['x-simulator-reset-token'] || '').trim()
+  if (DEV_RESET_TOKEN && providedToken && providedToken === DEV_RESET_TOKEN) {
+    return { ok: true, mode: 'token' }
+  }
+
+  return {
+    ok: false,
+    status: 403,
+    error: {
+      code: 'RESET_FORBIDDEN',
+      message: DEV_RESET_TOKEN
+        ? 'Reset endpoint requires x-simulator-reset-token when gateway is publicly bound.'
+        : 'Reset endpoint is blocked on non-loopback bind. Configure SIMULATOR_DEV_RESET_TOKEN to allow internal reset.',
+    },
+  }
+}
+
 function recordControlPlaneAudit(payload) {
   state.controlPlaneAuditLogs = [
     {
@@ -2766,12 +2820,21 @@ async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/dev/reset' && req.method === 'POST') {
+    const auth = authorizeDevReset(req)
+    if (!auth.ok) {
+      sendJson(res, auth.status, {
+        error: auth.error,
+      })
+      return
+    }
+
     const previousPlacementConfigVersion = state.placementConfigVersion
     resetGatewayState()
     sendJson(res, 200, {
       ok: true,
       previousPlacementConfigVersion,
       placementConfigVersion: state.placementConfigVersion,
+      authMode: auth.mode || 'unknown',
       stateFile: STATE_FILE,
       updatedAt: state.updatedAt,
     })
