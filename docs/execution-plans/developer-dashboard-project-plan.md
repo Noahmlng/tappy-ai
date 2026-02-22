@@ -1,344 +1,204 @@
-# Developer Dashboard Plan (External Developer Portal, Production-Only)
+# Developer Dashboard Plan (v1 Minimal, External Developer First)
 
-- Version: v1.0
+- Version: v1.1
 - Last Updated: 2026-02-22
-- Goal: 将 `projects/simulator-dashboard` 从“本地模拟调参台”升级为“外部开发者门户”，使开发者在 UI 或 Agent 指令中完成账号、配置、接入、计费、验证与上线。
+- Goal: 第一版聚焦“极简接入”，让外部开发者用最少步骤跑通生产链路；复杂逻辑尽量由平台内部承担。
 
-## 1. Product Positioning and Hard Boundaries
+## 0. Alignment Summary (this revision)
 
-### 1.1 Positioning
+1. Dashboard 走极简风格（参考 Exa：少页面、少配置、关键信息优先）。
+2. Agent-first 接入不在指令中暴露长期 API Key。
+3. 自动提交 PR 默认关闭。
+4. `managed_mediation` 作为默认路由，但不要求开发者理解或配置供应商细节。
+5. `sandbox/staging/prod` 凭证强制分离。
+6. Reset 功能仅供内部 simulator 调试，不对外部开发者展示。
+7. ZeroClick / TryGravity 兼容是“迁移加速能力”，不是 v1 外部接入硬门槛。
 
-`simulator-dashboard` 是外部开发者控制平面（control plane），不是内部运维台。
+## 1. Product Principles (v1)
 
-### 1.2 Hard Boundaries (必须遵守)
+1. External developer first: 先让外部用户 15 分钟跑通，不追求后台完备度。
+2. Platform owns complexity: 策略、路由、供应商差异由我们处理。
+3. One happy path: 默认只给一条最短路径，不让用户在 v1 里做大量选择。
+4. Production network only: 外部链路只走公网正式 API。
+5. Fail-open by default: 广告失败不阻塞主流程。
 
-1. 外部接入只走生产可用的公网 API 链路，不走内部联调链路。
-2. 不依赖本地网关地址（例如 `127.0.0.1:3100`）作为外部接入路径。
-3. 不将 `/api/v1/dashboard/*` 或 `/api/v1/dev/*` 作为外部接入合同。
-4. Dashboard 上的所有动作都要映射到可审计的公开控制平面 API。
+## 2. v1 Scope (Must / Should / Later)
 
-### 1.3 North Star
+## 2.1 Must (v1 必做)
 
-一个完全外部的开发者在 15-30 分钟内完成：
+1. 外部开发者账号开通 + 创建 App。
+2. API Key 管理（创建、显示一次、轮换、吊销）。
+3. 最小 placement 配置（先支持标准模板，不开放复杂策略参数）。
+4. Quick Start 页面：`config -> evaluate -> events` 一键验证。
+5. 简化观测：最近请求、错误率、基础 usage/billing 概览。
+6. Agent 指令生成（Codex/CloudCode/Cursor）。
 
-1. 注册与身份验证。
-2. 创建 app 与 placement。
-3. 获取 API 凭证。
-4. 跑通首次广告请求与回传事件。
-5. 在同一界面看到配置状态、计费与效果数据。
+## 2.2 Should (v1.5)
 
-## 2. End-to-End Integration Chain (Developer Journey)
+1. 更细粒度角色权限。
+2. 更完整计费与对账详情页。
+3. 自定义 placement 高阶参数。
 
-## 2.1 Phase A: Account and Organization Bootstrap
+## 2.3 Later (v2+)
 
-Dashboard 必备能力：
+1. 大规模 A/B 配置和实验编排。
+2. 完整多供应商可视化调度。
+3. 高级告警与自动优化。
 
-1. 开发者注册、邮箱验证、2FA（可选）。
-2. 创建 Organization 和 Project（app）。
-3. 角色权限（Owner/Admin/Developer/Viewer）。
+## 3. Minimal Dashboard IA (Exa-style)
 
-后端能力：
+v1 仅保留 5 个页面：
 
-1. `POST /api/v1/public/auth/register`
-2. `POST /api/v1/public/auth/verify-email`
-3. `POST /api/v1/public/orgs`
-4. `POST /api/v1/public/projects`
+1. `Home`
+   - 当前环境状态、接入是否完成、最近 24h 核心指标。
+2. `Quick Start`
+   - 两步接入：拿 Key -> 跑首条请求。
+   - 提供 JS/Python/cURL 最小示例。
+3. `API Keys`
+   - 创建、复制、轮换、吊销。
+4. `Integrations`
+   - 最小 placement 模板与环境开关。
+5. `Usage`
+   - 请求量、成功率、基础计费摘要。
 
-## 2.2 Phase B: Credentials and Environment Setup
+不在 v1 对外暴露：
 
-Dashboard 必备能力：
+1. Reset/Snapshot。
+2. 复杂 provider 路由配置。
+3. 大量策略参数编辑页。
 
-1. 环境切换：`sandbox | staging | prod`。
-2. API Key 管理：创建、展示一次、轮换、撤销。
-3. 回调白名单、来源域名白名单、IP 白名单（按产品需要可选）。
+## 4. External Integration Flow (v1 Happy Path)
 
-后端能力：
+1. 注册账号并创建 App。
+2. 复制 `API_BASE_URL` + `API_KEY` + 默认 `PLACEMENT_ID`。
+3. 运行 Quick Start 示例（或复制 Agent 指令）。
+4. 收到首个 `requestId`，并在 Usage 页面看到请求记录。
+5. 上线前只做最小检查：成功率、延迟、events ack。
 
-1. `POST /api/v1/public/credentials/keys`
-2. `POST /api/v1/public/credentials/keys/:keyId/rotate`
-3. `POST /api/v1/public/credentials/keys/:keyId/revoke`
+## 5. Agent-first Integration Without Exposed Long-lived Key
 
-## 2.3 Phase C: Placement and Runtime Config
+## 5.1 Core Rule
 
-Dashboard 必备能力：
+Agent 指令中不放长期 API Key，不要求用户把长期 key 贴进 prompt。
 
-1. 创建/编辑 placement（surface、format、frequency cap、trigger guardrails）。
-2. 配置版本管理（草稿、发布、回滚）。
-3. 变更审计日志（谁在何时改了什么）。
+## 5.2 Two Onboarding Modes
 
-后端能力：
+1. Manual mode（简单直连）：
+   - 开发者在自己环境变量中配置 `API_KEY`。
+   - 适合传统 API 接入。
+2. Connected-agent mode（推荐）：
+   - Dashboard 生成短期一次性 `integration token`（例如 10-15 分钟有效）。
+   - Agent 用短期 token 拉取最小配置并完成改造。
+   - 长期 key 由平台安全交换，不出现在 prompt 文本里。
 
-1. `GET /api/v1/public/placements`
-2. `POST /api/v1/public/placements`
-3. `PUT /api/v1/public/placements/:placementId`
-4. `POST /api/v1/public/config/releases`
-5. `POST /api/v1/public/config/releases/:releaseId/rollback`
+## 5.3 Agent Output Contract (v1)
 
-## 2.4 Phase D: First Live Call and Event Tracking
+1. 输出变更文件清单。
+2. 输出可执行 smoke test 命令。
+3. 输出验证证据（requestId / status）。
+4. 不自动提交 PR（默认）。
 
-Dashboard 必备能力：
+## 6. Why Default `managed_mediation` (and why users do not need provider keys)
 
-1. Quick Start Runner（直接发起 `config -> evaluate -> events`）。
-2. requestId 追踪与请求重放（仅脱敏字段）。
-3. 失败分类（transport error / business no_fill / blocked）。
+`managed_mediation` 设为默认的原因：
 
-后端能力：
+1. 开发者只接一个统一 API，不需要理解 ZeroClick/TryGravity 字段差异。
+2. 我们可在服务端统一做 failover、限流、重试和策略控制。
+3. 后续迁移外部客户时，可在不改客户代码的前提下切换底层 provider。
+4. 可避免让开发者额外输入 provider 级 API Key。
 
-1. `GET /api/v1/mediation/config`
-2. `POST /api/v1/sdk/evaluate`
-3. `POST /api/v1/sdk/events`
-4. `GET /api/v1/public/trace/:requestId`
+实现约束：
 
-## 2.5 Phase E: Billing and Analytics Closure
+1. 外部开发者只持有“我们平台”的 API Key。
+2. provider 侧凭证由我们内部管理，不进入外部 Dashboard v1。
 
-Dashboard 必备能力：
+## 7. Environment and Key Policy
 
-1. 账单视图（周期、应收、已结算、争议中）。
-2. 使用量与收益（impression/click/revenue/eCPM/fill-rate）。
-3. 事件对账（按 requestId / eventId / provider）。
+1. 强制分离 `sandbox/staging/prod` keys（确认采用）。
+2. key 权限最小化：按 app + env 绑定。
+3. 默认开启 key 轮换入口。
+4. 任何密钥展示只显示一次明文。
 
-后端能力：
+## 8. Reset Strategy (Internal Only)
 
-1. `GET /api/v1/public/billing/summary`
-2. `GET /api/v1/public/billing/invoices`
-3. `GET /api/v1/public/analytics/overview`
-4. `GET /api/v1/public/reconciliation/events`
+定位修正：
 
-## 3. Agent-First Onboarding (Codex / CloudCode / Cursor)
+1. Reset 是 simulator 联调能力，不是外部开发者能力。
+2. Reset 入口仅内部可见（feature flag + internal role）。
+3. 生产外部门户不显示 Reset UI。
 
-## 3.1 Product Goal
+内部 Reset 能力（供研发调试）：
 
-用户已有账号时，默认入口不再只是读文档，而是“一条 Agent 指令 + 一次授权”，由系统自动完成集成改造。
+1. Soft reset：清理测试配置，保留账号组织。
+2. Snapshot restore：回到某次联调前状态。
+3. Validation run：每次重配生成新的 run id，避免数据串扰。
 
-## 3.2 Dashboard Capability
+## 9. ZeroClick / TryGravity Strategy (Priority Adjustment)
 
-新增页面：`Agent Onboarding`
+定位修正：
 
-1. 选择目标 Agent：`Codex` / `CloudCode` / `Cursor`。
-2. 选择目标仓库技术栈：Node / Python / Browser SDK。
-3. 生成一次性 Bootstrap Token（短期有效，默认 15 分钟）。
-4. 生成对应指令模板（Prompt + CLI 命令）。
-5. 展示“预期文件变更清单”和“回滚命令”。
+1. 不是“竞品对抗模块”，是“客户迁移加速模块”。
+2. 不是 v1 外部接入 Must，作为 P2 能力推进。
 
-## 3.3 Recommended Security Model
+v1 仅保留：
 
-1. 指令里不直接暴露长期 API Key。
-2. Agent 使用 Bootstrap Token 换取短期凭证。
-3. 短期凭证仅允许读取当前项目最小范围配置。
-4. 全量操作写入审计日志（actor=agent + tool + commitSha）。
+1. 兼容性映射文档（字段对照、差异点）。
+2. 迁移 intake checklist（用于接手已有客户时快速评估）。
 
-## 3.4 Agent Instruction Contract (v1)
+## 10. Development Plan (Re-aligned)
 
-```json
-{
-  "version": "agent_onboarding_v1",
-  "projectId": "proj_xxx",
-  "environment": "staging",
-  "bootstrapToken": "one_time_token",
-  "integrationMode": "mediated",
-  "placements": ["chat_inline_v1"],
-  "tasks": [
-    "install_sdk",
-    "inject_env",
-    "add_evaluate_call",
-    "add_events_reporting",
-    "run_smoke_test"
-  ]
-}
-```
+## 10.1 Milestone A: Minimal Portal (4-6 days)
 
-## 3.5 One-line Prompt Examples
+1. Home / Quick Start / API Keys / Integrations / Usage 五页落地。
+2. 对接公开生产 API（非内部 dashboard API）。
+3. Quick Start 首条链路验证完成。
 
-Codex:
+Exit:
 
-```text
-Use this onboarding payload and complete integration automatically in this repository: <payload_json>. Keep fail-open behavior and output test evidence.
-```
+1. 新用户 15 分钟内跑通首个 requestId。
 
-CloudCode:
+## 10.2 Milestone B: Agent-connected Onboarding (4-6 days)
 
-```text
-Apply the onboarding payload to this workspace, generate required config files, wire evaluate/events calls, and return a verification checklist.
-```
+1. 生成 Codex/CloudCode/Cursor 指令模板。
+2. 短期 integration token 流程。
+3. 产出 smoke test 与验证证据。
 
-Cursor:
+Exit:
 
-```text
-Execute onboarding from this payload, patch project files, and produce a runnable smoke-test script plus rollback script.
-```
+1. 不暴露长期 API Key 的前提下，完成自动接入演示。
 
-## 4. Provider Compatibility Layer (ZeroClick / TryGravity)
+## 10.3 Milestone C: Managed Mediation Default (4-6 days)
 
-## 4.1 Adapter Abstraction (统一模型)
+1. 默认走统一路由，不让开发者配置 provider 细节。
+2. 服务端处理 fallback 与基础策略。
+3. key 按环境强制分离。
 
-控制平面统一接口：
+Exit:
 
-1. `fetchCandidates(context) -> candidates[]`
-2. `trackImpression(event) -> ack`
-3. `trackClick(event) -> ack or redirect`
-4. `health() -> provider health`
+1. 新项目在零 provider 配置前提下可稳定跑通。
 
-Dashboard 对外只暴露“统一配置模型”，不暴露供应商差异给新手用户。
+## 10.4 Milestone D: Internal Simulator Reset (3-4 days)
 
-## 4.2 ZeroClick Compatibility Notes (as of 2026-02-22)
+1. Reset/Snapshot/Validation-run 仅内部开关启用。
+2. 外部门户隐藏全部 reset 功能。
 
-1. Offers endpoint: `POST https://zeroclick.dev/api/v2/offers`，认证头 `x-zc-api-key`。
-2. `method=client` 由请求头推导 IP/UA；`method=server` 需要传 `ipAddress`。
-3. Impression endpoint: `POST https://zeroclick.dev/api/v2/impressions`。
-4. Impression 上报无鉴权，且官方要求从终端设备发起（client-side）。
+Exit:
 
-Dashboard 必备校验：
+1. 内部可连续重置调试，外部不可见。
 
-1. 若选择 ZeroClick + server mode，必须检查是否可提供终端 `ipAddress`。
-2. 若业务端无法 client-side 上报 impression，阻止上线并给出红色告警。
+## 10.5 Milestone E: Migration Compatibility Kit (P2, 3-5 days)
 
-## 4.3 TryGravity Compatibility Notes (as of 2026-02-22)
+1. ZeroClick/TryGravity 映射模板与导入脚本。
+2. 客户迁移评估清单。
 
-1. Contextual endpoint: `POST https://server.trygravity.ai/api/v1/ad/contextual`。
-2. 认证头 `Authorization: Bearer <API_KEY>`。
-3. 必填核心字段：`messages`、`sessionId`、`render_context.placements`、`numAds`（需与 placements 长度一致）。
-4. 返回 `impUrl` 与 `clickUrl`；展示和点击都需要正确触发以保证计费归因。
-5. 公共健康检查：`GET https://server.trygravity.ai/health`。
+Exit:
 
-Dashboard 必备校验：
+1. 新迁移客户在 1-2 天内完成映射评估。
 
-1. `numAds` 与 placement 数量不一致时禁止发布。
-2. 缺少 `impUrl` firing 逻辑时禁止生产放量。
+## 11. Confirmed Decisions
 
-## 4.4 Multi-provider Routing Strategy
-
-1. `managed_mediation`（推荐默认）：由平台统一路由到 ZeroClick/TryGravity/其他供应方。
-2. `direct_provider`：由开发者在 Dashboard 显式选择单一供应方。
-3. `hybrid_fallback`：主路由失败后切换备用供应方，保证 fail-open。
-
-## 5. Testing and Reset Strategy (反复重测能力)
-
-## 5.1 Problem to Solve
-
-接入会反复试错，必须支持“快速清空并重配”，避免人工逐项回退。
-
-## 5.2 Reset Modes
-
-1. Soft Reset（保留账号）：
-   - 禁用全部 placement。
-   - 撤销当前环境 API keys 并重发。
-   - 清空测试白名单与测试 webhook。
-2. Hard Reset（保留组织、清空集成）：
-   - 归档 app 下所有 placement/config release。
-   - 清空沙盒事件数据与临时证书。
-   - 恢复为“未接入”初始态模板。
-3. Snapshot Restore：
-   - 每次“接入前”自动生成快照。
-   - 一键回滚到任意快照版本。
-
-## 5.3 Test Workflow Template
-
-1. 点击 `Start New Validation Run`。
-2. 系统创建 `integrationRunId` 并绑定独立测试配置。
-3. 执行自动冒烟：
-   - config 拉取
-   - evaluate 请求
-   - impression/click 事件
-   - 账单计数一致性检查
-4. 输出通过/失败报告与 requestId 证据。
-5. 失败时允许 `Reset + Retry`，不污染上一轮数据。
-
-## 5.4 Required Test Matrix
-
-1. Functional: 正常返回 `served|blocked|no_fill|error`。
-2. Contract: 字段完整性与类型校验。
-3. Compatibility: ZeroClick/TryGravity 分别跑通。
-4. Reliability: 超时、5xx、限流下 fail-open。
-5. Billing: `impression/click/revenue` 对账一致。
-6. Security: key 轮换、权限最小化、审计完整性。
-
-## 6. Dashboard IA (Target Information Architecture)
-
-1. `Home`：关键接入状态、上线 readiness。
-2. `Accounts & Access`：账号、成员、API keys。
-3. `Apps & Placements`：app、placement、配置版本、发布与回滚。
-4. `Quick Start Runner`：在线发起首条链路请求与验证。
-5. `Agent Onboarding`：生成 Codex/CloudCode/Cursor 指令。
-6. `Providers`：ZeroClick/TryGravity 连接状态与参数映射。
-7. `Analytics & Billing`：效果指标、账单、对账。
-8. `Audit & Trace`：requestId 追踪、变更审计、错误定位。
-9. `Reset & Snapshots`：一键重置、快照恢复、测试 run 管理。
-
-## 7. Development Plan (Alignment Baseline)
-
-## 7.1 Milestone 0 (Docs Freeze, 1-2 days)
-
-1. 冻结外部接入合同与 Dashboard 信息架构。
-2. 冻结 Agent onboarding payload v1。
-3. 冻结 ZeroClick/TryGravity 适配字段映射表。
-
-Exit Criteria:
-
-1. 产品、后端、前端、SDK 四方评审通过。
-
-## 7.2 Milestone 1 (Control Plane Foundation, 4-6 days)
-
-1. 账号/组织/项目模型。
-2. 凭证管理（创建、轮换、撤销）。
-3. 环境管理（sandbox/staging/prod）。
-
-Exit Criteria:
-
-1. 新用户可在 UI 完成注册到 key 发放。
-
-## 7.3 Milestone 2 (Placement + Runtime Integration, 5-7 days)
-
-1. placement/config/release/rollback。
-2. Quick Start Runner 跑通 `config -> evaluate -> events`。
-3. trace by requestId。
-
-Exit Criteria:
-
-1. 从零账号到首条 requestId 全链路打通。
-
-## 7.4 Milestone 3 (Provider Adapters, 5-7 days)
-
-1. ZeroClick 适配器接入与校验器。
-2. TryGravity 适配器接入与校验器。
-3. managed/direct/hybrid 路由配置。
-
-Exit Criteria:
-
-1. 两家供应方都可通过统一配置完成联调。
-
-## 7.5 Milestone 4 (Agent Automation, 4-6 days)
-
-1. Bootstrap token + 短期凭证交换。
-2. Codex/CloudCode/Cursor 指令模板落地。
-3. 自动化改造结果回传（变更清单 + 冒烟结果）。
-
-Exit Criteria:
-
-1. 至少一个样例仓库通过“一条指令完成接入”验收。
-
-## 7.6 Milestone 5 (Reset + Test Orchestrator, 4-6 days)
-
-1. Soft/Hard reset。
-2. Snapshot 管理。
-3. 验证 run 编排与报告导出。
-
-Exit Criteria:
-
-1. 同一账号可连续 3 轮“重置-重配-重测”且数据隔离清晰。
-
-## 8. Risks and Controls
-
-1. 风险：Agent 自动改代码可能越权或引入不安全改动。
-   - 控制：最小权限 token + 变更预览 + 人工批准开关。
-2. 风险：多供应方字段差异导致计费错配。
-   - 控制：统一事件模型 + provider-specific 校验器 + 上线前对账门禁。
-3. 风险：测试重置误删生产配置。
-   - 控制：环境隔离、prod 二次确认、prod 禁用 hard reset。
-
-## 9. Decisions Needed Before Coding
-
-1. Agent 自动接入的默认模式是否启用“自动提交 PR”（建议默认关闭）。
-2. `managed_mediation` 是否作为新项目默认路由（建议是）。
-3. sandbox/staging/prod 是否强制分离 API key（建议强制分离）。
-4. reset 能力是否先只开放 sandbox/staging（建议是）。
-5. 是否先支持 ZeroClick + TryGravity 两家，后续再扩展更多 adapter（建议是）。
+1. 自动提交 PR：`NO`（默认关闭）。
+2. 新项目默认路由：`managed_mediation`（对开发者无额外负担）。
+3. 环境 key 强制分离：`YES`。
+4. Reset 能力：`Internal simulator only`。
+5. ZeroClick/TryGravity：`P2 migration accelerator`，非 v1 硬门槛。
