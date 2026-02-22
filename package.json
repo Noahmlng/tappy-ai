@@ -17,6 +17,7 @@
     "dev:dashboard": "npm run dev --workspace @ai-network/simulator-dashboard",
     "build:dashboard": "npm run build --workspace @ai-network/simulator-dashboard",
     "dev:local": "node ./scripts/dev-local.js",
+    "sim:reset": "bash ./scripts/reset-simulator-integration.sh",
     "infra:up": "bash ./scripts/dev-mediation-infra.sh up",
     "infra:down": "bash ./scripts/dev-mediation-infra.sh down",
     "infra:status": "bash ./scripts/dev-mediation-infra.sh status"

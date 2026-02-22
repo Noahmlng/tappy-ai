@@ -1,7 +1,7 @@
 # Local Simulator Gateway
 
 - Version: v0.1
-- Last Updated: 2026-02-17
+- Last Updated: 2026-02-22
 
 ## Purpose
 
@@ -37,6 +37,7 @@ Default address:
 11. `POST /api/v1/sdk/evaluate`
 12. `POST /api/v1/sdk/events`
 13. `POST /api/v1/intent-card/retrieve`
+14. `POST /api/v1/dev/reset`
 
 ## Placement Config Versioning
 
@@ -121,6 +122,21 @@ Gateway state is persisted to:
 - `projects/ad-aggregation-platform/.local/simulator-gateway-state.json`
 
 This file is local-only and ignored by git.
+
+## Fast Reset for Repeated Integration Tests
+
+Use:
+
+```bash
+curl -sS -X POST http://127.0.0.1:3100/api/v1/dev/reset -H 'Content-Type: application/json' -d '{}'
+```
+
+Behavior:
+
+1. Reset placements to defaults from `config/default-placements.json`.
+2. Clear placement audits, decisions, events, metrics, and network flow stats/logs.
+3. Clear in-memory cooldown/frequency runtime counters.
+4. Persist a fresh snapshot to `.local/simulator-gateway-state.json`.
 
 ## Environment Variables
 

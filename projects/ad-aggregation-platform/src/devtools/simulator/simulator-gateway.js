@@ -813,7 +813,20 @@ function persistState(state) {
   }
 }
 
-const state = loadState()
+function clearRuntimeMemory() {
+  runtimeMemory.cooldownBySessionPlacement.clear()
+  runtimeMemory.perSessionPlacementCount.clear()
+  runtimeMemory.perUserPlacementDayCount.clear()
+}
+
+let state = loadState()
+
+function resetGatewayState() {
+  state = createInitialState()
+  clearRuntimeMemory()
+  persistState(state)
+  return state
+}
 
 function withCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -1689,6 +1702,19 @@ async function requestHandler(req, res) {
     withCors(res)
     res.statusCode = 204
     res.end()
+    return
+  }
+
+  if (pathname === '/api/v1/dev/reset' && req.method === 'POST') {
+    const previousPlacementConfigVersion = state.placementConfigVersion
+    resetGatewayState()
+    sendJson(res, 200, {
+      ok: true,
+      previousPlacementConfigVersion,
+      placementConfigVersion: state.placementConfigVersion,
+      stateFile: STATE_FILE,
+      updatedAt: state.updatedAt,
+    })
     return
   }
 
