@@ -512,10 +512,9 @@ import {
 import { sendMessageStream } from '../api/deepseek'
 import { shouldUseWebSearchTool, runWebSearchTool, buildWebSearchContext } from '../api/webSearchTool'
 import {
-  fetchSdkConfig,
-  evaluateAttachPlacement,
-  evaluateNextStepIntentCardPlacement,
   reportSdkEvent,
+  runAttachPlacementFlow,
+  runNextStepIntentCardPlacementFlow,
 } from '../api/adsSdk'
 import CitationSources from '../components/CitationSources.vue'
 import FollowUpSuggestions from '../components/FollowUpSuggestions.vue'
@@ -1599,17 +1598,6 @@ function findMessageById(sessionId, messageId) {
   return targetSession.messages.find((message) => message?.id === messageId) || null
 }
 
-function isPlacementEnabledInConfig(config, placementKey) {
-  if (!config || typeof config !== 'object') return false
-  const placements = Array.isArray(config.placements) ? config.placements : []
-  const key = String(placementKey || '').trim()
-  if (!key) return false
-
-  const placement = placements.find((item) => String(item?.placementKey || '').trim() === key)
-  if (!placement) return false
-  return placement.enabled !== false
-}
-
 function resolveInlineOffersForMessage(message) {
   if (!message || message.role !== 'assistant' || message.kind === 'tool') return []
   const slot = message.attachAdSlot
@@ -1738,7 +1726,7 @@ function forceAppendAttachLinksMarkdown(message) {
   message.content = `${message.content}${marker}${lines.join('\n')}`
 }
 
-async function runAttachAdsFlow({ session, userContent, assistantMessageId, turnTrace, sdkConfig = null }) {
+async function runAttachAdsFlow({ session, userContent, assistantMessageId, turnTrace }) {
   const currentMessage = findMessageById(session.id, assistantMessageId)
   if (!currentMessage) return
 
@@ -1755,41 +1743,15 @@ async function runAttachAdsFlow({ session, userContent, assistantMessageId, turn
   appendTurnTraceEvent(turnTrace, 'ads_config_fetch_started', {
     appId: reportPayload.appId,
   })
-  upsertTurnTrace(turnTrace)
-
-  let resolvedSdkConfig = sdkConfig
-  try {
-    if (!resolvedSdkConfig) {
-      resolvedSdkConfig = await fetchSdkConfig(reportPayload.appId)
-    }
-    appendTurnTraceEvent(turnTrace, 'ads_config_fetch_completed')
-    upsertTurnTrace(turnTrace)
-  } catch (error) {
-    appendTurnTraceEvent(turnTrace, 'ads_config_fetch_failed', {
-      error: error instanceof Error ? error.message : 'config_fetch_failed',
-    })
-    upsertTurnTrace(turnTrace)
-    return
-  }
-
-  if (!isPlacementEnabledInConfig(resolvedSdkConfig, 'attach.post_answer_render')) {
-    appendTurnTraceEvent(turnTrace, 'ads_skipped', {
-      placementKey: 'attach.post_answer_render',
-      reason: 'placement_disabled',
-    })
-    upsertTurnTrace(turnTrace)
-    return
-  }
-
   appendTurnTraceEvent(turnTrace, 'ads_evaluate_started', {
     placementKey: 'attach.post_answer_render',
     event: 'answer_completed',
   })
   upsertTurnTrace(turnTrace)
 
-  let result
+  let flow
   try {
-    result = await evaluateAttachPlacement(reportPayload)
+    flow = await runAttachPlacementFlow(reportPayload)
   } catch (error) {
     appendTurnTraceEvent(turnTrace, 'ads_evaluate_failed', {
       error: error instanceof Error ? error.message : 'evaluate_failed',
@@ -1798,16 +1760,48 @@ async function runAttachAdsFlow({ session, userContent, assistantMessageId, turn
     return
   }
 
+  const configEvidence = flow?.evidence?.config || null
+  if (configEvidence?.ok) {
+    appendTurnTraceEvent(turnTrace, 'ads_config_fetch_completed', {
+      status: configEvidence.status || 200,
+      placementId: configEvidence.placementId || 'chat_inline_v1',
+      placementKey: configEvidence.placementKey || ATTACH_LINK_PLACEMENT_KEY,
+    })
+  } else {
+    appendTurnTraceEvent(turnTrace, 'ads_config_fetch_failed', {
+      error: configEvidence?.error || flow?.error || 'config_fetch_failed',
+    })
+  }
+  upsertTurnTrace(turnTrace)
+
+  if (flow?.skipped) {
+    appendTurnTraceEvent(turnTrace, 'ads_skipped', {
+      placementKey: flow?.placementKey || ATTACH_LINK_PLACEMENT_KEY,
+      reason: flow?.skipReason || 'placement_disabled',
+    })
+    upsertTurnTrace(turnTrace)
+    return
+  }
+
+  const attachEvaluateError = String(flow?.evidence?.evaluate?.error || '').trim()
+  if (!flow?.evidence?.evaluate?.ok && attachEvaluateError) {
+    appendTurnTraceEvent(turnTrace, 'ads_evaluate_failed', {
+      placementKey: flow?.placementKey || ATTACH_LINK_PLACEMENT_KEY,
+      error: attachEvaluateError,
+    })
+    upsertTurnTrace(turnTrace)
+  }
+
   const targetMessage = findMessageById(session.id, assistantMessageId)
   if (!targetMessage) return
 
-  reportPayload.requestId = String(result?.requestId || '')
+  reportPayload.requestId = String(flow?.requestId || '')
   targetMessage.attachAdSlot = normalizeAttachAdSlot({
-    requestId: result?.requestId,
-    placementId: result?.placementId,
+    requestId: flow?.requestId,
+    placementId: flow?.placementId,
     placementKey: ATTACH_LINK_PLACEMENT_KEY,
-    decision: result?.decision,
-    ads: result?.ads,
+    decision: flow?.decision,
+    ads: flow?.ads,
     reportPayload,
   })
   forceAppendAttachLinksMarkdown(targetMessage)
@@ -1816,46 +1810,48 @@ async function runAttachAdsFlow({ session, userContent, assistantMessageId, turn
   scheduleSaveSessions()
 
   appendTurnTraceEvent(turnTrace, 'ads_evaluate_completed', {
-    requestId: result?.requestId || '',
-    result: result?.decision?.result || 'unknown',
-    reason: result?.decision?.reason || '',
-    reasonDetail: result?.decision?.reasonDetail || '',
-    adCount: Array.isArray(result?.ads) ? result.ads.length : 0,
+    requestId: flow?.requestId || '',
+    result: flow?.decision?.result || 'unknown',
+    reason: flow?.decision?.reason || '',
+    reasonDetail: flow?.decision?.reasonDetail || '',
+    adCount: Array.isArray(flow?.ads) ? flow.ads.length : 0,
   })
+  if (flow?.evidence?.events?.ok) {
+    appendTurnTraceEvent(turnTrace, 'ads_event_reported', {
+      requestId: flow?.requestId || '',
+      kind: 'impression',
+    })
+  } else {
+    appendTurnTraceEvent(turnTrace, 'ads_event_report_failed', {
+      requestId: flow?.requestId || '',
+      kind: 'impression',
+      error: flow?.evidence?.events?.error || 'event_report_failed',
+    })
+  }
+  if (flow?.failOpenApplied) {
+    appendTurnTraceEvent(turnTrace, 'ads_fail_open_applied', {
+      requestId: flow?.requestId || '',
+      reason: flow?.error || flow?.evidence?.events?.error || 'sdk_fail_open',
+    })
+  }
   upsertTurnTrace(turnTrace)
 
-  const decisionResult = String(result?.decision?.result || '').toLowerCase()
-  if (decisionResult === 'served' && Array.isArray(result?.ads) && result.ads.length > 0) {
+  const decisionResult = String(flow?.decision?.result || '').toLowerCase()
+  if (decisionResult === 'served' && Array.isArray(flow?.ads) && flow.ads.length > 0) {
     appendTurnTraceEvent(turnTrace, 'ads_served', {
-      requestId: result.requestId || '',
-      placementId: result.placementId || '',
-      adCount: result.ads.length,
+      requestId: flow?.requestId || '',
+      placementId: flow?.placementId || '',
+      adCount: flow.ads.length,
     })
     upsertTurnTrace(turnTrace)
-
-    try {
-      await reportSdkEvent(reportPayload)
-      appendTurnTraceEvent(turnTrace, 'ads_event_reported', {
-        requestId: result.requestId || '',
-        kind: 'impression',
-      })
-      upsertTurnTrace(turnTrace)
-    } catch (error) {
-      appendTurnTraceEvent(turnTrace, 'ads_event_report_failed', {
-        requestId: result.requestId || '',
-        kind: 'impression',
-        error: error instanceof Error ? error.message : 'event_report_failed',
-      })
-      upsertTurnTrace(turnTrace)
-    }
     return
   }
 
   if (decisionResult === 'no_fill') {
     appendTurnTraceEvent(turnTrace, 'ads_no_fill', {
-      requestId: result?.requestId || '',
-      reason: result?.decision?.reason || '',
-      reasonDetail: result?.decision?.reasonDetail || '',
+      requestId: flow?.requestId || '',
+      reason: flow?.decision?.reason || '',
+      reasonDetail: flow?.decision?.reasonDetail || '',
     })
     upsertTurnTrace(turnTrace)
     return
@@ -1863,9 +1859,9 @@ async function runAttachAdsFlow({ session, userContent, assistantMessageId, turn
 
   if (decisionResult === 'blocked') {
     appendTurnTraceEvent(turnTrace, 'ads_blocked', {
-      requestId: result?.requestId || '',
-      reason: result?.decision?.reason || '',
-      reasonDetail: result?.decision?.reasonDetail || '',
+      requestId: flow?.requestId || '',
+      reason: flow?.decision?.reason || '',
+      reasonDetail: flow?.decision?.reasonDetail || '',
     })
     upsertTurnTrace(turnTrace)
     return
@@ -1873,15 +1869,15 @@ async function runAttachAdsFlow({ session, userContent, assistantMessageId, turn
 
   if (decisionResult === 'error') {
     appendTurnTraceEvent(turnTrace, 'ads_error', {
-      requestId: result?.requestId || '',
-      reason: result?.decision?.reason || '',
-      reasonDetail: result?.decision?.reasonDetail || '',
+      requestId: flow?.requestId || '',
+      reason: flow?.decision?.reason || '',
+      reasonDetail: flow?.decision?.reasonDetail || '',
     })
     upsertTurnTrace(turnTrace)
   }
 }
 
-async function runNextStepIntentCardFlow({ session, userContent, assistantMessageId, turnTrace, sdkConfig = null }) {
+async function runNextStepIntentCardFlow({ session, userContent, assistantMessageId, turnTrace }) {
   if (!ENABLE_NEXT_STEP_FLOW) {
     appendTurnTraceEvent(turnTrace, 'ads_skipped', {
       placementKey: 'next_step.intent_card',
@@ -1893,16 +1889,6 @@ async function runNextStepIntentCardFlow({ session, userContent, assistantMessag
 
   const currentMessage = findMessageById(session.id, assistantMessageId)
   if (!currentMessage) return
-
-  const resolvedSdkConfig = sdkConfig || await fetchSdkConfig(SDK_APP_ID).catch(() => null)
-  if (!isPlacementEnabledInConfig(resolvedSdkConfig, 'next_step.intent_card')) {
-    appendTurnTraceEvent(turnTrace, 'ads_skipped', {
-      placementKey: 'next_step.intent_card',
-      reason: 'placement_disabled',
-    })
-    upsertTurnTrace(turnTrace)
-    return
-  }
 
   const intentClass = inferIntentClass(userContent)
   const intentScore = estimateIntentScore(userContent)
@@ -1931,9 +1917,9 @@ async function runNextStepIntentCardFlow({ session, userContent, assistantMessag
   })
   upsertTurnTrace(turnTrace)
 
-  let result
+  let flow
   try {
-    result = await evaluateNextStepIntentCardPlacement(reportPayload)
+    flow = await runNextStepIntentCardPlacementFlow(reportPayload)
   } catch (error) {
     appendTurnTraceEvent(turnTrace, 'ads_evaluate_failed', {
       placementKey: reportPayload.placementKey,
@@ -1943,12 +1929,49 @@ async function runNextStepIntentCardFlow({ session, userContent, assistantMessag
     return
   }
 
+  const configEvidence = flow?.evidence?.config || null
+  if (configEvidence?.ok) {
+    appendTurnTraceEvent(turnTrace, 'ads_config_fetch_completed', {
+      placementKey: reportPayload.placementKey,
+      status: configEvidence.status || 200,
+      placementId: configEvidence.placementId || reportPayload.placementId,
+    })
+  } else {
+    appendTurnTraceEvent(turnTrace, 'ads_config_fetch_failed', {
+      placementKey: reportPayload.placementKey,
+      error: configEvidence?.error || flow?.error || 'config_fetch_failed',
+    })
+  }
+  upsertTurnTrace(turnTrace)
+
+  if (flow?.skipped) {
+    appendTurnTraceEvent(turnTrace, 'ads_skipped', {
+      placementKey: reportPayload.placementKey,
+      reason: flow?.skipReason || 'placement_disabled',
+    })
+    upsertTurnTrace(turnTrace)
+    return
+  }
+
+  const nextStepEvaluateError = String(flow?.evidence?.evaluate?.error || '').trim()
+  if (!flow?.evidence?.evaluate?.ok && nextStepEvaluateError) {
+    appendTurnTraceEvent(turnTrace, 'ads_evaluate_failed', {
+      placementKey: reportPayload.placementKey,
+      error: nextStepEvaluateError,
+    })
+    upsertTurnTrace(turnTrace)
+  }
+
   const targetMessage = findMessageById(session.id, assistantMessageId)
   if (!targetMessage) return
 
-  reportPayload.requestId = String(result?.requestId || '')
+  reportPayload.requestId = String(flow?.requestId || '')
   targetMessage.nextStepAdSlot = normalizeNextStepAdSlot({
-    ...result,
+    requestId: flow?.requestId,
+    placementId: flow?.placementId,
+    placementKey: reportPayload.placementKey,
+    decision: flow?.decision,
+    ads: flow?.ads,
     reportPayload,
   })
   touchActiveSession()
@@ -1956,50 +1979,53 @@ async function runNextStepIntentCardFlow({ session, userContent, assistantMessag
 
   appendTurnTraceEvent(turnTrace, 'ads_evaluate_completed', {
     placementKey: reportPayload.placementKey,
-    requestId: result?.requestId || '',
-    result: result?.decision?.result || 'unknown',
-    reason: result?.decision?.reason || '',
-    reasonDetail: result?.decision?.reasonDetail || '',
-    adCount: Array.isArray(result?.ads) ? result.ads.length : 0,
+    requestId: flow?.requestId || '',
+    result: flow?.decision?.result || 'unknown',
+    reason: flow?.decision?.reason || '',
+    reasonDetail: flow?.decision?.reasonDetail || '',
+    adCount: Array.isArray(flow?.ads) ? flow.ads.length : 0,
   })
+  if (flow?.evidence?.events?.ok) {
+    appendTurnTraceEvent(turnTrace, 'ads_event_reported', {
+      placementKey: reportPayload.placementKey,
+      requestId: flow?.requestId || '',
+      kind: 'impression',
+    })
+  } else {
+    appendTurnTraceEvent(turnTrace, 'ads_event_report_failed', {
+      placementKey: reportPayload.placementKey,
+      requestId: flow?.requestId || '',
+      kind: 'impression',
+      error: flow?.evidence?.events?.error || 'event_report_failed',
+    })
+  }
+  if (flow?.failOpenApplied) {
+    appendTurnTraceEvent(turnTrace, 'ads_fail_open_applied', {
+      placementKey: reportPayload.placementKey,
+      requestId: flow?.requestId || '',
+      reason: flow?.error || flow?.evidence?.events?.error || 'sdk_fail_open',
+    })
+  }
   upsertTurnTrace(turnTrace)
 
-  const decisionResult = String(result?.decision?.result || '').toLowerCase()
-  if (decisionResult === 'served' && Array.isArray(result?.ads) && result.ads.length > 0) {
+  const decisionResult = String(flow?.decision?.result || '').toLowerCase()
+  if (decisionResult === 'served' && Array.isArray(flow?.ads) && flow.ads.length > 0) {
     appendTurnTraceEvent(turnTrace, 'ads_served', {
       placementKey: reportPayload.placementKey,
-      requestId: result.requestId || '',
-      placementId: result.placementId || '',
-      adCount: result.ads.length,
+      requestId: flow?.requestId || '',
+      placementId: flow?.placementId || '',
+      adCount: flow.ads.length,
     })
     upsertTurnTrace(turnTrace)
-
-    try {
-      await reportSdkEvent(reportPayload)
-      appendTurnTraceEvent(turnTrace, 'ads_event_reported', {
-        placementKey: reportPayload.placementKey,
-        requestId: result.requestId || '',
-        kind: 'impression',
-      })
-      upsertTurnTrace(turnTrace)
-    } catch (error) {
-      appendTurnTraceEvent(turnTrace, 'ads_event_report_failed', {
-        placementKey: reportPayload.placementKey,
-        requestId: result.requestId || '',
-        kind: 'impression',
-        error: error instanceof Error ? error.message : 'event_report_failed',
-      })
-      upsertTurnTrace(turnTrace)
-    }
     return
   }
 
   if (decisionResult === 'no_fill') {
     appendTurnTraceEvent(turnTrace, 'ads_no_fill', {
       placementKey: reportPayload.placementKey,
-      requestId: result?.requestId || '',
-      reason: result?.decision?.reason || '',
-      reasonDetail: result?.decision?.reasonDetail || '',
+      requestId: flow?.requestId || '',
+      reason: flow?.decision?.reason || '',
+      reasonDetail: flow?.decision?.reasonDetail || '',
     })
     upsertTurnTrace(turnTrace)
     return
@@ -2008,9 +2034,9 @@ async function runNextStepIntentCardFlow({ session, userContent, assistantMessag
   if (decisionResult === 'blocked') {
     appendTurnTraceEvent(turnTrace, 'ads_blocked', {
       placementKey: reportPayload.placementKey,
-      requestId: result?.requestId || '',
-      reason: result?.decision?.reason || '',
-      reasonDetail: result?.decision?.reasonDetail || '',
+      requestId: flow?.requestId || '',
+      reason: flow?.decision?.reason || '',
+      reasonDetail: flow?.decision?.reasonDetail || '',
     })
     upsertTurnTrace(turnTrace)
     return
@@ -2019,9 +2045,9 @@ async function runNextStepIntentCardFlow({ session, userContent, assistantMessag
   if (decisionResult === 'error') {
     appendTurnTraceEvent(turnTrace, 'ads_error', {
       placementKey: reportPayload.placementKey,
-      requestId: result?.requestId || '',
-      reason: result?.decision?.reason || '',
-      reasonDetail: result?.decision?.reasonDetail || '',
+      requestId: flow?.requestId || '',
+      reason: flow?.decision?.reason || '',
+      reasonDetail: flow?.decision?.reasonDetail || '',
     })
     upsertTurnTrace(turnTrace)
   }

@@ -1,3 +1,5 @@
+import { createAdsSdkClient } from '../../../ad-aggregation-platform/src/sdk/client.js'
+
 function cleanText(value) {
   if (typeof value !== 'string') return ''
   return value.trim()
@@ -38,64 +40,17 @@ const DEFAULT_SDK_VERSION = cleanText(
   import.meta.env.MEDIATION_SDK_VERSION ||
   '1.0.0'
 ) || '1.0.0'
-const DEFAULT_TIMEOUT_MS = 4500
+const DEFAULT_EVALUATE_TIMEOUT_MS = 20000
 
-function withTimeoutSignal(timeoutMs = DEFAULT_TIMEOUT_MS) {
-  const controller = new AbortController()
-  const timer = setTimeout(() => {
-    controller.abort(new Error('Request timed out'))
-  }, timeoutMs)
-  return {
-    signal: controller.signal,
-    clear: () => clearTimeout(timer),
-  }
-}
-
-async function requestJson(path, options = {}) {
-  const { timeoutMs, acceptedStatuses, ...fetchOptions } = options
-  const timeout = withTimeoutSignal(timeoutMs)
-  try {
-    const response = await fetch(`${API_BASE}${path}`, {
-      ...fetchOptions,
-      signal: timeout.signal,
-    })
-
-    const body = await response.json().catch(() => ({}))
-    const statusAllowed = Array.isArray(acceptedStatuses)
-      ? acceptedStatuses.includes(response.status)
-      : false
-    if (!response.ok && !statusAllowed) {
-      const message = body?.error?.message || `Request failed: ${response.status}`
-      throw new Error(message)
-    }
-
-    return body
-  } finally {
-    timeout.clear()
-  }
-}
-
-function withAuthorization(headers = {}) {
-  if (!MEDIATION_API_KEY) return headers
-  return {
-    ...headers,
-    Authorization: `Bearer ${MEDIATION_API_KEY}`,
-  }
-}
-
-function normalizeMediationConfigResponse(payload = {}) {
-  if (Array.isArray(payload?.placements)) return payload
-
-  const placement = payload?.placement && typeof payload.placement === 'object'
-    ? payload.placement
-    : null
-
-  if (!placement) return payload
-  return {
-    ...payload,
-    placements: [placement],
-  }
-}
+const sdkClient = createAdsSdkClient({
+  apiBaseUrl: API_BASE,
+  apiKey: MEDIATION_API_KEY,
+  timeouts: {
+    config: 3000,
+    evaluate: DEFAULT_EVALUATE_TIMEOUT_MS,
+    events: 2500,
+  },
+})
 
 export async function fetchSdkConfig(appId, options = {}) {
   const normalizedAppId = String(appId || '').trim() || DEFAULT_APP_ID
@@ -104,23 +59,15 @@ export async function fetchSdkConfig(appId, options = {}) {
   }
 
   const placementId = String(options.placementId || DEFAULT_PLACEMENT_ID).trim() || DEFAULT_PLACEMENT_ID
-  const requestAt = new Date().toISOString()
-  const params = new URLSearchParams({
+  const response = await sdkClient.fetchConfig({
     appId: normalizedAppId,
     placementId,
     environment: MEDIATION_ENV,
     schemaVersion: DEFAULT_SCHEMA_VERSION,
     sdkVersion: DEFAULT_SDK_VERSION,
-    requestAt,
+    requestAt: new Date().toISOString(),
   })
-
-  const payload = await requestJson(`/v1/mediation/config?${params.toString()}`, {
-    method: 'GET',
-    headers: withAuthorization(),
-    timeoutMs: 3000,
-    acceptedStatuses: [200, 304],
-  })
-  return normalizeMediationConfigResponse(payload)
+  return response?.payload || {}
 }
 
 function normalizeAttachPayload(payload = {}) {
@@ -172,36 +119,59 @@ function normalizeNextStepIntentCardPayload(payload = {}) {
 
 export async function evaluateAttachPlacement(payload) {
   const body = normalizeAttachPayload(payload)
-  return requestJson('/v1/sdk/evaluate', {
-    method: 'POST',
-    headers: withAuthorization({
-      'Content-Type': 'application/json',
-    }),
-    body: JSON.stringify(body),
-    timeoutMs: DEFAULT_TIMEOUT_MS,
+  const response = await sdkClient.evaluate(body, {
+    timeoutMs: DEFAULT_EVALUATE_TIMEOUT_MS,
   })
+  return response?.payload || {}
 }
 
 export async function evaluateNextStepIntentCardPlacement(payload) {
   const body = normalizeNextStepIntentCardPayload(payload)
-  return requestJson('/v1/sdk/evaluate', {
-    method: 'POST',
-    headers: withAuthorization({
-      'Content-Type': 'application/json',
-    }),
-    body: JSON.stringify(body),
-    timeoutMs: DEFAULT_TIMEOUT_MS,
+  const response = await sdkClient.evaluate(body, {
+    timeoutMs: DEFAULT_EVALUATE_TIMEOUT_MS,
   })
+  return response?.payload || {}
 }
 
 export async function reportSdkEvent(payload) {
   const body = payload?.context ? normalizeNextStepIntentCardPayload(payload) : normalizeAttachPayload(payload)
-  return requestJson('/v1/sdk/events', {
-    method: 'POST',
-    headers: withAuthorization({
-      'Content-Type': 'application/json',
-    }),
-    body: JSON.stringify(body),
+  const response = await sdkClient.reportEvent(body, {
     timeoutMs: 2500,
+  })
+  return response?.payload || {}
+}
+
+export async function runAttachPlacementFlow(payload = {}) {
+  const body = normalizeAttachPayload(payload)
+  return sdkClient.runAttachFlow({
+    appId: body.appId || DEFAULT_APP_ID,
+    placementId: DEFAULT_PLACEMENT_ID,
+    placementKey: 'attach.post_answer_render',
+    environment: MEDIATION_ENV,
+    schemaVersion: DEFAULT_SCHEMA_VERSION,
+    sdkVersion: DEFAULT_SDK_VERSION,
+    sessionId: body.sessionId,
+    turnId: body.turnId,
+    query: body.query,
+    answerText: body.answerText,
+    intentScore: body.intentScore,
+    locale: body.locale,
+  })
+}
+
+export async function runNextStepIntentCardPlacementFlow(payload = {}) {
+  const body = normalizeNextStepIntentCardPayload(payload)
+  return sdkClient.runNextStepFlow({
+    appId: body.appId || DEFAULT_APP_ID,
+    placementId: body.placementId || 'chat_followup_v1',
+    placementKey: body.placementKey || 'next_step.intent_card',
+    environment: MEDIATION_ENV,
+    schemaVersion: DEFAULT_SCHEMA_VERSION,
+    sdkVersion: DEFAULT_SDK_VERSION,
+    sessionId: body.sessionId,
+    turnId: body.turnId,
+    userId: body.userId,
+    event: body.event,
+    context: body.context,
   })
 }

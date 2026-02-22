@@ -55,3 +55,12 @@
 - 入口：`intent-card/index.js`。
 - 能力：`normalizeIntentCardCatalog`、`enrichOffersWithIntentCardCatalog`、`summarizeIntentCardCatalog`。
 - 向量检索：`createIntentCardVectorIndex(catalog)` + `retrieveIntentCardTopK(index, { query, facets, topK })`。
+
+10. `sdk/`
+- 外部开发者前端 SDK shared client。
+- 入口：`sdk/client.js` -> `createAdsSdkClient(options)`。
+- 核心方法：
+  - `fetchConfig`（`/api/v1/mediation/config`）
+  - `evaluate`（`/api/v1/sdk/evaluate`）
+  - `reportEvent`（`/api/v1/sdk/events`）
+  - `runAttachFlow` / `runNextStepFlow`（内部统一执行 `config -> evaluate -> events`，并内置 fail-open）。
