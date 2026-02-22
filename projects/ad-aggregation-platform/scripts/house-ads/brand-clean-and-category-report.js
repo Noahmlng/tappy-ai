@@ -250,6 +250,7 @@ function chooseEntity(brand) {
   const useOriginal = name.name_score >= 0.72
   const cleanedName = useOriginal ? name.normalized_name : meta.brandCandidate
   const finalScore = Number((name.name_score * 0.3 + domain.domain_score * 0.5 + Number(brand.source_confidence || 0) * 0.2).toFixed(4))
+  const queryContaminatedName = name.reasons.includes('non_brand_hint') && name.name_score <= 0.2
 
   let entityDecision = 'brand_ad_eligible'
   const reasons = [...new Set([...name.reasons, ...domain.reasons])]
@@ -257,6 +258,9 @@ function chooseEntity(brand) {
   if (!cleanedName) {
     entityDecision = 'non_brand_entity'
     reasons.push('empty_cleaned_name')
+  } else if (queryContaminatedName) {
+    entityDecision = 'non_brand_entity'
+    reasons.push('query_title_not_brand')
   } else if (domain.domain_class === 'commercial_domain' && finalScore >= 0.6) {
     entityDecision = 'brand_ad_eligible'
   } else if (domain.domain_class === 'institutional_domain') {
