@@ -1,0 +1,16 @@
+{
+  "generated_at": "2026-02-22T08:26:21.416Z",
+  "total_brands": 3000,
+  "valid_brands": 2991,
+  "suspect_brands": 9,
+  "invalid_brands": 0,
+  "category_count": 24,
+  "output_files": {
+    "cleaned_brand_list_csv": "data/house-ads/reports/house-ads-cleaned-brand-list-20260222-082621.csv",
+    "category_report_csv": "data/house-ads/reports/house-ads-brand-category-report-20260222-082621.csv",
+    "summary_json": "data/house-ads/reports/house-ads-brand-category-summary-20260222-082621.json",
+    "latest_cleaned_brand_list_csv": "data/house-ads/reports/house-ads-cleaned-brand-list-latest.csv",
+    "latest_category_report_csv": "data/house-ads/reports/house-ads-brand-category-report-latest.csv",
+    "latest_summary_json": "data/house-ads/reports/house-ads-brand-category-summary-latest.json"
+  }
+}

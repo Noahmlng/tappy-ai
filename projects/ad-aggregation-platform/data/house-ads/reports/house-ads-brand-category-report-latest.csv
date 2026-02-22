@@ -1,0 +1,25 @@
+vertical_l1,vertical_l2,total_brands,valid_brands,suspect_brands,invalid_brands,sample_brands,valid_ratio,suspect_ratio,invalid_ratio
+art_culture,craft,150,149,1,0,Craft | T | Live | Researchgate | Stanford | Ietf | Dailymail | Unesco | Mailchimp | Netflix | Scribd | Cisco,0.9933,0.0067,0
+b2b_services,business_service,150,148,2,0,Github | Zoom | Cloudflare | Cookiedatabase | Canva | Stripe | Techcrunch | Dailymotion | Ieee | Sedo | Noaa | Businesswire,0.9867,0.0133,0
+baby_parenting,baby_products,150,150,0,0,Parenting | Pinterest | Tumblr | Who | Issuu | Statista | Myshopify | Ft | Ca | Theverge | Yandex | Chatgpt,1,0,0
+beauty_personal_care,cosmetics,74,74,0,0,Iciba | Cosmetics and Your Health | Wordpress | Theguardian | Reuters | Wsj | Gitlab | Arxiv | Cornell | Themeforest | Docker | Python,1,0,0
+beauty_personal_care,skincare,76,76,0,0,Skincare | Com | Github | Gov | Doi | Bbc | Cnbc | Telegraph | Surveymonkey | Bandcamp | Wpguardian | Theatlantic,1,0,0
+consumer_electronics,laptop,68,68,0,0,Googletagmanager | Forms | Cpanel | Springer | Bloomberg | Addtoany | Uk | Amazon | Fda | Nationalgeographic | Academia | State,1,0,0
+consumer_electronics,pet_supplies,1,1,0,0,Zhihu,1,0,0
+consumer_electronics,smartphone,81,81,0,0,Koolearn | 网易手机 有态度的手机门户 | LEADING 释义 | Eudic | Bilibili | Dxomark | TOP | 智能手機 | Chinesewords | Hujiang | Leading | GSMArena.com,1,0,0
+developer_tools,dev_platform,150,149,1,0,Apple Developer (简体中文 | Bit | Nytimes | Cnn | Un | List Manage | Go | G | Free | Mckinsey | Healthline | Theconversation,0.9933,0.0067,0
+education,online_learning,150,150,0,0,Worldbank | Nginx | Flickr | Vk | Cdc | Businessinsider | Slideshare | Hubspot | Independent | Iso | Office365 | Deloitte,1,0,0
+fashion,apparel,76,76,0,0,Vogue | Fashionforum | Youtu | Qq | Paypal | Harvard | Discord | Line | Berkeley | Tripadvisor | Yelp | Wpguardian,1,0,0
+fashion,footwear,74,74,0,0,Baidu | Goo | Spotify | Oracle | Nature | Example | Wired | Tandfonline | Thenai | Prnewswire | Taobao | Youku,1,0,0
+finance,digital_banking,150,150,0,0,Digitalspy | Ibm | F5 | Office | Dropbox | Weebly | Unsplash | Behance | Cnet | Networkadvertising | Washington | Mayoclinic,1,0,0
+food_beverage,snacks,150,148,2,0,作业帮 | About food and nutrition | Food Forum | Whatsapp | Amazonaws | T | Gnu | Nasa | Time | Loc | Allaboutcookies | Cpanel,0.9867,0.0133,0
+gaming_entertainment,gaming,150,150,0,0,"Msn | Microsoft Edge 游戏助手常见问题解答 | Tripmerge | Wanderlix | 3dmgame | Bbc | Admiddleeast | Uaktravel | 游戏和应用程序 | Splashtravels | Kampung Pelegong Homestay, Labuan | Pelegong Farmstay",1,0,0
+health_wellness,healthcare,150,149,1,0,Alibaba | Blogspot | Creativecommons | Dropcatch | Linktr | Amzn | Stackoverflow | Substack | Booking | Princeton | Usda | Apnews,0.9933,0.0067,0
+home_appliance,kitchen_appliance,150,150,0,0,Wordreference | Mailinabox | Sciencedirect | Mit | Discord | Twitch | Usatoday | Britannica | Hbr | Mailchi | Ubuntu | Openstreetmap,1,0,0
+home_improvement,home_decor,150,150,0,0,Apache | Forbes | Googleblog | Washingtonpost | Etsy | Firefox | Google | Pixabay | Aliyun | Youronlinechoices | Pexels | Yale,1,0,0
+local_services,food_delivery,150,150,0,0,Mozilla | Tinyurl | Debian | Calendly | Oup | Sina | Redhat | Goodreads | Readthedocs | Kickstarter | It | Sohu,1,0,0
+mobility,automotive,150,149,1,0,Cargurus | Spglobal | Wa | Archive | Shopify | G | Openai | Aol | Gouv | Myspace | Steampowered | Fandom,0.9933,0.0067,0
+pet,pet_supplies,150,150,0,0,Europa | Soundcloud | Plesk | Mysql | Hp | Ted | Squarespace | Latimes | Freepik | Huffingtonpost | Salesforce | Bmj,1,0,0
+saas,productivity,150,150,0,0,Productivity Primer | Weforum | Nginx | Godaddy | Opera | Wikimedia | Telegram | Npr | Bsky | Wix | Investopedia | Webmd,1,0,0
+sports_outdoor,fitness,150,149,1,0,Fitness | Forumsport | Vimeo | Macromedia | Wixsite | Wiley | Gov | Googleusercontent | Trustpilot | Mdpi | Samsung | Whitehouse,0.9933,0.0067,0
+travel_hospitality,hotel_booking,150,150,0,0,Aktuell in Angebote | Gov | Wordpress | W3 | Youtube Nocookie | Imdb | Expireddomains | Sharepoint | Blogger | Cbsnews | Epa | Indeed,1,0,0
