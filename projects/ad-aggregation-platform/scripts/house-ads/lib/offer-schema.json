@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-network.local/schemas/house-ads/offer.schema.json",
+  "title": "House Ads Offer",
+  "description": "Canonical offer contract for House Ads link/product placements.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "offer_id": {
+      "type": "string",
+      "minLength": 3
+    },
+    "campaign_id": {
+      "type": "string",
+      "minLength": 3
+    },
+    "brand_id": {
+      "type": "string",
+      "minLength": 3
+    },
+    "offer_type": {
+      "type": "string",
+      "enum": ["link", "product"]
+    },
+    "vertical_l1": {
+      "type": "string",
+      "minLength": 2
+    },
+    "vertical_l2": {
+      "type": "string",
+      "minLength": 2
+    },
+    "market": {
+      "type": "string",
+      "minLength": 2
+    },
+    "title": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 120
+    },
+    "description": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 240
+    },
+    "snippet": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 240
+    },
+    "target_url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https?://"
+    },
+    "image_url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https?://"
+    },
+    "cta_text": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 40
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "paused", "archived"]
+    },
+    "language": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 10
+    },
+    "disclosure": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 120
+    },
+    "source_type": {
+      "type": "string",
+      "enum": ["real", "partner", "synthetic"]
+    },
+    "confidence_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "freshness_ttl_hours": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 720
+    },
+    "last_verified_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "product_id": {
+      "type": "string",
+      "minLength": 2
+    },
+    "merchant": {
+      "type": "string",
+      "minLength": 2
+    },
+    "price": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "original_price": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "discount_pct": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "availability": {
+      "type": "string",
+      "enum": ["in_stock", "limited", "preorder", "out_of_stock", "unknown"]
+    },
+    "tags": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 40
+      },
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "offer_id",
+    "campaign_id",
+    "brand_id",
+    "offer_type",
+    "vertical_l1",
+    "vertical_l2",
+    "market",
+    "title",
+    "target_url",
+    "status",
+    "source_type",
+    "confidence_score",
+    "freshness_ttl_hours",
+    "last_verified_at"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "offer_type": {
+            "const": "link"
+          }
+        },
+        "required": ["offer_type"]
+      },
+      "then": {
+        "required": [
+          "description",
+          "cta_text",
+          "language",
+          "disclosure"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "offer_type": {
+            "const": "product"
+          }
+        },
+        "required": ["offer_type"]
+      },
+      "then": {
+        "required": [
+          "snippet",
+          "product_id",
+          "merchant",
+          "price",
+          "currency",
+          "availability",
+          "tags",
+          "language",
+          "disclosure"
+        ]
+      }
+    }
+  ]
+}
