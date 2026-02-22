@@ -20,6 +20,7 @@ import {
   asyncPool,
   registrableDomain,
   timestampTag,
+  domainToBrandName,
 } from './lib/common.js'
 
 const BRAND_SEEDS_DIR = path.join(RAW_ROOT, 'brand-seeds')
@@ -49,6 +50,39 @@ function tokenMatchScore(brandName, title) {
   return matched.length / brandTokens.length
 }
 
+function sourceTitleLooksWeak(sourceTitle = '') {
+  const value = cleanText(sourceTitle).toLowerCase()
+  if (!value) return true
+  const weakHints = [
+    '什么意思',
+    '是什么意思',
+    '怎么读',
+    '翻译',
+    '用法',
+    '例句',
+    'forum',
+    'thread',
+    'rating',
+    'guide',
+    'tips',
+    'review',
+    'hidden',
+    'future of',
+    'popular with',
+    '百度知道',
+  ]
+  if (weakHints.some((hint) => value.includes(hint))) return true
+  if (value.length > 48) return true
+  if (value.split(/\s+/g).filter(Boolean).length > 6) return true
+  return false
+}
+
+function canonicalBrandNameFromDomain(domain = '') {
+  const candidate = cleanText(domainToBrandName(domain))
+  if (!candidate) return ''
+  return candidate
+}
+
 async function probeDomain(domain, timeoutMs) {
   if (!domain) return { reachable: false, protocol: '', url: '', title: '' }
   const candidates = [`https://${domain}`, `http://${domain}`]
@@ -66,10 +100,12 @@ async function probeDomain(domain, timeoutMs) {
   return { reachable: false, protocol: '', url: '', title: '' }
 }
 
-function scoreSeed(seed, probe) {
+function scoreSeed(seed, probe, domain) {
   const base = Number(seed.source_confidence) || 0
   const availabilityBoost = probe.reachable ? 0.2 : -0.15
-  const titleMatch = tokenMatchScore(seed.brand_name, probe.title || '') * 0.2
+  // Use domain-derived canonical name as strong signal. Search titles are weak evidence.
+  const canonicalHint = canonicalBrandNameFromDomain(domain)
+  const titleMatch = tokenMatchScore(canonicalHint, probe.title || '') * 0.2
   const httpsBoost = probe.protocol === 'https' ? 0.05 : 0
   return Number(Math.max(0, Math.min(1, base + availabilityBoost + titleMatch + httpsBoost)).toFixed(4))
 }
@@ -132,7 +168,7 @@ async function main() {
   const inspected = await asyncPool(concurrency, seeds, async (seed) => {
     const domain = pickSeedDomain(seed)
     const probe = skipNetwork ? { reachable: true, protocol: 'https', url: `https://${domain}`, title: '' } : await probeDomain(domain, timeoutMs)
-    const confidence = scoreSeed(seed, probe)
+    const confidence = scoreSeed(seed, probe, domain)
     return {
       seed,
       domain,
@@ -144,23 +180,31 @@ async function main() {
   const candidates = inspected
     .filter((item) => item.domain)
     .filter((item) => (strictReachable ? item.probe.reachable : true))
-    .map((item) => ({
-      brand_id: brandId(item.domain, item.seed.brand_name),
-      brand_name: cleanText(item.seed.brand_name) || item.domain,
-      vertical_l1: cleanText(item.seed.vertical_l1) || 'unknown',
-      vertical_l2: cleanText(item.seed.vertical_l2) || 'unknown',
-      market: cleanText(item.seed.market) || 'US',
-      official_domain: item.domain,
-      source_confidence: item.confidence,
-      status: 'active',
-      evidence: {
-        seed_id: item.seed.seed_id || '',
-        search_hit_count: Number(item.seed.search_hit_count) || 0,
-        verified_reachable: Boolean(item.probe.reachable),
-        homepage_title: cleanText(item.probe.title).slice(0, 180),
-        homepage_url: item.probe.url,
-      },
-    }))
+    .map((item) => {
+      const sourceTitle = cleanText(item.seed.brand_name)
+      const canonicalBrandName = canonicalBrandNameFromDomain(item.domain) || item.domain
+      return {
+        brand_id: brandId(item.domain, canonicalBrandName),
+        brand_name: canonicalBrandName,
+        canonical_brand_name: canonicalBrandName,
+        source_title: sourceTitle,
+        vertical_l1: cleanText(item.seed.vertical_l1) || 'unknown',
+        vertical_l2: cleanText(item.seed.vertical_l2) || 'unknown',
+        market: cleanText(item.seed.market) || 'US',
+        official_domain: item.domain,
+        source_confidence: item.confidence,
+        status: 'active',
+        evidence: {
+          seed_id: item.seed.seed_id || '',
+          search_hit_count: Number(item.seed.search_hit_count) || 0,
+          source_title: sourceTitle,
+          source_title_is_weak: sourceTitleLooksWeak(sourceTitle),
+          verified_reachable: Boolean(item.probe.reachable),
+          homepage_title: cleanText(item.probe.title).slice(0, 180),
+          homepage_url: item.probe.url,
+        },
+      }
+    })
     .sort((a, b) => b.source_confidence - a.source_confidence)
 
   const selected = roundRobinSelect(candidates, Math.max(1, maxBrands))
