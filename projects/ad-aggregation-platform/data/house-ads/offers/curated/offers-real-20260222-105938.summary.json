@@ -1,0 +1,15 @@
+{
+  "generatedAt": "2026-02-22T10:59:38.922Z",
+  "inputSignals": 3154,
+  "normalizedOffers": 174,
+  "dedupedOffers": 174,
+  "rejectedCandidates": 0,
+  "uniqueBrands": 102,
+  "uniqueCampaigns": 102,
+  "byType": {
+    "link": 174,
+    "product": 0
+  },
+  "output": "data/house-ads/offers/curated/offers-real-20260222-105938.jsonl",
+  "rejectedOutput": "data/house-ads/offers/curated/offers-real-20260222-105938.rejected.json"
+}
