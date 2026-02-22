@@ -2,7 +2,7 @@ import { AUTO_PR_POLICY } from '../agent-templates/index.js'
 
 const FILE_SECTION_PATTERN = /(^|\n)\s*(#{1,6}\s*)?(files?\s*(changed|updated|modified|list)|changed files?)\s*:?\s*($|\n)/i
 
-const FILE_PATH_PATTERN = /(?:^|[\s`'"])((?:\.{0,2}\/)?(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+(?:\.[A-Za-z0-9._-]+)?)(?=$|[\s`'":,)\]])/g
+const FILE_PATH_PATTERN = /(?:^|[\s`'"])((?:\/|\.{0,2}\/)?(?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+(?:\.[A-Za-z0-9._-]+)?)(?=$|[\s`'":,)\]])/g
 
 const SMOKE_STEPS = [
   {
@@ -34,6 +34,10 @@ const AUTO_PR_VIOLATION_PATTERNS = [
   /open\s+(a|the)\s+pr/i,
   /create\s+(a|the)\s+pull\s+request/i,
 ]
+
+const NEGATED_PR_CONTEXT_BEFORE_PATTERN = /\b(?:do\s+not|don't|did\s+not|never|must\s+not|should\s+not|cannot|can't|without|skip(?:ped|ping)?|avoid(?:ed|ing)?|disabled)\b/i
+
+const NEGATED_PR_CONTEXT_AFTER_PATTERN = /\b(?:not\s+allowed|forbidden|disabled|prohibited)\b/i
 
 function asText(value) {
   return String(value || '')
@@ -293,15 +297,36 @@ function validateEvidence(text) {
 
 function validatePrPolicy(text) {
   const source = asText(text)
-  const matches = AUTO_PR_VIOLATION_PATTERNS
-    .filter((pattern) => pattern.test(source))
-    .map((pattern) => pattern.toString())
+  const matches = []
+
+  AUTO_PR_VIOLATION_PATTERNS.forEach((pattern) => {
+    const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`
+    const globalPattern = new RegExp(pattern.source, flags)
+    const items = source.matchAll(globalPattern)
+
+    for (const item of items) {
+      const index = Number(item.index || 0)
+      const matchedText = String(item[0] || '')
+      const start = Math.max(0, index - 56)
+      const end = Math.min(source.length, index + matchedText.length + 36)
+      const before = source.slice(start, index)
+      const after = source.slice(index + matchedText.length, end)
+
+      if (
+        NEGATED_PR_CONTEXT_BEFORE_PATTERN.test(before)
+        || NEGATED_PR_CONTEXT_AFTER_PATTERN.test(after)
+      ) {
+        continue
+      }
+      matches.push(pattern.toString())
+    }
+  })
 
   if (matches.length > 0) {
     return {
       ok: false,
       message: 'Detected possible auto-PR behavior in output text.',
-      matches,
+      matches: uniq(matches),
     }
   }
 

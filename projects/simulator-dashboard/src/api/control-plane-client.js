@@ -132,16 +132,16 @@ export const controlPlaneClient = {
   },
   placements: {
     list() {
-      return request('/v1/public/placements')
+      return request('/v1/dashboard/placements')
     },
     create(payload) {
-      return request('/v1/public/placements', {
+      return request('/v1/dashboard/placements', {
         method: 'POST',
         body: payload || {},
       })
     },
     update(placementId, payload) {
-      return request(`/v1/public/placements/${encodeURIComponent(placementId)}`, {
+      return request(`/v1/dashboard/placements/${encodeURIComponent(placementId)}`, {
         method: 'PUT',
         body: payload || {},
       })
