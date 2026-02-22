@@ -21,8 +21,10 @@
 - `execution-plans/mediation-atomic-task-pack.md`
 - `execution-plans/stage1-house-ads-resource-fill-plan.md`
 - `execution-plans/implementation/`（基础设施基线、任务板、门禁、上线准备）
+- `execution-plans/implementation/templates/mediation-reliability-test-matrix.md`
 
 ## 3) 其他资料（`other/`）
 
 - `other/integration/`（quickstart、api reference、runbook）
+- `other/integration/developer-integration-pack/`（10份接入内容模板）
 - `other/project-structure.md`
