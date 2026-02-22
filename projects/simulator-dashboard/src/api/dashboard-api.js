@@ -56,3 +56,21 @@ export async function revokePublicApiKey(keyId) {
     method: 'POST',
   })
 }
+
+export async function fetchPublicPlacements() {
+  return request('/v1/public/placements')
+}
+
+export async function createPublicPlacement(payload) {
+  return request('/v1/public/placements', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  })
+}
+
+export async function updatePublicPlacement(placementId, payload) {
+  return request(`/v1/public/placements/${encodeURIComponent(placementId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload || {}),
+  })
+}

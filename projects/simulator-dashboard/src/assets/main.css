@@ -313,6 +313,28 @@ a {
   font-size: 0.85rem;
 }
 
+.input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111827;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+}
+
+.input:focus {
+  outline: 2px solid #bfdbfe;
+  border-color: #bfdbfe;
+}
+
+.checkbox-line {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  margin-top: 24px;
+}
+
 .kv-grid {
   display: grid;
   gap: 10px;
