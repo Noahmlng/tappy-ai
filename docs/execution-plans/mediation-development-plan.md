@@ -3,11 +3,11 @@
 - 版本：v1.0
 - 日期：2026-02-21
 - 适用范围：`/Users/zeming/Documents/chat-ads-main`
-- 目标：按 `docs/mediation-design/` 的 A-H 冻结合同落地可运行 Mediation 产品，并保证功能测试链路 100% 通过后再产出 SDK 接入文档。
+- 目标：按 `docs/design/mediation/` 的 A-H 冻结合同落地可运行 Mediation 产品，并保证功能测试链路 100% 通过后再产出 SDK 接入文档。
 
 ## 1. 结论先行（执行策略）
 
-1. 以 `docs/mediation-design/` 为唯一设计真相源，历史 `ad-aggregation-platform` 仅做“资产复用池”。
+1. 以 `docs/design/mediation/` 为唯一设计真相源，历史 `ad-aggregation-platform` 仅做“资产复用池”。
 2. 先建测试骨架与验收门禁，再按 A->B->C->D->E->F->G 主链 + H 横切落地。
 3. 对历史代码进行三类拆分：
    - Mediation 可复用核心（保留并重构）
@@ -19,7 +19,7 @@
 
 ### 2.1 文档复杂度（A-H）
 
-从 `docs/mediation-design/modules/*.md` 统计：
+从 `docs/design/mediation/modules/*.md` 统计：
 
 1. Module H：972 行，53 个小节，版本治理与失效矩阵最复杂（最高风险）。
 2. Module E：875 行，40 个小节，交付对象 + 门禁矩阵 + fail-open/fail-closed（高风险）。
@@ -126,7 +126,7 @@
 ## Phase 0 - 基线冻结与任务初始化（P0）
 
 1. T0-1：冻结版本与接口边界
-   - 锁定 `docs/mediation-design/` 当前版本为开发基线。
+   - 锁定 `docs/design/mediation/` 当前版本为开发基线。
    - 产出 `contract catalog`（A-H 输入/输出/事件/原因码/锚点索引表）。
 2. T0-2：完成历史代码分类清单
    - 标注每个目录归属：核心/临时/工具。
@@ -338,7 +338,7 @@
 10. 多环境发布流程（灰度、冻结窗口、回滚演练记录）。
 
 设计锚点：
-1. 统一以 `docs/mediation-design/operations/06-production-readiness-and-infra.md` 作为生产基线设计文档。
+1. 统一以 `docs/design/mediation/operations/06-production-readiness-and-infra.md` 作为生产基线设计文档。
 
 ## 8. 推荐并行分工
 

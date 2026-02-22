@@ -2,8 +2,8 @@
 
 - Version: v1.0
 - Date: 2026-02-21
-- Source index: `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/INDEX.md`
-- Source modules: `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/`
+- Source index: `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/INDEX.md`
+- Source modules: `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/modules/`
 
 ## Catalog Usage
 

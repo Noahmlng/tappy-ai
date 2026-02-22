@@ -2,7 +2,7 @@
 
 - 版本：v1.0
 - 日期：2026-02-21
-- 关联总计划：`/Users/zeming/Documents/chat-ads-main/docs/mediation-development-plan.md`
+- 关联总计划：`/Users/zeming/Documents/chat-ads-main/docs/execution-plans/mediation-development-plan.md`
 - 目标：把 Mediation 落地任务拆为可独立执行的原子任务，确保单次 agent context 可控且任务可闭环验收。
 
 ## 0. 使用规则（所有任务通用）
@@ -43,15 +43,15 @@
 2. 前置依赖：
    - 无
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/operations/06-production-readiness-and-infra.md`
+   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/operations/06-production-readiness-and-infra.md`
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/implementation/infra-topology-and-capacity.md`
+   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/implementation/infra-topology-and-capacity.md`
 5. 执行步骤：
    - 定义服务拓扑、数据流、峰值 QPS、事件 TPS、存储增长模型。
 6. 验收标准：
    - 明确给出单日容量与扩容阈值。
 7. 验证命令：
-   - `rg -n "QPS|TPS|容量|扩容|拓扑" docs/implementation/infra-topology-and-capacity.md`
+   - `rg -n "QPS|TPS|容量|扩容|拓扑" docs/execution-plans/implementation/infra-topology-and-capacity.md`
 8. 输出物：
    - infra topology & capacity doc
 
@@ -83,7 +83,7 @@
 2. 前置依赖：
    - INFRA-002
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/operations/06-production-readiness-and-infra.md`
+   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/operations/06-production-readiness-and-infra.md`
 4. 允许改动：
    - 新增 `projects/ad-aggregation-platform/migrations/*`
    - 新增 migration runner 脚本
@@ -106,14 +106,14 @@
 3. 必读 context：
    - A/B/F/G/H 幂等与缓存合同小节
 4. 允许改动：
-   - 新增 `docs/implementation/redis-keyspace-policy.md`
+   - 新增 `docs/execution-plans/implementation/redis-keyspace-policy.md`
    - 新增 `src/infra/redis-keyspace.*`（常量与 helper）
 5. 执行步骤：
    - 统一 key 命名、TTL、淘汰策略、冲突策略。
 6. 验收标准：
    - 不同模块不会产生键冲突。
 7. 验证命令：
-   - `rg -n "idempotency|dedup|cache|circuit" docs/implementation/redis-keyspace-policy.md`
+   - `rg -n "idempotency|dedup|cache|circuit" docs/execution-plans/implementation/redis-keyspace-policy.md`
 8. 输出物：
    - redis keyspace policy
 
@@ -126,14 +126,14 @@
 3. 必读 context：
    - F/G/H 异步语义与 ACK/重试合同小节
 4. 允许改动：
-   - 新增 `docs/implementation/mq-topology-and-retry-policy.md`
+   - 新增 `docs/execution-plans/implementation/mq-topology-and-retry-policy.md`
    - 新增 `src/infra/mq-topics.*`
 5. 执行步骤：
    - 定义 topic、consumer group、retry backoff、DLQ。
 6. 验收标准：
    - 任一消息链路均可追踪重试与最终落点。
 7. 验证命令：
-   - `rg -n "DLQ|retry|backoff|consumer group|topic" docs/implementation/mq-topology-and-retry-policy.md`
+   - `rg -n "DLQ|retry|backoff|consumer group|topic" docs/execution-plans/implementation/mq-topology-and-retry-policy.md`
 8. 输出物：
    - MQ policy baseline
 
@@ -147,7 +147,7 @@
    - module-h 发布鉴权相关小节
    - operations/06 安全章节
 4. 允许改动：
-   - 新增 `docs/implementation/security-baseline.md`
+   - 新增 `docs/execution-plans/implementation/security-baseline.md`
    - 新增 `src/infra/auth/*`（如已有目录按现状调整）
 5. 执行步骤：
    - 定义 token 生命周期、密钥轮转、最小权限模型。
@@ -167,7 +167,7 @@
 3. 必读 context：
    - operations/06 的 SLO 章节
 4. 允许改动：
-   - 新增 `docs/implementation/observability-slo.md`
+   - 新增 `docs/execution-plans/implementation/observability-slo.md`
    - 新增 `src/infra/observability/*`
 5. 执行步骤：
    - 接入结构化日志、metrics、trace。
@@ -190,7 +190,7 @@
    - operations/06 发布章节
 4. 允许改动：
    - CI/CD 配置文件
-   - 新增 `docs/implementation/release-and-rollback-playbook.md`
+   - 新增 `docs/execution-plans/implementation/release-and-rollback-playbook.md`
 5. 执行步骤：
    - 增加灰度门禁、冻结窗口、回滚流程。
 6. 验收标准：
@@ -210,7 +210,7 @@
 3. 必读 context：
    - F/G 合同 + operations/06 对账章节
 4. 允许改动：
-   - 新增 `docs/implementation/reconciliation-and-dispute.md`
+   - 新增 `docs/execution-plans/implementation/reconciliation-and-dispute.md`
    - 新增对账导出脚本（如 `scripts/reconcile-*`）
 5. 执行步骤：
    - 定义日级对账、差异检测、差异重跑流程。
@@ -230,13 +230,13 @@
 3. 必读 context：
    - operations/06 的 `6.11`
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/implementation/go-no-go-checklist.md`
+   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/implementation/go-no-go-checklist.md`
 5. 执行步骤：
    - 把服务、测试、安全、运维、业务就绪项转为可勾选清单。
 6. 验收标准：
    - 任一阻断项失败即 No-Go。
 7. 验证命令：
-   - `rg -n "Go|No-Go|阻断|必须全部满足" docs/implementation/go-no-go-checklist.md`
+   - `rg -n "Go|No-Go|阻断|必须全部满足" docs/execution-plans/implementation/go-no-go-checklist.md`
 8. 输出物：
    - go/no-go checklist
 
@@ -251,10 +251,10 @@
 2. 前置依赖：
    - 无
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/INDEX.md`
-   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/`
+   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/INDEX.md`
+   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/modules/`
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/implementation/contract-catalog.md`
+   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/implementation/contract-catalog.md`
 5. 执行步骤：
    - 为 A-H 每个模块建立小节。
    - 每模块至少列出：核心接口、输入合同、输出合同、关键事件、原因码段、版本锚点字段。
@@ -262,7 +262,7 @@
    - A-H 全覆盖，无空节。
    - 可被后续任务直接引用。
 7. 验证命令：
-   - `rg -n "Module A|Module H|输入合同|输出合同|原因码|版本锚点" docs/implementation/contract-catalog.md`
+   - `rg -n "Module A|Module H|输入合同|输出合同|原因码|版本锚点" docs/execution-plans/implementation/contract-catalog.md`
 8. 输出物：
    - `contract-catalog.md`
 
@@ -274,9 +274,9 @@
    - FND-001
 3. 必读 context：
    - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/src/`
-   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-development-plan.md`
+   - `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/mediation-development-plan.md`
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/implementation/legacy-to-mediation-mapping.md`
+   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/implementation/legacy-to-mediation-mapping.md`
 5. 执行步骤：
    - 按目录级别列出归属分类。
    - 标注“可复用资产 -> 对应模块（B/D/H等）”。
@@ -284,7 +284,7 @@
 6. 验收标准：
    - 至少覆盖 `src/connectors`、`src/offers`、`src/runtime`、`src/devtools/simulator`、`src/providers/intent*`、`src/providers/ner`。
 7. 验证命令：
-   - `rg -n "可复用|迁出主链|tooling|Module D|Module B" docs/implementation/legacy-to-mediation-mapping.md`
+   - `rg -n "可复用|迁出主链|tooling|Module D|Module B" docs/execution-plans/implementation/legacy-to-mediation-mapping.md`
 8. 输出物：
    - `legacy-to-mediation-mapping.md`
 
@@ -296,17 +296,17 @@
    - FND-001
    - FND-002
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-atomic-task-pack.md`
+   - `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/mediation-atomic-task-pack.md`
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/implementation/task-board-seed.csv`
+   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/implementation/task-board-seed.csv`
 5. 执行步骤：
    - 列：`task_id,module,owner,status,depends_on,dod,test_command,artifact_path`
    - 把本文件任务卡同步入表。
 6. 验收标准：
    - 每个任务一行，依赖关系可追踪。
 7. 验证命令：
-   - `head -n 5 docs/implementation/task-board-seed.csv`
-   - `wc -l docs/implementation/task-board-seed.csv`
+   - `head -n 5 docs/execution-plans/implementation/task-board-seed.csv`
+   - `wc -l docs/execution-plans/implementation/task-board-seed.csv`
 8. 输出物：
    - `task-board-seed.csv`
 
@@ -359,7 +359,7 @@
 2. 前置依赖：
    - FND-004
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/operations/01-closed-loop-model.md`
+   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/operations/01-closed-loop-model.md`
    - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/scripts/e2e-next-step-scenarios.js`
 4. 允许改动：
    - 新增 `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/tests/e2e/minimal-closed-loop.spec.*`
@@ -383,7 +383,7 @@
 2. 前置依赖：
    - FND-005
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/module-h-config-version-governance.md`
+   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/modules/module-h-config-version-governance.md`
    - 小节：`3.10.3` 到 `3.10.8`
 4. 允许改动：
    - 新增 `src/mediation/config-governance/config-resolution.*`
@@ -498,7 +498,7 @@
 2. 前置依赖：
    - H-004
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/module-a-sdk-ingress-opportunity-sensing.md`
+   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/modules/module-a-sdk-ingress-opportunity-sensing.md`
    - 小节：`3.3.10` 到 `3.3.13`
 4. 允许改动：
    - `src/mediation/ingress-opportunity/trigger-handler.*`
@@ -658,7 +658,7 @@
 2. 前置依赖：
    - B-004
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/module-c-policy-safety-governor.md`
+   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/modules/module-c-policy-safety-governor.md`
    - 小节：`3.5.4` 到 `3.5.11`
 4. 允许改动：
    - `src/mediation/policy-safety/policy-engine.*`
@@ -705,7 +705,7 @@
 2. 前置依赖：
    - C-002
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/module-d-supply-orchestrator-adapter-layer.md`
+   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/modules/module-d-supply-orchestrator-adapter-layer.md`
    - 小节：`3.6.9` 到 `3.6.15`
    - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/src/connectors/`
 4. 允许改动：
@@ -776,7 +776,7 @@
 2. 前置依赖：
    - D-003
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/module-e-delivery-composer.md`
+   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/modules/module-e-delivery-composer.md`
    - 小节：`3.7.4` 到 `3.7.13`
 4. 允许改动：
    - `src/mediation/delivery-composer/compose.*`
@@ -846,7 +846,7 @@
 2. 前置依赖：
    - E-003
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/module-f-event-attribution-processor.md`
+   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/modules/module-f-event-attribution-processor.md`
    - 小节：`3.8.4` 到 `3.8.11`
 4. 允许改动：
    - `src/mediation/event-attribution/events-controller.*`
@@ -869,7 +869,7 @@
    - F-001
 3. 必读 context：
    - module-f 小节：`3.8.12` 到 `3.8.20`
-   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/operations/01-closed-loop-model.md`
+   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/operations/01-closed-loop-model.md`
 4. 允许改动：
    - `src/mediation/event-attribution/idempotency.*`
    - `src/mediation/event-attribution/terminal-closure.*`
@@ -917,7 +917,7 @@
 2. 前置依赖：
    - F-003
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/modules/module-g-audit-replay-controller.md`
+   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/modules/module-g-audit-replay-controller.md`
    - 小节：`3.9.7` 到 `3.9.13`
 4. 允许改动：
    - `src/mediation/audit-replay/append-controller.*`
@@ -966,7 +966,7 @@
 2. 前置依赖：
    - H-005, A-003, B-004, C-002, D-003, E-003, F-003, G-002
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-development-plan.md` 第 6 章
+   - `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/mediation-development-plan.md` 第 6 章
 4. 允许改动：
    - `tests/contracts/*`
    - `tests/integration/*`
@@ -986,7 +986,7 @@
 2. 前置依赖：
    - QA-001
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-development-plan.md` 第 6.3 节
+   - `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/mediation-development-plan.md` 第 6.3 节
 4. 允许改动：
    - `tests/e2e/*`
 5. 执行步骤：
@@ -1027,13 +1027,13 @@
 3. 必读 context：
    - QA-001/QA-002 测试输出
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/implementation/test-readiness-report.md`
+   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/implementation/test-readiness-report.md`
 5. 执行步骤：
    - 汇总模块通过率、场景通过率、失败清零证明。
 6. 验收标准：
    - 明确写出 `P0 matrix = 100%`、`E2E = 100%`。
 7. 验证命令：
-   - `rg -n "100%" docs/implementation/test-readiness-report.md`
+   - `rg -n "100%" docs/execution-plans/implementation/test-readiness-report.md`
 8. 输出物：
    - test readiness report
 
@@ -1048,10 +1048,10 @@
 2. 前置依赖：
    - QA-004
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-design/operations/02-sdk-integration-guide-and-minimal-checklist.md`
+   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/operations/02-sdk-integration-guide-and-minimal-checklist.md`
    - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/docs/sdk-integration-document-spec.md`
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/integration/quickstart.md`
+   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/other/integration/quickstart.md`
 5. 执行步骤：
    - 包含 init/evaluate/events/验证步骤。
 6. 验收标准：
@@ -1070,7 +1070,7 @@
 3. 必读 context：
    - A/E/F/G/H 模块合同文档
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/integration/api-reference.md`
+   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/other/integration/api-reference.md`
 5. 执行步骤：
    - 每接口列：请求、响应、错误码、重试语义、幂等约束。
 6. 验收标准：
@@ -1087,16 +1087,16 @@
 2. 前置依赖：
    - SDK-002
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/mediation-development-plan.md`
-   - `/Users/zeming/Documents/chat-ads-main/docs/integration/api-reference.md`
+   - `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/mediation-development-plan.md`
+   - `/Users/zeming/Documents/chat-ads-main/docs/other/integration/api-reference.md`
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/integration/runbook.md`
+   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/other/integration/runbook.md`
 5. 执行步骤：
    - 覆盖 no_fill、高 blocked、回放不一致、配置发布失败等问题。
 6. 验收标准：
    - 每问题有“现象-原因-检查-修复-验证”闭环。
 7. 验证命令：
-   - `rg -n "现象|可能原因|检查步骤|修复动作|验证方式" docs/integration/runbook.md`
+   - `rg -n "现象|可能原因|检查步骤|修复动作|验证方式" docs/other/integration/runbook.md`
 8. 输出物：
    - runbook 文档
 

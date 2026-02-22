@@ -2,7 +2,7 @@
 
 - 文档版本：v0.2
 - 最近更新：2026-02-21
-- 适用阶段：`docs/ai-network-development-plan.md` Stage 1（Mediation 冷启动）
+- 适用阶段：`docs/execution-plans/ai-network-development-plan.md` Stage 1（Mediation 冷启动）
 - 目标定位：在 DSP / 大型 Ads Network 尚未快速接入前，以“仓库化模拟广告库”先完成供给填充能力。
 
 ## 1. 决策输入（本轮冻结）

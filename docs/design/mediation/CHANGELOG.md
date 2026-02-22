@@ -383,8 +383,8 @@
 
 ### 2026-02-21（v4.0）
 
-1. 将原 `docs/mediation-module-design.md` 单文件重构为主入口 + 索引 + 子文件目录结构。
-2. 新增结构化目录 `docs/mediation-design/`，并按核心域拆分为 `core/`、`modules/`、`operations/`。
+1. 将原 `docs/design/mediation-module-design.md` 单文件重构为主入口 + 索引 + 子文件目录结构。
+2. 新增结构化目录 `docs/design/mediation/`，并按核心域拆分为 `core/`、`modules/`、`operations/`。
 3. 保留 A-H 模块设计全文，按模块文件独立管理，便于 agent 按边界编辑。
 4. 新增 `README.md`、`INDEX.md`、`AGENT_GUIDE.md`，定义阅读路径与跨模块更新规则。
 5. 将历史版本记录（v0.x ~ v3.x）迁移到本文件集中维护。

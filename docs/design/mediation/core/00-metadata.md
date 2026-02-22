@@ -8,7 +8,7 @@
 ## 文档定位
 
 该文件用于定义结构化文档体系的元信息，不承载模块细节。  
-模块细节见 `docs/mediation-design/modules/`。
+模块细节见 `docs/design/mediation/modules/`。
 
 ## 信息层次（冻结）
 
@@ -18,12 +18,12 @@
 
 ## 关联文档
 
-1. 主入口：`docs/mediation-module-design.md`
-2. 全局索引：`docs/mediation-design/INDEX.md`
-3. Agent 编辑规则：`docs/mediation-design/AGENT_GUIDE.md`
-4. AI Assistant Placement Framework：`docs/ai-assistant-placement-framework.md`
+1. 主入口：`docs/design/mediation-module-design.md`
+2. 全局索引：`docs/design/mediation/INDEX.md`
+3. Agent 编辑规则：`docs/design/mediation/AGENT_GUIDE.md`
+4. AI Assistant Placement Framework：`docs/design/ai-assistant-placement-framework.md`
 
 ## 兼容说明
 
 1. 旧版单文件章节编号（3.3 ~ 3.13 等）在子文件中保留，便于历史对照。
-2. 历史变更记录完整保留在 `docs/mediation-design/CHANGELOG.md`。
+2. 历史变更记录完整保留在 `docs/design/mediation/CHANGELOG.md`。

@@ -54,7 +54,7 @@ CI gate workflow:
 ## 6. Rollback Drill
 
 1. Run workflow with `action=rollback`.
-2. Fill `docs/implementation/templates/rollback-drill-record.md`.
+2. Fill `docs/execution-plans/implementation/templates/rollback-drill-record.md`.
 3. Attach timeline and reason-code evidence.
 
 ## 7. No-Go Conditions

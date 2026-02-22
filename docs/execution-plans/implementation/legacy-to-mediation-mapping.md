@@ -4,7 +4,7 @@
 - Date: 2026-02-21
 - 依赖任务: FND-001
 - 设计依据:
-  - `/Users/zeming/Documents/chat-ads-main/docs/mediation-development-plan.md`
+  - `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/mediation-development-plan.md`
   - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/src/`
 
 ## 1. 分类口径

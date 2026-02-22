@@ -191,7 +191,7 @@
 
 建议下一步新增：
 
-1. `docs/integration/quickstart.md`
-2. `docs/integration/api-reference.md`
-3. `docs/integration/troubleshooting.md`
+1. `docs/other/integration/quickstart.md`
+2. `docs/other/integration/api-reference.md`
+3. `docs/other/integration/troubleshooting.md`
 

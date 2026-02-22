@@ -13,8 +13,8 @@
 ## 1. 第一阶段：Mediation First（当前核心）
 
 相关文档：
-1. `docs/mediation-module-design.md`（Mediation 模块专属设计文档，后续讨论主入口）
-2. `docs/stage1-house-ads-resource-fill-plan.md`（Stage 1 House Ads 模拟广告库资源填充执行计划）
+1. `docs/design/mediation-module-design.md`（Mediation 模块专属设计文档，后续讨论主入口）
+2. `docs/execution-plans/stage1-house-ads-resource-fill-plan.md`（Stage 1 House Ads 模拟广告库资源填充执行计划）
 
 ### 1.1 目标对齐
 
@@ -174,12 +174,12 @@
 
 ### 2026-02-21（v0.8）
 
-1. 新增 Stage 1 House Ads 资源填充执行计划文档入口：`docs/stage1-house-ads-resource-fill-plan.md`。
+1. 新增 Stage 1 House Ads 资源填充执行计划文档入口：`docs/execution-plans/stage1-house-ads-resource-fill-plan.md`。
 2. 在第一阶段补充“当前执行优先级”冻结项，明确先做模拟广告库规模化填充，以及本轮不做项边界。
 
 ### 2026-02-21（v0.7）
 
-1. 新增 Mediation 模块专属设计文档入口：`docs/mediation-module-design.md`。
+1. 新增 Mediation 模块专属设计文档入口：`docs/design/mediation-module-design.md`。
 2. 在第一阶段增加“相关文档”链接，明确后续讨论锚点。
 
 ### 2026-02-21（v0.6）

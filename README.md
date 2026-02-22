@@ -173,21 +173,21 @@
 
 当前 Mediation 设计已切到结构化文档体系，主入口和索引如下：
 
-1. 主入口（Main Doc）：`docs/mediation-module-design.md`（当前版本 `v4.48`）
-2. 结构化索引：`docs/mediation-design/INDEX.md`
-3. 结构化说明：`docs/mediation-design/README.md`
-4. 变更历史：`docs/mediation-design/CHANGELOG.md`
+1. 主入口（Main Doc）：`docs/design/mediation-module-design.md`（当前版本 `v4.48`）
+2. 结构化索引：`docs/design/mediation/INDEX.md`
+3. 结构化说明：`docs/design/mediation/README.md`
+4. 变更历史：`docs/design/mediation/CHANGELOG.md`
 
 模块合同文件（A-H）：
 
-1. `docs/mediation-design/modules/module-a-sdk-ingress-opportunity-sensing.md`
-2. `docs/mediation-design/modules/module-b-schema-translation-signal-normalization.md`
-3. `docs/mediation-design/modules/module-c-policy-safety-governor.md`
-4. `docs/mediation-design/modules/module-d-supply-orchestrator-adapter-layer.md`
-5. `docs/mediation-design/modules/module-e-delivery-composer.md`
-6. `docs/mediation-design/modules/module-f-event-attribution-processor.md`
-7. `docs/mediation-design/modules/module-g-audit-replay-controller.md`
-8. `docs/mediation-design/modules/module-h-config-version-governance.md`
+1. `docs/design/mediation/modules/module-a-sdk-ingress-opportunity-sensing.md`
+2. `docs/design/mediation/modules/module-b-schema-translation-signal-normalization.md`
+3. `docs/design/mediation/modules/module-c-policy-safety-governor.md`
+4. `docs/design/mediation/modules/module-d-supply-orchestrator-adapter-layer.md`
+5. `docs/design/mediation/modules/module-e-delivery-composer.md`
+6. `docs/design/mediation/modules/module-f-event-attribution-processor.md`
+7. `docs/design/mediation/modules/module-g-audit-replay-controller.md`
+8. `docs/design/mediation/modules/module-h-config-version-governance.md`
 
 <a id="readme-assets"></a>
 ## 项目资产总览（代码 + 文档）
@@ -201,12 +201,13 @@
 
 ### 关键文档目录
 
-- 路线图：`docs/ai-network-development-plan.md`
-- Mediation 主入口：`docs/mediation-module-design.md`
-- Mediation 索引：`docs/mediation-design/INDEX.md`
-- Mediation 变更记录：`docs/mediation-design/CHANGELOG.md`
-- 项目结构：`docs/project-structure.md`
-- Placement 框架：`docs/ai-assistant-placement-framework.md`
+- 文档分类索引：`docs/README.md`（设计 / 执行计划 / 其他）
+- 路线图：`docs/execution-plans/ai-network-development-plan.md`
+- Mediation 主入口：`docs/design/mediation-module-design.md`
+- Mediation 索引：`docs/design/mediation/INDEX.md`
+- Mediation 变更记录：`docs/design/mediation/CHANGELOG.md`
+- 项目结构：`docs/other/project-structure.md`
+- Placement 框架：`docs/design/ai-assistant-placement-framework.md`
 - Gateway 设计：`projects/ad-aggregation-platform/docs/local-simulator-gateway.md`
 - SDK 设置草案：`projects/ad-aggregation-platform/archive/temporary-docs/sdk-placement-settings-draft.md`
 - Chatbot SDK 接入设计：`projects/simulator-chatbot/docs/sdk-integration-design.md`
