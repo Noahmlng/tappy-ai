@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 
-import { fetchDashboardState, updateDashboardPlacement } from '../api/dashboard-api'
+import { controlPlaneClient } from '../api/control-plane-client'
 import { mockDashboardState } from '../data/mockDashboard'
 
 const STORAGE_KEY = 'ai-network-simulator-dashboard-state-v2'
@@ -129,7 +129,7 @@ function toFiniteNumber(value, fallback) {
 }
 
 function syncPlacement(placementId, patch) {
-  updateDashboardPlacement(placementId, patch)
+  controlPlaneClient.dashboard.updatePlacement(placementId, patch)
     .then((res) => {
       if (!res?.placement) return
       const idx = dashboardState.placements.findIndex((item) => item.placementId === placementId)
@@ -151,7 +151,7 @@ export async function hydrateDashboardState() {
   dashboardState.meta.loading = true
 
   try {
-    const snapshot = await fetchDashboardState()
+    const snapshot = await controlPlaneClient.dashboard.getState()
     applySnapshot(snapshot)
     dashboardState.meta.connected = true
     dashboardState.meta.error = ''

@@ -1,11 +1,6 @@
 import { reactive } from 'vue'
 
-import {
-  createPublicApiKey,
-  fetchPublicApiKeys,
-  revokePublicApiKey,
-  rotatePublicApiKey,
-} from '../api/dashboard-api'
+import { controlPlaneClient } from '../api/control-plane-client'
 
 const STORAGE_KEY = 'ai-network-simulator-dashboard-api-keys-v1'
 
@@ -138,7 +133,7 @@ export async function hydrateApiKeys() {
   apiKeysState.meta.loading = true
 
   try {
-    const payload = await fetchPublicApiKeys()
+    const payload = await controlPlaneClient.credentials.listKeys()
     const keys = normalizeList(payload)
     if (keys.length > 0) {
       applyItems(keys)
@@ -170,7 +165,7 @@ export async function createApiKey(input) {
 
   try {
     if (apiKeysState.meta.syncMode === 'remote') {
-      const payload = await createPublicApiKey(input)
+      const payload = await controlPlaneClient.credentials.createKey(input)
       const normalized = normalizeItem(payload?.key || payload)
       const secret = String(payload?.secret || payload?.apiKey || '')
 
@@ -212,7 +207,7 @@ export async function rotateApiKey(keyId) {
 
   try {
     if (apiKeysState.meta.syncMode === 'remote') {
-      const payload = await rotatePublicApiKey(keyId)
+      const payload = await controlPlaneClient.credentials.rotateKey(keyId)
       const normalized = normalizeItem(payload?.key || payload)
       const secret = String(payload?.secret || payload?.apiKey || '')
       if (normalized) {
@@ -267,7 +262,7 @@ export async function revokeApiKey(keyId) {
 
   try {
     if (apiKeysState.meta.syncMode === 'remote') {
-      const payload = await revokePublicApiKey(keyId)
+      const payload = await controlPlaneClient.credentials.revokeKey(keyId)
       const normalized = normalizeItem(payload?.key || payload)
       if (normalized) {
         upsertItem(apiKeysState.items, normalized)

@@ -1,10 +1,6 @@
 import { reactive } from 'vue'
 
-import {
-  createPublicPlacement,
-  fetchPublicPlacements,
-  updatePublicPlacement,
-} from '../api/dashboard-api'
+import { controlPlaneClient } from '../api/control-plane-client'
 
 const STORAGE_KEY = 'ai-network-simulator-dashboard-integrations-v1'
 
@@ -100,7 +96,7 @@ export async function hydrateIntegrations() {
   integrationsState.meta.loading = true
 
   try {
-    const payload = await fetchPublicPlacements()
+    const payload = await controlPlaneClient.placements.list()
     const normalized = normalizeList(payload)
     if (normalized.length > 0) {
       applyTemplates(normalized)
@@ -142,8 +138,8 @@ export async function savePlacementTemplate(draft) {
         (row) => row.placementId === normalized.placementId,
       )
       const payload = exists
-        ? await updatePublicPlacement(normalized.placementId, normalized)
-        : await createPublicPlacement(normalized)
+        ? await controlPlaneClient.placements.update(normalized.placementId, normalized)
+        : await controlPlaneClient.placements.create(normalized)
       const remoteItem = normalizeTemplate(payload?.placement || payload)
       if (remoteItem) {
         upsert(integrationsState.templates, remoteItem)
