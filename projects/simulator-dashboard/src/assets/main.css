@@ -362,6 +362,11 @@ a {
   font-weight: 650;
 }
 
+.metric-sub {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 .warning {
   border-color: var(--danger-line);
   background: var(--danger-soft);
