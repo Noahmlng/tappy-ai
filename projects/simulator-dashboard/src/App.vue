@@ -53,8 +53,7 @@ const navItems = computed(() => {
       <header class="top-banner">
         <div class="top-banner-copy">
           <p class="top-banner-eyebrow">Primary Flow</p>
-          <strong>API First Path</strong>
-          <p>API Key → Request Path → 24h Usage</p>
+          <strong>API Key → Request Path → 24h Usage</strong>
         </div>
         <div class="top-banner-actions">
           <RouterLink to="/api-keys" class="button button-secondary">Manage API Keys</RouterLink>

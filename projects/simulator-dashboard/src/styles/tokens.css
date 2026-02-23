@@ -1,12 +1,12 @@
 :root {
-  --dash-canvas: #f7f7f5;
+  --dash-canvas: #f3f5f8;
   --dash-surface: #ffffff;
-  --dash-surface-soft: #fbfbfa;
-  --dash-ink: #131416;
-  --dash-subtle: #66707d;
-  --dash-stroke: #e5e8ec;
+  --dash-surface-soft: #f7f9fc;
+  --dash-ink: #151822;
+  --dash-subtle: #5d697a;
+  --dash-stroke: #d9e0eb;
 
-  --dash-primary: #15171a;
+  --dash-primary: #10141c;
   --dash-accent: #1d5eff;
 
   --dash-success-ink: #0f5f40;
@@ -29,6 +29,6 @@
   --dash-radius-md: 12px;
   --dash-radius-lg: 16px;
 
-  --dash-shadow-sm: 0 1px 2px rgb(17 24 39 / 0.06);
+  --dash-shadow-sm: 0 1px 2px rgb(15 23 42 / 0.05);
   --dash-duration: 180ms;
 }

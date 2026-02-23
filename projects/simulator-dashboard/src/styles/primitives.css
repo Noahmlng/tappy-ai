@@ -7,6 +7,8 @@ body {
   font-family: 'Soehne', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   color: var(--dash-ink);
   background: var(--dash-canvas);
+  font-size: 15px;
+  line-height: 1.45;
 }
 
 h1,
@@ -29,18 +31,18 @@ pre {
 .dashboard-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 236px minmax(0, 1fr);
-  gap: 16px;
-  padding: 16px;
+  grid-template-columns: 248px minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px;
 }
 
 .dashboard-side {
   position: sticky;
-  top: 16px;
-  height: calc(100vh - 32px);
+  top: 14px;
+  height: calc(100vh - 28px);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
   padding: 16px;
   border-radius: var(--dash-radius-lg);
   border: 1px solid var(--dash-stroke);
@@ -48,38 +50,39 @@ pre {
 }
 
 .brand-eyebrow {
-  font-size: 11px;
-  letter-spacing: 0.1em;
+  font-size: 12px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--dash-subtle);
+  font-family: 'Soehne Mono', monospace;
 }
 
 .brand-title {
-  margin-top: 8px;
+  margin-top: 6px;
   font-family: 'Tiempos Headline', 'Times New Roman', serif;
-  font-size: 38px;
-  line-height: 0.95;
-  letter-spacing: -0.02em;
+  font-size: clamp(24px, 2.7vw, 34px);
+  line-height: 0.94;
+  letter-spacing: -0.015em;
 }
 
 .brand-title span {
   margin-left: 6px;
   font-family: 'Soehne Mono', monospace;
-  font-size: 18px;
+  font-size: 22px;
   color: var(--dash-accent);
 }
 
 .side-nav-list {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .side-nav-link {
   text-decoration: none;
-  padding: 10px 11px;
+  padding: 10px 12px;
   border-radius: var(--dash-radius-sm);
   border: 1px solid transparent;
-  color: #25303b;
+  color: #253042;
   font-size: 14px;
   font-weight: 500;
   transition: all var(--dash-duration) ease;
@@ -87,18 +90,18 @@ pre {
 
 .side-nav-link:hover {
   background: var(--dash-surface-soft);
-  border-color: var(--dash-stroke);
+  border-color: #d2d9e5;
 }
 
 .side-nav-link.active {
-  border-color: #cdd7e5;
-  background: #f3f7ff;
-  color: #1e3a7a;
+  border-color: #bdc7d8;
+  background: #edf2fb;
+  color: #172f5e;
 }
 
 .side-meta {
   margin-top: auto;
-  padding-top: 12px;
+  padding-top: 14px;
   border-top: 1px solid var(--dash-stroke);
   display: grid;
   gap: 8px;
@@ -108,14 +111,14 @@ pre {
   min-width: 0;
   display: grid;
   grid-template-rows: auto 1fr;
-  gap: 10px;
+  gap: 12px;
 }
 
 .top-banner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 14px;
   padding: 12px 14px;
   border-radius: var(--dash-radius-md);
   border: 1px solid var(--dash-stroke);
@@ -125,24 +128,25 @@ pre {
 .top-banner-copy {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: 8px;
 }
 
 .top-banner-eyebrow {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--dash-subtle);
   font-family: 'Soehne Mono', monospace;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .top-banner strong {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
+  color: #1e2a3b;
 }
 
 .top-banner p {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--dash-subtle);
 }
 
@@ -171,7 +175,7 @@ pre {
 
 .page {
   display: grid;
-  gap: 14px;
+  gap: 18px;
 }
 
 .page-header,
@@ -185,36 +189,37 @@ pre {
 .page-header > div,
 .section-head > div {
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
 .page-header h2,
 .section-head h2 {
-  font-family: 'Tiempos Headline', 'Times New Roman', serif;
-  font-size: 42px;
-  line-height: 0.95;
-  letter-spacing: -0.025em;
+  font-family: 'Soehne', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: clamp(34px, 3.2vw, 44px);
+  line-height: 0.94;
+  letter-spacing: -0.035em;
+  font-weight: 600;
 }
 
 .eyebrow {
   font-family: 'Soehne Mono', monospace;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 11px;
+  letter-spacing: 0.12em;
+  font-size: 12px;
   color: var(--dash-subtle);
 }
 
 .subtitle,
 .muted {
   color: var(--dash-subtle);
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .panel,
 .card {
-  padding: 16px;
+  padding: 18px;
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }
 
 .panel-toolbar,
@@ -236,8 +241,8 @@ pre {
 .ui-btn {
   border: 1px solid transparent;
   border-radius: var(--dash-radius-sm);
-  padding: 7px 11px;
-  font-size: 12px;
+  padding: 8px 12px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.2;
   cursor: pointer;
@@ -293,12 +298,12 @@ pre {
   justify-content: center;
   border-radius: 999px;
   border: 1px solid var(--dash-stroke);
-  padding: 2px 8px;
-  font-size: 11px;
+  padding: 3px 9px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1.2;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
 
 .ui-badge[data-tone='success'],
@@ -358,10 +363,10 @@ pre {
   width: 100%;
   border: 1px solid var(--dash-stroke);
   border-radius: var(--dash-radius-sm);
-  padding: 9px 10px;
+  padding: 9px 11px;
   background: #fff;
   color: #1a2028;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .input:focus,
@@ -449,7 +454,7 @@ pre {
   border: 1px solid var(--dash-stroke);
   border-radius: var(--dash-radius-md);
   background: var(--dash-surface-soft);
-  padding: 12px;
+  padding: 13px;
   display: grid;
   gap: 6px;
 }
@@ -460,13 +465,13 @@ pre {
 
 .metric-value {
   font-family: 'Tiempos Headline', 'Times New Roman', serif;
-  font-size: 44px;
-  line-height: 0.95;
-  letter-spacing: -0.025em;
+  font-size: clamp(34px, 3.2vw, 46px);
+  line-height: 0.9;
+  letter-spacing: -0.02em;
 }
 
 .metric-sub {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--dash-subtle);
 }
 
@@ -538,7 +543,7 @@ pre {
 
 .kpi-grid {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
@@ -546,19 +551,19 @@ pre {
   border: 1px solid var(--dash-stroke);
   border-radius: var(--dash-radius-sm);
   background: var(--dash-surface-soft);
-  padding: 12px;
+  padding: 14px;
 }
 
 .kpi-label {
   color: var(--dash-subtle);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .kpi-value {
-  margin-top: 6px;
+  margin-top: 8px;
   font-family: 'Tiempos Headline', 'Times New Roman', serif;
-  font-size: 30px;
-  line-height: 0.95;
+  font-size: clamp(28px, 2.2vw, 34px);
+  line-height: 0.9;
 }
 
 .split-grid {
@@ -628,7 +633,7 @@ pre {
   border: 1px solid var(--dash-info-stroke);
   background: var(--dash-info-bg);
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: 14px;
   color: #3356a5;
   display: flex;
   align-items: center;
