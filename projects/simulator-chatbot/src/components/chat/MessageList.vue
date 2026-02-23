@@ -29,6 +29,7 @@
         :resolve-message-content-for-rendering="resolveMessageContentForRendering"
         :resolve-inline-offers-for-message="resolveInlineOffersForMessage"
         :resolve-ad-href="resolveAdHref"
+        :is-debug-mode="isDebugMode"
         @start-query-rewrite-edit="$emit('start-query-rewrite-edit', $event)"
         @cancel-query-rewrite-edit="$emit('cancel-query-rewrite-edit')"
         @update:query-rewrite-draft="$emit('update:queryRewriteDraft', $event)"
@@ -91,6 +92,10 @@ defineProps({
   resolveAdHref: {
     type: Function,
     required: true,
+  },
+  isDebugMode: {
+    type: Boolean,
+    default: false,
   },
 })
 

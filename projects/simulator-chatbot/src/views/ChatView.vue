@@ -9,6 +9,7 @@
       :active-system-prompt="activeSystemPrompt"
       :active-session-turn-logs="activeSessionTurnLogs"
       :trace-panel-open="isTracePanelOpen"
+      :is-debug-mode="isDebugMode"
       :format-session-time="formatSessionTime"
       :format-trace-time="formatTraceTime"
       :format-trace-event-type="formatTraceEventType"
@@ -27,8 +28,10 @@
       <ChatTopbar
         :is-sidebar-open="isSidebarOpen"
         title="Simulator"
+        :is-debug-mode="isDebugMode"
         @open-sidebar="isSidebarOpen = true"
         @start-new-chat="startNewChat"
+        @toggle-debug="isDebugMode = !isDebugMode"
       />
 
       <div ref="scrollRef" class="chat-main-scroll flex flex-1 flex-col overflow-y-auto">
@@ -43,6 +46,7 @@
           :resolve-message-content-for-rendering="resolveMessageContentForRendering"
           :resolve-inline-offers-for-message="resolveInlineOffersForMessage"
           :resolve-ad-href="resolveAdHref"
+          :is-debug-mode="isDebugMode"
           @start-query-rewrite-edit="startQueryRewriteEdit"
           @cancel-query-rewrite-edit="cancelQueryRewriteEdit"
           @update:query-rewrite-draft="queryRewriteDraft = $event"
@@ -116,6 +120,7 @@ const isComposing = ref(false)
 const queryRewriteMessageId = ref('')
 const queryRewriteDraft = ref('')
 const isTracePanelOpen = ref(true)
+const isDebugMode = ref(false)
 
 const sessions = ref([])
 const activeSessionId = ref('')
@@ -586,13 +591,16 @@ function loadUiPrefs() {
     const raw = localStorage.getItem(UI_PREFS_STORAGE_KEY)
     if (!raw) {
       isTracePanelOpen.value = true
+      isDebugMode.value = false
       return
     }
     const parsed = JSON.parse(raw)
     isTracePanelOpen.value = parsed?.tracePanelOpen !== false
+    isDebugMode.value = parsed?.debugMode === true
   } catch (error) {
     console.error('Failed to load UI prefs:', error)
     isTracePanelOpen.value = true
+    isDebugMode.value = false
   }
 }
 
@@ -601,6 +609,7 @@ function persistUiPrefs() {
     UI_PREFS_STORAGE_KEY,
     JSON.stringify({
       tracePanelOpen: Boolean(isTracePanelOpen.value),
+      debugMode: Boolean(isDebugMode.value),
     }),
   )
 }
@@ -677,6 +686,10 @@ watch(
 )
 
 watch(isTracePanelOpen, () => {
+  persistUiPrefs()
+})
+
+watch(isDebugMode, () => {
   persistUiPrefs()
 })
 

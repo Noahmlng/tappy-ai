@@ -12,18 +12,28 @@
       <div class="chat-topbar-title">{{ title }}</div>
     </div>
 
-    <button
-      class="chat-topbar-action"
-      @click="$emit('start-new-chat')"
-    >
-      <Plus :size="13" />
-      <span>New</span>
-    </button>
+    <div class="flex items-center gap-2">
+      <button
+        class="chat-topbar-action"
+        @click="$emit('toggle-debug')"
+      >
+        <Bug :size="13" />
+        <span>{{ isDebugMode ? 'Debug On' : 'Debug Off' }}</span>
+      </button>
+
+      <button
+        class="chat-topbar-action"
+        @click="$emit('start-new-chat')"
+      >
+        <Plus :size="13" />
+        <span>New</span>
+      </button>
+    </div>
   </header>
 </template>
 
 <script setup>
-import { Menu, Plus } from 'lucide-vue-next'
+import { Bug, Menu, Plus } from 'lucide-vue-next'
 
 defineProps({
   isSidebarOpen: {
@@ -34,7 +44,11 @@ defineProps({
     type: String,
     default: 'Chat Bot',
   },
+  isDebugMode: {
+    type: Boolean,
+    default: false,
+  },
 })
 
-defineEmits(['open-sidebar', 'start-new-chat'])
+defineEmits(['open-sidebar', 'start-new-chat', 'toggle-debug'])
 </script>

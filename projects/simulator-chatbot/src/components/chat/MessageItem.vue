@@ -158,7 +158,7 @@
         />
 
         <div
-          v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.attachAdSlot?.ads?.length"
+          v-if="isDebugMode && msg.kind !== 'tool' && msg.status === 'done' && msg.attachAdSlot?.ads?.length"
           class="chat-sponsored-card"
         >
           <div class="chat-sponsored-head">
@@ -200,14 +200,14 @@
         </div>
 
         <FollowUpSuggestions
-          v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.followUps?.length"
+          v-if="isDebugMode && msg.kind !== 'tool' && msg.status === 'done' && msg.followUps?.length"
           :items="msg.followUps"
           :disabled="isLoading"
           @select="$emit('follow-up-select', $event)"
         />
 
         <IntentCard
-          v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.nextStepAdSlot?.ads?.length && !msg.nextStepAdSlot?.dismissedAt"
+          v-if="isDebugMode && msg.kind !== 'tool' && msg.status === 'done' && msg.nextStepAdSlot?.ads?.length && !msg.nextStepAdSlot?.dismissedAt"
           :slot-data="msg.nextStepAdSlot"
           :max-items="3"
           @click-item="(ad) => $emit('next-step-ad-click', { msg, ad })"
@@ -268,6 +268,10 @@ defineProps({
   resolveAdHref: {
     type: Function,
     required: true,
+  },
+  isDebugMode: {
+    type: Boolean,
+    default: false,
   },
 })
 

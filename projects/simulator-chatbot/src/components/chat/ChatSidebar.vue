@@ -15,7 +15,7 @@
       <div class="chat-sidebar-brand">
         <p class="chat-sidebar-eyebrow">Simulator Console</p>
         <p class="chat-sidebar-title">Codex Mode</p>
-        <p class="chat-sidebar-subtitle">Trace every model + tool decision</p>
+        <p class="chat-sidebar-subtitle">Conversation-first workspace</p>
       </div>
 
       <button
@@ -100,7 +100,7 @@
         </div>
       </details>
 
-      <details class="chat-panel" :open="tracePanelOpen">
+      <details v-if="isDebugMode" class="chat-panel" :open="tracePanelOpen">
         <summary
           class="chat-panel-summary"
           @click.prevent="$emit('update:tracePanelOpen', !tracePanelOpen)"
@@ -163,6 +163,10 @@ defineProps({
   tracePanelOpen: {
     type: Boolean,
     default: true,
+  },
+  isDebugMode: {
+    type: Boolean,
+    default: false,
   },
   formatSessionTime: {
     type: Function,
