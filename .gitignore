@@ -18,6 +18,7 @@ coverage
 *.local
 /projects/ad-aggregation-platform/.local/
 /projects/ad-aggregation-platform/.secrets/
+/projects/ad-aggregation-platform/tests/reports/meyka-regression/
 
 # Editor directories and files
 .vscode/*
