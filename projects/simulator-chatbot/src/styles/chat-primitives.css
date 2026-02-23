@@ -74,6 +74,15 @@ body {
   box-shadow: var(--chat-shadow);
 }
 
+.chat-trace-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #8b95a7;
+  vertical-align: middle;
+}
+
 .animate-in {
   animation: fade-in 0.24s both, slide-in-from-bottom 0.24s both;
 }
