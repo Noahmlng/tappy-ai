@@ -14,11 +14,11 @@
 
     <div class="flex items-center gap-2">
       <button
-        class="chat-topbar-action"
+        :class="['chat-topbar-action', { 'is-active': isDebugMode }]"
         @click="$emit('toggle-debug')"
       >
         <Bug :size="13" />
-        <span>{{ isDebugMode ? 'Debug On' : 'Debug Off' }}</span>
+        <span>Debug {{ isDebugMode ? 'On' : 'Off' }}</span>
       </button>
 
       <button

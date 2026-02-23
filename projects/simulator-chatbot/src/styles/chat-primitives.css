@@ -342,6 +342,12 @@ body {
   background: #f5f7fb;
 }
 
+.chat-topbar-action.is-active {
+  border-color: #b7c8eb;
+  background: #edf3ff;
+  color: #24498b;
+}
+
 .chat-hero-title {
   text-align: center;
   font-family: 'Tiempos Headline', 'Times New Roman', serif;

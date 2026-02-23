@@ -10,7 +10,7 @@
       :class="hasStarted ? 'mb-0 max-h-0 scale-95 overflow-hidden opacity-0' : 'mb-8 max-h-20 scale-100 opacity-100'"
     >
       <h1 class="chat-hero-title">How can I help you today?</h1>
-      <p class="chat-hero-subtitle">Simulate monetization paths and inspect every execution trace.</p>
+      <p class="chat-hero-subtitle">Ask, iterate, and validate answers in one clean conversation flow.</p>
     </div>
 
     <div

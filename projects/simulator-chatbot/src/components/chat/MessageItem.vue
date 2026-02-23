@@ -1,7 +1,7 @@
 <template>
   <div
     :class="[
-      'chat-message animate-in',
+      'chat-message group animate-in',
       msg.role === 'user' ? 'is-user' : ''
     ]"
   >
@@ -64,7 +64,7 @@
           <div class="whitespace-pre-wrap">{{ msg.content }}</div>
           <div class="mt-2 flex justify-end">
             <button
-              class="chat-rewrite-btn disabled:cursor-not-allowed disabled:opacity-60"
+              class="chat-rewrite-btn opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 disabled:cursor-not-allowed disabled:opacity-60"
               :disabled="isLoading"
               @click="$emit('start-query-rewrite-edit', msg)"
             >
@@ -139,7 +139,7 @@
 
         <div
           v-if="msg.kind !== 'tool' && msg.role === 'assistant' && msg.status === 'done' && msg.sourceUserContent"
-          class="chat-regen-row"
+          class="chat-regen-row opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
         >
           <button
             class="chat-regen-btn disabled:cursor-not-allowed disabled:opacity-60"
