@@ -1854,7 +1854,8 @@ async function runAttachAdsFlow({ session, userContent, assistantMessageId, turn
 
 async function runNextStepIntentCardFlow({ session, userContent, assistantMessageId, turnTrace }) {
   if (!ENABLE_NEXT_STEP_FLOW) {
-    appendTurnTraceEvent(turnTrace, 'ads_skipped', {
+    appendTurnTraceEvent(turnTrace, 'next_step_skipped', {
+      flow: 'next_step',
       placementKey: 'next_step.intent_card',
       reason: 'flow_disabled',
     })
@@ -1920,7 +1921,8 @@ async function runNextStepIntentCardFlow({ session, userContent, assistantMessag
   upsertTurnTrace(turnTrace)
 
   if (flow?.skipped) {
-    appendTurnTraceEvent(turnTrace, 'ads_skipped', {
+    appendTurnTraceEvent(turnTrace, 'next_step_skipped', {
+      flow: 'next_step',
       placementKey: reportPayload.placementKey,
       reason: flow?.skipReason || 'placement_disabled',
     })
@@ -2453,7 +2455,8 @@ async function handleSend(options = {}) {
           upsertTurnTrace(turnTrace)
         })
       } else {
-        appendTurnTraceEvent(turnTrace, 'ads_skipped', {
+        appendTurnTraceEvent(turnTrace, 'next_step_skipped', {
+          flow: 'next_step',
           placementKey: 'next_step.intent_card',
           reason: 'flow_disabled',
         })
