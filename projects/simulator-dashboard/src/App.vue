@@ -62,11 +62,15 @@ const activeNavLabel = computed(() => {
 
     <div class="shell-main">
       <header class="top-banner">
-        <div>
+        <div class="top-banner-copy">
+          <p class="top-banner-eyebrow">Panxo + Exa Inspired Direction</p>
           <strong>{{ activeNavLabel }}</strong>
-          <p>External developer first. Minimal path to request evidence.</p>
+          <p>Evidence-native monetization control center for AI traffic.</p>
         </div>
-        <UiBadge tone="info">Production-ready API flow</UiBadge>
+        <div class="top-banner-actions">
+          <UiBadge tone="success">Realtime telemetry</UiBadge>
+          <UiBadge tone="info">Production-ready API flow</UiBadge>
+        </div>
       </header>
 
       <main class="main-container card-surface">
