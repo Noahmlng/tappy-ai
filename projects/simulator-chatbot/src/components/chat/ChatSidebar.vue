@@ -90,7 +90,7 @@
         <textarea
           :value="activeSystemPrompt"
           :disabled="!activeSession"
-          rows="5"
+          rows="4"
           class="chat-system-input disabled:opacity-60"
           placeholder="Set a per-chat system prompt..."
           @input="$emit('update:activeSystemPrompt', $event.target.value)"

@@ -17,11 +17,6 @@ const navItems = computed(() => {
     }))
     .sort((a, b) => a.order - b.order)
 })
-
-const activeNavLabel = computed(() => {
-  const current = route.matched[route.matched.length - 1]
-  return current?.meta?.navLabel || 'Dashboard'
-})
 </script>
 
 <template>
@@ -58,7 +53,7 @@ const activeNavLabel = computed(() => {
       <header class="top-banner">
         <div class="top-banner-copy">
           <p class="top-banner-eyebrow">Primary Flow</p>
-          <strong>{{ activeNavLabel }}</strong>
+          <strong>API First Path</strong>
           <p>API Key → Request Path → 24h Usage</p>
         </div>
         <div class="top-banner-actions">
