@@ -14,6 +14,27 @@ function toDeepSeekMessages(messages = []) {
     .map((msg) => ({ role: msg.role, content: msg.content }))
 }
 
+function normalizeMessageSequenceForDeepSeek(messages = []) {
+  const normalized = []
+
+  for (const item of toDeepSeekMessages(messages)) {
+    const role = item.role
+    const content = typeof item.content === 'string' ? item.content.trim() : ''
+    if (!content) continue
+
+    const last = normalized[normalized.length - 1]
+    if (last && last.role === role && role !== 'system') {
+      // DeepSeek can reject consecutive assistant/user roles; merge adjacent messages defensively.
+      last.content = `${last.content}\n\n${content}`.trim()
+      continue
+    }
+
+    normalized.push({ role, content })
+  }
+
+  return normalized
+}
+
 function extractDeltaText(parsedChunk) {
   const delta = parsedChunk?.choices?.[0]?.delta
   if (!delta) return ''
@@ -39,7 +60,7 @@ export async function sendMessageStream(messages, onMessage, onStart, onEnd, onE
 
   const payload = {
     model: DEEPSEEK_MODEL,
-    messages: toDeepSeekMessages(messages),
+    messages: normalizeMessageSequenceForDeepSeek(messages),
     stream: true,
     temperature: 0.7,
   }

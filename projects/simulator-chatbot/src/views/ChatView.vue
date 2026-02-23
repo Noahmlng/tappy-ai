@@ -1197,8 +1197,8 @@ function buildModelMessages(messages, webSearchContext, systemPrompt = '') {
 
   if (webSearchContext) {
     modelMessages.push({
-      role: 'assistant',
-      content: `[Tool:web_search]\n${webSearchContext}`,
+      role: 'user',
+      content: `Additional web search context for grounding:\n${webSearchContext}`,
     })
   }
 
