@@ -1,6 +1,10 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 
+import UiBadge from '../components/ui/UiBadge.vue'
+import UiButton from '../components/ui/UiButton.vue'
+import UiCard from '../components/ui/UiCard.vue'
+import UiSectionHeader from '../components/ui/UiSectionHeader.vue'
 import {
   apiKeysState,
   clearRevealedSecret,
@@ -30,8 +34,8 @@ function formatDate(value) {
   return date.toLocaleString()
 }
 
-function statusClass(status) {
-  return status === 'revoked' ? 'status-pill bad' : 'status-pill good'
+function statusTone(status) {
+  return status === 'revoked' ? 'error' : 'success'
 }
 
 async function handleCreate() {
@@ -62,24 +66,22 @@ onMounted(() => {
 
 <template>
   <section class="page">
-    <header class="page-header">
-      <p class="eyebrow">Credentials</p>
-      <h2>API Keys</h2>
-      <p class="subtitle">
-        Create, rotate, and revoke keys by environment.
-      </p>
-    </header>
+    <UiSectionHeader
+      eyebrow="Credentials"
+      title="API Keys"
+      subtitle="Create, rotate, and revoke keys by environment."
+    />
 
-    <article class="panel">
+    <UiCard>
       <div class="panel-toolbar">
         <h3>Keys</h3>
         <div class="toolbar-actions">
-          <button class="button" type="button" :disabled="isBusy" @click="hydrateApiKeys()">
+          <UiButton :disabled="isBusy" @click="hydrateApiKeys()">
             {{ apiKeysState.meta.loading ? 'Refreshing...' : 'Refresh' }}
-          </button>
-          <button class="button" type="button" :disabled="isBusy" @click="toggleCreateForm">
+          </UiButton>
+          <UiButton :disabled="isBusy" @click="toggleCreateForm">
             {{ createFormOpen ? 'Cancel' : 'Create key' }}
-          </button>
+          </UiButton>
         </div>
       </div>
 
@@ -111,9 +113,9 @@ onMounted(() => {
           </label>
         </div>
         <div class="toolbar-actions">
-          <button class="button" type="button" :disabled="isBusy" @click="handleCreate">
+          <UiButton :disabled="isBusy" @click="handleCreate">
             {{ isBusy ? 'Creating...' : 'Create' }}
-          </button>
+          </UiButton>
         </div>
       </div>
 
@@ -138,32 +140,26 @@ onMounted(() => {
           <tr v-for="row in rows" :key="row.keyId">
             <td>{{ row.name }}</td>
             <td>{{ row.environment }}</td>
-            <td>
-              <span :class="statusClass(row.status)">
-                {{ row.status }}
-              </span>
-            </td>
+            <td><UiBadge :tone="statusTone(row.status)">{{ row.status }}</UiBadge></td>
             <td><code>{{ row.maskedKey }}</code></td>
             <td>{{ formatDate(row.createdAt) }}</td>
             <td>{{ formatDate(row.lastUsedAt) }}</td>
             <td>
               <div class="toolbar-actions">
-                <button
-                  class="button button-secondary"
-                  type="button"
+                <UiButton
+                  variant="secondary"
                   :disabled="isBusy || row.status === 'revoked'"
                   @click="handleRotate(row.keyId)"
                 >
                   Rotate
-                </button>
-                <button
-                  class="button button-danger"
-                  type="button"
+                </UiButton>
+                <UiButton
+                  variant="danger"
                   :disabled="isBusy || row.status === 'revoked'"
                   @click="handleRevoke(row.keyId)"
                 >
                   Revoke
-                </button>
+                </UiButton>
               </div>
             </td>
           </tr>
@@ -172,6 +168,6 @@ onMounted(() => {
           </tr>
         </tbody>
       </table>
-    </article>
+    </UiCard>
   </section>
 </template>

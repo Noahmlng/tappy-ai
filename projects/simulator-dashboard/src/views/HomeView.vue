@@ -1,6 +1,10 @@
 <script setup>
 import { computed, onMounted } from 'vue'
 
+import UiBadge from '../components/ui/UiBadge.vue'
+import UiButton from '../components/ui/UiButton.vue'
+import UiCard from '../components/ui/UiCard.vue'
+import UiSectionHeader from '../components/ui/UiSectionHeader.vue'
 import { dashboardState, hydrateDashboardState } from '../state/dashboard-state'
 
 const isLoading = computed(() => Boolean(dashboardState.meta?.loading))
@@ -60,10 +64,10 @@ const kpis24h = computed(() => {
   ]
 })
 
-function statusClass(status) {
-  if (status === 'ready') return 'status-pill good'
-  if (status === 'offline') return 'status-pill bad'
-  return 'status-pill warn'
+function statusTone(status) {
+  if (status === 'ready') return 'success'
+  if (status === 'offline') return 'error'
+  return 'warn'
 }
 
 function refreshHome() {
@@ -77,27 +81,25 @@ onMounted(() => {
 
 <template>
   <section class="page">
-    <header class="page-header">
-      <p class="eyebrow">Dashboard v1</p>
-      <h2>Home</h2>
-      <p class="subtitle">
-        Integration readiness and key 24-hour metrics.
-      </p>
-    </header>
+    <UiSectionHeader
+      eyebrow="Dashboard v1"
+      title="Home"
+      subtitle="Integration readiness and key 24-hour metrics."
+    />
 
-    <article class="panel">
+    <UiCard>
       <div class="panel-toolbar">
         <h3>Integration Status</h3>
-        <button class="button" type="button" :disabled="isLoading" @click="refreshHome">
+        <UiButton :disabled="isLoading" @click="refreshHome">
           {{ isLoading ? 'Refreshing...' : 'Refresh' }}
-        </button>
+        </UiButton>
       </div>
 
       <div class="status-grid">
         <article v-for="item in integrationStatus" :key="item.label" class="status-item">
           <div class="panel-head">
             <strong>{{ item.label }}</strong>
-            <span :class="statusClass(item.status)">{{ item.status }}</span>
+            <UiBadge :tone="statusTone(item.status)">{{ item.status }}</UiBadge>
           </div>
           <p class="muted">{{ item.detail }}</p>
         </article>
@@ -106,13 +108,13 @@ onMounted(() => {
       <p v-if="dashboardState.meta.lastSyncedAt" class="muted">
         Last synced: {{ new Date(dashboardState.meta.lastSyncedAt).toLocaleString() }}
       </p>
-    </article>
+    </UiCard>
 
     <div class="grid grid-3">
-      <article v-for="kpi in kpis24h" :key="kpi.label" class="panel metric">
+      <UiCard v-for="kpi in kpis24h" :key="kpi.label" class="metric">
         <h3>{{ kpi.label }}</h3>
         <p class="metric-value">{{ kpi.value }}</p>
-      </article>
+      </UiCard>
     </div>
   </section>
 </template>

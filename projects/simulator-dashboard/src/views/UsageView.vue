@@ -1,6 +1,9 @@
 <script setup>
 import { computed, onMounted } from 'vue'
 
+import UiButton from '../components/ui/UiButton.vue'
+import UiCard from '../components/ui/UiCard.vue'
+import UiSectionHeader from '../components/ui/UiSectionHeader.vue'
 import { dashboardState, hydrateDashboardState } from '../state/dashboard-state'
 
 const isLoading = computed(() => Boolean(dashboardState.meta.loading))
@@ -84,20 +87,18 @@ onMounted(() => {
 
 <template>
   <section class="page">
-    <header class="page-header">
-      <p class="eyebrow">Observability</p>
-      <h2>Usage</h2>
-      <p class="subtitle">
-        Request volume, success rate, and basic billing summary.
-      </p>
-    </header>
+    <UiSectionHeader
+      eyebrow="Observability"
+      title="Usage"
+      subtitle="Request volume, success rate, and basic billing summary."
+    />
 
-    <article class="panel">
+    <UiCard>
       <div class="panel-toolbar">
         <h3>24h Summary</h3>
-        <button class="button" type="button" :disabled="isLoading" @click="refreshUsage">
+        <UiButton :disabled="isLoading" @click="refreshUsage">
           {{ isLoading ? 'Refreshing...' : 'Refresh' }}
-        </button>
+        </UiButton>
       </div>
       <p class="muted">
         Source:
@@ -109,18 +110,18 @@ onMounted(() => {
       <p v-if="dashboardState.meta.error" class="muted">
         {{ dashboardState.meta.error }}
       </p>
-    </article>
+    </UiCard>
 
     <div class="grid grid-3">
-      <article v-for="card in usageCards" :key="card.label" class="panel metric">
+      <UiCard v-for="card in usageCards" :key="card.label" class="metric">
         <h3>{{ card.label }}</h3>
         <p class="metric-value">{{ card.value }}</p>
         <p class="metric-sub">{{ card.sub }}</p>
-      </article>
+      </UiCard>
     </div>
 
     <div class="grid">
-      <article class="panel">
+      <UiCard>
         <h3>Basic Billing Summary</h3>
         <table class="table">
           <thead>
@@ -136,9 +137,9 @@ onMounted(() => {
             </tr>
           </tbody>
         </table>
-      </article>
+      </UiCard>
 
-      <article class="panel">
+      <UiCard>
         <h3>7-Day Usage Trend</h3>
         <table class="table">
           <thead>
@@ -158,7 +159,7 @@ onMounted(() => {
             </tr>
           </tbody>
         </table>
-      </article>
+      </UiCard>
     </div>
   </section>
 </template>
