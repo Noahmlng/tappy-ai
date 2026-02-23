@@ -91,6 +91,84 @@ function buildAttachInput() {
   }
 }
 
+function createNextStepFetchMock({ decisionResult = 'served', ads = [] } = {}) {
+  const calls = []
+
+  const fetchImpl = async (url, init = {}) => {
+    const parsedUrl = new URL(url, 'http://localhost')
+    const method = String(init.method || 'GET').toUpperCase()
+    const body = typeof init.body === 'string' && init.body
+      ? JSON.parse(init.body)
+      : null
+
+    calls.push({
+      method,
+      pathname: parsedUrl.pathname,
+      search: parsedUrl.search,
+      body,
+    })
+
+    if (parsedUrl.pathname === '/api/v1/mediation/config') {
+      return createJsonResponse(200, {
+        placements: [
+          {
+            placementId: 'chat_followup_v1',
+            placementKey: 'next_step.intent_card',
+            enabled: true,
+          },
+        ],
+      })
+    }
+
+    if (parsedUrl.pathname === '/api/v1/sdk/evaluate') {
+      return createJsonResponse(200, {
+        requestId: 'adreq_next_step_001',
+        placementId: 'chat_followup_v1',
+        placementKey: 'next_step.intent_card',
+        decision: {
+          result: decisionResult,
+          reason: decisionResult,
+          reasonDetail: decisionResult,
+        },
+        ads,
+      })
+    }
+
+    if (parsedUrl.pathname === '/api/v1/sdk/events') {
+      return createJsonResponse(200, {
+        ok: true,
+      })
+    }
+
+    throw new Error(`unexpected request: ${method} ${parsedUrl.pathname}`)
+  }
+
+  return {
+    calls,
+    fetchImpl,
+  }
+}
+
+function buildNextStepInput() {
+  return {
+    appId: 'simulator-chatbot',
+    sessionId: 'session_next_step_001',
+    turnId: 'turn_next_step_001',
+    userId: 'user_next_step_001',
+    event: 'followup_generation',
+    placementId: 'chat_followup_v1',
+    placementKey: 'next_step.intent_card',
+    context: {
+      query: 'Recent upgrade trend for Amazon stock?',
+      answerText: 'Analysts recently revised targets upward.',
+      locale: 'en-US',
+      intent_class: 'shopping',
+      intent_score: 0.88,
+      preference_facets: [],
+    },
+  }
+}
+
 test('sdk attach flow: no_fill does not report impression event', async () => {
   const mock = createFetchMock({
     decisionResult: 'no_fill',
@@ -139,4 +217,35 @@ test('sdk attach flow: served decision reports impression with adId', async () =
   assert.equal(eventCalls[0].body.kind, 'impression')
   assert.equal(eventCalls[0].body.adId, 'ad_stock_001')
   assert.equal(eventCalls[0].body.placementId, 'chat_inline_v1')
+})
+
+test('sdk next_step flow: served decision reports impression with kind and adId', async () => {
+  const mock = createNextStepFetchMock({
+    decisionResult: 'served',
+    ads: [
+      {
+        item_id: 'next_item_001',
+        title: 'Brokerage Bonus Offer',
+        snippet: 'Open an account and get bonus credits.',
+        target_url: 'https://broker.example.com/bonus',
+      },
+    ],
+  })
+
+  const sdkClient = createAdsSdkClient({
+    apiBaseUrl: '/api',
+    fetchImpl: mock.fetchImpl,
+  })
+
+  const flow = await sdkClient.runNextStepFlow(buildNextStepInput())
+  const eventCalls = mock.calls.filter((item) => item.pathname === '/api/v1/sdk/events')
+
+  assert.equal(flow.decision.result, 'served')
+  assert.equal(flow.evidence.events.ok, true)
+  assert.equal(flow.evidence.events.skipped, false)
+  assert.equal(eventCalls.length, 1)
+  assert.equal(eventCalls[0].body.kind, 'impression')
+  assert.equal(eventCalls[0].body.adId, 'next_item_001')
+  assert.equal(eventCalls[0].body.placementId, 'chat_followup_v1')
+  assert.equal(eventCalls[0].body.placementKey, 'next_step.intent_card')
 })

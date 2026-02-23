@@ -158,6 +158,12 @@ function normalizeAttachPayload(payload = {}) {
   }
 }
 
+function normalizeNextStepKind(value) {
+  const kind = String(value || '').trim().toLowerCase()
+  if (kind === 'click' || kind === 'dismiss' || kind === 'impression') return kind
+  return ''
+}
+
 function normalizeNextStepIntentCardPayload(payload = {}) {
   const contextInput = payload.context && typeof payload.context === 'object' ? payload.context : {}
   const context = {
@@ -188,6 +194,8 @@ function normalizeNextStepIntentCardPayload(payload = {}) {
     event: String(payload.event || 'followup_generation').trim(),
     placementId: String(payload.placementId || 'chat_followup_v1').trim(),
     placementKey: String(payload.placementKey || 'next_step.intent_card').trim(),
+    kind: normalizeNextStepKind(payload.kind),
+    adId: String(payload.adId || '').trim(),
     context,
   }
 }

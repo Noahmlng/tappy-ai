@@ -81,15 +81,20 @@ function normalizeAds(items) {
   return items
     .map((item, index) => {
       if (!item || typeof item !== 'object') return null
+      const adId = cleanText(item.adId || item.item_id || item.itemId) || `ad_${index}`
+      const targetUrl = cleanText(item.targetUrl || item.target_url)
       return {
-        adId: cleanText(item.adId) || `ad_${index}`,
+        adId,
+        itemId: adId,
         title: cleanText(item.title),
-        description: cleanText(item.description),
-        targetUrl: cleanText(item.targetUrl),
+        description: cleanText(item.description || item.snippet),
+        targetUrl,
         disclosure: cleanText(item.disclosure) || 'Sponsored',
         reason: cleanText(item.reason),
         tracking: item.tracking && typeof item.tracking === 'object'
-          ? { clickUrl: cleanText(item.tracking.clickUrl) }
+          ? {
+              clickUrl: cleanText(item.tracking.clickUrl || item.tracking.click_url) || targetUrl,
+            }
           : {},
         sourceNetwork: cleanText(item.sourceNetwork),
         entityText: cleanText(item.entityText),
@@ -593,10 +598,29 @@ export function createAdsSdkClient(options = {}) {
       requestAt: cleanText(input.requestAt) || new Date().toISOString(),
       evaluatePayload,
       intentScore: context.intent_score,
-      eventPayloadFactory: ({ requestId }) => ({
-        ...evaluatePayload,
-        requestId,
-      }),
+      eventPayloadFactory: ({ requestId, decision, evaluateResponse, ads }) => {
+        const decisionResult = cleanText(decision?.result).toLowerCase()
+        const rawAds = Array.isArray(evaluateResponse?.ads) ? evaluateResponse.ads : []
+        const firstAdId = cleanText(
+          rawAds[0]?.adId
+            || rawAds[0]?.item_id
+            || rawAds[0]?.itemId
+            || ads[0]?.adId,
+        )
+
+        if (decisionResult !== 'served' || !firstAdId) {
+          return null
+        }
+
+        return {
+          ...evaluatePayload,
+          requestId,
+          kind: 'impression',
+          adId: firstAdId,
+          placementId,
+          placementKey,
+        }
+      },
       configTimeoutMs: input.configTimeoutMs,
       evaluateTimeoutMs: input.evaluateTimeoutMs,
       eventsTimeoutMs: input.eventsTimeoutMs,

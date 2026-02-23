@@ -737,6 +737,7 @@ function normalizeNextStepAdItem(raw, index) {
 
   return {
     itemId,
+    adId: itemId,
     title,
     snippet: typeof raw.snippet === 'string'
       ? raw.snippet
@@ -765,6 +766,13 @@ function normalizeNextStepAdItem(raw, index) {
         : null,
     disclosure: raw.disclosure === 'Ad' ? 'Ad' : 'Sponsored',
   }
+}
+
+function resolveNextStepAdId(slot, ad = null) {
+  const fromAd = pickFirstNonEmptyString(ad?.itemId, ad?.adId)
+  if (fromAd) return fromAd
+  const firstAd = Array.isArray(slot?.ads) ? slot.ads[0] : null
+  return pickFirstNonEmptyString(firstAd?.itemId, firstAd?.adId)
 }
 
 function normalizeNextStepAdSlot(raw) {
@@ -1987,6 +1995,11 @@ async function runNextStepIntentCardFlow({ session, userContent, assistantMessag
     reasonDetail: flow?.decision?.reasonDetail || '',
     adCount: Array.isArray(flow?.ads) ? flow.ads.length : 0,
   })
+  const firstNextStepAdId = pickFirstNonEmptyString(
+    flow?.ads?.[0]?.itemId,
+    flow?.ads?.[0]?.item_id,
+    flow?.ads?.[0]?.adId,
+  )
   if (flow?.evidence?.events?.skipped) {
     appendTurnTraceEvent(turnTrace, 'ads_event_skipped', {
       placementKey: reportPayload.placementKey,
@@ -1999,12 +2012,14 @@ async function runNextStepIntentCardFlow({ session, userContent, assistantMessag
       placementKey: reportPayload.placementKey,
       requestId: flow?.requestId || '',
       kind: 'impression',
+      adId: firstNextStepAdId,
     })
   } else {
     appendTurnTraceEvent(turnTrace, 'ads_event_report_failed', {
       placementKey: reportPayload.placementKey,
       requestId: flow?.requestId || '',
       kind: 'impression',
+      adId: firstNextStepAdId,
       error: flow?.evidence?.events?.error || 'event_report_failed',
     })
   }
@@ -2124,6 +2139,7 @@ function handleInlineMarkerCount(message, count) {
 function handleNextStepAdClick(message, ad) {
   const slot = message?.nextStepAdSlot
   if (!slot?.reportPayload || !message?.sourceTurnId) return
+  const adId = resolveNextStepAdId(slot, ad)
 
   updateTurnTrace(message.sourceTurnId, (trace) => {
     const nextTrace = { ...trace }
@@ -2134,7 +2150,7 @@ function handleNextStepAdClick(message, ad) {
         type: 'ads_click_tracked',
         at: Date.now(),
         payload: {
-          adId: ad?.itemId || '',
+          adId,
           title: ad?.title || '',
           requestId: slot.requestId || '',
           placementId: slot.placementId || '',
@@ -2145,7 +2161,13 @@ function handleNextStepAdClick(message, ad) {
     return nextTrace
   })
 
-  reportAdsEvent(slot.reportPayload).catch((error) => {
+  reportAdsEvent({
+    ...slot.reportPayload,
+    kind: 'click',
+    adId,
+    placementId: slot.placementId || 'chat_followup_v1',
+    placementKey: slot.placementKey || 'next_step.intent_card',
+  }).catch((error) => {
     updateTurnTrace(message.sourceTurnId, (trace) => {
       const nextTrace = { ...trace }
       nextTrace.events = [
@@ -2156,6 +2178,7 @@ function handleNextStepAdClick(message, ad) {
           at: Date.now(),
           payload: {
             kind: 'click',
+            adId,
             placementKey: slot.placementKey || 'next_step.intent_card',
             error: error instanceof Error ? error.message : 'event_report_failed',
           },
@@ -2171,6 +2194,7 @@ function handleNextStepAdDismiss(message) {
   const slot = message.nextStepAdSlot
   if (!slot || typeof slot !== 'object') return
   if (Number.isFinite(slot.dismissedAt)) return
+  const adId = resolveNextStepAdId(slot)
 
   slot.dismissedAt = Date.now()
   touchActiveSession()
@@ -2187,6 +2211,7 @@ function handleNextStepAdDismiss(message) {
         type: 'ads_dismissed',
         at: Date.now(),
         payload: {
+          adId,
           requestId: slot.requestId || '',
           placementId: slot.placementId || '',
           placementKey: slot.placementKey || 'next_step.intent_card',
@@ -2198,7 +2223,13 @@ function handleNextStepAdDismiss(message) {
 
   if (!slot.reportPayload) return
 
-  reportAdsEvent(slot.reportPayload)
+  reportAdsEvent({
+    ...slot.reportPayload,
+    kind: 'dismiss',
+    adId,
+    placementId: slot.placementId || 'chat_followup_v1',
+    placementKey: slot.placementKey || 'next_step.intent_card',
+  })
     .then(() => {
       updateTurnTrace(message.sourceTurnId, (trace) => {
         const nextTrace = { ...trace }
@@ -2210,6 +2241,7 @@ function handleNextStepAdDismiss(message) {
             at: Date.now(),
             payload: {
               kind: 'dismiss',
+              adId,
               placementKey: slot.placementKey || 'next_step.intent_card',
               requestId: slot.requestId || '',
             },
@@ -2229,6 +2261,7 @@ function handleNextStepAdDismiss(message) {
             at: Date.now(),
             payload: {
               kind: 'dismiss',
+              adId,
               placementKey: slot.placementKey || 'next_step.intent_card',
               error: error instanceof Error ? error.message : 'event_report_failed',
             },

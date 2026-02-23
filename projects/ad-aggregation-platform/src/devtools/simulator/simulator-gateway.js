@@ -131,6 +131,8 @@ const NEXT_STEP_INTENT_CARD_ALLOWED_FIELDS = new Set([
   'event',
   'placementId',
   'placementKey',
+  'kind',
+  'adId',
   'context',
 ])
 const NEXT_STEP_INTENT_CARD_CONTEXT_ALLOWED_FIELDS = new Set([
@@ -865,6 +867,13 @@ function normalizeAttachEventKind(value) {
   throw new Error('kind must be impression or click.')
 }
 
+function normalizeNextStepEventKind(value) {
+  const kind = String(value || '').trim().toLowerCase()
+  if (!kind) return 'impression'
+  if (kind === 'impression' || kind === 'click' || kind === 'dismiss') return kind
+  throw new Error('kind must be impression, click, or dismiss.')
+}
+
 function normalizeAttachMvpPayload(payload, routeName) {
   const input = payload && typeof payload === 'object' ? payload : {}
   validateNoExtraFields(input, ATTACH_MVP_ALLOWED_FIELDS, routeName)
@@ -984,6 +993,8 @@ function normalizeNextStepIntentCardPayload(payload, routeName) {
   const placementKey = requiredNonEmptyString(input.placementKey, 'placementKey')
   const event = String(input.event || '').trim().toLowerCase()
   const userId = String(input.userId || '').trim()
+  const kind = normalizeNextStepEventKind(input.kind)
+  const adId = String(input.adId || '').trim()
 
   if (placementKey !== NEXT_STEP_INTENT_CARD_PLACEMENT_KEY) {
     throw new Error(`placementKey must be ${NEXT_STEP_INTENT_CARD_PLACEMENT_KEY}.`)
@@ -1016,6 +1027,8 @@ function normalizeNextStepIntentCardPayload(payload, routeName) {
     turnId,
     userId,
     event,
+    kind,
+    adId,
     placementId,
     placementKey,
     context: {
@@ -3978,6 +3991,10 @@ async function requestHandler(req, res) {
         const inferredPreferenceFacets = normalizeNextStepPreferenceFacets(
           request.context.intentHints?.preference_facets,
         )
+        const normalizedPlacementId = request.placementId || 'chat_followup_v1'
+        if (request.kind === 'click') {
+          recordClickCounters(normalizedPlacementId)
+        }
 
         recordEvent({
           eventType: 'sdk_event',
@@ -3992,8 +4009,10 @@ async function requestHandler(req, res) {
           intentScore: Number.isFinite(inferredIntentScore) ? inferredIntentScore : 0,
           preferenceFacets: inferredPreferenceFacets,
           locale: request.context.locale,
-          event: request.event,
-          placementId: request.placementId,
+          event: request.kind === 'impression' ? request.event : request.kind,
+          kind: request.kind,
+          adId: request.adId || '',
+          placementId: normalizedPlacementId,
           placementKey: request.placementKey,
         })
       } else {
