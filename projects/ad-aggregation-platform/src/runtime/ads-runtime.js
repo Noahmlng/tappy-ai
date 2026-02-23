@@ -66,6 +66,86 @@ const HEURISTIC_ENTITY_STOPWORDS = new Set([
   'you',
   'your'
 ])
+const ENTITY_MATCH_GENERIC_TOKENS = new Set([
+  'cloud',
+  'service',
+  'services',
+  'platform',
+  'platforms',
+  'tool',
+  'tools',
+  'software',
+  'solution',
+  'solutions',
+  'system',
+  'systems',
+  'assistant',
+  'agents',
+  'agent',
+])
+const FINANCE_INTENT_HINT_TOKENS = new Set([
+  'stock',
+  'stocks',
+  'share',
+  'shares',
+  'equity',
+  'equities',
+  'ticker',
+  'market',
+  'markets',
+  'forecast',
+  'forecasts',
+  'earnings',
+  'analyst',
+  'analysts',
+  'upgrade',
+  'downgrade',
+  'broker',
+  'brokers',
+  'brokerage',
+  'trading',
+  'trade',
+  'portfolio',
+  'etf',
+  'crypto',
+  'finance',
+  'financial',
+  'invest',
+  'investing',
+  'investment',
+])
+const FINANCE_OFFER_SIGNAL_TOKENS = new Set([
+  'stock',
+  'stocks',
+  'share',
+  'shares',
+  'equity',
+  'equities',
+  'broker',
+  'brokers',
+  'brokerage',
+  'trading',
+  'trade',
+  'invest',
+  'investing',
+  'investment',
+  'investor',
+  'portfolio',
+  'etf',
+  'crypto',
+  'exchange',
+  'wallet',
+  'finance',
+  'financial',
+  'bank',
+  'banking',
+  'wealth',
+  'retirement',
+  'tax',
+  'loan',
+  'credit',
+  'fintech',
+])
 
 function cleanText(value) {
   if (typeof value !== 'string') return ''
@@ -107,6 +187,13 @@ function uniqueStrings(values) {
   }
 
   return output
+}
+
+function tokenizeAlphanumeric(value) {
+  return cleanText(value)
+    .toLowerCase()
+    .split(/[^a-z0-9]+/g)
+    .filter(Boolean)
 }
 
 function normalizeForMatching(value) {
@@ -250,10 +337,18 @@ function extractKeywordEntitiesFromQuery(query = '') {
 function buildEntityMatcher(entities = []) {
   const tokens = uniqueStrings(
     entities.flatMap((entity) => [entity.entityText, entity.normalizedText])
-  ).map((item) => ({
-    raw: item.toLowerCase(),
-    compact: normalizeForMatching(item)
-  }))
+  )
+    .filter((item) => {
+      const normalized = cleanText(item).toLowerCase()
+      if (!normalized) return false
+      if (normalized.includes(' ')) return true
+      if (normalized.length < 3) return false
+      return !ENTITY_MATCH_GENERIC_TOKENS.has(normalized)
+    })
+    .map((item) => ({
+      raw: item.toLowerCase(),
+      compact: normalizeForMatching(item)
+    }))
 
   return function scoreOffer(offer) {
     if (tokens.length === 0) return { score: 0, matchedEntityText: '' }
@@ -298,6 +393,40 @@ function buildEntityMatcher(entities = []) {
 
     return { score, matchedEntityText }
   }
+}
+
+function isFinanceIntentRequest(requestContext = {}) {
+  const corpus = `${cleanText(requestContext.query)} ${cleanText(requestContext.answerText)}`
+  if (!corpus) return false
+  return tokenizeAlphanumeric(corpus).some((token) => FINANCE_INTENT_HINT_TOKENS.has(token))
+}
+
+function buildOfferSemanticCorpus(offer = {}) {
+  const metadata = offer?.metadata && typeof offer.metadata === 'object' ? offer.metadata : {}
+  return cleanText(
+    [
+      offer.title,
+      offer.description,
+      offer.entityText,
+      offer.normalizedEntityText,
+      offer.merchantName,
+      offer.productName,
+      offer.targetUrl,
+      offer.trackingUrl,
+      metadata?.programId,
+      metadata?.campaignId,
+    ].join(' ')
+  ).toLowerCase()
+}
+
+function hasFinanceOfferSignal(offer = {}) {
+  const corpus = buildOfferSemanticCorpus(offer)
+  if (!corpus) return false
+  const tokens = new Set(tokenizeAlphanumeric(corpus))
+  for (const token of FINANCE_OFFER_SIGNAL_TOKENS) {
+    if (tokens.has(token)) return true
+  }
+  return false
 }
 
 function toTrackingObject(offer) {
@@ -440,12 +569,15 @@ function rankAndSelectOffers(offers, entities, requestContext, maxAds) {
   }
 
   const scoreOffer = buildEntityMatcher(entities)
+  const financeIntentRequest = isFinanceIntentRequest(requestContext)
   const withScore = offers.map((offer) => {
     const { score, matchedEntityText } = scoreOffer(offer)
+    const semanticAllowed = financeIntentRequest ? hasFinanceOfferSignal(offer) : true
     return {
       offer,
       score,
       matchedEntityText,
+      semanticAllowed,
       qualityScore: qualityRank(offer),
       commercialSignal: commercialSignalRank(offer),
       availabilityScore: availabilityRank(offer.availability),
@@ -462,13 +594,17 @@ function rankAndSelectOffers(offers, entities, requestContext, maxAds) {
     return 0
   })
 
-  const matched = withScore.filter((item) => item.score > 0)
+  const matched = withScore.filter((item) => item.score > 0 && item.semanticAllowed)
+  const semanticFilteredOut = financeIntentRequest
+    ? withScore.filter((item) => item.score > 0 && !item.semanticAllowed).length
+    : 0
 
   return {
     selected: matched.slice(0, maxAds),
     invalidForTestAll: 0,
     matchedCandidates: matched.length,
-    unmatchedOffers: Math.max(0, withScore.length - matched.length)
+    unmatchedOffers: Math.max(0, withScore.length - matched.length),
+    semanticFilteredOut
   }
 }
 
@@ -947,7 +1083,8 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     selected,
     invalidForTestAll,
     matchedCandidates = 0,
-    unmatchedOffers = 0
+    unmatchedOffers = 0,
+    semanticFilteredOut = 0,
   } = rankAndSelectOffers(offersForRanking, entities, request.context, maxAds)
   const ads = selected.map((item) =>
     toAdRecord(item.offer, {
@@ -986,6 +1123,7 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     selectedOffers: orderedAds.length,
     matchedCandidates,
     unmatchedOffers,
+    semanticFilteredOut,
     invalidOffersDroppedByTestAllValidation: invalidForTestAll,
     networkOrder: DEFAULT_NETWORK_ORDER,
     networkHits,
