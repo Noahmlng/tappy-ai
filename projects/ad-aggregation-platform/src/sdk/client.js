@@ -147,6 +147,21 @@ function buildEventsEvidence() {
   }
 }
 
+function extractErrorCode(payload) {
+  if (!payload || typeof payload !== 'object') return ''
+  const error = payload.error
+  if (!error || typeof error !== 'object') return ''
+  return cleanText(error.code || '').toUpperCase()
+}
+
+function shouldFallbackToAnonymous(payload) {
+  const code = extractErrorCode(payload)
+  if (!code) return true
+  return code === 'INVALID_API_KEY'
+    || code === 'UNSUPPORTED_BEARER_TOKEN'
+    || code === 'UNSUPPORTED_TOKEN_TYPE'
+}
+
 async function parseResponsePayload(response) {
   const contentType = String(response.headers.get('content-type') || '').toLowerCase()
   if (response.status === 204) return {}
@@ -159,6 +174,7 @@ async function parseResponsePayload(response) {
 export function createAdsSdkClient(options = {}) {
   const apiBaseUrl = normalizeApiBaseUrl(options.apiBaseUrl || '/api')
   const apiKey = cleanText(options.apiKey || '')
+  let useApiKeyAuth = Boolean(apiKey)
   const fetchImpl = options.fetchImpl || globalThis.fetch
   const timeouts = {
     config: toFiniteNumber(options.timeouts?.config, DEFAULT_TIMEOUT_MS.config) || DEFAULT_TIMEOUT_MS.config,
@@ -171,35 +187,53 @@ export function createAdsSdkClient(options = {}) {
   }
 
   async function requestJson(pathname, req = {}) {
-    const controller = new AbortController()
-    const timeoutMs = Math.max(1, toFiniteNumber(req.timeoutMs, DEFAULT_TIMEOUT_MS.evaluate))
     const startedAt = Date.now()
-    const timer = setTimeout(() => controller.abort(), timeoutMs)
-    try {
-      const headers = {
-        ...(req.headers && typeof req.headers === 'object' ? req.headers : {}),
-      }
-      if (apiKey) {
-        headers.Authorization = `Bearer ${apiKey}`
-      }
+    const timeoutMs = Math.max(1, toFiniteNumber(req.timeoutMs, DEFAULT_TIMEOUT_MS.evaluate))
 
-      const response = await fetchImpl(buildUrl(apiBaseUrl, pathname, req.query), {
-        method: req.method || 'GET',
-        headers,
-        body: req.body,
-        signal: controller.signal,
-      })
+    async function executeRequest(includeAuthorization) {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), timeoutMs)
+      try {
+        const headers = {
+          ...(req.headers && typeof req.headers === 'object' ? req.headers : {}),
+        }
+        if (includeAuthorization && apiKey) {
+          headers.Authorization = `Bearer ${apiKey}`
+        }
 
-      const payload = await parseResponsePayload(response)
-      const latencyMs = Math.max(0, Date.now() - startedAt)
-      return {
-        ok: response.ok,
-        status: response.status,
-        payload,
-        latencyMs,
+        const response = await fetchImpl(buildUrl(apiBaseUrl, pathname, req.query), {
+          method: req.method || 'GET',
+          headers,
+          body: req.body,
+          signal: controller.signal,
+        })
+
+        const payload = await parseResponsePayload(response)
+        return {
+          ok: response.ok,
+          status: response.status,
+          payload,
+        }
+      } finally {
+        clearTimeout(timer)
       }
-    } finally {
-      clearTimeout(timer)
+    }
+
+    const attemptWithApiKey = Boolean(apiKey) && useApiKeyAuth
+    let result = await executeRequest(attemptWithApiKey)
+
+    if (
+      attemptWithApiKey
+      && result.status === 401
+      && shouldFallbackToAnonymous(result.payload)
+    ) {
+      useApiKeyAuth = false
+      result = await executeRequest(false)
+    }
+
+    return {
+      ...result,
+      latencyMs: Math.max(0, Date.now() - startedAt),
     }
   }
 
