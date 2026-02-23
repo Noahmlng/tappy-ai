@@ -178,8 +178,10 @@ test('next-step sdk events: click/dismiss carry kind+adId and click updates dash
     const clickRows = Array.isArray(clickLogs.payload?.items) ? clickLogs.payload.items : []
     const clickRow = clickRows.find((item) => String(item?.requestId || '') === clickRequestId)
     assert.equal(Boolean(clickRow), true, 'click sdk_event must be stored')
+    assert.equal(clickRow.event, 'click')
     assert.equal(clickRow.kind, 'click')
     assert.equal(clickRow.adId, 'next_item_click_001')
+    assert.equal(clickRow.placementKey, 'next_step.intent_card')
 
     const dismissRequestId = `adreq_next_step_dismiss_${Date.now()}`
     const dismissEvent = await requestJson(baseUrl, '/api/v1/sdk/events', {
@@ -205,8 +207,10 @@ test('next-step sdk events: click/dismiss carry kind+adId and click updates dash
     const dismissRows = Array.isArray(dismissLogs.payload?.items) ? dismissLogs.payload.items : []
     const dismissRow = dismissRows.find((item) => String(item?.requestId || '') === dismissRequestId)
     assert.equal(Boolean(dismissRow), true, 'dismiss sdk_event must be stored')
+    assert.equal(dismissRow.event, 'dismiss')
     assert.equal(dismissRow.kind, 'dismiss')
     assert.equal(dismissRow.adId, 'next_item_dismiss_001')
+    assert.equal(dismissRow.placementKey, 'next_step.intent_card')
   } catch (error) {
     const logs = gateway.getLogs()
     const message = error instanceof Error ? error.message : String(error)
