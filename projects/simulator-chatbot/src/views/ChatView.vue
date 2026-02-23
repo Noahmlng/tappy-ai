@@ -531,7 +531,11 @@ const TOOL_STATES = ['planning', 'running', 'done', 'error']
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant. Be accurate, concise, and explicit about uncertainty.'
 const ADS_PLATFORM_APP_ID = import.meta.env.VITE_SIMULATOR_APP_ID || import.meta.env.APP_ID || 'simulator-chatbot'
 const ATTACH_LINK_PLACEMENT_KEY = 'attach.post_answer_render'
-const ENABLE_NEXT_STEP_FLOW = false
+const ENABLE_NEXT_STEP_FLOW = String(
+  import.meta.env.VITE_ENABLE_NEXT_STEP_FLOW ??
+  import.meta.env.ENABLE_NEXT_STEP_FLOW ??
+  'true',
+).trim().toLowerCase() !== 'false'
 
 const input = ref('')
 const historyQuery = ref('')
