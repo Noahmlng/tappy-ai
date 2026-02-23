@@ -1,5 +1,6 @@
 import { loadRuntimeConfig } from '../config/runtime-config.js'
 import { createCjConnector } from '../connectors/cj/index.js'
+import { createHouseConnector } from '../connectors/house/index.js'
 import { createPartnerStackConnector } from '../connectors/partnerstack/index.js'
 import { extractEntitiesWithLlm } from '../providers/ner/index.js'
 import { normalizeUnifiedOffers } from '../offers/index.js'
@@ -640,6 +641,8 @@ function buildQueryCacheKey(request, maxAds, entitySignature = '') {
       cjPage: debug.cjPage,
       cjWebsiteId: debug.cjWebsiteId,
       cjAdvertiserIds: debug.cjAdvertiserIds,
+      houseLimit: debug.houseLimit,
+      houseMarket: debug.houseMarket,
       disableNetworkDegradation: debug.disableNetworkDegradation,
       healthFailureThreshold: debug.healthFailureThreshold,
       circuitOpenMs: debug.circuitOpenMs,
@@ -823,6 +826,7 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
   const partnerstackConnector =
     options.partnerstackConnector || createPartnerStackConnector({ runtimeConfig })
   const cjConnector = options.cjConnector || createCjConnector({ runtimeConfig })
+  const houseConnector = options.houseConnector || createHouseConnector({ runtimeConfig })
   const nerExtractor = options.nerExtractor || extractEntitiesWithLlm
 
   let entities = []
@@ -1012,8 +1016,15 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     websiteId: request.context.debug.cjWebsiteId,
     advertiserIds: request.context.debug.cjAdvertiserIds
   }
+  const houseQueryParams = {
+    keywords,
+    query: request.context.query,
+    locale: request.context.locale,
+    market: request.context.debug.houseMarket || '',
+    limit: request.context.debug.houseLimit
+  }
 
-  const [partnerstackResult, cjResult] = await Promise.all([
+  const [partnerstackResult, cjResult, houseResult] = await Promise.all([
     fetchOffersWithSnapshot({
       network: 'partnerstack',
       queryParams: partnerstackQueryParams,
@@ -1041,23 +1052,63 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
       snapshotCacheTtlMs,
       degradationEnabled,
       healthPolicy
-    })
+    }),
+    isNextStepIntentCard
+      ? fetchOffersWithSnapshot({
+          network: 'house',
+          queryParams: houseQueryParams,
+          fetcher: () => (
+            typeof houseConnector.fetchProductOffersCatalog === 'function'
+              ? houseConnector.fetchProductOffersCatalog(houseQueryParams)
+              : houseConnector.fetchOffers(houseQueryParams)
+          ),
+          healthCheck: houseConnector.healthCheck,
+          snapshotCacheEnabled,
+          snapshotCacheTtlMs,
+          degradationEnabled,
+          healthPolicy
+        })
+      : Promise.resolve({
+          offers: [],
+          snapshotUsed: false,
+          cacheStatus: 'skipped',
+          error: null,
+          sourceDebug: null
+        })
   ])
 
-  const networkErrors = []
+  const networkHits = isNextStepIntentCard
+    ? {
+        partnerstack: 0,
+        cj: 0,
+        house: 0
+      }
+    : {
+        partnerstack: 0,
+        cj: 0
+      }
+  const snapshotUsage = isNextStepIntentCard
+    ? {
+        partnerstack: partnerstackResult.snapshotUsed,
+        cj: cjResult.snapshotUsed,
+        house: houseResult.snapshotUsed
+      }
+    : {
+        partnerstack: partnerstackResult.snapshotUsed,
+        cj: cjResult.snapshotUsed
+      }
+
   const rawOffers = []
-  const networkHits = {
-    partnerstack: 0,
-    cj: 0
-  }
-  const snapshotUsage = {
-    partnerstack: partnerstackResult.snapshotUsed,
-    cj: cjResult.snapshotUsed
-  }
+  const networkErrors = []
 
   networkHits.partnerstack = partnerstackResult.offers.length
   networkHits.cj = cjResult.offers.length
   rawOffers.push(...partnerstackResult.offers, ...cjResult.offers)
+
+  if (isNextStepIntentCard) {
+    networkHits.house = houseResult.offers.length
+    rawOffers.push(...houseResult.offers)
+  }
 
   if (partnerstackResult.error) {
     networkErrors.push({
@@ -1071,6 +1122,13 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
       network: 'cj',
       errorCode: cjResult.error.errorCode,
       message: cjResult.error.message
+    })
+  }
+  if (isNextStepIntentCard && houseResult.error) {
+    networkErrors.push({
+      network: 'house',
+      errorCode: houseResult.error.errorCode,
+      message: houseResult.error.message
     })
   }
 
@@ -1129,18 +1187,36 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     networkHits,
     networkErrors,
     snapshotUsage,
-    snapshotCacheStatus: {
-      partnerstack: partnerstackResult.cacheStatus,
-      cj: cjResult.cacheStatus
-    },
-    sourceModes: {
-      partnerstack: isNextStepIntentCard ? 'links_catalog' : 'offers_catalog',
-      cj: isNextStepIntentCard ? 'links_catalog' : 'offers_catalog'
-    },
-    sourceDebug: {
-      partnerstack: partnerstackResult.sourceDebug || {},
-      cj: cjResult.sourceDebug || {}
-    },
+    snapshotCacheStatus: isNextStepIntentCard
+      ? {
+          partnerstack: partnerstackResult.cacheStatus,
+          cj: cjResult.cacheStatus,
+          house: houseResult.cacheStatus
+        }
+      : {
+          partnerstack: partnerstackResult.cacheStatus,
+          cj: cjResult.cacheStatus
+        },
+    sourceModes: isNextStepIntentCard
+      ? {
+          partnerstack: 'links_catalog',
+          cj: 'links_catalog',
+          house: 'product_offers_catalog'
+        }
+      : {
+          partnerstack: 'offers_catalog',
+          cj: 'offers_catalog'
+        },
+    sourceDebug: isNextStepIntentCard
+      ? {
+          partnerstack: partnerstackResult.sourceDebug || {},
+          cj: cjResult.sourceDebug || {},
+          house: houseResult.sourceDebug || {}
+        }
+      : {
+          partnerstack: partnerstackResult.sourceDebug || {},
+          cj: cjResult.sourceDebug || {}
+        },
     intentCardCatalog: isNextStepIntentCard ? summarizeIntentCardCatalog(intentCardCatalog) : null,
     networkHealth: getAllNetworkHealth(),
     cache: {

@@ -135,6 +135,38 @@ function createMockCjConnector() {
   }
 }
 
+function createMockHouseConnector() {
+  return {
+    async fetchProductOffersCatalog() {
+      return {
+        offers: [
+          {
+            offerId: 'house:product:mock-next-step-1',
+            sourceNetwork: 'house',
+            sourceType: 'product',
+            title: 'Mock House Product Offer',
+            description: 'Mock house product catalog description',
+            targetUrl: 'https://house.example.com/product/mock-next-step-1',
+            trackingUrl: 'https://house.example.com/product/mock-next-step-1',
+            entityText: 'mock',
+            normalizedEntityText: 'mock',
+            entityType: 'product',
+            availability: 'active',
+            metadata: {
+              intentCardItemId: 'mock_house_item_1',
+              category: 'software',
+              matchTags: ['software', 'mock']
+            }
+          }
+        ],
+        debug: {
+          mode: 'house_product_offers_catalog'
+        }
+      }
+    },
+  }
+}
+
 function createLogger(verbose = false) {
   if (!verbose) {
     return {
@@ -185,11 +217,11 @@ function assertSmokeResult(result, mode, adRequest) {
     && adRequest?.placementId === 'next_step.intent_card'
     && result.adResponse.ads.length > 0
   ) {
-    const hasLinkCatalogOffer = result.adResponse.ads.some((item) =>
-      String(item?.adId || '').includes(':link:')
+    const hasHouseProductOffer = result.adResponse.ads.some((item) =>
+      String(item?.sourceNetwork || '').toLowerCase() === 'house'
     )
-    if (!hasLinkCatalogOffer) {
-      throw new Error('Expected next_step.intent_card mock smoke to use link catalog offers.')
+    if (!hasHouseProductOffer) {
+      throw new Error('Expected next_step.intent_card mock smoke to include house product catalog offers.')
     }
   }
 }
@@ -213,7 +245,8 @@ async function main() {
           },
           nerExtractor: createMockNerExtractor(),
           partnerstackConnector: createMockPartnerStackConnector(),
-          cjConnector: createMockCjConnector()
+          cjConnector: createMockCjConnector(),
+          houseConnector: createMockHouseConnector()
         }
 
   const result = await runAdsRetrievalPipeline(adRequest, options)

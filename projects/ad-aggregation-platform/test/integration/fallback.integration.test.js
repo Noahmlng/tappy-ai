@@ -208,3 +208,94 @@ test('fallback baseline: circuit-open skips live fetch and uses snapshot fallbac
     true,
   )
 })
+
+test('next-step runtime consumes house product offers catalog when enabled', async () => {
+  const runtimeConfig = createRuntimeConfig()
+  const request = {
+    ...buildRequest('next_step_house_catalog'),
+    placementId: 'next_step.intent_card',
+    context: {
+      query: 'Acorns investing tools for beginners',
+      answerText: 'You can compare finance apps for saving and investing.',
+      locale: 'en-US',
+      testAllOffers: false,
+      debug: {
+        disableQueryCache: true,
+      },
+    },
+  }
+
+  let houseCalls = 0
+
+  const result = await runAdsRetrievalPipeline(request, {
+    runtimeConfig,
+    disableQueryCache: true,
+    nerExtractor: async () => ({
+      entities: [
+        {
+          entityText: 'Acorns',
+          normalizedText: 'acorns',
+          entityType: 'brand',
+          confidence: 0.96,
+        },
+      ],
+    }),
+    partnerstackConnector: {
+      async fetchLinksCatalog() {
+        return { offers: [], debug: { mode: 'partnerstack_links_catalog' } }
+      },
+      async fetchOffers() {
+        return { offers: [] }
+      },
+    },
+    cjConnector: {
+      async fetchLinksCatalog() {
+        return { offers: [], debug: { mode: 'cj_links_catalog' } }
+      },
+      async fetchOffers() {
+        return { offers: [] }
+      },
+    },
+    houseConnector: {
+      async fetchProductOffersCatalog() {
+        houseCalls += 1
+        return {
+          offers: [
+            {
+              sourceNetwork: 'house',
+              sourceType: 'product',
+              sourceId: 'mock_house_offer_1',
+              offerId: 'house:product:mock_house_offer_1',
+              title: 'Acorns digital banking Essential Pick',
+              description: 'Acorns finance and investing option for beginner users.',
+              targetUrl: 'https://acorns.com/products/digital-banking-1',
+              trackingUrl: 'https://acorns.com/products/digital-banking-1',
+              availability: 'active',
+              entityText: 'Acorns',
+              normalizedEntityText: 'acorns',
+              entityType: 'product',
+              merchantName: 'Acorns',
+              productName: 'Acorns digital banking Essential Pick',
+              metadata: {
+                intentCardItemId: 'syn_prd_house_1',
+                category: 'finance',
+                matchTags: ['finance', 'investing'],
+              },
+            },
+          ],
+          debug: {
+            mode: 'house_product_offers_catalog',
+          },
+        }
+      },
+    },
+  })
+
+  assert.equal(houseCalls, 1)
+  assert.equal(Array.isArray(result.adResponse.ads), true)
+  assert.equal(result.adResponse.ads.length, 1)
+  assert.equal(result.adResponse.ads[0].sourceNetwork, 'house')
+  assert.equal(result.debug.networkHits.house, 1)
+  assert.equal(result.debug.sourceModes.house, 'product_offers_catalog')
+  assert.equal(result.debug.sourceDebug.house.mode, 'house_product_offers_catalog')
+})
