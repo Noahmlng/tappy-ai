@@ -5,8 +5,10 @@ import { createPartnerStackConnector } from '../connectors/partnerstack/index.js
 import { extractEntitiesWithLlm } from '../providers/ner/index.js'
 import { normalizeUnifiedOffers } from '../offers/index.js'
 import {
+  createIntentCardVectorIndex,
   enrichOffersWithIntentCardCatalog,
   normalizeIntentCardCatalog,
+  retrieveIntentCardTopK,
   summarizeIntentCardCatalog,
 } from '../providers/intent-card/index.js'
 import { offerSnapshotCache, queryCache } from '../cache/runtime-caches.js'
@@ -25,6 +27,7 @@ const DEFAULT_PLACEMENT_ID = 'attach.post_answer_render'
 const DEFAULT_NETWORK_ORDER = ['partnerstack', 'cj']
 const DEFAULT_QUERY_CACHE_TTL_MS = 15000
 const DEFAULT_SNAPSHOT_CACHE_TTL_MS = 120000
+const DEFAULT_INTENT_CARD_RETRIEVAL_MIN_SCORE = 0.08
 const QUERY_CACHE_VERSION = 'v1'
 const INACTIVE_OFFER_STATUSES = new Set([
   'inactive',
@@ -609,6 +612,97 @@ function rankAndSelectOffers(offers, entities, requestContext, maxAds) {
   }
 }
 
+function normalizePreferenceFacetsForIntentCard(facets = []) {
+  if (!Array.isArray(facets)) return []
+
+  return facets
+    .map((facet) => {
+      if (!facet || typeof facet !== 'object') return null
+
+      const facetKey = cleanText(facet.facetKey || facet.facet_key).toLowerCase()
+      const facetValue = cleanText(facet.facetValue || facet.facet_value)
+      if (!facetKey || !facetValue) return null
+
+      return {
+        facet_key: facetKey,
+        facet_value: facetValue,
+        confidence: clampNumber(facet.confidence, 0, 1, 0.6),
+      }
+    })
+    .filter(Boolean)
+}
+
+function buildIntentCardOfferLookup(offers = []) {
+  const lookup = new Map()
+
+  for (const offer of Array.isArray(offers) ? offers : []) {
+    const itemId = cleanText(offer?.metadata?.intentCardCatalog?.item_id)
+    if (!itemId || lookup.has(itemId)) continue
+    lookup.set(itemId, offer)
+  }
+
+  return lookup
+}
+
+function fallbackSelectOffersByIntentCardVector({ offers = [], catalog = [], requestContext = {}, maxAds = 3 }) {
+  const query = cleanText(requestContext.query)
+  if (!query || !Array.isArray(catalog) || catalog.length === 0) {
+    return {
+      selected: [],
+      retrieval: null,
+      indexStats: null,
+    }
+  }
+
+  const vectorIndex = createIntentCardVectorIndex(catalog)
+  const retrieval = retrieveIntentCardTopK(vectorIndex, {
+    query,
+    facets: normalizePreferenceFacetsForIntentCard(requestContext.preferenceFacets),
+    topK: maxAds,
+    minScore: DEFAULT_INTENT_CARD_RETRIEVAL_MIN_SCORE,
+  })
+
+  if (!Array.isArray(retrieval?.items) || retrieval.items.length === 0) {
+    return {
+      selected: [],
+      retrieval,
+      indexStats: {
+        itemCount: vectorIndex.items.length,
+        vocabularySize: vectorIndex.vocabularySize,
+      },
+    }
+  }
+
+  const offerLookup = buildIntentCardOfferLookup(offers)
+  const selected = []
+
+  for (const item of retrieval.items) {
+    const itemId = cleanText(item?.item_id)
+    if (!itemId) continue
+
+    const offer = offerLookup.get(itemId)
+    if (!offer) continue
+
+    selected.push({
+      offer,
+      score: typeof item.score === 'number' ? item.score : 0,
+      matchedEntityText: cleanText(item.title) || cleanText(offer.entityText),
+      matchSource: 'intent_card_vector',
+    })
+
+    if (selected.length >= maxAds) break
+  }
+
+  return {
+    selected,
+    retrieval,
+    indexStats: {
+      itemCount: vectorIndex.items.length,
+      vocabularySize: vectorIndex.vocabularySize,
+    },
+  }
+}
+
 function createRequestId() {
   return `adreq_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`
 }
@@ -1137,18 +1231,49 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
   const offersForRanking = isNextStepIntentCard
     ? enrichOffersWithIntentCardCatalog(offers, intentCardCatalog)
     : offers
-  const {
-    selected,
-    invalidForTestAll,
-    matchedCandidates = 0,
-    unmatchedOffers = 0,
-    semanticFilteredOut = 0,
-  } = rankAndSelectOffers(offersForRanking, entities, request.context, maxAds)
+  const selection = rankAndSelectOffers(offersForRanking, entities, request.context, maxAds)
+  let selected = Array.isArray(selection.selected) ? selection.selected : []
+  const invalidForTestAll = Number.isFinite(selection.invalidForTestAll) ? selection.invalidForTestAll : 0
+  const matchedCandidates = Number.isFinite(selection.matchedCandidates) ? selection.matchedCandidates : 0
+  const unmatchedOffers = Number.isFinite(selection.unmatchedOffers) ? selection.unmatchedOffers : 0
+  const semanticFilteredOut = Number.isFinite(selection.semanticFilteredOut) ? selection.semanticFilteredOut : 0
+  let intentCardVectorFallbackUsed = false
+  let intentCardVectorFallbackSelected = 0
+  let intentCardVectorFallbackMeta = null
+
+  if (isNextStepIntentCard && selected.length === 0 && !request.context.testAllOffers) {
+    const vectorFallback = fallbackSelectOffersByIntentCardVector({
+      offers: offersForRanking,
+      catalog: intentCardCatalog,
+      requestContext: request.context,
+      maxAds,
+    })
+
+    if (Array.isArray(vectorFallback.selected) && vectorFallback.selected.length > 0) {
+      selected = vectorFallback.selected
+      intentCardVectorFallbackUsed = true
+      intentCardVectorFallbackSelected = vectorFallback.selected.length
+    }
+
+    if (vectorFallback.retrieval || vectorFallback.indexStats) {
+      intentCardVectorFallbackMeta = {
+        ...(vectorFallback.indexStats || {}),
+        candidateCount: Number(vectorFallback.retrieval?.meta?.candidateCount || 0),
+        topK: Number(vectorFallback.retrieval?.meta?.topK || 0),
+        minScore: Number(
+          vectorFallback.retrieval?.meta?.minScore ?? DEFAULT_INTENT_CARD_RETRIEVAL_MIN_SCORE
+        ),
+      }
+    }
+  }
+
   const ads = selected.map((item) =>
     toAdRecord(item.offer, {
       reason: request.context.testAllOffers
         ? 'test_all_offers'
-        : 'entity_match',
+        : item.matchSource === 'intent_card_vector'
+          ? 'intent_card_vector'
+          : 'entity_match',
       entityText: item.matchedEntityText
     })
   )
@@ -1182,6 +1307,9 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     matchedCandidates,
     unmatchedOffers,
     semanticFilteredOut,
+    intentCardVectorFallbackUsed,
+    intentCardVectorFallbackSelected,
+    intentCardVectorFallbackMeta,
     invalidOffersDroppedByTestAllValidation: invalidForTestAll,
     networkOrder: DEFAULT_NETWORK_ORDER,
     networkHits,

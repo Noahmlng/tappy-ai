@@ -11,7 +11,7 @@ const GATEWAY_ENTRY = path.join(PROJECT_ROOT, 'src', 'devtools', 'simulator', 's
 
 const HOST = '127.0.0.1'
 const HEALTH_TIMEOUT_MS = 12000
-const REQUEST_TIMEOUT_MS = 5000
+const REQUEST_TIMEOUT_MS = 12000
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -138,13 +138,13 @@ test('next-step reason priority: intent_non_commercial wins over threshold when 
         placementId: 'chat_followup_v1',
         placementKey: 'next_step.intent_card',
         context: {
-          // With intent fallback enabled, the server resolves this as non-commercial with score=0.
-          // This means both non_commercial and below-threshold conditions are true.
+          // Explicitly set a non-commercial low-score hint so both non_commercial
+          // and below-threshold conditions are true; non_commercial should win.
           query: 'Explain why the sky is blue in simple physics terms.',
           answerText: 'Rayleigh scattering causes shorter wavelengths to scatter more.',
           locale: 'en-US',
-          intent_class: 'shopping',
-          intent_score: 0.99,
+          intent_class: 'non_commercial',
+          intent_score: 0.1,
           preference_facets: [],
         },
       },

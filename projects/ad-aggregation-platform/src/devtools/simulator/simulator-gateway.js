@@ -74,6 +74,14 @@ const ATTACH_MVP_EVENT = 'answer_completed'
 const NEXT_STEP_INTENT_CARD_PLACEMENT_KEY = 'next_step.intent_card'
 const MANAGED_ROUTING_MODE = 'managed_mediation'
 const NEXT_STEP_INTENT_CARD_EVENTS = new Set(['followup_generation', 'follow_up_generation'])
+const NEXT_STEP_INTENT_CLASSES = new Set([
+  'shopping',
+  'purchase_intent',
+  'gifting',
+  'product_exploration',
+  'non_commercial',
+  'other',
+])
 const NEXT_STEP_INTENT_POST_RULES = Object.freeze({
   intentThresholdFloor: 0.35,
   cooldownSeconds: 20,
@@ -84,9 +92,6 @@ const NEXT_STEP_SENSITIVE_TOPICS = [
   'medical',
   'medicine',
   'health diagnosis',
-  'finance',
-  'financial advice',
-  'investment',
   'legal',
   'lawsuit',
   'self-harm',
@@ -99,8 +104,6 @@ const NEXT_STEP_SENSITIVE_TOPICS = [
   'diagnosis',
   '处方',
   '医疗',
-  '投资',
-  '理财',
   '法律',
   '未成年',
   '自残',
@@ -1103,6 +1106,33 @@ function mapInferenceFacetsToInternal(value) {
     .filter(Boolean)
 }
 
+function mapInternalFacetsToInference(value) {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((facet) => {
+      if (!facet || typeof facet !== 'object') return null
+      const facetKey = String(facet.facetKey || '').trim()
+      const facetValue = String(facet.facetValue || '').trim()
+      if (!facetKey || !facetValue) return null
+      const confidence = clampNumber(facet.confidence, 0, 1, NaN)
+      const source = String(facet.source || '').trim()
+      return {
+        facet_key: facetKey,
+        facet_value: facetValue,
+        ...(Number.isFinite(confidence) ? { confidence } : {}),
+        ...(source ? { source } : {}),
+      }
+    })
+    .filter(Boolean)
+}
+
+function normalizeHintIntentClass(value) {
+  const text = String(value || '').trim().toLowerCase()
+  if (!text) return ''
+  if (!NEXT_STEP_INTENT_CLASSES.has(text)) return ''
+  return text
+}
+
 function mergeUniqueStrings(...values) {
   const set = new Set()
   for (const value of values) {
@@ -1141,15 +1171,38 @@ async function resolveIntentInferenceForNextStep(request) {
     hints,
   })
 
-  const resolvedIntentClass = String(inference?.intent_class || 'non_commercial').trim().toLowerCase()
-  const resolvedIntentScore = Number.isFinite(inference?.intent_score)
-    ? clampNumber(inference.intent_score, 0, 1, 0)
-    : 0
-  const resolvedPreferenceFacets = mapInferenceFacetsToInternal(inference?.preference_facets)
+  const hintIntentClass = normalizeHintIntentClass(hints?.intent_class)
+  const hintIntentScore = clampNumber(hints?.intent_score, 0, 1, NaN)
+  const hintPreferenceFacets = normalizeNextStepPreferenceFacets(hints?.preference_facets)
+  const fallbackUseClientHints = Boolean(inference?.fallbackUsed) && Boolean(hintIntentClass)
+
+  const resolvedIntentClass = fallbackUseClientHints
+    ? hintIntentClass
+    : String(inference?.intent_class || 'non_commercial').trim().toLowerCase()
+  const resolvedIntentScore = fallbackUseClientHints
+    ? (Number.isFinite(hintIntentScore) ? hintIntentScore : 0)
+    : (Number.isFinite(inference?.intent_score)
+      ? clampNumber(inference.intent_score, 0, 1, 0)
+      : 0)
+  const resolvedPreferenceFacets = fallbackUseClientHints
+    ? hintPreferenceFacets
+    : mapInferenceFacetsToInternal(inference?.preference_facets)
   const resolvedConstraints = mergeConstraints(context.constraints, inference?.constraints)
+  const effectiveInference = fallbackUseClientHints
+    ? {
+        ...inference,
+        intent_class: resolvedIntentClass,
+        intent_score: resolvedIntentScore,
+        preference_facets: mapInternalFacetsToInference(resolvedPreferenceFacets),
+        inference_trace: [
+          ...(Array.isArray(inference?.inference_trace) ? inference.inference_trace : []),
+          'fallback:client_hints_applied',
+        ].slice(0, 10),
+      }
+    : inference
 
   return {
-    inference,
+    inference: effectiveInference,
     resolvedContext: {
       ...context,
       intentClass: resolvedIntentClass || 'non_commercial',
@@ -1958,6 +2011,20 @@ function summarizeRuntimeDebug(debug) {
     selectedOffers: Number.isFinite(debug.selectedOffers) ? debug.selectedOffers : 0,
     matchedCandidates: Number.isFinite(debug.matchedCandidates) ? debug.matchedCandidates : 0,
     unmatchedOffers: Number.isFinite(debug.unmatchedOffers) ? debug.unmatchedOffers : 0,
+    intentCardVectorFallbackUsed: Boolean(debug.intentCardVectorFallbackUsed),
+    intentCardVectorFallbackSelected: Number.isFinite(debug.intentCardVectorFallbackSelected)
+      ? debug.intentCardVectorFallbackSelected
+      : 0,
+    intentCardVectorFallbackMeta: debug.intentCardVectorFallbackMeta &&
+      typeof debug.intentCardVectorFallbackMeta === 'object'
+      ? {
+          itemCount: toPositiveInteger(debug.intentCardVectorFallbackMeta.itemCount, 0),
+          vocabularySize: toPositiveInteger(debug.intentCardVectorFallbackMeta.vocabularySize, 0),
+          candidateCount: toPositiveInteger(debug.intentCardVectorFallbackMeta.candidateCount, 0),
+          topK: toPositiveInteger(debug.intentCardVectorFallbackMeta.topK, 0),
+          minScore: clampNumber(debug.intentCardVectorFallbackMeta.minScore, 0, 1, 0),
+        }
+      : null,
     noFillReason: String(debug.noFillReason || '').trim(),
     keywords: String(debug.keywords || '').trim(),
     ner: debug.ner && typeof debug.ner === 'object'
