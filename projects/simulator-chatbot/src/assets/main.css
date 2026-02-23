@@ -1,70 +1,91 @@
 @import "tailwindcss";
-@import "tw-animate-css";
-@import "../styles/fonts.css";
-@import "../styles/tokens.css";
-@import "../styles/chat-primitives.css";
-
-@custom-variant dark (&:is(.dark *));
-
-@theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-}
 
 :root {
-  --radius: 12px;
-
-  --background: var(--chat-bg);
-  --foreground: var(--chat-main-ink);
-
-  --card: #ffffff;
-  --card-foreground: var(--chat-main-ink);
-  --popover: #ffffff;
-  --popover-foreground: var(--chat-main-ink);
-
-  --primary: #1b1f25;
-  --primary-foreground: #ffffff;
-  --secondary: #eef3fb;
-  --secondary-foreground: #22324a;
-
-  --muted: #f3f6fb;
-  --muted-foreground: var(--chat-main-muted);
-  --accent: #edf3ff;
-  --accent-foreground: #254a89;
-
-  --destructive: #b53b33;
-  --border: var(--chat-stroke);
-  --input: var(--chat-stroke);
-  --ring: var(--chat-stroke-strong);
+  --chat-sidebar-bg: #171717;
+  --chat-sidebar-surface: #212121;
+  --chat-sidebar-border: #2f2f2f;
+  --chat-sidebar-text: #e8e8e8;
+  --chat-sidebar-muted: #a6a6a6;
+  --chat-main-bg: #ffffff;
+  --chat-main-text: #1f1f1f;
 }
 
-@layer base {
-  * {
-    @apply border-border;
-  }
+body {
+  margin: 0;
+  background: var(--chat-main-bg);
+  color: var(--chat-main-text);
+  font-family: "Soehne", "Helvetica Neue", Helvetica, "Segoe UI", sans-serif;
+}
 
-  body {
-    @apply bg-background text-foreground antialiased;
-  }
+/* 消息出现动效 */
+.animate-in {
+  animation: fade-in 0.28s both, slide-in-from-bottom 0.28s both;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-in-from-bottom {
+  from { transform: translateY(0.45rem); }
+  to { transform: translateY(0); }
+}
+
+/* 全局滚动条样式 */
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #cfd3d8;
+  border-radius: 10px;
+  transition: background 0.2s ease;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Firefox 滚动条样式 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cfd3d8 transparent;
+}
+
+/* 滚动条美化（保留原有类） */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #d4d7dc;
+  border-radius: 10px;
+}
+.scrollbar-thin:hover::-webkit-scrollbar-thumb {
+  background: #bfc5cc;
+}
+
+/* 自定义缓动曲线 */
+.cubic-bezier-transition {
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 增强的光标闪烁效果 */
+.cursor-blink {
+  animation: cursor-blink-animation 1s ease-in-out infinite;
+}
+
+@keyframes cursor-blink-animation {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* 隐藏 textarea 的滚动条 */
+textarea::-webkit-scrollbar {
+  display: none;
 }

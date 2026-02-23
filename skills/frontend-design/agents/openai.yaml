@@ -1,4 +1,0 @@
-interface:
-  display_name: "Frontend Design"
-  short_description: "Craft bold, production-ready frontend aesthetics"
-  default_prompt: "Use $frontend-design to design and implement a distinctive production frontend UI with a clear aesthetic direction."

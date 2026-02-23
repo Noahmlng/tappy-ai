@@ -1,79 +1,493 @@
 <template>
-  <div class="chat-app">
-    <ChatSidebar
-      :is-sidebar-open="isSidebarOpen"
-      :history-query="historyQuery"
-      :filtered-sessions="filteredSessions"
-      :active-session-id="activeSessionId"
-      :active-session="activeSession"
-      :active-system-prompt="activeSystemPrompt"
-      :active-session-turn-logs="activeSessionTurnLogs"
-      :trace-panel-open="isTracePanelOpen"
-      :is-debug-mode="isDebugMode"
-      :format-session-time="formatSessionTime"
-      :format-trace-time="formatTraceTime"
-      :format-trace-event-type="formatTraceEventType"
-      @close-sidebar="isSidebarOpen = false"
-      @start-new-chat="startNewChat"
-      @open-session="openSession"
-      @delete-session="deleteSession"
-      @update:history-query="historyQuery = $event"
-      @reset-system-prompt="resetActiveSystemPrompt"
-      @update:active-system-prompt="activeSystemPrompt = $event"
-      @clear-history="clearHistory"
-      @update:trace-panel-open="isTracePanelOpen = $event"
-    />
+  <div class="flex h-screen w-full overflow-hidden bg-[#f7f7f8] font-sans text-[#1f1f1f]">
+    <aside
+      :class="[
+        'fixed z-40 flex h-full w-[260px] -translate-x-full flex-col border-r border-[#2a2a2a] bg-[var(--chat-sidebar-bg)] text-[var(--chat-sidebar-text)] transition-transform duration-300 ease-in-out lg:relative lg:z-0 lg:translate-x-0',
+        isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+      ]"
+    >
+      <div class="border-b border-[var(--chat-sidebar-border)] p-3">
+        <div class="mb-2 flex items-center justify-between lg:hidden">
+          <button @click="isSidebarOpen = false" class="rounded-lg p-2 text-[var(--chat-sidebar-muted)] hover:bg-[#262626]">
+            <X :size="18" />
+          </button>
+        </div>
 
-    <main class="chat-main chat-main-shell relative flex h-full flex-1 flex-col overflow-hidden">
-      <ChatTopbar
-        :is-sidebar-open="isSidebarOpen"
-        title="Simulator"
-        :is-debug-mode="isDebugMode"
-        @open-sidebar="isSidebarOpen = true"
-        @start-new-chat="startNewChat"
-        @toggle-debug="isDebugMode = !isDebugMode"
-      />
+        <button
+          @click="startNewChat"
+          class="group flex w-full items-center justify-between rounded-xl border border-[var(--chat-sidebar-border)] bg-[var(--chat-sidebar-surface)] p-2 text-sm font-medium transition-colors hover:bg-[#2b2b2b]"
+        >
+          <div class="flex items-center gap-2">
+            <div class="rounded-full border border-[#3a3a3a] bg-[#151515] p-1">
+              <Plus :size="14" />
+            </div>
+            <span>New Chat</span>
+          </div>
+          <MessageSquare :size="14" class="text-[var(--chat-sidebar-muted)] opacity-0 group-hover:opacity-100" />
+        </button>
 
-      <div ref="scrollRef" class="chat-main-scroll flex flex-1 flex-col overflow-y-auto">
-        <MessageList
-          :has-started="hasStarted"
-          :current-messages="currentMessages"
-          :is-loading="isLoading"
-          :query-rewrite-message-id="queryRewriteMessageId"
-          :query-rewrite-draft="queryRewriteDraft"
-          :format-tool-state="formatToolState"
-          :get-host-label="getHostLabel"
-          :resolve-message-content-for-rendering="resolveMessageContentForRendering"
-          :resolve-inline-offers-for-message="resolveInlineOffersForMessage"
-          :resolve-ad-href="resolveAdHref"
-          :is-debug-mode="isDebugMode"
-          @start-query-rewrite-edit="startQueryRewriteEdit"
-          @cancel-query-rewrite-edit="cancelQueryRewriteEdit"
-          @update:query-rewrite-draft="queryRewriteDraft = $event"
-          @submit-query-rewrite="submitQueryRewrite"
-          @inline-offer-click="({ msg, ad }) => handleInlineOfferClick(msg, ad)"
-          @inline-marker-count="({ msg, count }) => handleInlineMarkerCount(msg, count)"
-          @regenerate="handleRegenerate"
-          @source-click="({ msg, source }) => handleSourceClick(msg, source)"
-          @sponsored-ad-click="({ msg, ad }) => handleSponsoredAdClick(msg, ad)"
-          @follow-up-select="handleFollowUpSelect"
-          @next-step-ad-click="({ msg, ad }) => handleNextStepAdClick(msg, ad)"
-          @next-step-ad-dismiss="handleNextStepAdDismiss"
-        />
+        <label class="mt-2 flex items-center gap-2 rounded-xl border border-[var(--chat-sidebar-border)] bg-[var(--chat-sidebar-surface)] px-2 py-2 text-sm">
+          <Search :size="16" class="text-[var(--chat-sidebar-muted)]" />
+          <input
+            v-model="historyQuery"
+            type="text"
+            placeholder="Search history"
+            class="w-full bg-transparent text-[var(--chat-sidebar-text)] outline-none placeholder:text-[var(--chat-sidebar-muted)]"
+          />
+        </label>
+      </div>
 
-        <ComposerBar
-          :model-value="input"
-          :is-loading="isLoading"
-          :has-started="hasStarted"
-          @update:model-value="input = $event"
-          @send="handleSend"
-          @composition-start="isComposing = true"
-          @composition-end="isComposing = false"
-        />
+      <div class="scrollbar-thin flex-1 space-y-1 overflow-y-auto px-3 py-2">
+        <div class="px-2 py-2 text-[11px] font-semibold uppercase tracking-tight text-[var(--chat-sidebar-muted)]">Recent</div>
 
         <div
-          class="cubic-bezier-transition shrink-0 transition-all duration-[220ms]"
-          :class="hasStarted ? 'max-h-0' : 'max-h-[12vh] flex-grow'"
+          v-for="session in filteredSessions"
+          :key="session.id"
+          :class="[
+            'group relative w-full rounded-lg p-2 text-sm outline-none transition-colors',
+            session.id === activeSessionId
+              ? 'bg-[#2f2f2f] text-white'
+              : 'text-[var(--chat-sidebar-text)] hover:bg-[#262626]'
+          ]"
+        >
+          <button @click="openSession(session.id)" class="w-full pr-9 text-left">
+            <div class="truncate">{{ session.title }}</div>
+            <div class="mt-1 text-[11px] text-[var(--chat-sidebar-muted)]">{{ formatSessionTime(session.updatedAt) }}</div>
+          </button>
+          <button
+            @click.stop="deleteSession(session.id)"
+            class="absolute right-2 top-1/2 hidden -translate-y-1/2 rounded p-1 text-[var(--chat-sidebar-muted)] hover:bg-[#3a3a3a] group-hover:flex"
+            aria-label="Delete chat"
+            title="Delete chat"
+          >
+            <Trash2 :size="14" />
+          </button>
+        </div>
+
+        <div v-if="filteredSessions.length === 0" class="px-2 py-5 text-xs text-[var(--chat-sidebar-muted)]">
+          No chat history.
+        </div>
+      </div>
+
+      <div class="space-y-2 border-t border-[var(--chat-sidebar-border)] p-3">
+        <details class="rounded-xl border border-[var(--chat-sidebar-border)] bg-[var(--chat-sidebar-surface)] p-2">
+          <summary class="cursor-pointer list-none text-[11px] font-semibold uppercase tracking-wide text-[var(--chat-sidebar-muted)]">
+            System Prompt
+          </summary>
+          <div class="mt-2 flex items-center justify-end">
+            <button
+              class="rounded border border-[#3a3a3a] px-1.5 py-0.5 text-[10px] text-[var(--chat-sidebar-muted)] hover:bg-[#2d2d2d] disabled:opacity-60"
+              :disabled="!activeSession"
+              @click="resetActiveSystemPrompt"
+            >
+              Reset
+            </button>
+          </div>
+          <textarea
+            v-model="activeSystemPrompt"
+            :disabled="!activeSession"
+            rows="5"
+            class="mt-2 w-full resize-y rounded-lg border border-[#3a3a3a] bg-[#1b1b1b] px-2 py-1.5 text-[12px] text-[var(--chat-sidebar-text)] outline-none focus:border-[#5a5a5a] disabled:opacity-60"
+            placeholder="Set a per-chat system prompt..."
+          ></textarea>
+          <div class="mt-1 text-[10px] text-[var(--chat-sidebar-muted)]">
+            Applied to every request in the current chat. New Chat resets to default.
+          </div>
+        </details>
+
+        <details class="rounded-xl border border-[var(--chat-sidebar-border)] bg-[var(--chat-sidebar-surface)] p-2">
+          <summary class="cursor-pointer list-none text-[11px] font-semibold uppercase tracking-wide text-[var(--chat-sidebar-muted)]">
+            Turn Trace
+          </summary>
+          <div v-if="activeSessionTurnLogs.length === 0" class="mt-2 text-[11px] text-[var(--chat-sidebar-muted)]">
+            No turn logs yet.
+          </div>
+          <div v-else class="mt-2 max-h-56 space-y-1 overflow-y-auto pr-1">
+            <details
+              v-for="log in activeSessionTurnLogs"
+              :key="log.turnId"
+              class="rounded border border-[#333333] bg-[#1a1a1a] px-2 py-1"
+            >
+              <summary class="list-none cursor-pointer">
+                <div class="flex items-center gap-1 text-[11px]">
+                  <span class="truncate font-medium text-[var(--chat-sidebar-text)]">{{ log.userQuery }}</span>
+                  <span
+                    :class="[
+                      'ml-auto rounded px-1.5 py-0.5 text-[10px] font-semibold',
+                      log.toolUsed ? 'bg-emerald-500/20 text-emerald-300' : 'bg-[#303030] text-[var(--chat-sidebar-muted)]'
+                    ]"
+                  >
+                    {{ log.toolUsed ? 'Tool: YES' : 'Tool: NO' }}
+                  </span>
+                </div>
+                <div class="mt-1 text-[10px] text-[var(--chat-sidebar-muted)]">{{ formatTraceTime(log.startedAt) }}</div>
+              </summary>
+
+              <div class="mt-2 border-t border-[#333333] pt-2 text-[11px] text-[var(--chat-sidebar-text)]">
+                <div class="mb-1 text-[10px] text-[var(--chat-sidebar-muted)]">Retry count: {{ log.retryCount || 0 }}</div>
+                <ul class="space-y-1">
+                  <li v-for="event in log.events" :key="event.id" class="leading-tight">
+                    <span class="text-[var(--chat-sidebar-muted)]">{{ formatTraceTime(event.at) }}</span>
+                    <span class="mx-1">·</span>
+                    <span>{{ formatTraceEventType(event.type) }}</span>
+                  </li>
+                </ul>
+              </div>
+            </details>
+          </div>
+        </details>
+
+        <button
+          @click="clearHistory"
+          class="w-full rounded-xl border border-[var(--chat-sidebar-border)] bg-[var(--chat-sidebar-surface)] px-3 py-2 text-xs font-medium text-[var(--chat-sidebar-text)] hover:bg-[#2b2b2b]"
+        >
+          Clear History
+        </button>
+      </div>
+    </aside>
+
+    <main class="relative flex h-full flex-1 flex-col overflow-hidden bg-[var(--chat-main-bg)]">
+      <header class="z-30 flex h-14 shrink-0 items-center justify-between border-b border-[#ececec] bg-white/90 px-4 backdrop-blur-md">
+        <div class="flex items-center gap-2">
+          <button
+            v-if="!isSidebarOpen"
+            @click="isSidebarOpen = true"
+            class="hidden rounded-lg p-2 text-[#6b6b6b] hover:bg-[#f2f2f2] lg:block"
+          >
+            <Menu :size="20" />
+          </button>
+          <div class="rounded-full border border-[#e5e7eb] px-2.5 py-1 text-xs font-medium text-[#5f6368]">Chat Bot</div>
+        </div>
+
+        <button
+          @click="startNewChat"
+          class="inline-flex items-center gap-1 rounded-full border border-[#dddddd] px-2.5 py-1 text-xs font-medium text-[#3f3f46] transition-colors hover:bg-[#f5f5f5]"
+        >
+          <Plus :size="13" />
+          <span>New</span>
+        </button>
+      </header>
+
+      <div ref="scrollRef" class="flex flex-1 flex-col overflow-y-auto">
+        <div
+          class="cubic-bezier-transition shrink-0 transition-all duration-[700ms]"
+          :class="hasStarted ? 'max-h-0' : 'max-h-[35vh] flex-grow'"
+        ></div>
+
+        <div
+          class="cubic-bezier-transition shrink-0 flex flex-col items-center transition-all duration-[700ms]"
+          :class="hasStarted ? 'mb-0 max-h-0 scale-95 overflow-hidden opacity-0' : 'mb-8 max-h-20 scale-100 opacity-100'"
+        >
+          <h1 class="text-center text-[34px] font-semibold tracking-tight text-[#202123]">How can I help you today?</h1>
+        </div>
+
+        <div
+          class="mx-auto flex w-full max-w-[760px] flex-col gap-8 px-4 transition-all duration-[700ms]"
+          :class="hasStarted ? 'py-8 opacity-100' : 'max-h-0 overflow-hidden opacity-0'"
+        >
+          <template v-for="msg in currentMessages" :key="msg.id">
+            <div
+              :class="[
+                'animate-in flex gap-3',
+                msg.role === 'user' ? 'flex-row-reverse items-start' : 'flex-row items-start'
+              ]"
+            >
+              <div class="mt-1 flex-shrink-0">
+                <div
+                  v-if="msg.role === 'assistant' && msg.kind !== 'tool'"
+                  class="flex h-8 w-8 items-center justify-center rounded-full border border-[#0f8f70] bg-[#10a37f] shadow-sm"
+                >
+                  <Bot :size="18" class="text-white" />
+                </div>
+                <div
+                  v-else-if="msg.role === 'assistant' && msg.kind === 'tool'"
+                  class="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7d7d7] bg-[#f4f4f4] shadow-sm"
+                >
+                  <Search :size="16" class="text-[#5f6368]" />
+                </div>
+                <div
+                  v-else
+                  class="flex h-8 w-8 items-center justify-center rounded-full bg-[#ececec] shadow-sm"
+                >
+                  <UserCircle :size="18" class="text-[#737373]" />
+                </div>
+              </div>
+
+              <div
+                :class="[
+                  'min-h-[44px] max-w-[78%] px-4 py-2.5 text-[15px] leading-7',
+                  msg.role === 'user'
+                    ? 'rounded-3xl rounded-tr-md border border-[#ececec] bg-[#f4f4f4] text-[#202123]'
+                    : 'rounded-2xl rounded-tl-sm bg-transparent text-[#202123]'
+                ]"
+              >
+                <div v-if="msg.role === 'user'" class="leading-normal">
+                  <template v-if="queryRewriteMessageId === msg.id">
+                    <textarea
+                      v-model="queryRewriteDraft"
+                      rows="2"
+                      class="w-full resize-y rounded-xl border border-[#d8d8d8] bg-white px-3 py-2 text-[14px] leading-normal text-[#202123] outline-none focus:border-[#b8b8b8]"
+                      @keydown.esc.prevent="cancelQueryRewriteEdit"
+                    ></textarea>
+                    <div class="mt-2 flex items-center justify-end gap-2">
+                      <button
+                        class="rounded-lg border border-[#d1d1d1] px-2 py-1 text-[11px] text-[#52525b] hover:bg-[#f3f4f6]"
+                        @click="cancelQueryRewriteEdit"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        class="rounded-lg border border-[#111111] bg-[#111111] px-2 py-1 text-[11px] text-white hover:bg-[#2a2a2a] disabled:cursor-not-allowed disabled:opacity-60"
+                        :disabled="!queryRewriteDraft.trim() || isLoading"
+                        @click="submitQueryRewrite(msg)"
+                      >
+                        Rewrite & Run
+                      </button>
+                    </div>
+                  </template>
+
+                  <template v-else>
+                    <div class="whitespace-pre-wrap">{{ msg.content }}</div>
+                    <div class="mt-2 flex justify-end">
+                      <button
+                        class="inline-flex items-center gap-1 rounded-lg border border-[#d7d7d7] bg-white px-2 py-1 text-[11px] text-[#5f6368] hover:bg-[#f6f7f8] disabled:cursor-not-allowed disabled:opacity-60"
+                        :disabled="isLoading"
+                        @click="startQueryRewriteEdit(msg)"
+                      >
+                        <PenSquare :size="12" />
+                        <span>Edit & Rewrite</span>
+                      </button>
+                    </div>
+                  </template>
+                </div>
+
+                <div v-else class="leading-normal">
+                  <template v-if="msg.kind === 'tool'">
+                    <div class="rounded-2xl border border-[#e6e6e6] bg-[#fafafa] px-3 py-2 text-sm">
+                      <div class="flex items-center gap-2 text-xs uppercase tracking-wide text-[#6b7280]">
+                        <span class="font-semibold">Tool</span>
+                        <span class="rounded-md bg-[#ececec] px-1.5 py-0.5 text-[10px] text-[#4b5563]">web_search</span>
+                        <span class="ml-auto text-[11px] font-medium normal-case text-[#5f6368]">{{ formatToolState(msg.toolState) }}</span>
+                      </div>
+
+                      <div v-if="msg.toolQuery" class="mt-2 text-[13px] text-[#4b5563]">Query: "{{ msg.toolQuery }}"</div>
+
+                      <div v-if="msg.toolState === 'running'" class="mt-2 inline-flex items-center gap-2 text-xs text-[#6b7280]">
+                        <LoaderCircle :size="12" class="animate-spin" />
+                        <span>Searching web...</span>
+                      </div>
+
+                      <div v-if="msg.toolState === 'error'" class="mt-2 text-xs text-red-600">
+                        {{ msg.toolError || 'Tool execution failed.' }}
+                      </div>
+
+                      <div v-if="msg.toolState === 'done' && msg.toolLatencyMs !== null" class="mt-2 text-[11px] text-[#6b7280]">
+                        Finished in {{ msg.toolLatencyMs }} ms
+                      </div>
+
+                      <ul v-if="msg.toolResults?.length" class="mt-2 space-y-2">
+                        <li v-for="(result, idx) in msg.toolResults" :key="result.id || idx" class="rounded-xl border border-[#e7e7e7] bg-white p-2">
+                          <a
+                            :href="result.url"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="text-sm font-medium text-[#2f5bd3] hover:underline"
+                          >
+                            {{ idx + 1 }}. {{ result.title }}
+                          </a>
+                          <p class="mt-1 text-xs text-[#4b5563]">{{ result.snippet }}</p>
+                          <p class="mt-1 text-[11px] text-[#9ca3af]">{{ getHostLabel(result.url) }}</p>
+                        </li>
+                      </ul>
+                    </div>
+                  </template>
+
+                  <template v-else-if="msg.status === 'reasoning' && !msg.content">
+                    <div class="inline-flex items-center gap-2 text-sm text-[#6b7280]">
+                      <LoaderCircle :size="14" class="animate-spin" />
+                      <span>Reasoning...</span>
+                    </div>
+                  </template>
+
+                  <template v-if="msg.kind !== 'tool' && msg.content">
+                    <MarkdownRenderer
+                      :key="`${msg.id}:${msg.attachAdSlot?.requestId || ''}:${msg.attachAdSlot?.ads?.length || 0}`"
+                      :content="resolveMessageContentForRendering(msg)"
+                      :inline-offers="resolveInlineOffersForMessage(msg)"
+                      @ad-click="(ad) => handleInlineOfferClick(msg, ad)"
+                      @inline-marker-count="(count) => handleInlineMarkerCount(msg, count)"
+                    />
+                    <span
+                      v-if="msg.status === 'streaming'"
+                      class="cursor-blink ml-0.5 inline-block h-5 w-0.5 bg-gray-800 align-middle"
+                    ></span>
+                  </template>
+
+                  <div
+                    v-if="msg.kind !== 'tool' && msg.role === 'assistant' && msg.status === 'done' && msg.sourceUserContent"
+                    class="mt-2 flex items-center gap-2"
+                  >
+                    <button
+                      class="rounded-lg border border-[#d8d8d8] bg-white px-2 py-1 text-[11px] text-[#5f6368] hover:bg-[#f4f4f5] disabled:cursor-not-allowed disabled:opacity-60"
+                      :disabled="isLoading"
+                      @click="handleRegenerate(msg)"
+                    >
+                      Regenerate
+                    </button>
+                    <span class="text-[10px] text-[#9ca3af]">Retry #{{ msg.retryCount }}</span>
+                  </div>
+
+                  <CitationSources
+                    v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.sources?.length"
+                    :sources="msg.sources"
+                    @source-click="(source) => handleSourceClick(msg, source)"
+                  />
+
+                  <div
+                    v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.attachAdSlot?.ads?.length"
+                    class="mt-3 rounded-2xl border border-[#dfe3f2] bg-[#f8f9ff] p-3"
+                  >
+                    <div class="mb-2 flex items-center justify-between">
+                      <span class="rounded-full bg-[#eef2ff] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#4758c7]">
+                        Sponsored
+                      </span>
+                      <span class="text-[10px] text-[#7b839f]">{{ msg.attachAdSlot.placementId || 'chat_inline_v1' }}</span>
+                    </div>
+                    <ul class="space-y-2">
+                      <li
+                        v-for="ad in msg.attachAdSlot.ads"
+                        :key="ad.adId"
+                        class="rounded-xl border border-[#e5e9f7] bg-white p-2.5"
+                      >
+                        <div class="flex items-start justify-between gap-3">
+                          <div class="min-w-0">
+                            <p class="truncate text-sm font-semibold text-[#1f2937]">
+                              {{ ad.entityText || ad.title || 'Sponsored result' }}
+                            </p>
+                            <p v-if="ad.description" class="mt-1 text-xs text-[#566176]">
+                              {{ ad.description }}
+                            </p>
+                            <p v-if="ad.sourceNetwork" class="mt-1 text-[10px] uppercase tracking-wide text-[#8b93ab]">
+                              {{ ad.sourceNetwork }}
+                            </p>
+                          </div>
+                          <a
+                            :href="resolveAdHref(ad)"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="shrink-0 rounded-lg border border-[#cad3f3] bg-[#f3f6ff] px-2 py-1 text-[11px] font-medium text-[#2d4fd8] hover:bg-[#e9efff]"
+                            @click="handleSponsoredAdClick(msg, ad)"
+                          >
+                            Open
+                          </a>
+                        </div>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <!--
+                    Temporarily disabled ad link rendering in simulator UI.
+                    Keep runtime data flow/decision logging unchanged.
+                  <div
+                    v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.attachAdSlot?.ads?.length"
+                    class="mt-3 rounded-xl border border-[#dbe3ff] bg-[#f7f9ff] p-3"
+                  >
+                    <div class="mb-2 flex items-center justify-between">
+                      <span class="text-[11px] font-semibold uppercase tracking-wide text-[#5b6acb]">Sponsored</span>
+                      <span class="text-[10px] text-[#7d87b7]">{{ msg.attachAdSlot.placementId || 'attach.post_answer_render' }}</span>
+                    </div>
+                    <div class="mb-2 text-[10px] text-[#64748b]">
+                      Pinlink anchors matched: {{ Number.isFinite(msg.inlineMarkerCount) ? msg.inlineMarkerCount : 0 }}
+                    </div>
+                    <div
+                      v-if="(Number.isFinite(msg.inlineMarkerCount) ? msg.inlineMarkerCount : 0) === 0"
+                      class="mb-2 rounded-md border border-[#f0d9a8] bg-[#fff7e6] px-2 py-1 text-[10px] text-[#8a5b18]"
+                    >
+                      Ads returned but no inline anchor matched the answer text.
+                    </div>
+                    <ul class="space-y-2">
+                      <li
+                        v-for="ad in msg.attachAdSlot.ads"
+                        :key="ad.adId"
+                        class="rounded-lg border border-[#dfe5ff] bg-white p-2"
+                      >
+                        <a
+                          :href="resolveAdHref(ad)"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="text-sm font-medium text-[#2f5bd3] hover:underline"
+                          @click="handleSponsoredAdClick(msg, ad)"
+                        >
+                          {{ ad.title }}
+                        </a>
+                        <p v-if="ad.description" class="mt-1 text-xs text-[#4b5563]">{{ ad.description }}</p>
+                      </li>
+                    </ul>
+                  </div>
+                  -->
+
+                  <FollowUpSuggestions
+                    v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.followUps?.length"
+                    :items="msg.followUps"
+                    :disabled="isLoading"
+                    @select="handleFollowUpSelect"
+                  />
+
+                  <IntentCard
+                    v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.nextStepAdSlot?.ads?.length && !msg.nextStepAdSlot?.dismissedAt"
+                    :slot-data="msg.nextStepAdSlot"
+                    :max-items="3"
+                    @click-item="(ad) => handleNextStepAdClick(msg, ad)"
+                    @dismiss="() => handleNextStepAdDismiss(msg)"
+                  />
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <div class="h-4"></div>
+        </div>
+
+        <div
+          class="cubic-bezier-transition sticky bottom-0 z-20 w-full bg-gradient-to-t from-white via-white to-white/90 transition-all duration-[700ms]"
+          :class="hasStarted ? 'mt-auto pb-5 pt-2' : 'pb-8'"
+        >
+          <div class="mx-auto max-w-[760px] px-4">
+            <div class="relative flex flex-col rounded-[28px] border border-[#d9d9e3] bg-white p-2 shadow-[0_10px_30px_rgba(0,0,0,0.06)] transition-all duration-300 focus-within:border-[#c9c9d7]">
+              <textarea
+                v-model="input"
+                rows="1"
+                @compositionstart="isComposing = true"
+                @compositionend="isComposing = false"
+                @keydown.enter.prevent="handleSend"
+                placeholder="Message Chat Bot"
+                class="max-h-52 w-full resize-none border-none bg-transparent py-3 pl-4 pr-24 text-[16px] text-[#202123] outline-none focus:outline-none focus:ring-0 placeholder:text-[#9ca3af]"
+                style="min-height: 44px"
+              ></textarea>
+
+              <div class="flex items-center justify-end px-2 pb-1">
+                <button
+                  @click="handleSend"
+                  :disabled="!input.trim() || isLoading"
+                  :class="[
+                    'rounded-full p-2.5 outline-none transition-all',
+                    input.trim() && !isLoading ? 'bg-[#111111] text-white hover:bg-[#2a2a2a]' : 'cursor-not-allowed bg-[#ebebeb] text-[#b8b8b8]'
+                  ]"
+                >
+                  <ArrowUp :size="18" :stroke-width="3" />
+                </button>
+              </div>
+            </div>
+
+            <div class="mt-3 text-center">
+              <p class="select-none text-[11px] text-[#8f8f95]">Chat Bot can make mistakes. Check important info.</p>
+            </div>
+          </div>
+        </div>
+
+        <div
+          class="cubic-bezier-transition shrink-0 transition-all duration-[700ms]"
+          :class="hasStarted ? 'max-h-0' : 'max-h-[25vh] flex-grow'"
         ></div>
       </div>
     </main>
@@ -82,6 +496,19 @@
 
 <script setup>
 import { ref, computed, nextTick, watch, onBeforeUnmount } from 'vue'
+import {
+  X,
+  Plus,
+  MessageSquare,
+  Search,
+  PenSquare,
+  Trash2,
+  Menu,
+  ArrowUp,
+  Bot,
+  UserCircle,
+  LoaderCircle,
+} from 'lucide-vue-next'
 import { sendMessageStream } from '../api/deepseek'
 import { shouldUseWebSearchTool, runWebSearchTool, buildWebSearchContext } from '../api/webSearchTool'
 import {
@@ -89,16 +516,15 @@ import {
   runAttachPlacementFlow,
   runNextStepIntentCardPlacementFlow,
 } from '../api/adsPlatformClient'
-import ChatSidebar from '../components/chat/ChatSidebar.vue'
-import ChatTopbar from '../components/chat/ChatTopbar.vue'
-import ComposerBar from '../components/chat/ComposerBar.vue'
-import MessageList from '../components/chat/MessageList.vue'
+import CitationSources from '../components/CitationSources.vue'
+import FollowUpSuggestions from '../components/FollowUpSuggestions.vue'
+import IntentCard from '../components/IntentCard.vue'
+import MarkdownRenderer from '../components/MarkdownRenderer.vue'
 
 const STORAGE_KEY = 'chat_bot_history_v3'
 const LEGACY_STORAGE_KEYS = ['chat_bot_history_v2', 'chat_bot_sessions_v1']
 const TURN_LOG_STORAGE_KEY = 'chat_bot_turn_logs_v2'
 const LEGACY_TURN_LOG_STORAGE_KEYS = ['chat_bot_turn_logs_v1']
-const UI_PREFS_STORAGE_KEY = 'chat_bot_ui_prefs_v1'
 const MAX_SESSIONS = 50
 const MAX_TURN_LOGS = 400
 const TOOL_STATES = ['planning', 'running', 'done', 'error']
@@ -119,8 +545,6 @@ const isLoading = ref(false)
 const isComposing = ref(false)
 const queryRewriteMessageId = ref('')
 const queryRewriteDraft = ref('')
-const isTracePanelOpen = ref(true)
-const isDebugMode = ref(false)
 
 const sessions = ref([])
 const activeSessionId = ref('')
@@ -586,37 +1010,8 @@ function loadTurnLogs() {
   }
 }
 
-function loadUiPrefs() {
-  try {
-    const raw = localStorage.getItem(UI_PREFS_STORAGE_KEY)
-    if (!raw) {
-      isTracePanelOpen.value = true
-      isDebugMode.value = false
-      return
-    }
-    const parsed = JSON.parse(raw)
-    isTracePanelOpen.value = parsed?.tracePanelOpen !== false
-    isDebugMode.value = parsed?.debugMode === true
-  } catch (error) {
-    console.error('Failed to load UI prefs:', error)
-    isTracePanelOpen.value = true
-    isDebugMode.value = false
-  }
-}
-
-function persistUiPrefs() {
-  localStorage.setItem(
-    UI_PREFS_STORAGE_KEY,
-    JSON.stringify({
-      tracePanelOpen: Boolean(isTracePanelOpen.value),
-      debugMode: Boolean(isDebugMode.value),
-    }),
-  )
-}
-
 loadSessions()
 loadTurnLogs()
-loadUiPrefs()
 
 const sortedSessions = computed(() => {
   return [...sessions.value].sort((a, b) => b.updatedAt - a.updatedAt)
@@ -684,14 +1079,6 @@ watch(
   },
   { deep: true },
 )
-
-watch(isTracePanelOpen, () => {
-  persistUiPrefs()
-})
-
-watch(isDebugMode, () => {
-  persistUiPrefs()
-})
 
 onBeforeUnmount(() => {
   if (persistTimer) {

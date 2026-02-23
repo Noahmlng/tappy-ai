@@ -18,37 +18,37 @@ const routes = [
     path: '/home',
     name: 'home',
     component: HomeView,
-    meta: { nav: true, navOrder: 1, navLabel: 'Home' },
+    meta: { navLabel: 'Home' },
   },
   {
     path: '/quick-start',
     name: 'quickStart',
     component: QuickStartView,
-    meta: { nav: false, legacy: true, navLabel: 'Quick Start' },
+    meta: { navLabel: 'Quick Start' },
   },
   {
     path: '/api-keys',
     name: 'apiKeys',
     component: ApiKeysView,
-    meta: { nav: true, navOrder: 2, navLabel: 'API Keys' },
+    meta: { navLabel: 'API Keys' },
   },
   {
     path: '/integrations',
     name: 'integrations',
     component: IntegrationsView,
-    meta: { nav: false, legacy: true, navLabel: 'Integrations' },
+    meta: { navLabel: 'Integrations' },
   },
   {
     path: '/usage',
     name: 'usage',
     component: UsageView,
-    meta: { nav: true, navOrder: 3, navLabel: 'Usage' },
+    meta: { navLabel: 'Usage' },
   },
   {
     path: '/agent-onboarding',
     name: 'agentOnboarding',
     component: AgentOnboardingView,
-    meta: { nav: false, legacy: true, navLabel: 'Agent Onboarding' },
+    meta: { navLabel: 'Agent Onboarding' },
   },
 ]
 
@@ -57,7 +57,7 @@ if (isFeatureEnabled('enableInternalReset')) {
     path: '/internal-reset',
     name: 'internalReset',
     component: InternalResetView,
-    meta: { nav: false, legacy: true, navLabel: 'Internal Reset' },
+    meta: { navLabel: 'Internal Reset' },
   })
 }
 

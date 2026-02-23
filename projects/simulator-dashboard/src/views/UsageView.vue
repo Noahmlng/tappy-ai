@@ -1,9 +1,6 @@
 <script setup>
 import { computed, onMounted } from 'vue'
 
-import UiButton from '../components/ui/UiButton.vue'
-import UiCard from '../components/ui/UiCard.vue'
-import UiSectionHeader from '../components/ui/UiSectionHeader.vue'
 import { dashboardState, hydrateDashboardState } from '../state/dashboard-state'
 
 const isLoading = computed(() => Boolean(dashboardState.meta.loading))
@@ -37,10 +34,28 @@ const usageCards = computed(() => {
       sub: `Runtime errors: ${runtimeErrors.toLocaleString()}`,
     },
     {
-      label: 'Revenue (24h est.)',
+      label: 'Estimated Spend (24h)',
       value: `$${spend24h.toFixed(2)}`,
-      sub: `Fill: ${(Number(summary.fillRate || 0) * 100).toFixed(1)}%`,
+      sub: `eCPM: $${Number(summary.ecpm || 0).toFixed(2)}`,
     },
+  ]
+})
+
+const billingSummary = computed(() => {
+  const summary = dashboardState.metricsSummary || {}
+  const day = latestDay.value
+  const impressions24h = Number(day?.impressions || 0)
+  const ctr = Number(summary.ctr || 0)
+  const clicks24h = Math.round(impressions24h * ctr)
+  const revenue24h = Number(day?.revenueUsd || 0)
+
+  return [
+    { metric: 'Revenue (24h est.)', value: `$${revenue24h.toFixed(2)}` },
+    { metric: 'Billable impressions (24h est.)', value: impressions24h.toLocaleString() },
+    { metric: 'Clicks (24h est.)', value: clicks24h.toLocaleString() },
+    { metric: 'CTR (rolling)', value: `${(ctr * 100).toFixed(2)}%` },
+    { metric: 'Fill Rate (rolling)', value: `${(Number(summary.fillRate || 0) * 100).toFixed(1)}%` },
+    { metric: 'eCPM (rolling)', value: `$${Number(summary.ecpm || 0).toFixed(2)}` },
   ]
 })
 
@@ -69,51 +84,81 @@ onMounted(() => {
 
 <template>
   <section class="page">
-    <UiSectionHeader
-      eyebrow="Observability"
-      title="Usage"
-      subtitle="Single-screen usage pulse with 7-day trend."
-    >
-      <template #right>
-        <UiButton :disabled="isLoading" @click="refreshUsage">
+    <header class="page-header">
+      <p class="eyebrow">Observability</p>
+      <h2>Usage</h2>
+      <p class="subtitle">
+        Request volume, success rate, and basic billing summary.
+      </p>
+    </header>
+
+    <article class="panel">
+      <div class="panel-toolbar">
+        <h3>24h Summary</h3>
+        <button class="button" type="button" :disabled="isLoading" @click="refreshUsage">
           {{ isLoading ? 'Refreshing...' : 'Refresh' }}
-        </UiButton>
-      </template>
-    </UiSectionHeader>
+        </button>
+      </div>
+      <p class="muted">
+        Source:
+        <strong>{{ dashboardState.meta.connected ? 'public API' : 'local fallback' }}</strong>
+        <span v-if="dashboardState.meta.lastSyncedAt">
+          · last synced {{ new Date(dashboardState.meta.lastSyncedAt).toLocaleString() }}
+        </span>
+      </p>
+      <p v-if="dashboardState.meta.error" class="muted">
+        {{ dashboardState.meta.error }}
+      </p>
+    </article>
 
     <div class="grid grid-3">
-      <UiCard v-for="card in usageCards" :key="card.label" class="metric">
+      <article v-for="card in usageCards" :key="card.label" class="panel metric">
         <h3>{{ card.label }}</h3>
         <p class="metric-value">{{ card.value }}</p>
         <p class="metric-sub">{{ card.sub }}</p>
-      </UiCard>
+      </article>
     </div>
 
-    <UiCard>
-      <div class="panel-head">
-        <h3>7-Day Trend</h3>
-        <p class="muted" v-if="dashboardState.meta.lastSyncedAt">
-          Synced {{ new Date(dashboardState.meta.lastSyncedAt).toLocaleString() }}
-        </p>
-      </div>
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Day</th>
-            <th>Impressions</th>
-            <th>Clicks (est.)</th>
-            <th>Revenue</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in dailyRows" :key="row.day">
-            <td>{{ row.day }}</td>
-            <td>{{ row.impressions.toLocaleString() }}</td>
-            <td>{{ row.clicks.toLocaleString() }}</td>
-            <td>${{ row.revenueUsd.toFixed(2) }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </UiCard>
+    <div class="grid">
+      <article class="panel">
+        <h3>Basic Billing Summary</h3>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in billingSummary" :key="row.metric">
+              <td>{{ row.metric }}</td>
+              <td>{{ row.value }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="panel">
+        <h3>7-Day Usage Trend</h3>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Day</th>
+              <th>Impressions</th>
+              <th>Clicks (est.)</th>
+              <th>Revenue</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in dailyRows" :key="row.day">
+              <td>{{ row.day }}</td>
+              <td>{{ row.impressions.toLocaleString() }}</td>
+              <td>{{ row.clicks.toLocaleString() }}</td>
+              <td>${{ row.revenueUsd.toFixed(2) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </article>
+    </div>
   </section>
 </template>

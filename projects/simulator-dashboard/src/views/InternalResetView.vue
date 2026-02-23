@@ -1,22 +1,16 @@
-<script setup>
-import UiCard from '../components/ui/UiCard.vue'
-import LegacyNotice from '../components/ui/LegacyNotice.vue'
-import UiSectionHeader from '../components/ui/UiSectionHeader.vue'
-</script>
-
 <template>
   <section class="page">
-    <LegacyNotice />
+    <header class="page-header">
+      <p class="eyebrow">Internal Tooling</p>
+      <h2>Internal Reset</h2>
+      <p class="subtitle">
+        This route is gated by `VITE_ENABLE_INTERNAL_RESET` and hidden from external users.
+      </p>
+    </header>
 
-    <UiSectionHeader
-      eyebrow="Internal Tooling"
-      title="Internal Reset"
-      subtitle="This route is gated by `VITE_ENABLE_INTERNAL_RESET` and hidden from external users."
-    />
-
-    <UiCard class="warning">
+    <article class="panel warning">
       <h3>Internal-only area</h3>
       <p>Reset and snapshot controls will be added in `DASH-D-*` tasks.</p>
-    </UiCard>
+    </article>
   </section>
 </template>

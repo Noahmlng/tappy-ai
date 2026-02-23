@@ -1,13 +1,13 @@
 <template>
-  <div class="mt-3 rounded-xl border border-[#cbe5d7] bg-[#ebf8f1] p-3">
+  <div class="mt-3 rounded-xl border border-[#d9eadf] bg-[#f3fbf6] p-3">
     <div class="mb-2 flex items-center justify-between gap-2">
       <div class="flex items-center gap-2">
-        <span class="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#2f7d51]">Related Products · Sponsored</span>
+        <span class="text-[11px] font-semibold uppercase tracking-wide text-[#2f7d51]">Related Products · Sponsored</span>
         <span class="text-[10px] text-[#4d8f69]">{{ placementLabel }}</span>
       </div>
       <button
         type="button"
-        class="rounded-md border border-[#9fd0b5] bg-white px-2 py-0.5 text-[10px] text-[#2f7d51] transition-colors hover:bg-[#e7f5ed]"
+        class="rounded-md border border-[#b8d7c5] bg-white px-2 py-0.5 text-[10px] text-[#2f7d51] transition-colors hover:bg-[#ecf7f0]"
         @click="$emit('dismiss')"
       >
         Dismiss
@@ -18,7 +18,7 @@
       <li
         v-for="ad in visibleItems"
         :key="ad.itemId"
-        class="rounded-lg border border-[#cbe5d7] bg-white p-2"
+        class="rounded-lg border border-[#d9eadf] bg-white p-2"
       >
         <a
           :href="resolveHref(ad)"

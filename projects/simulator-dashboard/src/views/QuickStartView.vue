@@ -1,10 +1,5 @@
 <script setup>
 import { computed, ref } from 'vue'
-
-import UiButton from '../components/ui/UiButton.vue'
-import UiCard from '../components/ui/UiCard.vue'
-import LegacyNotice from '../components/ui/LegacyNotice.vue'
-import UiSectionHeader from '../components/ui/UiSectionHeader.vue'
 import { controlPlaneClient } from '../api/control-plane-client'
 
 const activeTab = ref('javascript')
@@ -151,13 +146,13 @@ curl -sS -X POST "$MEDIATION_API_BASE_URL/api/v1/sdk/evaluate" \\
   -H "Authorization: Bearer $MEDIATION_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d "{
-    \"appId\": \"$APP_ID\",
-    \"sessionId\": \"quickstart_session_001\",
-    \"turnId\": \"quickstart_turn_001\",
-    \"query\": \"Recommend waterproof running shoes\",
-    \"answerText\": \"Prioritize grip and breathable waterproof upper.\",
-    \"intentScore\": 0.91,
-    \"locale\": \"en-US\"
+    \\"appId\\": \\"$APP_ID\\",
+    \\"sessionId\\": \\"quickstart_session_001\\",
+    \\"turnId\\": \\"quickstart_turn_001\\",
+    \\"query\\": \\"Recommend waterproof running shoes\\",
+    \\"answerText\\": \\"Prioritize grip and breathable waterproof upper.\\",
+    \\"intentScore\\": 0.91,
+    \\"locale\\": \\"en-US\\"
   }" | tee /tmp/mediation-eval.json
 
 REQUEST_ID=$(cat /tmp/mediation-eval.json | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{const j=JSON.parse(d||"{}");process.stdout.write(j.requestId||"")})')
@@ -166,15 +161,15 @@ curl -sS -X POST "$MEDIATION_API_BASE_URL/api/v1/sdk/events" \\
   -H "Authorization: Bearer $MEDIATION_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d "{
-    \"requestId\": \"$REQUEST_ID\",
-    \"appId\": \"$APP_ID\",
-    \"sessionId\": \"quickstart_session_001\",
-    \"turnId\": \"quickstart_turn_001\",
-    \"query\": \"Recommend waterproof running shoes\",
-    \"answerText\": \"Prioritize grip and breathable waterproof upper.\",
-    \"intentScore\": 0.91,
-    \"locale\": \"en-US\"
-  }"`,
+    \\"requestId\\": \\"$REQUEST_ID\\",
+    \\"appId\\": \\"$APP_ID\\",
+    \\"sessionId\\": \\"quickstart_session_001\\",
+    \\"turnId\\": \\"quickstart_turn_001\\",
+    \\"query\\": \\"Recommend waterproof running shoes\\",
+    \\"answerText\\": \\"Prioritize grip and breathable waterproof upper.\\",
+    \\"intentScore\\": 0.91,
+    \\"locale\\": \\"en-US\\"
+  }"`
 }
 
 const snippet = computed(() => examples[activeTab.value] || examples.javascript)
@@ -223,26 +218,30 @@ async function runQuickStartVerifier() {
 
 <template>
   <section class="page">
-    <LegacyNotice />
+    <header class="page-header">
+      <p class="eyebrow">Onboarding</p>
+      <h2>Quick Start</h2>
+      <p class="subtitle">
+        Run your first production-style integration call in minutes.
+      </p>
+    </header>
 
-    <UiSectionHeader
-      eyebrow="Onboarding"
-      title="Quick Start"
-      subtitle="Run your first production-style integration call in minutes."
-    />
-
-    <UiCard>
+    <article class="panel">
       <div class="panel-toolbar">
         <h3>Step 1: Prepare env</h3>
-        <UiButton @click="copyText(envSnippet)">Copy env</UiButton>
+        <button class="button" type="button" @click="copyText(envSnippet)">
+          Copy env
+        </button>
       </div>
       <pre class="code-block">{{ envSnippet }}</pre>
-    </UiCard>
+    </article>
 
-    <UiCard>
+    <article class="panel">
       <div class="panel-toolbar">
         <h3>Step 2: Run minimal client call</h3>
-        <UiButton @click="copyText(snippet)">Copy snippet</UiButton>
+        <button class="button" type="button" @click="copyText(snippet)">
+          Copy snippet
+        </button>
       </div>
 
       <div class="tab-list" role="tablist" aria-label="Quickstart language tabs">
@@ -260,14 +259,14 @@ async function runQuickStartVerifier() {
 
       <pre class="code-block">{{ snippet }}</pre>
       <p v-if="copyState" class="copy-note">{{ copyState }}</p>
-    </UiCard>
+    </article>
 
-    <UiCard>
+    <article class="panel">
       <div class="panel-toolbar">
         <h3>Step 3: Verify in dashboard</h3>
-        <UiButton :disabled="verifyLoading" @click="runQuickStartVerifier">
+        <button class="button" type="button" :disabled="verifyLoading" @click="runQuickStartVerifier">
           {{ verifyLoading ? 'Verifying...' : 'Run verify' }}
-        </UiButton>
+        </button>
       </div>
       <p class="subtitle">Runs `config -> evaluate -> events` and returns evidence.</p>
       <p v-if="verifyError" class="muted">{{ verifyError }}</p>
@@ -276,9 +275,9 @@ async function runQuickStartVerifier() {
         <p><strong>status:</strong> <code>{{ verifyResult.status || '-' }}</code></p>
         <pre class="code-block">{{ verifyEvidence }}</pre>
       </div>
-    </UiCard>
+    </article>
 
-    <UiCard>
+    <article class="panel">
       <h3>Pass criteria</h3>
       <ul class="checklist">
         <li>`config` returns `200` or `304`</li>
@@ -288,6 +287,6 @@ async function runQuickStartVerifier() {
         <li>Dashboard verify panel returns evidence (`requestId/status`)</li>
         <li>Main user response remains fail-open on ads errors</li>
       </ul>
-    </UiCard>
+    </article>
   </section>
 </template>

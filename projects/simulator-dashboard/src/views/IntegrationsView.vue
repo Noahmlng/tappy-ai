@@ -1,11 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 
-import UiBadge from '../components/ui/UiBadge.vue'
-import UiButton from '../components/ui/UiButton.vue'
-import UiCard from '../components/ui/UiCard.vue'
-import LegacyNotice from '../components/ui/LegacyNotice.vue'
-import UiSectionHeader from '../components/ui/UiSectionHeader.vue'
 import {
   hydrateIntegrations,
   integrationsState,
@@ -76,8 +71,8 @@ function formatDate(value) {
   return date.toLocaleString()
 }
 
-function statusTone(enabled) {
-  return enabled ? 'success' : 'warn'
+function statusClass(enabled) {
+  return enabled ? 'status-pill good' : 'status-pill warn'
 }
 
 onMounted(() => {
@@ -87,24 +82,24 @@ onMounted(() => {
 
 <template>
   <section class="page">
-    <LegacyNotice />
+    <header class="page-header">
+      <p class="eyebrow">Integration</p>
+      <h2>Integrations</h2>
+      <p class="subtitle">
+        Minimal placement template only. Provider routing/config is platform-managed in v1.
+      </p>
+    </header>
 
-    <UiSectionHeader
-      eyebrow="Integration"
-      title="Integrations"
-      subtitle="Minimal placement template only. Provider routing/config is platform-managed in v1."
-    />
-
-    <UiCard>
+    <article class="panel">
       <div class="panel-toolbar">
         <h3>Placement Templates</h3>
         <div class="toolbar-actions">
-          <UiButton :disabled="isBusy" @click="hydrateIntegrations()">
+          <button class="button" type="button" :disabled="isBusy" @click="hydrateIntegrations()">
             {{ integrationsState.meta.loading ? 'Refreshing...' : 'Refresh' }}
-          </UiButton>
-          <UiButton :disabled="isBusy" @click="startCreate">
+          </button>
+          <button class="button" type="button" :disabled="isBusy" @click="startCreate">
             New template
-          </UiButton>
+          </button>
         </div>
       </div>
 
@@ -144,9 +139,9 @@ onMounted(() => {
           </label>
         </div>
         <div class="toolbar-actions">
-          <UiButton :disabled="isBusy || !draft.placementId.trim()" @click="saveDraft">
+          <button class="button" type="button" :disabled="isBusy || !draft.placementId.trim()" @click="saveDraft">
             {{ isBusy ? 'Saving...' : (createMode ? 'Create template' : 'Save changes') }}
-          </UiButton>
+          </button>
         </div>
       </div>
 
@@ -166,16 +161,20 @@ onMounted(() => {
             <td><code>{{ row.placementId }}</code></td>
             <td>{{ row.environment }}</td>
             <td>{{ row.surface }}</td>
-            <td><UiBadge :tone="statusTone(row.enabled)">{{ row.enabled ? 'enabled' : 'disabled' }}</UiBadge></td>
+            <td>
+              <span :class="statusClass(row.enabled)">
+                {{ row.enabled ? 'enabled' : 'disabled' }}
+              </span>
+            </td>
             <td>{{ formatDate(row.updatedAt) }}</td>
             <td>
               <div class="toolbar-actions">
-                <UiButton variant="secondary" :disabled="isBusy" @click="startEdit(row)">
+                <button class="button button-secondary" type="button" :disabled="isBusy" @click="startEdit(row)">
                   Edit
-                </UiButton>
-                <UiButton variant="secondary" :disabled="isBusy" @click="toggleEnabled(row)">
+                </button>
+                <button class="button button-secondary" type="button" :disabled="isBusy" @click="toggleEnabled(row)">
                   {{ row.enabled ? 'Disable' : 'Enable' }}
-                </UiButton>
+                </button>
               </div>
             </td>
           </tr>
@@ -184,6 +183,6 @@ onMounted(() => {
           </tr>
         </tbody>
       </table>
-    </UiCard>
+    </article>
   </section>
 </template>

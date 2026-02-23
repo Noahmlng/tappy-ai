@@ -1,11 +1,5 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
-
-import UiBadge from '../components/ui/UiBadge.vue'
-import UiButton from '../components/ui/UiButton.vue'
-import UiCard from '../components/ui/UiCard.vue'
-import LegacyNotice from '../components/ui/LegacyNotice.vue'
-import UiSectionHeader from '../components/ui/UiSectionHeader.vue'
 import { controlPlaneClient } from '../api/control-plane-client'
 import { AGENT_TEMPLATE_ITEMS, AUTO_PR_POLICY, buildAgentTemplates } from '../lib/agent-templates'
 import { validateAgentOutputContract } from '../lib/agent-output-contract'
@@ -44,7 +38,9 @@ const contractEvidence = computed(() => {
   const evidence = contractValidation.value?.checks?.evidence?.evidence
   return evidence ? JSON.stringify(evidence, null, 2) : ''
 })
-const prPolicyTone = computed(() => (AUTO_PR_POLICY.enabled ? 'warn' : 'success'))
+const prPolicyStatusClass = computed(() => (
+  AUTO_PR_POLICY.enabled ? 'status-pill warn' : 'status-pill good'
+))
 const prPolicyLabel = computed(() => (
   AUTO_PR_POLICY.enabled ? 'auto pr on' : 'auto pr off'
 ))
@@ -93,22 +89,22 @@ function runContractValidation() {
   contractValidation.value = validateAgentOutputContract(contractOutput.value)
 }
 
-function contractCheckTone(ok) {
-  return ok ? 'success' : 'error'
+function contractCheckClass(ok) {
+  return ok ? 'status-pill good' : 'status-pill bad'
 }
 </script>
 
 <template>
   <section class="page">
-    <LegacyNotice />
+    <header class="page-header">
+      <p class="eyebrow">Agent Onboarding</p>
+      <h2>Agent Onboarding</h2>
+      <p class="subtitle">
+        Generate one-command onboarding instructions for Codex, CloudCode, and Cursor.
+      </p>
+    </header>
 
-    <UiSectionHeader
-      eyebrow="Agent Onboarding"
-      title="Agent Onboarding"
-      subtitle="Generate one-command onboarding instructions for Codex, CloudCode, and Cursor."
-    />
-
-    <UiCard class="create-key-form">
+    <article class="panel create-key-form">
       <h3>Input</h3>
       <div class="form-grid">
         <label>
@@ -158,9 +154,9 @@ function contractCheckTone(ok) {
         </label>
       </div>
       <div class="toolbar-actions">
-        <UiButton :disabled="tokenIssuing" @click="issueIntegrationToken">
+        <button class="button" type="button" :disabled="tokenIssuing" @click="issueIntegrationToken">
           {{ tokenIssuing ? 'Issuing...' : 'Issue one-time token' }}
-        </UiButton>
+        </button>
       </div>
       <p v-if="tokenError" class="muted">{{ tokenError }}</p>
       <p v-if="tokenMeta" class="muted">
@@ -171,12 +167,14 @@ function contractCheckTone(ok) {
       <p class="muted">
         Agent-first flow should use one-time token only. Long-lived API key must not be pasted in prompt.
       </p>
-    </UiCard>
+    </article>
 
-    <UiCard>
+    <article class="panel">
       <div class="panel-toolbar">
         <h3>Instruction Template</h3>
-        <UiButton @click="copyText(activeSnippet)">Copy template</UiButton>
+        <button class="button" type="button" @click="copyText(activeSnippet)">
+          Copy template
+        </button>
       </div>
       <div class="tab-list" role="tablist" aria-label="Agent tabs">
         <button
@@ -192,12 +190,12 @@ function contractCheckTone(ok) {
       </div>
       <pre class="code-block">{{ activeSnippet }}</pre>
       <p v-if="copyState" class="copy-note">{{ copyState }}</p>
-    </UiCard>
+    </article>
 
-    <UiCard>
+    <article class="panel">
       <div class="panel-head">
         <h3>PR Policy</h3>
-        <UiBadge :tone="prPolicyTone">{{ prPolicyLabel }}</UiBadge>
+        <span :class="prPolicyStatusClass">{{ prPolicyLabel }}</span>
       </div>
       <p class="subtitle">{{ AUTO_PR_POLICY.summary }}</p>
       <ul class="checklist">
@@ -206,9 +204,9 @@ function contractCheckTone(ok) {
         </li>
       </ul>
       <p class="muted">Required output line: <code>{{ AUTO_PR_POLICY.acknowledgement }}</code></p>
-    </UiCard>
+    </article>
 
-    <UiCard>
+    <article class="panel">
       <h3>Output Contract</h3>
       <ul class="checklist">
         <li>Patch only, no auto PR submission.</li>
@@ -217,12 +215,14 @@ function contractCheckTone(ok) {
         <li>Fail-open is explicitly preserved.</li>
         <li>{{ AUTO_PR_POLICY.acknowledgement }}</li>
       </ul>
-    </UiCard>
+    </article>
 
-    <UiCard>
+    <article class="panel">
       <div class="panel-toolbar">
         <h3>Output Contract Validator</h3>
-        <UiButton @click="runContractValidation">Validate output</UiButton>
+        <button class="button" type="button" @click="runContractValidation">
+          Validate output
+        </button>
       </div>
       <p class="subtitle">
         Paste agent final output and validate `files + smoke + evidence` in one check.
@@ -236,25 +236,25 @@ function contractCheckTone(ok) {
 
       <div v-if="contractValidation" class="status-grid">
         <p>
-          <UiBadge :tone="contractValidation.ok ? 'success' : 'error'">
+          <span :class="contractValidation.ok ? 'status-pill good' : 'status-pill bad'">
             {{ contractValidation.ok ? 'pass' : 'fail' }}
-          </UiBadge>
+          </span>
           Score {{ contractValidation.score }}
         </p>
         <p>
-          <UiBadge :tone="contractCheckTone(contractValidation.checks.files.ok)">files</UiBadge>
+          <span :class="contractCheckClass(contractValidation.checks.files.ok)">files</span>
           {{ contractValidation.checks.files.message }}
         </p>
         <p>
-          <UiBadge :tone="contractCheckTone(contractValidation.checks.smoke.ok)">smoke</UiBadge>
+          <span :class="contractCheckClass(contractValidation.checks.smoke.ok)">smoke</span>
           {{ contractValidation.checks.smoke.message }}
         </p>
         <p>
-          <UiBadge :tone="contractCheckTone(contractValidation.checks.evidence.ok)">evidence</UiBadge>
+          <span :class="contractCheckClass(contractValidation.checks.evidence.ok)">evidence</span>
           {{ contractValidation.checks.evidence.message }}
         </p>
         <p>
-          <UiBadge :tone="contractCheckTone(contractValidation.checks.prPolicy.ok)">pr policy</UiBadge>
+          <span :class="contractCheckClass(contractValidation.checks.prPolicy.ok)">pr policy</span>
           {{ contractValidation.checks.prPolicy.message }}
         </p>
         <div v-if="contractValidation.checks.files.files.length">
@@ -270,6 +270,6 @@ function contractCheckTone(ok) {
           <pre class="code-block">{{ contractValidation.checks.prPolicy.matches.join('\n') }}</pre>
         </div>
       </div>
-    </UiCard>
+    </article>
   </section>
 </template>

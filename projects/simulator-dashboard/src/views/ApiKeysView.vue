@@ -1,10 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 
-import UiBadge from '../components/ui/UiBadge.vue'
-import UiButton from '../components/ui/UiButton.vue'
-import UiCard from '../components/ui/UiCard.vue'
-import UiSectionHeader from '../components/ui/UiSectionHeader.vue'
 import {
   apiKeysState,
   clearRevealedSecret,
@@ -24,9 +20,8 @@ const draft = reactive({
 const environmentOptions = ['sandbox', 'staging', 'prod']
 
 const isBusy = computed(() => Boolean(apiKeysState.meta.loading || apiKeysState.meta.syncing))
+const syncMode = computed(() => String(apiKeysState.meta.syncMode || 'local'))
 const rows = computed(() => Array.isArray(apiKeysState.items) ? apiKeysState.items : [])
-const activeCount = computed(() => rows.value.filter((item) => item.status === 'active').length)
-const revokedCount = computed(() => rows.value.filter((item) => item.status === 'revoked').length)
 
 function formatDate(value) {
   if (!value) return '-'
@@ -35,8 +30,8 @@ function formatDate(value) {
   return date.toLocaleString()
 }
 
-function statusTone(status) {
-  return status === 'revoked' ? 'error' : 'success'
+function statusClass(status) {
+  return status === 'revoked' ? 'status-pill bad' : 'status-pill good'
 }
 
 async function handleCreate() {
@@ -67,36 +62,31 @@ onMounted(() => {
 
 <template>
   <section class="page">
-    <UiSectionHeader
-      eyebrow="Credentials"
-      title="API Keys"
-      subtitle="Keep keys minimal and scoped by environment."
-    >
-      <template #right>
-        <div class="toolbar-actions">
-          <UiButton :disabled="isBusy" @click="hydrateApiKeys()">
-            {{ apiKeysState.meta.loading ? 'Refreshing...' : 'Refresh' }}
-          </UiButton>
-          <UiButton :disabled="isBusy" @click="toggleCreateForm">
-            {{ createFormOpen ? 'Cancel' : 'Create key' }}
-          </UiButton>
-        </div>
-      </template>
-    </UiSectionHeader>
+    <header class="page-header">
+      <p class="eyebrow">Credentials</p>
+      <h2>API Keys</h2>
+      <p class="subtitle">
+        Create, rotate, and revoke keys by environment.
+      </p>
+    </header>
 
-    <UiCard>
-      <div class="grid">
-        <article class="kpi-card">
-          <p class="kpi-label">Active keys</p>
-          <p class="kpi-value">{{ activeCount }}</p>
-        </article>
-        <article class="kpi-card">
-          <p class="kpi-label">Revoked keys</p>
-          <p class="kpi-value">{{ revokedCount }}</p>
-        </article>
+    <article class="panel">
+      <div class="panel-toolbar">
+        <h3>Keys</h3>
+        <div class="toolbar-actions">
+          <button class="button" type="button" :disabled="isBusy" @click="hydrateApiKeys()">
+            {{ apiKeysState.meta.loading ? 'Refreshing...' : 'Refresh' }}
+          </button>
+          <button class="button" type="button" :disabled="isBusy" @click="toggleCreateForm">
+            {{ createFormOpen ? 'Cancel' : 'Create key' }}
+          </button>
+        </div>
       </div>
 
-      <p class="muted" v-if="apiKeysState.meta.error">{{ apiKeysState.meta.error }}</p>
+      <p class="muted">
+        Sync mode: <strong>{{ syncMode }}</strong>
+        <span v-if="apiKeysState.meta.error"> · {{ apiKeysState.meta.error }}</span>
+      </p>
 
       <div v-if="createFormOpen" class="panel create-key-form">
         <h3>New Key</h3>
@@ -121,14 +111,14 @@ onMounted(() => {
           </label>
         </div>
         <div class="toolbar-actions">
-          <UiButton :disabled="isBusy" @click="handleCreate">
+          <button class="button" type="button" :disabled="isBusy" @click="handleCreate">
             {{ isBusy ? 'Creating...' : 'Create' }}
-          </UiButton>
+          </button>
         </div>
       </div>
 
       <div v-if="apiKeysState.meta.lastRevealedSecret" class="secret-banner">
-        <strong>New key secret (shown once)</strong>
+        <strong>New key secret (shown once):</strong>
         <code>{{ apiKeysState.meta.lastRevealedSecret }}</code>
       </div>
 
@@ -139,7 +129,8 @@ onMounted(() => {
             <th>Environment</th>
             <th>Status</th>
             <th>Masked Key</th>
-            <th>Updated</th>
+            <th>Created At</th>
+            <th>Last Used</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -147,33 +138,40 @@ onMounted(() => {
           <tr v-for="row in rows" :key="row.keyId">
             <td>{{ row.name }}</td>
             <td>{{ row.environment }}</td>
-            <td><UiBadge :tone="statusTone(row.status)">{{ row.status }}</UiBadge></td>
+            <td>
+              <span :class="statusClass(row.status)">
+                {{ row.status }}
+              </span>
+            </td>
             <td><code>{{ row.maskedKey }}</code></td>
-            <td>{{ formatDate(row.lastUsedAt || row.createdAt) }}</td>
+            <td>{{ formatDate(row.createdAt) }}</td>
+            <td>{{ formatDate(row.lastUsedAt) }}</td>
             <td>
               <div class="toolbar-actions">
-                <UiButton
-                  variant="secondary"
+                <button
+                  class="button button-secondary"
+                  type="button"
                   :disabled="isBusy || row.status === 'revoked'"
                   @click="handleRotate(row.keyId)"
                 >
                   Rotate
-                </UiButton>
-                <UiButton
-                  variant="danger"
+                </button>
+                <button
+                  class="button button-danger"
+                  type="button"
                   :disabled="isBusy || row.status === 'revoked'"
                   @click="handleRevoke(row.keyId)"
                 >
                   Revoke
-                </UiButton>
+                </button>
               </div>
             </td>
           </tr>
           <tr v-if="rows.length === 0">
-            <td colspan="6" class="muted">No keys found.</td>
+            <td colspan="7" class="muted">No keys found.</td>
           </tr>
         </tbody>
       </table>
-    </UiCard>
+    </article>
   </section>
 </template>
