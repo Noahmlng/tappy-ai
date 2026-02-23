@@ -66,6 +66,11 @@ const LOCAL_BOOTSTRAP_API_KEY = cleanText(
   import.meta.env.MEDIATION_LOCAL_BOOTSTRAP_API_KEY ||
   'sk_staging_simulator_local_bootstrap_v1',
 )
+const LOOPBACK_AUTH_MODE = cleanText(
+  import.meta.env.VITE_MEDIATION_LOOPBACK_AUTH_MODE ||
+  import.meta.env.MEDIATION_LOOPBACK_AUTH_MODE ||
+  '',
+).toLowerCase()
 const PREFER_CONFIGURED_KEY_ON_LOOPBACK = cleanText(
   import.meta.env.VITE_MEDIATION_PREFER_ENV_KEY ||
   import.meta.env.MEDIATION_PREFER_ENV_KEY ||
@@ -73,11 +78,39 @@ const PREFER_CONFIGURED_KEY_ON_LOOPBACK = cleanText(
 ).toLowerCase() === 'true'
 const DEFAULT_EVALUATE_TIMEOUT_MS = 20000
 const API_BASE_HOSTNAME = resolveApiBaseHostname(API_BASE)
-const EFFECTIVE_MEDIATION_API_KEY = (
-  isLoopbackHostname(API_BASE_HOSTNAME) && !PREFER_CONFIGURED_KEY_ON_LOOPBACK
-    ? (LOCAL_BOOTSTRAP_API_KEY || MEDIATION_API_KEY)
-    : MEDIATION_API_KEY
-)
+
+function resolveLoopbackAuthMode(mode, preferConfiguredKeyOnLoopback) {
+  if (mode === 'env_key' || mode === 'bootstrap' || mode === 'anonymous') {
+    return mode
+  }
+  if (preferConfiguredKeyOnLoopback) {
+    return 'env_key'
+  }
+  return 'anonymous'
+}
+
+function resolveEffectiveApiKey(options = {}) {
+  const isLoopback = options.isLoopback === true
+  const mediationApiKey = cleanText(options.mediationApiKey)
+  const bootstrapApiKey = cleanText(options.bootstrapApiKey)
+  const loopbackAuthMode = resolveLoopbackAuthMode(
+    cleanText(options.loopbackAuthMode).toLowerCase(),
+    options.preferConfiguredKeyOnLoopback === true,
+  )
+
+  if (!isLoopback) return mediationApiKey
+  if (loopbackAuthMode === 'env_key') return mediationApiKey
+  if (loopbackAuthMode === 'bootstrap') return bootstrapApiKey
+  return ''
+}
+
+const EFFECTIVE_MEDIATION_API_KEY = resolveEffectiveApiKey({
+  isLoopback: isLoopbackHostname(API_BASE_HOSTNAME),
+  mediationApiKey: MEDIATION_API_KEY,
+  bootstrapApiKey: LOCAL_BOOTSTRAP_API_KEY,
+  loopbackAuthMode: LOOPBACK_AUTH_MODE,
+  preferConfiguredKeyOnLoopback: PREFER_CONFIGURED_KEY_ON_LOOPBACK,
+})
 
 const adsPlatformClient = createAdsSdkClient({
   apiBaseUrl: API_BASE,
