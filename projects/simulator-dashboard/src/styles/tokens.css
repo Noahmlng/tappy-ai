@@ -1,38 +1,34 @@
-@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Fraunces:opsz,wght,SOFT,WONK@9..144,400..700,25,0&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
-
 :root {
-  --dash-canvas: #efe9df;
-  --dash-canvas-strong: #e7ddcf;
-  --dash-surface: #fcf9f3;
-  --dash-surface-soft: #f4eee4;
-  --dash-ink: #111115;
-  --dash-subtle: #645c52;
-  --dash-stroke: #d6cbba;
-  --dash-primary: #0f0f14;
-  --dash-accent: #1b5dff;
-  --dash-accent-soft: #e0e9ff;
-  --dash-accent-ink: #1846ba;
+  --dash-canvas: #f7f7f5;
+  --dash-surface: #ffffff;
+  --dash-surface-soft: #fbfbfa;
+  --dash-ink: #131416;
+  --dash-subtle: #66707d;
+  --dash-stroke: #e5e8ec;
 
-  --dash-success-ink: #125c3d;
-  --dash-success-bg: #ecf8f1;
-  --dash-success-stroke: #b9e4ce;
+  --dash-primary: #15171a;
+  --dash-accent: #1d5eff;
 
-  --dash-warn-ink: #905200;
-  --dash-warn-bg: #fff3e0;
-  --dash-warn-stroke: #efcf9c;
+  --dash-success-ink: #0f5f40;
+  --dash-success-bg: #ecf8f2;
+  --dash-success-stroke: #c6e8d7;
 
-  --dash-error-ink: #a62f24;
-  --dash-error-bg: #ffeeec;
-  --dash-error-stroke: #f0c4bf;
+  --dash-warn-ink: #845100;
+  --dash-warn-bg: #fff5e8;
+  --dash-warn-stroke: #f3ddbd;
 
-  --dash-info-ink: #1f51d0;
-  --dash-info-bg: #e9efff;
-  --dash-info-stroke: #c5d4ff;
+  --dash-error-ink: #ab312a;
+  --dash-error-bg: #fff0ef;
+  --dash-error-stroke: #f1cbc8;
 
-  --dash-radius-sm: 12px;
-  --dash-radius-md: 18px;
-  --dash-radius-lg: 24px;
+  --dash-info-ink: #1d5eff;
+  --dash-info-bg: #edf2ff;
+  --dash-info-stroke: #cfdcff;
 
-  --dash-shadow-sm: 0 6px 16px rgb(16 16 21 / 0.06);
-  --dash-shadow-md: 0 20px 46px rgb(16 16 21 / 0.08);
+  --dash-radius-sm: 8px;
+  --dash-radius-md: 12px;
+  --dash-radius-lg: 16px;
+
+  --dash-shadow-sm: 0 1px 2px rgb(17 24 39 / 0.06);
+  --dash-duration: 180ms;
 }

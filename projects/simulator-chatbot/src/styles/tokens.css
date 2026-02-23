@@ -1,36 +1,38 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Red+Hat+Display:wght@400;500;600;700&family=Syne:wght@600;700&display=swap');
-
 :root {
-  --chat-bg: #090d13;
-  --chat-main-bg: #eef3f9;
-  --chat-main-ink: #111927;
-  --chat-main-muted: #647186;
+  --chat-bg: #f6f7f9;
+  --chat-main-bg: #f9fafc;
+  --chat-main-ink: #12161c;
+  --chat-main-muted: #6b7380;
 
-  --chat-sidebar-bg: #070b13;
-  --chat-sidebar-surface: #101a2a;
-  --chat-sidebar-stroke: #22324a;
-  --chat-sidebar-ink: #e7efff;
-  --chat-sidebar-muted: #94a7c8;
+  --chat-sidebar-bg: #ffffff;
+  --chat-sidebar-surface: #f7f8fa;
+  --chat-sidebar-stroke: #e4e8ee;
+  --chat-sidebar-ink: #1b2028;
+  --chat-sidebar-muted: #738093;
 
-  --chat-stroke: #c7d5e7;
-  --chat-stroke-strong: #9cb2d2;
-  --chat-user-bg: #0f1f37;
+  --chat-stroke: #d8dde6;
+  --chat-stroke-strong: #c8d0dc;
+  --chat-user-bg: #f2f4f8;
   --chat-assistant-bg: #ffffff;
 
-  --chat-brand: #0f1625;
-  --chat-accent: #2f80ff;
+  --chat-brand: #12161d;
+  --chat-accent: #1d5eff;
 
-  --chat-run-bg: #fff2d9;
-  --chat-run-ink: #9a5f00;
-  --chat-run-stroke: #f0c982;
+  --chat-run-bg: #fff5e8;
+  --chat-run-ink: #895400;
+  --chat-run-stroke: #f1ddbd;
 
-  --chat-done-bg: #e6fbf0;
-  --chat-done-ink: #166743;
-  --chat-done-stroke: #9ce2c0;
+  --chat-done-bg: #edf9f2;
+  --chat-done-ink: #146342;
+  --chat-done-stroke: #bfe6d2;
 
-  --chat-error-bg: #ffeaea;
-  --chat-error-ink: #b7352d;
-  --chat-error-stroke: #efb2ac;
+  --chat-error-bg: #fff0ef;
+  --chat-error-ink: #ab312a;
+  --chat-error-stroke: #f1cbc8;
 
-  --chat-shadow: 0 24px 52px rgb(8 13 22 / 0.13);
+  --chat-shadow: 0 1px 2px rgb(17 24 39 / 0.06);
+  --chat-radius-sm: 8px;
+  --chat-radius-md: 12px;
+  --chat-radius-lg: 16px;
+  --chat-duration: 180ms;
 }
