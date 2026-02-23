@@ -10,7 +10,7 @@
         v-if="msg.role === 'assistant' && msg.kind !== 'tool'"
         class="chat-avatar assistant"
       >
-        <Bot :size="18" class="text-white" />
+        <Bot :size="18" class="text-[#294982]" />
       </div>
       <div
         v-else-if="msg.role === 'assistant' && msg.kind === 'tool'"
@@ -28,7 +28,7 @@
 
     <div
       :class="[
-        'chat-bubble text-[15px] leading-7',
+        'chat-bubble text-[15px] leading-[1.55]',
         msg.role === 'user'
           ? 'chat-bubble-user'
           : 'chat-bubble-assistant'

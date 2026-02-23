@@ -1,14 +1,14 @@
 <template>
   <div
-    class="chat-composer-shell cubic-bezier-transition transition-all duration-[700ms]"
-    :class="hasStarted ? 'mt-auto pb-5 pt-2' : 'pb-8'"
+    class="chat-composer-shell cubic-bezier-transition transition-all duration-[220ms]"
+    :class="hasStarted ? 'mt-auto pb-4 pt-2' : 'pb-8'"
   >
-    <div class="mx-auto max-w-[860px] px-4">
+    <div class="mx-auto max-w-[920px] px-4">
       <div class="chat-composer relative flex flex-col p-2">
         <textarea
           :value="modelValue"
           rows="1"
-          placeholder="Message Chat Bot"
+          placeholder="Message simulator"
           class="chat-composer-input"
           style="min-height: 44px"
           @input="$emit('update:modelValue', $event.target.value)"

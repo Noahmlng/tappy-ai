@@ -1,21 +1,21 @@
 <template>
   <div>
     <div
-      class="cubic-bezier-transition shrink-0 transition-all duration-[700ms]"
-      :class="hasStarted ? 'max-h-0' : 'max-h-[35vh] flex-grow'"
+      class="cubic-bezier-transition shrink-0 transition-all duration-[220ms]"
+      :class="hasStarted ? 'max-h-0' : 'max-h-[16vh] flex-grow'"
     ></div>
 
     <div
-      class="cubic-bezier-transition shrink-0 flex flex-col items-center transition-all duration-[700ms]"
-      :class="hasStarted ? 'mb-0 max-h-0 scale-95 overflow-hidden opacity-0' : 'mb-8 max-h-20 scale-100 opacity-100'"
+      class="cubic-bezier-transition shrink-0 flex flex-col items-center transition-all duration-[220ms]"
+      :class="hasStarted ? 'mb-0 max-h-0 scale-95 overflow-hidden opacity-0' : 'mb-10 max-h-[220px] scale-100 opacity-100'"
     >
       <h1 class="chat-hero-title">How can I help you today?</h1>
       <p class="chat-hero-subtitle">Ask, iterate, and validate answers in one clean conversation flow.</p>
     </div>
 
     <div
-      class="chat-message-stream transition-all duration-[700ms]"
-      :class="hasStarted ? 'py-8 opacity-100' : 'max-h-0 overflow-hidden opacity-0'"
+      class="chat-message-stream transition-all duration-[220ms]"
+      :class="hasStarted ? 'py-6 opacity-100' : 'max-h-0 overflow-hidden opacity-0'"
     >
       <MessageItem
         v-for="msg in currentMessages"

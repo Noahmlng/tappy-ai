@@ -72,8 +72,8 @@
         />
 
         <div
-          class="cubic-bezier-transition shrink-0 transition-all duration-[700ms]"
-          :class="hasStarted ? 'max-h-0' : 'max-h-[25vh] flex-grow'"
+          class="cubic-bezier-transition shrink-0 transition-all duration-[220ms]"
+          :class="hasStarted ? 'max-h-0' : 'max-h-[12vh] flex-grow'"
         ></div>
       </div>
     </main>

@@ -1,7 +1,7 @@
 <template>
   <aside
     :class="[
-      'chat-sidebar chat-sidebar-shell fixed z-40 flex h-full w-[294px] -translate-x-full flex-col transition-transform duration-300 ease-in-out lg:relative lg:z-0 lg:translate-x-0',
+      'chat-sidebar chat-sidebar-shell fixed z-40 flex h-full w-[278px] -translate-x-full flex-col transition-transform duration-300 ease-in-out lg:relative lg:z-0 lg:translate-x-0',
       isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
     ]"
   >
@@ -23,12 +23,12 @@
         class="chat-sidebar-newchat group flex items-center justify-between"
       >
         <div class="flex items-center gap-2">
-          <div class="rounded-full border border-[#5f86c7] bg-[#0f1830] p-1">
+          <div class="chat-newchat-icon">
             <Plus :size="14" />
           </div>
           <span>New Chat</span>
         </div>
-        <MessageSquare :size="14" class="text-[#a5badc] opacity-0 group-hover:opacity-100" />
+        <MessageSquare :size="14" class="chat-newchat-glyph opacity-0 group-hover:opacity-100" />
       </button>
 
       <label class="chat-sidebar-search">
