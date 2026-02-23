@@ -23,15 +23,15 @@
       @update:trace-panel-open="isTracePanelOpen = $event"
     />
 
-    <main class="chat-main relative flex h-full flex-1 flex-col overflow-hidden">
+    <main class="chat-main chat-main-shell relative flex h-full flex-1 flex-col overflow-hidden">
       <ChatTopbar
         :is-sidebar-open="isSidebarOpen"
-        title="Chat Bot"
+        title="Simulator"
         @open-sidebar="isSidebarOpen = true"
         @start-new-chat="startNewChat"
       />
 
-      <div ref="scrollRef" class="flex flex-1 flex-col overflow-y-auto">
+      <div ref="scrollRef" class="chat-main-scroll flex flex-1 flex-col overflow-y-auto">
         <MessageList
           :has-started="hasStarted"
           :current-messages="currentMessages"

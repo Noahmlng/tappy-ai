@@ -9,11 +9,12 @@
       class="cubic-bezier-transition shrink-0 flex flex-col items-center transition-all duration-[700ms]"
       :class="hasStarted ? 'mb-0 max-h-0 scale-95 overflow-hidden opacity-0' : 'mb-8 max-h-20 scale-100 opacity-100'"
     >
-      <h1 class="text-center text-[34px] font-semibold tracking-tight text-[#202123]">How can I help you today?</h1>
+      <h1 class="chat-hero-title">How can I help you today?</h1>
+      <p class="chat-hero-subtitle">Simulate monetization paths and inspect every execution trace.</p>
     </div>
 
     <div
-      class="mx-auto flex w-full max-w-[760px] flex-col gap-8 px-4 transition-all duration-[700ms]"
+      class="chat-message-stream transition-all duration-[700ms]"
       :class="hasStarted ? 'py-8 opacity-100' : 'max-h-0 overflow-hidden opacity-0'"
     >
       <MessageItem
