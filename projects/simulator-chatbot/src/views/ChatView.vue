@@ -1791,7 +1791,13 @@ async function runAttachAdsFlow({ session, userContent, assistantMessageId, turn
     reasonDetail: flow?.decision?.reasonDetail || '',
     adCount: Array.isArray(flow?.ads) ? flow.ads.length : 0,
   })
-  if (flow?.evidence?.events?.ok) {
+  if (flow?.evidence?.events?.skipped) {
+    appendTurnTraceEvent(turnTrace, 'ads_event_skipped', {
+      requestId: flow?.requestId || '',
+      kind: 'impression',
+      reason: 'decision_not_served',
+    })
+  } else if (flow?.evidence?.events?.ok) {
     appendTurnTraceEvent(turnTrace, 'ads_event_reported', {
       requestId: flow?.requestId || '',
       kind: 'impression',
@@ -1962,7 +1968,14 @@ async function runNextStepIntentCardFlow({ session, userContent, assistantMessag
     reasonDetail: flow?.decision?.reasonDetail || '',
     adCount: Array.isArray(flow?.ads) ? flow.ads.length : 0,
   })
-  if (flow?.evidence?.events?.ok) {
+  if (flow?.evidence?.events?.skipped) {
+    appendTurnTraceEvent(turnTrace, 'ads_event_skipped', {
+      placementKey: reportPayload.placementKey,
+      requestId: flow?.requestId || '',
+      kind: 'impression',
+      reason: 'decision_not_served',
+    })
+  } else if (flow?.evidence?.events?.ok) {
     appendTurnTraceEvent(turnTrace, 'ads_event_reported', {
       placementKey: reportPayload.placementKey,
       requestId: flow?.requestId || '',

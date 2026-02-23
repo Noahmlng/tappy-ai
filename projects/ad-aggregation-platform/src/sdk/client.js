@@ -143,6 +143,7 @@ function buildEventsEvidence() {
     ok: false,
     status: 0,
     latencyMs: 0,
+    skipped: false,
     error: '',
   }
 }
@@ -462,7 +463,17 @@ export function createAdsSdkClient(options = {}) {
       })
       : null
 
-    if (!eventPayload || typeof eventPayload !== 'object') {
+    if (eventPayload === null || eventPayload === undefined) {
+      flow.evidence.events = {
+        ...buildEventsEvidence(),
+        ok: true,
+        status: 204,
+        skipped: true,
+      }
+      return flow
+    }
+
+    if (typeof eventPayload !== 'object') {
       flow.evidence.events = {
         ...buildEventsEvidence(),
         ok: false,
@@ -478,6 +489,7 @@ export function createAdsSdkClient(options = {}) {
         ok: true,
         status: eventsResponse.status,
         latencyMs: eventsResponse.latencyMs,
+        skipped: false,
         error: '',
       }
       return flow
@@ -516,12 +528,20 @@ export function createAdsSdkClient(options = {}) {
       requestAt: cleanText(input.requestAt) || new Date().toISOString(),
       evaluatePayload,
       intentScore: evaluatePayload.intentScore,
-      eventPayloadFactory: ({ requestId }) => ({
-        ...evaluatePayload,
-        requestId,
-        kind: 'impression',
-        placementId,
-      }),
+      eventPayloadFactory: ({ requestId, decision, ads }) => {
+        const decisionResult = cleanText(decision?.result).toLowerCase()
+        const firstAdId = cleanText(Array.isArray(ads) ? ads[0]?.adId : '')
+        if (decisionResult !== 'served' || !firstAdId) {
+          return null
+        }
+        return {
+          ...evaluatePayload,
+          requestId,
+          kind: 'impression',
+          placementId,
+          adId: firstAdId,
+        }
+      },
       configTimeoutMs: input.configTimeoutMs,
       evaluateTimeoutMs: input.evaluateTimeoutMs,
       eventsTimeoutMs: input.eventsTimeoutMs,
