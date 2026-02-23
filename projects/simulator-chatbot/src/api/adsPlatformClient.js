@@ -217,7 +217,16 @@ export async function evaluateNextStepIntentCardPlacement(payload) {
 }
 
 export async function reportAdsEvent(payload) {
-  const body = payload?.context ? normalizeNextStepIntentCardPayload(payload) : normalizeAttachPayload(payload)
+  const placementKey = String(payload?.placementKey || '').trim()
+  const placementId = String(payload?.placementId || '').trim()
+  const isNextStepPayload = Boolean(
+    payload?.context
+    || placementKey === 'next_step.intent_card'
+    || placementId === 'chat_followup_v1',
+  )
+  const body = isNextStepPayload
+    ? normalizeNextStepIntentCardPayload(payload)
+    : normalizeAttachPayload(payload)
   const response = await adsPlatformClient.reportEvent(body, {
     timeoutMs: 2500,
   })

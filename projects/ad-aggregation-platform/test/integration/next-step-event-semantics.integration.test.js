@@ -178,6 +178,7 @@ test('next-step sdk events: click/dismiss carry kind+adId and click updates dash
     const clickRows = Array.isArray(clickLogs.payload?.items) ? clickLogs.payload.items : []
     const clickRow = clickRows.find((item) => String(item?.requestId || '') === clickRequestId)
     assert.equal(Boolean(clickRow), true, 'click sdk_event must be stored')
+    assert.equal(clickRows.some((item) => String(item?.event || '') === 'answer_completed'), false)
     assert.equal(clickRow.event, 'click')
     assert.equal(clickRow.kind, 'click')
     assert.equal(clickRow.adId, 'next_item_click_001')
@@ -207,6 +208,7 @@ test('next-step sdk events: click/dismiss carry kind+adId and click updates dash
     const dismissRows = Array.isArray(dismissLogs.payload?.items) ? dismissLogs.payload.items : []
     const dismissRow = dismissRows.find((item) => String(item?.requestId || '') === dismissRequestId)
     assert.equal(Boolean(dismissRow), true, 'dismiss sdk_event must be stored')
+    assert.equal(dismissRows.some((item) => String(item?.event || '') === 'answer_completed'), false)
     assert.equal(dismissRow.event, 'dismiss')
     assert.equal(dismissRow.kind, 'dismiss')
     assert.equal(dismissRow.adId, 'next_item_dismiss_001')
