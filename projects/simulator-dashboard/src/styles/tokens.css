@@ -1,0 +1,35 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Manrope:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --dash-canvas: #f6f7f8;
+  --dash-surface: #ffffff;
+  --dash-surface-soft: #fbfbfc;
+  --dash-ink: #111111;
+  --dash-subtle: #6b7280;
+  --dash-stroke: #e5e7eb;
+  --dash-primary: #111111;
+  --dash-accent: #1e5eff;
+
+  --dash-success-ink: #0f6a3f;
+  --dash-success-bg: #edfdf3;
+  --dash-success-stroke: #b7efcf;
+
+  --dash-warn-ink: #8f4c00;
+  --dash-warn-bg: #fff7e7;
+  --dash-warn-stroke: #ffdba1;
+
+  --dash-error-ink: #b42318;
+  --dash-error-bg: #fff1f1;
+  --dash-error-stroke: #f5c6c4;
+
+  --dash-info-ink: #1e5eff;
+  --dash-info-bg: #eff4ff;
+  --dash-info-stroke: #c8d8ff;
+
+  --dash-radius-sm: 10px;
+  --dash-radius-md: 14px;
+  --dash-radius-lg: 16px;
+
+  --dash-shadow-sm: 0 1px 2px rgb(17 24 39 / 0.06);
+  --dash-shadow-md: 0 8px 28px rgb(17 24 39 / 0.06);
+}

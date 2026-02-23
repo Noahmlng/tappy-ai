@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 
+import UiBadge from './components/ui/UiBadge.vue'
 import { featureFlags } from './config/feature-flags'
 
 const route = useRoute()
@@ -22,41 +23,55 @@ const navItems = computed(() => {
 
   return items
 })
+
+const activeNavLabel = computed(() => {
+  const found = navItems.value.find((item) => route.path === item.to || route.path.startsWith(`${item.to}/`))
+  return found?.label || 'Dashboard'
+})
 </script>
 
 <template>
-  <div class="app-shell">
-    <aside class="side-nav">
+  <div class="dashboard-shell">
+    <aside class="dashboard-side card-surface">
       <div>
-        <p class="eyebrow">AI Native Network</p>
-        <h1 class="title">Developer Dashboard</h1>
+        <p class="brand-eyebrow">AI Native Network</p>
+        <h1 class="brand-title">Developer Dashboard <span>v1</span></h1>
       </div>
 
-      <nav class="nav-list">
+      <nav class="side-nav-list">
         <RouterLink
           v-for="item in navItems"
           :key="item.to"
           :to="item.to"
-          class="nav-link"
+          class="side-nav-link"
           :class="{ active: route.path === item.to || route.path.startsWith(`${item.to}/`) }"
         >
           {{ item.label }}
         </RouterLink>
       </nav>
 
-      <p class="muted">
-        Mode:
-        <strong>{{ featureFlags.dashboardV1Minimal ? 'v1 minimal' : 'legacy' }}</strong>
-      </p>
-
-      <p class="muted">
-        Internal reset:
-        <strong>{{ featureFlags.enableInternalReset ? 'enabled' : 'disabled' }}</strong>
-      </p>
+      <div class="side-meta">
+        <p class="muted">
+          Mode: <strong>{{ featureFlags.dashboardV1Minimal ? 'v1 minimal' : 'legacy' }}</strong>
+        </p>
+        <p class="muted">
+          Internal reset: <strong>{{ featureFlags.enableInternalReset ? 'enabled' : 'disabled' }}</strong>
+        </p>
+      </div>
     </aside>
 
-    <main class="content-pane card">
-      <RouterView />
-    </main>
+    <div class="shell-main">
+      <header class="top-banner">
+        <div>
+          <strong>{{ activeNavLabel }}</strong>
+          <p>External developer first. Minimal path to request evidence.</p>
+        </div>
+        <UiBadge tone="info">Production-ready API flow</UiBadge>
+      </header>
+
+      <main class="main-container card-surface">
+        <RouterView />
+      </main>
+    </div>
   </div>
 </template>
