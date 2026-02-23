@@ -1702,30 +1702,6 @@ function resolveMessageContentForRendering(message) {
   return `${content}\n\n${lines.join('\n')}`
 }
 
-function forceAppendAttachLinksMarkdown(message) {
-  if (!message || typeof message !== 'object') return
-  if (typeof message.content !== 'string') return
-
-  const offers = resolveInlineOffersForMessage(message)
-  if (offers.length === 0) return
-
-  const marker = '\n<!-- attach-links-force-rendered -->\n'
-  if (message.content.includes(marker)) return
-
-  const lines = ['Sponsored links:']
-  for (const offer of offers.slice(0, 3)) {
-    const href = pickAttachOfferHref(offer)
-    if (!href) continue
-    const label = String(offer.entityText || offer.title || href).trim()
-    lines.push(`- [${label}](${href})`)
-  }
-
-  if (lines.length <= 1) return
-  // Temporary brute-force fallback:
-  // directly mutate assistant markdown content to guarantee visible sponsored links.
-  message.content = `${message.content}${marker}${lines.join('\n')}`
-}
-
 async function runAttachAdsFlow({ session, userContent, assistantMessageId, turnTrace }) {
   const currentMessage = findMessageById(session.id, assistantMessageId)
   if (!currentMessage) return
@@ -1804,7 +1780,6 @@ async function runAttachAdsFlow({ session, userContent, assistantMessageId, turn
     ads: flow?.ads,
     reportPayload,
   })
-  forceAppendAttachLinksMarkdown(targetMessage)
   targetMessage.inlineMarkerCount = 0
   touchActiveSession()
   scheduleSaveSessions()
