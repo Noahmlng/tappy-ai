@@ -1196,10 +1196,25 @@ function buildModelMessages(messages, webSearchContext, systemPrompt = '') {
   modelMessages.push(...chatMessages)
 
   if (webSearchContext) {
-    modelMessages.push({
-      role: 'user',
-      content: `Additional web search context for grounding:\n${webSearchContext}`,
-    })
+    const contextContent = `Additional web search context for grounding:\n${webSearchContext}`
+    const lastUserIndex = modelMessages
+      .map((item, idx) => (item.role === 'user' ? idx : -1))
+      .filter((idx) => idx >= 0)
+      .pop()
+
+    if (lastUserIndex !== undefined && lastUserIndex >= 0) {
+      const existing = modelMessages[lastUserIndex]
+      const combined = `${existing.content}\n\n${contextContent}`
+      modelMessages[lastUserIndex] = {
+        role: 'user',
+        content: combined.trim(),
+      }
+    } else {
+      modelMessages.push({
+        role: 'user',
+        content: contextContent,
+      })
+    }
   }
 
   return modelMessages
