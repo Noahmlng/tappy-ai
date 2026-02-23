@@ -114,6 +114,9 @@ const ATTACH_MVP_ALLOWED_FIELDS = new Set([
   'answerText',
   'intentScore',
   'locale',
+  'kind',
+  'adId',
+  'placementId',
 ])
 const NEXT_STEP_INTENT_CARD_ALLOWED_FIELDS = new Set([
   'requestId',
@@ -817,6 +820,13 @@ function requiredNonEmptyString(value, fieldName) {
   return text
 }
 
+function normalizeAttachEventKind(value) {
+  const kind = String(value || '').trim().toLowerCase()
+  if (!kind) return 'impression'
+  if (kind === 'impression' || kind === 'click') return kind
+  throw new Error('kind must be impression or click.')
+}
+
 function normalizeAttachMvpPayload(payload, routeName) {
   const input = payload && typeof payload === 'object' ? payload : {}
   validateNoExtraFields(input, ATTACH_MVP_ALLOWED_FIELDS, routeName)
@@ -829,6 +839,9 @@ function normalizeAttachMvpPayload(payload, routeName) {
   const answerText = requiredNonEmptyString(input.answerText, 'answerText')
   const locale = requiredNonEmptyString(input.locale, 'locale')
   const intentScore = clampNumber(input.intentScore, 0, 1, NaN)
+  const kind = normalizeAttachEventKind(input.kind)
+  const adId = String(input.adId || '').trim()
+  const placementId = String(input.placementId || '').trim() || 'chat_inline_v1'
 
   if (!Number.isFinite(intentScore)) {
     throw new Error('intentScore is required and must be a number between 0 and 1.')
@@ -843,6 +856,9 @@ function normalizeAttachMvpPayload(payload, routeName) {
     answerText,
     intentScore,
     locale,
+    kind,
+    adId,
+    placementId,
   }
 }
 
@@ -1705,6 +1721,7 @@ function computeMetricsByDay() {
     day: new Date(`${row.date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short' }),
     revenueUsd: round(row.revenueUsd, 2),
     impressions: row.impressions,
+    clicks: row.clicks,
   }))
 }
 
@@ -1778,6 +1795,14 @@ function recordServeCounters(placement, request, revenueUsd) {
     const dayKey = getUserPlacementDayKey(userId, placement.placementId)
     runtimeMemory.perUserPlacementDayCount.set(dayKey, (runtimeMemory.perUserPlacementDayCount.get(dayKey) || 0) + 1)
   }
+}
+
+function recordClickCounters(placementId) {
+  const normalizedPlacementId = String(placementId || '').trim() || 'chat_inline_v1'
+  const placementStats = ensurePlacementStats(normalizedPlacementId)
+  state.globalStats.clicks += 1
+  placementStats.clicks += 1
+  appendDailyMetric({ clicks: 1 })
 }
 
 function recordBlockedOrNoFill(placement) {
@@ -3939,13 +3964,17 @@ async function requestHandler(req, res) {
           operation: 'sdk_events',
           requiredScope: 'sdkEvents',
           appId: request.appId,
-          placementId: 'chat_inline_v1',
+          placementId: request.placementId || 'chat_inline_v1',
         })
         if (!auth.ok) {
           sendJson(res, auth.status, {
             error: auth.error,
           })
           return
+        }
+
+        if (request.kind === 'click') {
+          recordClickCounters(request.placementId || 'chat_inline_v1')
         }
 
         recordEvent({
@@ -3958,7 +3987,10 @@ async function requestHandler(req, res) {
           answerText: request.answerText,
           intentScore: request.intentScore,
           locale: request.locale,
-          event: ATTACH_MVP_EVENT,
+          event: request.kind === 'click' ? 'click' : ATTACH_MVP_EVENT,
+          kind: request.kind,
+          adId: request.adId || '',
+          placementId: request.placementId || 'chat_inline_v1',
           placementKey: ATTACH_MVP_PLACEMENT_KEY,
         })
       }

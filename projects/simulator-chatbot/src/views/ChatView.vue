@@ -2076,7 +2076,12 @@ function handleSponsoredAdClick(message, ad) {
     return nextTrace
   })
 
-  reportAdsEvent(slot.reportPayload).catch((error) => {
+  reportAdsEvent({
+    ...slot.reportPayload,
+    kind: 'click',
+    adId: String(ad?.adId || ''),
+    placementId: String(slot?.placementId || 'chat_inline_v1'),
+  }).catch((error) => {
     updateTurnTrace(message.sourceTurnId, (trace) => {
       const nextTrace = { ...trace }
       nextTrace.events = [

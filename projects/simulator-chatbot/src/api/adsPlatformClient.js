@@ -71,6 +71,8 @@ export async function fetchAdsConfig(appId, options = {}) {
 }
 
 function normalizeAttachPayload(payload = {}) {
+  const kindRaw = String(payload.kind || '').trim().toLowerCase()
+  const normalizedKind = kindRaw === 'click' ? 'click' : kindRaw === 'impression' ? 'impression' : ''
   return {
     requestId: String(payload.requestId || '').trim(),
     appId: String(payload.appId || '').trim(),
@@ -80,6 +82,9 @@ function normalizeAttachPayload(payload = {}) {
     answerText: String(payload.answerText || '').trim(),
     intentScore: Number(payload.intentScore),
     locale: String(payload.locale || '').trim(),
+    kind: normalizedKind,
+    adId: String(payload.adId || '').trim(),
+    placementId: String(payload.placementId || '').trim(),
   }
 }
 

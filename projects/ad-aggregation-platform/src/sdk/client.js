@@ -519,6 +519,8 @@ export function createAdsSdkClient(options = {}) {
       eventPayloadFactory: ({ requestId }) => ({
         ...evaluatePayload,
         requestId,
+        kind: 'impression',
+        placementId,
       }),
       configTimeoutMs: input.configTimeoutMs,
       evaluateTimeoutMs: input.evaluateTimeoutMs,
