@@ -24,8 +24,9 @@ const draft = reactive({
 const environmentOptions = ['sandbox', 'staging', 'prod']
 
 const isBusy = computed(() => Boolean(apiKeysState.meta.loading || apiKeysState.meta.syncing))
-const syncMode = computed(() => String(apiKeysState.meta.syncMode || 'local'))
 const rows = computed(() => Array.isArray(apiKeysState.items) ? apiKeysState.items : [])
+const activeCount = computed(() => rows.value.filter((item) => item.status === 'active').length)
+const revokedCount = computed(() => rows.value.filter((item) => item.status === 'revoked').length)
 
 function formatDate(value) {
   if (!value) return '-'
@@ -69,12 +70,9 @@ onMounted(() => {
     <UiSectionHeader
       eyebrow="Credentials"
       title="API Keys"
-      subtitle="Create, rotate, and revoke keys by environment."
-    />
-
-    <UiCard>
-      <div class="panel-toolbar">
-        <h3>Keys</h3>
+      subtitle="Keep keys minimal and scoped by environment."
+    >
+      <template #right>
         <div class="toolbar-actions">
           <UiButton :disabled="isBusy" @click="hydrateApiKeys()">
             {{ apiKeysState.meta.loading ? 'Refreshing...' : 'Refresh' }}
@@ -83,12 +81,22 @@ onMounted(() => {
             {{ createFormOpen ? 'Cancel' : 'Create key' }}
           </UiButton>
         </div>
+      </template>
+    </UiSectionHeader>
+
+    <UiCard>
+      <div class="grid">
+        <article class="kpi-card">
+          <p class="kpi-label">Active keys</p>
+          <p class="kpi-value">{{ activeCount }}</p>
+        </article>
+        <article class="kpi-card">
+          <p class="kpi-label">Revoked keys</p>
+          <p class="kpi-value">{{ revokedCount }}</p>
+        </article>
       </div>
 
-      <p class="muted">
-        Sync mode: <strong>{{ syncMode }}</strong>
-        <span v-if="apiKeysState.meta.error"> · {{ apiKeysState.meta.error }}</span>
-      </p>
+      <p class="muted" v-if="apiKeysState.meta.error">{{ apiKeysState.meta.error }}</p>
 
       <div v-if="createFormOpen" class="panel create-key-form">
         <h3>New Key</h3>
@@ -120,7 +128,7 @@ onMounted(() => {
       </div>
 
       <div v-if="apiKeysState.meta.lastRevealedSecret" class="secret-banner">
-        <strong>New key secret (shown once):</strong>
+        <strong>New key secret (shown once)</strong>
         <code>{{ apiKeysState.meta.lastRevealedSecret }}</code>
       </div>
 
@@ -131,8 +139,7 @@ onMounted(() => {
             <th>Environment</th>
             <th>Status</th>
             <th>Masked Key</th>
-            <th>Created At</th>
-            <th>Last Used</th>
+            <th>Updated</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -142,8 +149,7 @@ onMounted(() => {
             <td>{{ row.environment }}</td>
             <td><UiBadge :tone="statusTone(row.status)">{{ row.status }}</UiBadge></td>
             <td><code>{{ row.maskedKey }}</code></td>
-            <td>{{ formatDate(row.createdAt) }}</td>
-            <td>{{ formatDate(row.lastUsedAt) }}</td>
+            <td>{{ formatDate(row.lastUsedAt || row.createdAt) }}</td>
             <td>
               <div class="toolbar-actions">
                 <UiButton
@@ -164,7 +170,7 @@ onMounted(() => {
             </td>
           </tr>
           <tr v-if="rows.length === 0">
-            <td colspan="7" class="muted">No keys found.</td>
+            <td colspan="6" class="muted">No keys found.</td>
           </tr>
         </tbody>
       </table>

@@ -4,6 +4,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import UiBadge from '../components/ui/UiBadge.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiCard from '../components/ui/UiCard.vue'
+import LegacyNotice from '../components/ui/LegacyNotice.vue'
 import UiSectionHeader from '../components/ui/UiSectionHeader.vue'
 import {
   hydrateIntegrations,
@@ -86,6 +87,8 @@ onMounted(() => {
 
 <template>
   <section class="page">
+    <LegacyNotice />
+
     <UiSectionHeader
       eyebrow="Integration"
       title="Integrations"

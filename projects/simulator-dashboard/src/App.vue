@@ -1,32 +1,26 @@
 <script setup>
 import { computed } from 'vue'
-import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 
-import UiBadge from './components/ui/UiBadge.vue'
 import { featureFlags } from './config/feature-flags'
 
 const route = useRoute()
+const router = useRouter()
 
 const navItems = computed(() => {
-  const items = [
-    { to: '/home', label: 'Home' },
-    { to: '/quick-start', label: 'Quick Start' },
-    { to: '/agent-onboarding', label: 'Agent Onboarding' },
-    { to: '/api-keys', label: 'API Keys' },
-    { to: '/integrations', label: 'Integrations' },
-    { to: '/usage', label: 'Usage' },
-  ]
-
-  if (featureFlags.enableInternalReset) {
-    items.push({ to: '/internal-reset', label: 'Internal Reset' })
-  }
-
-  return items
+  return router.getRoutes()
+    .filter((item) => item.meta?.nav)
+    .map((item) => ({
+      to: item.path,
+      label: item.meta?.navLabel || item.name,
+      order: Number(item.meta?.navOrder || 99),
+    }))
+    .sort((a, b) => a.order - b.order)
 })
 
 const activeNavLabel = computed(() => {
-  const found = navItems.value.find((item) => route.path === item.to || route.path.startsWith(`${item.to}/`))
-  return found?.label || 'Dashboard'
+  const current = route.matched[route.matched.length - 1]
+  return current?.meta?.navLabel || 'Dashboard'
 })
 </script>
 
@@ -63,13 +57,12 @@ const activeNavLabel = computed(() => {
     <div class="shell-main">
       <header class="top-banner">
         <div class="top-banner-copy">
-          <p class="top-banner-eyebrow">Panxo + Exa Inspired Direction</p>
+          <p class="top-banner-eyebrow">Primary Flow</p>
           <strong>{{ activeNavLabel }}</strong>
-          <p>Evidence-native monetization control center for AI traffic.</p>
+          <p>API Key → Request Path → 24h Usage</p>
         </div>
         <div class="top-banner-actions">
-          <UiBadge tone="success">Realtime telemetry</UiBadge>
-          <UiBadge tone="info">Production-ready API flow</UiBadge>
+          <RouterLink to="/api-keys" class="button button-secondary">Manage API Keys</RouterLink>
         </div>
       </header>
 

@@ -1,10 +1,13 @@
 <script setup>
 import UiCard from '../components/ui/UiCard.vue'
+import LegacyNotice from '../components/ui/LegacyNotice.vue'
 import UiSectionHeader from '../components/ui/UiSectionHeader.vue'
 </script>
 
 <template>
   <section class="page">
+    <LegacyNotice />
+
     <UiSectionHeader
       eyebrow="Internal Tooling"
       title="Internal Reset"

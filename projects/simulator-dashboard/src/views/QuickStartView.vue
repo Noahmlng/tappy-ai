@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 
 import UiButton from '../components/ui/UiButton.vue'
 import UiCard from '../components/ui/UiCard.vue'
+import LegacyNotice from '../components/ui/LegacyNotice.vue'
 import UiSectionHeader from '../components/ui/UiSectionHeader.vue'
 import { controlPlaneClient } from '../api/control-plane-client'
 
@@ -222,6 +223,8 @@ async function runQuickStartVerifier() {
 
 <template>
   <section class="page">
+    <LegacyNotice />
+
     <UiSectionHeader
       eyebrow="Onboarding"
       title="Quick Start"
