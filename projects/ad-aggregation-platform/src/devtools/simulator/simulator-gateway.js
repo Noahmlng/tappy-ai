@@ -24,6 +24,10 @@ const PORT = Number(process.env.SIMULATOR_GATEWAY_PORT || 3100)
 const HOST = process.env.SIMULATOR_GATEWAY_HOST || '127.0.0.1'
 const DEV_RESET_ENABLED = String(process.env.SIMULATOR_DEV_RESET_ENABLED || 'true').trim().toLowerCase() !== 'false'
 const DEV_RESET_TOKEN = String(process.env.SIMULATOR_DEV_RESET_TOKEN || '').trim()
+const DEFAULT_SIMULATOR_BOOTSTRAP_API_KEY = 'sk_staging_simulator_local_bootstrap_v1'
+const SIMULATOR_BOOTSTRAP_API_KEY = String(
+  process.env.SIMULATOR_BOOTSTRAP_API_KEY || DEFAULT_SIMULATOR_BOOTSTRAP_API_KEY,
+).trim()
 const MAX_DECISION_LOGS = 500
 const MAX_EVENT_LOGS = 500
 const MAX_PLACEMENT_AUDIT_LOGS = 500
@@ -238,8 +242,21 @@ function createMinimalAgentScope() {
   }
 }
 
-function buildApiKeySecret(environment = 'staging') {
+function resolveBootstrapApiKey(environment = 'staging') {
   const env = normalizeControlPlaneEnvironment(environment)
+  if (SIMULATOR_BOOTSTRAP_API_KEY && SIMULATOR_BOOTSTRAP_API_KEY.startsWith(`sk_${env}_`)) {
+    return SIMULATOR_BOOTSTRAP_API_KEY
+  }
+  if (env === 'staging') return DEFAULT_SIMULATOR_BOOTSTRAP_API_KEY
+  return `sk_${env}_simulator_local_bootstrap_v1`
+}
+
+function buildApiKeySecret(environment = 'staging', preferredSecret = '') {
+  const env = normalizeControlPlaneEnvironment(environment)
+  const preferred = String(preferredSecret || '').trim()
+  if (preferred && preferred.startsWith(`sk_${env}_`)) {
+    return preferred
+  }
   return `sk_${env}_${randomToken(24)}`
 }
 
@@ -287,7 +304,7 @@ function createControlPlaneKeyRecord(input = {}) {
   const keyId = String(input.keyId || '').trim() || `key_${randomToken(18)}`
   const createdAt = typeof input.createdAt === 'string' ? input.createdAt : nowIso()
   const updatedAt = typeof input.updatedAt === 'string' ? input.updatedAt : createdAt
-  const secret = buildApiKeySecret(environment)
+  const secret = buildApiKeySecret(environment, input.secret)
   const keyPrefix = secret.slice(0, 14)
   const secretHash = createHash('sha256').update(secret).digest('hex')
   const status = normalizeControlPlaneKeyStatus(input.status, 'active')
@@ -620,6 +637,7 @@ function createInitialControlPlaneState() {
     appId: app.appId,
     environment: 'staging',
     keyName: 'primary-staging',
+    secret: resolveBootstrapApiKey('staging'),
   })
 
   return {
@@ -687,6 +705,26 @@ function ensureControlPlaneState(raw) {
     .filter((item) => item && appIdSet.has(item.appId))
   if (apiKeys.length === 0) {
     apiKeys = fallback.apiKeys
+  }
+
+  const bootstrapSecret = resolveBootstrapApiKey('staging')
+  const bootstrapHash = hashToken(bootstrapSecret)
+  const hasBootstrapKey = apiKeys.some((item) => (
+    item
+    && item.appId === DEFAULT_CONTROL_PLANE_APP_ID
+    && item.environment === 'staging'
+    && item.secretHash === bootstrapHash
+    && item.status === 'active'
+  ))
+  if (!hasBootstrapKey) {
+    const { keyRecord } = createControlPlaneKeyRecord({
+      appId: DEFAULT_CONTROL_PLANE_APP_ID,
+      environment: 'staging',
+      keyName: 'primary-staging',
+      secret: bootstrapSecret,
+      status: 'active',
+    })
+    apiKeys.unshift(keyRecord)
   }
 
   const tokenRows = Array.isArray(raw.integrationTokens || raw.tokens)

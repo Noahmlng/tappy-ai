@@ -5,6 +5,27 @@ function cleanText(value) {
   return value.trim()
 }
 
+function isLoopbackHostname(hostname) {
+  const host = String(hostname || '').trim().toLowerCase()
+  if (!host) return false
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true
+  return host.startsWith('127.')
+}
+
+function resolveApiBaseHostname(apiBaseUrl) {
+  const value = cleanText(apiBaseUrl)
+  if (!value) return ''
+  try {
+    const base = typeof window !== 'undefined' && window?.location?.origin
+      ? window.location.origin
+      : 'http://localhost'
+    const url = new URL(value, base)
+    return cleanText(url.hostname)
+  } catch {
+    return ''
+  }
+}
+
 const API_BASE = (
   import.meta.env.VITE_SIMULATOR_API_BASE_URL ||
   import.meta.env.MEDIATION_API_BASE_URL ||
@@ -40,11 +61,27 @@ const DEFAULT_CLIENT_VERSION = cleanText(
   import.meta.env.MEDIATION_SDK_VERSION ||
   '1.0.0'
 ) || '1.0.0'
+const LOCAL_BOOTSTRAP_API_KEY = cleanText(
+  import.meta.env.VITE_MEDIATION_LOCAL_BOOTSTRAP_API_KEY ||
+  import.meta.env.MEDIATION_LOCAL_BOOTSTRAP_API_KEY ||
+  'sk_staging_simulator_local_bootstrap_v1',
+)
+const PREFER_CONFIGURED_KEY_ON_LOOPBACK = cleanText(
+  import.meta.env.VITE_MEDIATION_PREFER_ENV_KEY ||
+  import.meta.env.MEDIATION_PREFER_ENV_KEY ||
+  '',
+).toLowerCase() === 'true'
 const DEFAULT_EVALUATE_TIMEOUT_MS = 20000
+const API_BASE_HOSTNAME = resolveApiBaseHostname(API_BASE)
+const EFFECTIVE_MEDIATION_API_KEY = (
+  isLoopbackHostname(API_BASE_HOSTNAME) && !PREFER_CONFIGURED_KEY_ON_LOOPBACK
+    ? (LOCAL_BOOTSTRAP_API_KEY || MEDIATION_API_KEY)
+    : MEDIATION_API_KEY
+)
 
 const adsPlatformClient = createAdsSdkClient({
   apiBaseUrl: API_BASE,
-  apiKey: MEDIATION_API_KEY,
+  apiKey: EFFECTIVE_MEDIATION_API_KEY,
   timeouts: {
     config: 3000,
     evaluate: DEFAULT_EVALUATE_TIMEOUT_MS,
