@@ -1,14 +1,24 @@
 <script setup>
-defineProps({
-  as: {
-    type: String,
-    default: 'article',
+import { computed } from 'vue'
+
+import { Card } from './card'
+
+const props = defineProps({
+  class: {
+    type: [String, Array, Object],
+    default: '',
   },
 })
+
+const cardClass = computed(() => ([
+  'rounded-[12px] border-[var(--dash-stroke)] bg-[var(--dash-surface)] shadow-none',
+  'px-[18px] py-[18px] gap-[14px]',
+  props.class,
+]))
 </script>
 
 <template>
-  <component :is="as" class="card">
+  <Card :class="cardClass">
     <slot />
-  </component>
+  </Card>
 </template>

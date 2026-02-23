@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 
 import { featureFlags } from './config/feature-flags'
+import UiButton from './components/ui/UiButton.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -56,7 +57,9 @@ const navItems = computed(() => {
           <strong>API Key → Request Path → 24h Usage</strong>
         </div>
         <div class="top-banner-actions">
-          <RouterLink to="/api-keys" class="button button-secondary">Manage API Keys</RouterLink>
+          <UiButton variant="secondary" as-child>
+            <RouterLink to="/api-keys">Manage API Keys</RouterLink>
+          </UiButton>
         </div>
       </header>
 

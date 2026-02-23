@@ -1,7 +1,9 @@
+<script setup>
+import { Table } from './table'
+</script>
+
 <template>
-  <div class="table-wrap">
-    <table class="ui-table">
-      <slot />
-    </table>
-  </div>
+  <Table class="ui-table">
+    <slot />
+  </Table>
 </template>

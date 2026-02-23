@@ -89,7 +89,9 @@ onMounted(() => {
         <p class="muted" v-if="latestKey">
           Latest key: <strong>{{ latestKey.name }}</strong>
         </p>
-        <RouterLink to="/api-keys" class="button button-secondary">Go to API Keys</RouterLink>
+        <UiButton variant="secondary" as-child>
+          <RouterLink to="/api-keys">Go to API Keys</RouterLink>
+        </UiButton>
       </UiCard>
 
       <UiCard>
@@ -113,7 +115,9 @@ onMounted(() => {
           <p><span class="muted">Revenue</span><strong>{{ usageSnapshot.revenue24h }}</strong></p>
           <p><span class="muted">Fill Rate</span><strong>{{ usageSnapshot.fillRate }}</strong></p>
         </div>
-        <RouterLink to="/usage" class="button button-secondary">Open Usage</RouterLink>
+        <UiButton variant="secondary" as-child>
+          <RouterLink to="/usage">Open Usage</RouterLink>
+        </UiButton>
       </UiCard>
     </div>
   </section>
