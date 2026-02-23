@@ -13,27 +13,32 @@
     </div>
 
     <div class="flex items-center gap-2">
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         :class="['chat-topbar-action', { 'is-active': isDebugMode }]"
         @click="$emit('toggle-debug')"
       >
         <Bug :size="13" />
         <span>Debug {{ isDebugMode ? 'On' : 'Off' }}</span>
-      </button>
+      </Button>
 
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         class="chat-topbar-action"
         @click="$emit('start-new-chat')"
       >
         <Plus :size="13" />
         <span>New</span>
-      </button>
+      </Button>
     </div>
   </header>
 </template>
 
 <script setup>
 import { Bug, Menu, Plus } from 'lucide-vue-next'
+import { Button } from '@/components/ui/button'
 
 defineProps({
   isSidebarOpen: {

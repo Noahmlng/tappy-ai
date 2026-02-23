@@ -18,8 +18,9 @@
         <p class="chat-sidebar-subtitle">Conversation-first workspace</p>
       </div>
 
-      <button
+      <Button
         @click="$emit('start-new-chat')"
+        variant="outline"
         class="chat-sidebar-newchat group flex items-center justify-between"
       >
         <div class="flex items-center gap-2">
@@ -29,17 +30,17 @@
           <span>New Chat</span>
         </div>
         <MessageSquare :size="14" class="chat-newchat-glyph opacity-0 group-hover:opacity-100" />
-      </button>
+      </Button>
 
       <label class="chat-sidebar-search">
         <Search :size="16" class="text-[var(--chat-sidebar-muted)]" />
-        <input
+        <Input
           :value="historyQuery"
           type="text"
           placeholder="Search history"
-          class="text-sm"
+          class="h-8 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0 focus-visible:border-transparent"
           @input="$emit('update:historyQuery', $event.target.value)"
-        >
+        />
       </label>
     </div>
 
@@ -79,22 +80,24 @@
           System Prompt
         </summary>
         <div class="chat-panel-actions">
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             class="chat-panel-reset disabled:opacity-60"
             :disabled="!activeSession"
             @click="$emit('reset-system-prompt')"
           >
             Reset
-          </button>
+          </Button>
         </div>
-        <textarea
+        <Textarea
           :value="activeSystemPrompt"
           :disabled="!activeSession"
           rows="4"
-          class="chat-system-input disabled:opacity-60"
+          class="chat-system-input min-h-[108px] resize-y disabled:opacity-60"
           placeholder="Set a per-chat system prompt..."
           @input="$emit('update:activeSystemPrompt', $event.target.value)"
-        ></textarea>
+        />
         <div class="chat-panel-note">
           Applied to every request in the current chat. New Chat resets to default.
         </div>
@@ -116,18 +119,22 @@
         />
       </details>
 
-      <button
+      <Button
+        variant="outline"
         class="chat-clear-btn"
         @click="$emit('clear-history')"
       >
         Clear History
-      </button>
+      </Button>
     </div>
   </aside>
 </template>
 
 <script setup>
 import { MessageSquare, Plus, Search, Trash2, X } from 'lucide-vue-next'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 
 import ExecutionTracePanel from './ExecutionTracePanel.vue'
 

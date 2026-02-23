@@ -5,7 +5,7 @@
   >
     <div class="mx-auto max-w-[920px] px-4">
       <div class="chat-composer relative flex flex-col p-2">
-        <textarea
+        <Textarea
           :value="modelValue"
           rows="1"
           placeholder="Message simulator"
@@ -15,10 +15,12 @@
           @compositionstart="$emit('composition-start')"
           @compositionend="$emit('composition-end')"
           @keydown.enter.prevent="$emit('send')"
-        ></textarea>
+        />
 
         <div class="flex items-center justify-end px-2 pb-1">
-          <button
+          <Button
+            size="icon"
+            :variant="String(modelValue || '').trim() && !isLoading ? 'default' : 'outline'"
             :disabled="!String(modelValue || '').trim() || isLoading"
             :class="[
               'chat-send-btn outline-none',
@@ -29,7 +31,7 @@
             @click="$emit('send')"
           >
             <ArrowUp :size="18" :stroke-width="3" />
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -42,6 +44,8 @@
 
 <script setup>
 import { ArrowUp } from 'lucide-vue-next'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 
 defineProps({
   modelValue: {
