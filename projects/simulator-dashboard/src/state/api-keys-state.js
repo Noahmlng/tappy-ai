@@ -3,9 +3,6 @@ import { reactive } from 'vue'
 import { controlPlaneClient } from '../api/control-plane-client'
 import { getScopeQuery } from './scope-state'
 
-const STORAGE_KEY = 'ai-network-simulator-dashboard-api-keys-v2'
-const STORAGE_SOURCE = 'remote_api'
-
 function nowIso() {
   return new Date().toISOString()
 }
@@ -44,31 +41,6 @@ function normalizeList(payload) {
   return source.map(normalizeItem).filter(Boolean)
 }
 
-function persist(items) {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({
-      source: STORAGE_SOURCE,
-      items,
-    }),
-  )
-}
-
-function loadCachedItems() {
-  if (typeof window === 'undefined') return []
-  const raw = window.localStorage.getItem(STORAGE_KEY)
-  if (!raw) return []
-
-  try {
-    const parsed = JSON.parse(raw)
-    if (parsed?.source !== STORAGE_SOURCE) return []
-    return normalizeList(parsed.items)
-  } catch {
-    return []
-  }
-}
-
 function upsertItem(items, nextItem) {
   const idx = items.findIndex((row) => row.keyId === nextItem.keyId)
   if (idx >= 0) {
@@ -79,7 +51,7 @@ function upsertItem(items, nextItem) {
 }
 
 export const apiKeysState = reactive({
-  items: loadCachedItems(),
+  items: [],
   meta: {
     loading: false,
     syncing: false,
@@ -92,7 +64,6 @@ export const apiKeysState = reactive({
 
 function applyItems(items) {
   apiKeysState.items = clone(items)
-  persist(apiKeysState.items)
 }
 
 export async function hydrateApiKeys() {
@@ -106,6 +77,8 @@ export async function hydrateApiKeys() {
     apiKeysState.meta.error = ''
     apiKeysState.meta.lastSyncedAt = nowIso()
   } catch (error) {
+    apiKeysState.items = []
+    apiKeysState.meta.lastRevealedSecret = ''
     apiKeysState.meta.syncMode = 'offline'
     apiKeysState.meta.error = error instanceof Error
       ? error.message
@@ -132,12 +105,12 @@ export async function createApiKey(input) {
       throw new Error('Unexpected create key response')
     }
     upsertItem(apiKeysState.items, normalized)
-    persist(apiKeysState.items)
     apiKeysState.meta.syncMode = 'remote'
     apiKeysState.meta.lastSyncedAt = nowIso()
     apiKeysState.meta.error = ''
     apiKeysState.meta.lastRevealedSecret = String(payload?.secret || payload?.apiKey || '')
   } catch (error) {
+    apiKeysState.meta.lastRevealedSecret = ''
     apiKeysState.meta.syncMode = 'offline'
     apiKeysState.meta.error = error instanceof Error
       ? error.message
@@ -158,12 +131,12 @@ export async function rotateApiKey(keyId) {
       throw new Error('Unexpected rotate key response')
     }
     upsertItem(apiKeysState.items, normalized)
-    persist(apiKeysState.items)
     apiKeysState.meta.syncMode = 'remote'
     apiKeysState.meta.lastRevealedSecret = String(payload?.secret || payload?.apiKey || '')
     apiKeysState.meta.lastSyncedAt = nowIso()
     apiKeysState.meta.error = ''
   } catch (error) {
+    apiKeysState.meta.lastRevealedSecret = ''
     apiKeysState.meta.syncMode = 'offline'
     apiKeysState.meta.error = error instanceof Error
       ? error.message
@@ -186,7 +159,6 @@ export async function revokeApiKey(keyId) {
         row.keyId === keyId ? { ...row, status: 'revoked' } : row
       ))
     }
-    persist(apiKeysState.items)
     apiKeysState.meta.syncMode = 'remote'
     apiKeysState.meta.lastSyncedAt = nowIso()
     apiKeysState.meta.error = ''

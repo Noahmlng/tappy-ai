@@ -3,9 +3,6 @@ import { reactive } from 'vue'
 import { controlPlaneClient } from '../api/control-plane-client'
 import { getScopeQuery } from './scope-state'
 
-const STORAGE_KEY = 'ai-network-simulator-dashboard-state-v3'
-const STORAGE_SOURCE = 'remote_api'
-
 function buildEmptyDashboardState() {
   return {
     placementConfigVersion: 1,
@@ -124,24 +121,7 @@ function shapeState(value) {
   }
 }
 
-function loadState() {
-  if (typeof window === 'undefined') return shapeState(buildEmptyDashboardState())
-
-  const saved = window.localStorage.getItem(STORAGE_KEY)
-  if (!saved) return shapeState(buildEmptyDashboardState())
-
-  try {
-    const parsed = JSON.parse(saved)
-    if (parsed?.source !== STORAGE_SOURCE) {
-      return shapeState(buildEmptyDashboardState())
-    }
-    return shapeState(parsed.snapshot)
-  } catch {
-    return shapeState(buildEmptyDashboardState())
-  }
-}
-
-const initial = loadState()
+const initial = shapeState(buildEmptyDashboardState())
 
 export const dashboardState = reactive({
   ...initial,
@@ -153,33 +133,8 @@ export const dashboardState = reactive({
   },
 })
 
-function persist() {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({
-      source: STORAGE_SOURCE,
-      snapshot: {
-        placementConfigVersion: dashboardState.placementConfigVersion,
-        metricsSummary: dashboardState.metricsSummary,
-        metricsByDay: dashboardState.metricsByDay,
-        metricsByPlacement: dashboardState.metricsByPlacement,
-        settlementAggregates: dashboardState.settlementAggregates,
-        placements: dashboardState.placements,
-        placementAuditLogs: dashboardState.placementAuditLogs,
-        networkHealth: dashboardState.networkHealth,
-        networkHealthSummary: dashboardState.networkHealthSummary,
-        networkFlowStats: dashboardState.networkFlowStats,
-        networkFlowLogs: dashboardState.networkFlowLogs,
-        decisionLogs: dashboardState.decisionLogs,
-        controlPlaneApps: dashboardState.controlPlaneApps,
-        scope: dashboardState.scope,
-      },
-    }),
-  )
-}
-
-function applySnapshot(snapshot) {
+function applySnapshot(snapshot, options = {}) {
+  const markSynced = options?.markSynced !== false
   const next = shapeState(snapshot)
   dashboardState.placementConfigVersion = next.placementConfigVersion
   dashboardState.metricsSummary = next.metricsSummary
@@ -195,15 +150,15 @@ function applySnapshot(snapshot) {
   dashboardState.decisionLogs = next.decisionLogs
   dashboardState.controlPlaneApps = next.controlPlaneApps
   dashboardState.scope = next.scope
-  dashboardState.meta.lastSyncedAt = new Date().toISOString()
-  persist()
+  if (markSynced) {
+    dashboardState.meta.lastSyncedAt = new Date().toISOString()
+  }
 }
 
 function withPlacement(placementId, updater) {
   const target = dashboardState.placements.find((item) => item.placementId === placementId)
   if (!target) return null
   updater(target)
-  persist()
   return target
 }
 
@@ -223,7 +178,6 @@ function syncPlacement(placementId, patch) {
         dashboardState.meta.connected = true
         dashboardState.meta.error = ''
         dashboardState.meta.lastSyncedAt = new Date().toISOString()
-        persist()
       }
     })
     .catch((error) => {
@@ -241,10 +195,12 @@ export async function hydrateDashboardState() {
     dashboardState.meta.connected = true
     dashboardState.meta.error = ''
   } catch (error) {
+    applySnapshot(buildEmptyDashboardState(), { markSynced: false })
     dashboardState.meta.connected = false
     dashboardState.meta.error = error instanceof Error
       ? error.message
       : 'Dashboard API unavailable'
+    dashboardState.meta.lastSyncedAt = ''
   } finally {
     dashboardState.meta.loading = false
   }
@@ -323,7 +279,4 @@ export function resetDashboardState() {
   dashboardState.meta.connected = false
   dashboardState.meta.error = ''
   dashboardState.meta.lastSyncedAt = ''
-  if (typeof window !== 'undefined') {
-    window.localStorage.removeItem(STORAGE_KEY)
-  }
 }

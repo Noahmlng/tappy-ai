@@ -2,26 +2,12 @@ import { reactive } from 'vue'
 
 import { controlPlaneClient } from '../api/control-plane-client'
 
-const STORAGE_KEY = 'ai-network-simulator-dashboard-integrations-v1'
-
 function nowIso() {
   return new Date().toISOString()
 }
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value))
-}
-
-function defaultTemplates() {
-  return [
-    {
-      placementId: 'chat_inline_v1',
-      environment: 'staging',
-      surface: 'CHAT_INLINE',
-      enabled: true,
-      updatedAt: nowIso(),
-    },
-  ]
 }
 
 function normalizeTemplate(item) {
@@ -46,25 +32,6 @@ function normalizeList(payload) {
   return source.map(normalizeTemplate).filter(Boolean)
 }
 
-function loadLocalTemplates() {
-  if (typeof window === 'undefined') return defaultTemplates()
-  const raw = window.localStorage.getItem(STORAGE_KEY)
-  if (!raw) return defaultTemplates()
-
-  try {
-    const parsed = JSON.parse(raw)
-    const normalized = normalizeList(parsed)
-    return normalized.length > 0 ? normalized : defaultTemplates()
-  } catch {
-    return defaultTemplates()
-  }
-}
-
-function persist(items) {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
-}
-
 function upsert(items, row) {
   const idx = items.findIndex((item) => item.placementId === row.placementId)
   if (idx >= 0) {
@@ -75,11 +42,11 @@ function upsert(items, row) {
 }
 
 export const integrationsState = reactive({
-  templates: loadLocalTemplates(),
+  templates: [],
   meta: {
     loading: false,
     syncing: false,
-    syncMode: 'local',
+    syncMode: 'unknown',
     error: '',
     lastSyncedAt: '',
   },
@@ -87,7 +54,6 @@ export const integrationsState = reactive({
 
 function applyTemplates(items) {
   integrationsState.templates = clone(items)
-  persist(integrationsState.templates)
 }
 
 export async function hydrateIntegrations() {
@@ -96,25 +62,17 @@ export async function hydrateIntegrations() {
   try {
     const payload = await controlPlaneClient.placements.list()
     const normalized = normalizeList(payload)
-    if (normalized.length > 0) {
-      applyTemplates(normalized)
-      integrationsState.meta.syncMode = 'remote'
-      integrationsState.meta.error = ''
-      integrationsState.meta.lastSyncedAt = nowIso()
-      return
-    }
-
-    const local = loadLocalTemplates()
-    applyTemplates(local)
-    integrationsState.meta.syncMode = 'local'
-    integrationsState.meta.error = 'Remote placement list empty. Using local fallback.'
+    applyTemplates(normalized)
+    integrationsState.meta.syncMode = 'remote'
+    integrationsState.meta.error = ''
+    integrationsState.meta.lastSyncedAt = nowIso()
   } catch (error) {
-    const local = loadLocalTemplates()
-    applyTemplates(local)
-    integrationsState.meta.syncMode = 'local'
+    applyTemplates([])
+    integrationsState.meta.syncMode = 'offline'
     integrationsState.meta.error = error instanceof Error
       ? error.message
-      : 'Failed to load remote placements. Using local fallback.'
+      : 'Failed to load placements from remote service.'
+    integrationsState.meta.lastSyncedAt = ''
   } finally {
     integrationsState.meta.loading = false
   }
@@ -130,37 +88,26 @@ export async function savePlacementTemplate(draft) {
   integrationsState.meta.syncing = true
 
   try {
-    if (integrationsState.meta.syncMode === 'remote') {
-      const exists = integrationsState.templates.some(
-        (row) => row.placementId === normalized.placementId,
-      )
-      const payload = exists
-        ? await controlPlaneClient.placements.update(normalized.placementId, normalized)
-        : await controlPlaneClient.placements.create(normalized)
-      const remoteItem = normalizeTemplate(payload?.placement || payload)
-      if (remoteItem) {
-        upsert(integrationsState.templates, remoteItem)
-      } else {
-        upsert(integrationsState.templates, normalized)
-      }
-      persist(integrationsState.templates)
-      integrationsState.meta.error = ''
-      integrationsState.meta.lastSyncedAt = nowIso()
-      return
+    const exists = integrationsState.templates.some(
+      (row) => row.placementId === normalized.placementId,
+    )
+    const payload = exists
+      ? await controlPlaneClient.placements.update(normalized.placementId, normalized)
+      : await controlPlaneClient.placements.create(normalized)
+    const remoteItem = normalizeTemplate(payload?.placement || payload)
+    if (remoteItem) {
+      upsert(integrationsState.templates, remoteItem)
+    } else {
+      upsert(integrationsState.templates, normalized)
     }
-
-    upsert(integrationsState.templates, normalized)
-    persist(integrationsState.templates)
+    integrationsState.meta.syncMode = 'remote'
     integrationsState.meta.error = ''
     integrationsState.meta.lastSyncedAt = nowIso()
   } catch (error) {
-    integrationsState.meta.syncMode = 'local'
-    upsert(integrationsState.templates, normalized)
-    persist(integrationsState.templates)
+    integrationsState.meta.syncMode = 'offline'
     integrationsState.meta.error = error instanceof Error
-      ? `${error.message} (switched to local mode)`
-      : 'Failed to save on remote API. Switched to local mode.'
-    integrationsState.meta.lastSyncedAt = nowIso()
+      ? error.message
+      : 'Failed to save placement on remote API.'
   } finally {
     integrationsState.meta.syncing = false
   }
