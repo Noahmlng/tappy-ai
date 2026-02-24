@@ -30,6 +30,7 @@ const SIMULATOR_BOOTSTRAP_API_KEY = String(
 ).trim()
 const MAX_DECISION_LOGS = 500
 const MAX_EVENT_LOGS = 500
+const MAX_CONVERSION_FACTS = 2000
 const MAX_PLACEMENT_AUDIT_LOGS = 500
 const MAX_NETWORK_FLOW_LOGS = 300
 const MAX_CONTROL_PLANE_AUDIT_LOGS = 800
@@ -75,6 +76,9 @@ const ATTACH_MVP_EVENT = 'answer_completed'
 const NEXT_STEP_INTENT_CARD_PLACEMENT_KEY = 'next_step.intent_card'
 const MANAGED_ROUTING_MODE = 'managed_mediation'
 const NEXT_STEP_INTENT_CARD_EVENTS = new Set(['followup_generation', 'follow_up_generation'])
+const POSTBACK_EVENT_TYPES = new Set(['postback'])
+const POSTBACK_TYPES = new Set(['conversion'])
+const POSTBACK_STATUS = new Set(['pending', 'success', 'failed'])
 const NEXT_STEP_INTENT_CLASSES = new Set([
   'shopping',
   'purchase_intent',
@@ -162,6 +166,33 @@ const INTENT_CARD_RETRIEVE_ALLOWED_FIELDS = new Set([
   'topK',
   'minScore',
   'catalog',
+])
+const POSTBACK_CONVERSION_ALLOWED_FIELDS = new Set([
+  'eventType',
+  'event',
+  'kind',
+  'requestId',
+  'appId',
+  'accountId',
+  'account_id',
+  'sessionId',
+  'turnId',
+  'userId',
+  'placementId',
+  'placementKey',
+  'adId',
+  'postbackType',
+  'postbackStatus',
+  'conversionId',
+  'conversion_id',
+  'eventSeq',
+  'eventAt',
+  'event_at',
+  'currency',
+  'cpaUsd',
+  'cpa_usd',
+  'payoutUsd',
+  'payout_usd',
 ])
 
 const runtimeMemory = {
@@ -1055,6 +1086,88 @@ function normalizeNextStepEventKind(value) {
   throw new Error('kind must be impression, click, or dismiss.')
 }
 
+function normalizePostbackType(value) {
+  const type = String(value || '').trim().toLowerCase()
+  if (!type) return 'conversion'
+  if (POSTBACK_TYPES.has(type)) return type
+  throw new Error('postbackType must be conversion.')
+}
+
+function normalizePostbackStatus(value) {
+  const status = String(value || '').trim().toLowerCase()
+  if (!status) return 'success'
+  if (POSTBACK_STATUS.has(status)) return status
+  throw new Error('postbackStatus must be pending, success, or failed.')
+}
+
+function normalizeIsoTimestamp(value, fallback = nowIso(), fieldName = '') {
+  const text = String(value || '').trim()
+  if (!text) return fallback
+  const parsed = Date.parse(text)
+  if (!Number.isFinite(parsed)) {
+    if (fieldName) {
+      throw new Error(`${fieldName} must be a valid ISO-8601 datetime.`)
+    }
+    return fallback
+  }
+  return new Date(parsed).toISOString()
+}
+
+function isPostbackConversionPayload(payload) {
+  if (!payload || typeof payload !== 'object') return false
+  const eventType = String(payload.eventType || payload.event || '').trim().toLowerCase()
+  if (POSTBACK_EVENT_TYPES.has(eventType)) return true
+  if (payload.postbackType !== undefined) return true
+  if (payload.postbackStatus !== undefined) return true
+  if (payload.conversionId !== undefined || payload.conversion_id !== undefined) return true
+  return false
+}
+
+function normalizePostbackConversionPayload(payload, routeName) {
+  const input = payload && typeof payload === 'object' ? payload : {}
+  validateNoExtraFields(input, POSTBACK_CONVERSION_ALLOWED_FIELDS, routeName)
+
+  const requestId = requiredNonEmptyString(input.requestId, 'requestId')
+  const appId = requiredNonEmptyString(input.appId, 'appId')
+  const accountId = normalizeControlPlaneAccountId(input.accountId || input.account_id || resolveAccountIdForApp(appId))
+  const eventType = String(input.eventType || input.event || 'postback').trim().toLowerCase()
+  if (!POSTBACK_EVENT_TYPES.has(eventType)) {
+    throw new Error('eventType must be postback.')
+  }
+
+  const postbackType = normalizePostbackType(input.postbackType || input.kind || 'conversion')
+  const postbackStatus = normalizePostbackStatus(input.postbackStatus || 'success')
+  const cpaUsd = clampNumber(input.cpaUsd ?? input.cpa_usd ?? input.payoutUsd ?? input.payout_usd, 0, Number.MAX_SAFE_INTEGER, NaN)
+  if (postbackStatus === 'success' && !Number.isFinite(cpaUsd)) {
+    throw new Error('cpaUsd is required for successful postback conversion.')
+  }
+
+  const currency = String(input.currency || 'USD').trim().toUpperCase()
+  if (currency !== 'USD') {
+    throw new Error('currency must be USD for CPA MVP.')
+  }
+
+  return {
+    eventType: 'postback',
+    requestId,
+    appId,
+    accountId,
+    sessionId: String(input.sessionId || '').trim(),
+    turnId: String(input.turnId || '').trim(),
+    userId: String(input.userId || '').trim(),
+    placementId: String(input.placementId || '').trim(),
+    placementKey: String(input.placementKey || '').trim(),
+    adId: String(input.adId || '').trim(),
+    postbackType,
+    postbackStatus,
+    conversionId: String(input.conversionId || input.conversion_id || '').trim(),
+    eventSeq: String(input.eventSeq || '').trim(),
+    occurredAt: normalizeIsoTimestamp(input.eventAt || input.event_at, nowIso(), 'eventAt'),
+    cpaUsd: Number.isFinite(cpaUsd) ? round(cpaUsd, 4) : 0,
+    currency,
+  }
+}
+
 function normalizeAttachMvpPayload(payload, routeName) {
   const input = payload && typeof payload === 'object' ? payload : {}
   validateNoExtraFields(input, ATTACH_MVP_ALLOWED_FIELDS, routeName)
@@ -1586,12 +1699,52 @@ function initialPlacementStats(placements) {
   return stats
 }
 
+function normalizeConversionFact(raw) {
+  const item = raw && typeof raw === 'object' ? raw : {}
+  const appId = String(item.appId || '').trim()
+  const requestId = String(item.requestId || '').trim()
+  const conversionId = String(item.conversionId || '').trim()
+  const createdAt = normalizeIsoTimestamp(item.createdAt, nowIso())
+  const occurredAt = normalizeIsoTimestamp(item.occurredAt || item.eventAt, createdAt)
+
+  const typeRaw = String(item.postbackType || '').trim().toLowerCase()
+  const statusRaw = String(item.postbackStatus || '').trim().toLowerCase()
+  const postbackType = POSTBACK_TYPES.has(typeRaw) ? typeRaw : 'conversion'
+  const postbackStatus = POSTBACK_STATUS.has(statusRaw) ? statusRaw : 'success'
+  const cpaUsd = round(clampNumber(item.cpaUsd ?? item.revenueUsd, 0, Number.MAX_SAFE_INTEGER, 0), 4)
+  const fallbackFactId = `fact_${createHash('sha1').update(`${appId}|${requestId}|${conversionId}|${createdAt}`).digest('hex').slice(0, 16)}`
+
+  return {
+    factId: String(item.factId || '').trim() || fallbackFactId,
+    factType: 'cpa_conversion',
+    appId,
+    accountId: normalizeControlPlaneAccountId(item.accountId || resolveAccountIdForApp(appId), ''),
+    requestId,
+    sessionId: String(item.sessionId || '').trim(),
+    turnId: String(item.turnId || '').trim(),
+    userId: String(item.userId || '').trim(),
+    placementId: String(item.placementId || '').trim(),
+    placementKey: String(item.placementKey || '').trim(),
+    adId: String(item.adId || '').trim(),
+    postbackType,
+    postbackStatus,
+    conversionId,
+    eventSeq: String(item.eventSeq || '').trim(),
+    occurredAt,
+    createdAt,
+    cpaUsd,
+    revenueUsd: postbackStatus === 'success' ? cpaUsd : 0,
+    currency: 'USD',
+    idempotencyKey: String(item.idempotencyKey || '').trim(),
+  }
+}
+
 function createInitialState() {
   const placements = defaultPlacements.map((item) => normalizePlacement(item))
   const placementConfigVersion = Math.max(1, ...placements.map((placement) => placement.configVersion || 1))
 
   return {
-    version: 4,
+    version: 5,
     updatedAt: nowIso(),
     placementConfigVersion,
     placements,
@@ -1601,6 +1754,7 @@ function createInitialState() {
     networkFlowLogs: [],
     decisionLogs: [],
     eventLogs: [],
+    conversionFacts: [],
     globalStats: {
       requests: 0,
       served: 0,
@@ -1647,7 +1801,7 @@ function loadState() {
     }
 
     return {
-      version: toPositiveInteger(parsed?.version, 4),
+      version: toPositiveInteger(parsed?.version, 5),
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : nowIso(),
       placementConfigVersion,
       placements,
@@ -1663,6 +1817,9 @@ function loadState() {
         : [],
       decisionLogs: Array.isArray(parsed.decisionLogs) ? parsed.decisionLogs.slice(0, MAX_DECISION_LOGS) : [],
       eventLogs: Array.isArray(parsed.eventLogs) ? parsed.eventLogs.slice(0, MAX_EVENT_LOGS) : [],
+      conversionFacts: Array.isArray(parsed.conversionFacts)
+        ? parsed.conversionFacts.map((item) => normalizeConversionFact(item)).slice(0, MAX_CONVERSION_FACTS)
+        : [],
       globalStats: {
         requests: toPositiveInteger(parsed?.globalStats?.requests, 0),
         served: toPositiveInteger(parsed?.globalStats?.served, 0),
@@ -1755,7 +1912,7 @@ function readJsonBody(req) {
   })
 }
 
-function appendDailyMetric({ impressions = 0, clicks = 0, revenueUsd = 0 }) {
+function appendDailyMetric({ impressions = 0, clicks = 0 }) {
   state.dailyMetrics = ensureDailyMetricsWindow(state.dailyMetrics)
   const today = getTodayKey()
   const row = state.dailyMetrics.find((item) => item.date === today)
@@ -1763,7 +1920,6 @@ function appendDailyMetric({ impressions = 0, clicks = 0, revenueUsd = 0 }) {
 
   row.impressions += Math.max(0, impressions)
   row.clicks += Math.max(0, clicks)
-  row.revenueUsd = round(row.revenueUsd + Math.max(0, revenueUsd), 4)
 }
 
 function ensurePlacementStats(placementId) {
@@ -1807,6 +1963,77 @@ function recordEvent(payload) {
     },
     ...state.eventLogs,
   ].slice(0, MAX_EVENT_LOGS)
+}
+
+function findPlacementIdByRequestId(requestId) {
+  const targetRequestId = String(requestId || '').trim()
+  if (!targetRequestId) return ''
+  for (const row of state.decisionLogs) {
+    if (String(row?.requestId || '').trim() !== targetRequestId) continue
+    return String(row?.placementId || '').trim()
+  }
+  return ''
+}
+
+function resolvePlacementKeyById(placementId) {
+  const normalizedPlacementId = String(placementId || '').trim()
+  if (!normalizedPlacementId) return ''
+  const placement = state.placements.find((item) => item.placementId === normalizedPlacementId)
+  if (placement) {
+    return String(placement.placementKey || '').trim()
+  }
+  return String(PLACEMENT_KEY_BY_ID[normalizedPlacementId] || '').trim()
+}
+
+function buildConversionFactIdempotencyKey(payload = {}) {
+  const appId = String(payload.appId || '').trim()
+  const requestId = String(payload.requestId || '').trim()
+  const conversionId = String(payload.conversionId || '').trim()
+  const eventSeq = String(payload.eventSeq || '').trim()
+  const postbackType = String(payload.postbackType || '').trim().toLowerCase()
+  const postbackStatus = String(payload.postbackStatus || '').trim().toLowerCase()
+  const adId = String(payload.adId || '').trim()
+  const cpaUsd = round(clampNumber(payload.cpaUsd, 0, Number.MAX_SAFE_INTEGER, 0), 4)
+  const fallback = `${adId}|${cpaUsd.toFixed(4)}`
+  const semantic = [appId, requestId, conversionId, eventSeq, postbackType, postbackStatus, fallback].join('|')
+  return `fact_${createHash('sha256').update(semantic).digest('hex').slice(0, 24)}`
+}
+
+function recordConversionFact(payload) {
+  const request = payload && typeof payload === 'object' ? payload : {}
+  if (!Array.isArray(state.conversionFacts)) {
+    state.conversionFacts = []
+  }
+
+  const placementId = String(request.placementId || '').trim() || findPlacementIdByRequestId(request.requestId)
+  const placementKey = String(request.placementKey || '').trim() || resolvePlacementKeyById(placementId)
+  const idempotencyKey = buildConversionFactIdempotencyKey({
+    ...request,
+    placementId,
+  })
+
+  const existingFact = state.conversionFacts.find((item) => String(item?.idempotencyKey || '') === idempotencyKey)
+  if (existingFact) {
+    return {
+      duplicate: true,
+      fact: existingFact,
+    }
+  }
+
+  const fact = normalizeConversionFact({
+    ...request,
+    placementId,
+    placementKey,
+    idempotencyKey,
+    factId: createId('fact'),
+    createdAt: nowIso(),
+  })
+  state.conversionFacts = [fact, ...state.conversionFacts].slice(0, MAX_CONVERSION_FACTS)
+
+  return {
+    duplicate: false,
+    fact,
+  }
 }
 
 function recordPlacementAudit(payload) {
@@ -2005,10 +2232,69 @@ function recordRuntimeNetworkStats(decisionResult, runtimeDebug, meta = {}) {
   })
 }
 
+function isSettledConversionFact(row) {
+  return String(row?.postbackStatus || '').trim().toLowerCase() === 'success'
+}
+
+function conversionFactRevenueUsd(row) {
+  if (!isSettledConversionFact(row)) return 0
+  return round(clampNumber(row?.cpaUsd ?? row?.revenueUsd, 0, Number.MAX_SAFE_INTEGER, 0), 4)
+}
+
+function conversionFactDateKey(row) {
+  const raw = String(row?.occurredAt || row?.createdAt || '').trim()
+  if (!raw) return ''
+  const parsed = Date.parse(raw)
+  if (!Number.isFinite(parsed)) return raw.slice(0, 10)
+  return new Date(parsed).toISOString().slice(0, 10)
+}
+
+function buildPlacementIdByRequestMap(decisionRows = []) {
+  const rows = Array.isArray(decisionRows) ? decisionRows : []
+  const map = new Map()
+  for (const row of rows) {
+    const requestId = String(row?.requestId || '').trim()
+    const placementId = String(row?.placementId || '').trim()
+    if (!requestId || !placementId || map.has(requestId)) continue
+    map.set(requestId, placementId)
+  }
+  return map
+}
+
+function resolveFactPlacementId(row, placementIdByRequest = new Map()) {
+  const placementId = String(row?.placementId || '').trim()
+  if (placementId) return placementId
+  const requestId = String(row?.requestId || '').trim()
+  if (!requestId) return ''
+  return String(placementIdByRequest.get(requestId) || '').trim()
+}
+
+function buildRevenueByPlacementMap(factRows = [], placementIdByRequest = new Map()) {
+  const rows = Array.isArray(factRows) ? factRows : []
+  const map = new Map()
+  for (const row of rows) {
+    const revenueUsd = conversionFactRevenueUsd(row)
+    if (revenueUsd <= 0) continue
+    const placementId = resolveFactPlacementId(row, placementIdByRequest)
+    if (!placementId) continue
+    map.set(placementId, round((map.get(placementId) || 0) + revenueUsd, 4))
+  }
+  return map
+}
+
+function computeRevenueFromFacts(factRows = []) {
+  const rows = Array.isArray(factRows) ? factRows : []
+  let total = 0
+  for (const row of rows) {
+    total += conversionFactRevenueUsd(row)
+  }
+  return round(total, 4)
+}
+
 function computeMetricsSummary() {
   const impressions = state.globalStats.impressions
   const clicks = state.globalStats.clicks
-  const revenueUsd = state.globalStats.revenueUsd
+  const revenueUsd = computeRevenueFromFacts(state.conversionFacts)
   const requests = state.globalStats.requests
   const served = state.globalStats.served
 
@@ -2028,7 +2314,24 @@ function computeMetricsSummary() {
 
 function computeMetricsByDay() {
   state.dailyMetrics = ensureDailyMetricsWindow(state.dailyMetrics)
-  return state.dailyMetrics.map((row) => ({
+  const rows = createDailyMetricsSeed(7)
+  const byDate = new Map(rows.map((row) => [row.date, row]))
+
+  for (const metric of state.dailyMetrics) {
+    const target = byDate.get(String(metric?.date || ''))
+    if (!target) continue
+    target.impressions += toPositiveInteger(metric?.impressions, 0)
+    target.clicks += toPositiveInteger(metric?.clicks, 0)
+  }
+
+  for (const fact of Array.isArray(state.conversionFacts) ? state.conversionFacts : []) {
+    const dateKey = conversionFactDateKey(fact)
+    const target = byDate.get(dateKey)
+    if (!target) continue
+    target.revenueUsd = round(target.revenueUsd + conversionFactRevenueUsd(fact), 4)
+  }
+
+  return rows.map((row) => ({
     day: new Date(`${row.date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short' }),
     revenueUsd: round(row.revenueUsd, 2),
     impressions: row.impressions,
@@ -2037,6 +2340,12 @@ function computeMetricsByDay() {
 }
 
 function computeMetricsByPlacement() {
+  const placementIdByRequest = buildPlacementIdByRequestMap(state.decisionLogs)
+  const revenueByPlacement = buildRevenueByPlacementMap(
+    Array.isArray(state.conversionFacts) ? state.conversionFacts : [],
+    placementIdByRequest,
+  )
+
   return state.placements.map((placement) => {
     const stats = ensurePlacementStats(placement.placementId)
     const ctr = stats.impressions > 0 ? stats.clicks / stats.impressions : 0
@@ -2045,7 +2354,7 @@ function computeMetricsByPlacement() {
     return {
       placementId: placement.placementId,
       layer: layerFromPlacementKey(placement.placementKey),
-      revenueUsd: round(stats.revenueUsd, 2),
+      revenueUsd: round(revenueByPlacement.get(placement.placementId) || 0, 2),
       ctr: round(ctr, 4),
       fillRate: round(fillRate, 4),
     }
@@ -2079,20 +2388,18 @@ function getUserPlacementDayKey(userId, placementId) {
   return `${userId}::${placementId}::${getTodayKey()}`
 }
 
-function recordServeCounters(placement, request, revenueUsd) {
+function recordServeCounters(placement, request) {
   const placementStats = ensurePlacementStats(placement.placementId)
 
   state.globalStats.requests += 1
   state.globalStats.served += 1
   state.globalStats.impressions += 1
-  state.globalStats.revenueUsd = round(state.globalStats.revenueUsd + revenueUsd, 4)
 
   placementStats.requests += 1
   placementStats.served += 1
   placementStats.impressions += 1
-  placementStats.revenueUsd = round(placementStats.revenueUsd + revenueUsd, 4)
 
-  appendDailyMetric({ impressions: 1, revenueUsd })
+  appendDailyMetric({ impressions: 1 })
 
   const sessionId = String(request.sessionId || '').trim()
   if (sessionId) {
@@ -2662,8 +2969,7 @@ async function evaluateRequest(payload) {
     }
   }
 
-  const serveRevenue = round(0.03 + intentScore * 0.07, 4)
-  recordServeCounters(placement, request, serveRevenue)
+  recordServeCounters(placement, request)
 
   const scopedRuntimeAds = injectTrackingScopeIntoAds(runtimeAds, {
     accountId: request.accountId,
@@ -2737,12 +3043,7 @@ function filterRowsByScope(rows, scope = {}) {
   return list.filter((row) => recordMatchesScope(row, scope))
 }
 
-function inferServeRevenueFromDecision(decisionRow) {
-  const score = clampNumber(decisionRow?.intentScore, 0, 1, 0)
-  return round(0.03 + score * 0.07, 4)
-}
-
-function computeScopedMetricsSummary(decisionRows, eventRows) {
+function computeScopedMetricsSummary(decisionRows, eventRows, factRows) {
   const requests = decisionRows.length
   const servedRows = decisionRows.filter((row) => String(row?.result || '') === 'served')
   const served = servedRows.length
@@ -2752,10 +3053,7 @@ function computeScopedMetricsSummary(decisionRows, eventRows) {
     const kind = String(row?.kind || row?.event || '').toLowerCase()
     return kind === 'click'
   }).length
-  const revenueUsd = round(
-    servedRows.reduce((sum, row) => sum + inferServeRevenueFromDecision(row), 0),
-    4,
-  )
+  const revenueUsd = computeRevenueFromFacts(factRows)
   const ctr = impressions > 0 ? clicks / impressions : 0
   const ecpm = impressions > 0 ? (revenueUsd / impressions) * 1000 : 0
   const fillRate = requests > 0 ? served / requests : 0
@@ -2770,7 +3068,7 @@ function computeScopedMetricsSummary(decisionRows, eventRows) {
   }
 }
 
-function computeScopedMetricsByDay(decisionRows, eventRows) {
+function computeScopedMetricsByDay(decisionRows, eventRows, factRows) {
   const rows = createDailyMetricsSeed(7)
   const byDate = new Map(rows.map((row) => [row.date, row]))
 
@@ -2780,7 +3078,6 @@ function computeScopedMetricsByDay(decisionRows, eventRows) {
     if (!target) continue
     if (String(row?.result || '') === 'served') {
       target.impressions += 1
-      target.revenueUsd = round(target.revenueUsd + inferServeRevenueFromDecision(row), 4)
     }
   }
 
@@ -2794,6 +3091,13 @@ function computeScopedMetricsByDay(decisionRows, eventRows) {
     target.clicks += 1
   }
 
+  for (const row of factRows) {
+    const dateKey = conversionFactDateKey(row)
+    const target = byDate.get(dateKey)
+    if (!target) continue
+    target.revenueUsd = round(target.revenueUsd + conversionFactRevenueUsd(row), 4)
+  }
+
   return rows.map((row) => ({
     day: new Date(`${row.date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short' }),
     revenueUsd: round(row.revenueUsd, 2),
@@ -2802,7 +3106,7 @@ function computeScopedMetricsByDay(decisionRows, eventRows) {
   }))
 }
 
-function computeScopedMetricsByPlacement(decisionRows, eventRows) {
+function computeScopedMetricsByPlacement(decisionRows, eventRows, factRows) {
   const decisionStatsByPlacement = new Map()
   for (const row of decisionRows) {
     const placementId = String(row?.placementId || '').trim()
@@ -2812,7 +3116,6 @@ function computeScopedMetricsByPlacement(decisionRows, eventRows) {
         requests: 0,
         served: 0,
         impressions: 0,
-        revenueUsd: 0,
       })
     }
     const stats = decisionStatsByPlacement.get(placementId)
@@ -2820,9 +3123,11 @@ function computeScopedMetricsByPlacement(decisionRows, eventRows) {
     if (String(row?.result || '') === 'served') {
       stats.served += 1
       stats.impressions += 1
-      stats.revenueUsd = round(stats.revenueUsd + inferServeRevenueFromDecision(row), 4)
     }
   }
+
+  const placementIdByRequest = buildPlacementIdByRequestMap(decisionRows)
+  const revenueByPlacement = buildRevenueByPlacementMap(factRows, placementIdByRequest)
 
   const clicksByPlacement = new Map()
   for (const row of eventRows) {
@@ -2839,7 +3144,6 @@ function computeScopedMetricsByPlacement(decisionRows, eventRows) {
       requests: 0,
       served: 0,
       impressions: 0,
-      revenueUsd: 0,
     }
     const clicks = clicksByPlacement.get(placement.placementId) || 0
     const ctr = stats.impressions > 0 ? clicks / stats.impressions : 0
@@ -2848,7 +3152,7 @@ function computeScopedMetricsByPlacement(decisionRows, eventRows) {
     return {
       placementId: placement.placementId,
       layer: layerFromPlacementKey(placement.placementKey),
-      revenueUsd: round(stats.revenueUsd, 2),
+      revenueUsd: round(revenueByPlacement.get(placement.placementId) || 0, 2),
       ctr: round(ctr, 4),
       fillRate: round(fillRate, 4),
     }
@@ -2896,6 +3200,13 @@ function getDashboardStatePayload(scopeInput = {}) {
   const eventLogs = emptyScoped
     ? []
     : (shouldApplyScope ? filterRowsByScope(state.eventLogs, scope) : state.eventLogs)
+  const conversionFacts = emptyScoped
+    ? []
+    : (
+      shouldApplyScope
+        ? filterRowsByScope(state.conversionFacts, scope)
+        : (Array.isArray(state.conversionFacts) ? state.conversionFacts : [])
+    )
   const controlPlaneAuditLogs = emptyScoped
     ? []
     : (shouldApplyScope ? filterRowsByScope(state.controlPlaneAuditLogs, scope) : state.controlPlaneAuditLogs)
@@ -2904,19 +3215,19 @@ function getDashboardStatePayload(scopeInput = {}) {
     : (shouldApplyScope ? filterRowsByScope(state.networkFlowLogs, scope) : state.networkFlowLogs)
 
   const metricsSummary = emptyScoped
-    ? computeScopedMetricsSummary([], [])
+    ? computeScopedMetricsSummary([], [], [])
     : shouldApplyScope
-    ? computeScopedMetricsSummary(decisionLogs, eventLogs)
+    ? computeScopedMetricsSummary(decisionLogs, eventLogs, conversionFacts)
     : computeMetricsSummary()
   const metricsByDay = emptyScoped
-    ? computeScopedMetricsByDay([], [])
+    ? computeScopedMetricsByDay([], [], [])
     : shouldApplyScope
-    ? computeScopedMetricsByDay(decisionLogs, eventLogs)
+    ? computeScopedMetricsByDay(decisionLogs, eventLogs, conversionFacts)
     : computeMetricsByDay()
   const metricsByPlacement = emptyScoped
     ? []
     : shouldApplyScope
-    ? computeScopedMetricsByPlacement(decisionLogs, eventLogs)
+    ? computeScopedMetricsByPlacement(decisionLogs, eventLogs, conversionFacts)
     : computeMetricsByPlacement()
   const networkFlowStats = emptyScoped
     ? createInitialNetworkFlowStats()
@@ -4509,7 +4820,56 @@ async function requestHandler(req, res) {
   if (pathname === '/api/v1/sdk/events' && req.method === 'POST') {
     try {
       const payload = await readJsonBody(req)
-      if (isNextStepIntentCardPayload(payload)) {
+      let responsePayload = { ok: true }
+      if (isPostbackConversionPayload(payload)) {
+        const request = normalizePostbackConversionPayload(payload, 'sdk/events')
+        const auth = authorizeRuntimeCredential(req, {
+          operation: 'sdk_events',
+          requiredScope: 'sdkEvents',
+          appId: request.appId,
+          placementId: request.placementId || findPlacementIdByRequestId(request.requestId) || 'chat_inline_v1',
+        })
+        if (!auth.ok) {
+          sendJson(res, auth.status, {
+            error: auth.error,
+          })
+          return
+        }
+
+        const { duplicate, fact } = recordConversionFact(request)
+        recordEvent({
+          eventType: request.eventType,
+          event: 'postback',
+          kind: request.postbackType,
+          requestId: request.requestId,
+          appId: request.appId,
+          accountId: request.accountId,
+          sessionId: request.sessionId,
+          turnId: request.turnId,
+          userId: request.userId,
+          adId: request.adId,
+          placementId: fact.placementId,
+          placementKey: fact.placementKey,
+          postbackType: request.postbackType,
+          postbackStatus: request.postbackStatus,
+          conversionId: request.conversionId,
+          eventSeq: request.eventSeq,
+          cpaUsd: request.cpaUsd,
+          currency: request.currency,
+          occurredAt: request.occurredAt,
+          factId: fact.factId,
+          idempotencyKey: fact.idempotencyKey,
+          revenueUsd: fact.revenueUsd,
+          duplicate,
+        })
+
+        responsePayload = {
+          ok: true,
+          duplicate,
+          factId: fact.factId,
+          revenueUsd: round(fact.revenueUsd, 2),
+        }
+      } else if (isNextStepIntentCardPayload(payload)) {
         const request = normalizeNextStepIntentCardPayload(payload, 'sdk/events')
         const auth = authorizeRuntimeCredential(req, {
           operation: 'sdk_events',
@@ -4594,9 +4954,7 @@ async function requestHandler(req, res) {
 
       persistState(state)
 
-      sendJson(res, 200, {
-        ok: true,
-      })
+      sendJson(res, 200, responsePayload)
       return
     } catch (error) {
       sendJson(res, 400, {
