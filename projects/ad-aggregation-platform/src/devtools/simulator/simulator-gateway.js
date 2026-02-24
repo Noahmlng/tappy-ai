@@ -384,6 +384,7 @@ function deriveInventoryNetworksFromPlacement(placement = {}) {
 function mapOpportunityReasonToDecision(reasonCode = '', served = false) {
   if (served) return 'served'
   if (reasonCode === 'policy_blocked') return 'blocked'
+  if (reasonCode === 'placement_unavailable') return 'blocked'
   if (reasonCode === 'inventory_no_match' || reasonCode === 'rank_below_floor') return 'no_fill'
   return 'error'
 }
@@ -5313,7 +5314,7 @@ async function evaluateV2BidOpportunityFirst(payload) {
   }
 
   if (!placement || placement.enabled === false) {
-    reasonCode = 'policy_blocked'
+    reasonCode = 'placement_unavailable'
     stageStatusMap.intent = 'skipped'
     stageStatusMap.opportunity = 'pending'
     stageStatusMap.retrieval = 'skipped'
@@ -5375,7 +5376,7 @@ async function evaluateV2BidOpportunityFirst(payload) {
   stageStatusMap.opportunity = 'persisted'
 
   if (!placement || placement.enabled === false) {
-    reasonCode = 'policy_blocked'
+    reasonCode = 'placement_unavailable'
     stageStatusMap.retrieval = 'skipped'
     stageStatusMap.ranking = 'skipped'
   } else {
