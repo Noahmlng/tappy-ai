@@ -267,6 +267,9 @@ async function runIntegrationVerify() {
     if (!scopeReady.value) {
       throw new Error('Scope is empty. Please select an app first.')
     }
+    if (!hasActiveKey.value) {
+      throw new Error(`No active API key for appId=${scopeState.appId} environment=${integrationForm.environment}.`)
+    }
 
     const payload = await controlPlaneClient.quickStart.verify({
       accountId: scopeState.accountId,
@@ -333,7 +336,12 @@ onMounted(() => {
     <article class="panel">
       <div class="panel-toolbar">
         <h3>Self-Serve Integration</h3>
-        <button class="button" type="button" :disabled="verifyLoading" @click="runIntegrationVerify">
+        <button
+          class="button"
+          type="button"
+          :disabled="verifyLoading || !scopeReady || readiness.loading || !hasActiveKey"
+          @click="runIntegrationVerify"
+        >
           {{ verifyLoading ? 'Running...' : 'Run Verify' }}
         </button>
       </div>
