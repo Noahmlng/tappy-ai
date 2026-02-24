@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 
 import { authState, logoutDashboardUser } from './state/auth-state'
@@ -46,14 +46,63 @@ function isNavActive(path) {
   return route.path === path || route.path.startsWith(`${path}/`)
 }
 
+function isTypingTarget(target) {
+  if (!(target instanceof HTMLElement)) return false
+  const tag = target.tagName.toLowerCase()
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable
+}
+
+function handleGlobalKeydown(event) {
+  if (isPublicRoute.value) return
+  if (isTypingTarget(event.target)) return
+
+  if (event.key === 'Escape') {
+    closeSidebar()
+    return
+  }
+
+  if (event.key === '[' && event.metaKey === false && event.ctrlKey === false && event.altKey === false) {
+    toggleSidebarCollapse()
+  }
+}
+
+function handleWindowResize() {
+  if (typeof window === 'undefined') return
+  const isMobile = window.matchMedia('(max-width: 980px)').matches
+  if (!isMobile) {
+    sidebarOpen.value = false
+    document.body.classList.remove('app-nav-open')
+  }
+}
+
 onMounted(() => {
   const cached = typeof window !== 'undefined' ? window.localStorage.getItem('dashboard.sidebarCollapsed') : null
   sidebarCollapsed.value = cached === '1'
+  window.addEventListener('keydown', handleGlobalKeydown)
+  window.addEventListener('resize', handleWindowResize, { passive: true })
+})
+
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('keydown', handleGlobalKeydown)
+    window.removeEventListener('resize', handleWindowResize)
+    document.body.classList.remove('app-nav-open')
+  }
 })
 
 watch(sidebarCollapsed, (value) => {
   if (typeof window === 'undefined') return
   window.localStorage.setItem('dashboard.sidebarCollapsed', value ? '1' : '0')
+})
+
+watch(sidebarOpen, (value) => {
+  if (typeof window === 'undefined') return
+  const isMobile = window.matchMedia('(max-width: 980px)').matches
+  if (isMobile) {
+    document.body.classList.toggle('app-nav-open', value)
+  } else {
+    document.body.classList.remove('app-nav-open')
+  }
 })
 
 watch(
@@ -74,7 +123,7 @@ watch(
   >
     <div v-if="!isPublicRoute" class="mobile-header">
       <p class="mobile-title">Control Plane</p>
-      <button class="icon-button hamburger-btn" type="button" @click="toggleSidebar">
+      <button class="icon-button hamburger-btn" type="button" aria-label="Toggle navigation menu" @click="toggleSidebar">
         Menu
       </button>
     </div>
@@ -97,7 +146,7 @@ watch(
           <h1 class="title">Control Plane</h1>
           <p class="subtitle nav-subtitle">Runtime Dashboard</p>
         </div>
-        <button class="icon-button collapse-btn" type="button" @click="toggleSidebarCollapse">
+        <button class="icon-button collapse-btn" type="button" aria-label="Toggle sidebar collapse" @click="toggleSidebarCollapse">
           {{ sidebarCollapsed ? '>' : '<' }}
         </button>
       </div>
