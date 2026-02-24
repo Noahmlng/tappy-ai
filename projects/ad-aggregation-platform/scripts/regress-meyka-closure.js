@@ -318,15 +318,23 @@ async function runOneScenario(baseUrl, scenario, options = {}) {
 
   const beforeClicks = Number(beforeSummaryRes.payload?.clicks || 0)
 
-  const evaluateRes = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
+  const bidRes = await requestJson(baseUrl, '/api/v2/bid', {
     method: 'POST',
-    body: payload,
+    body: {
+      userId: payload.userId,
+      chatId: payload.sessionId,
+      placementId: payload.placementId,
+      messages: [
+        { role: 'user', content: String(payload?.context?.query || '') },
+        { role: 'assistant', content: String(payload?.context?.answerText || '') },
+      ],
+    },
   })
 
-  if (!evaluateRes.ok) {
-    issues.push(createIssue('P0', 'EVALUATE_FAILED', scenario.key, 'sdk evaluate failed', {
-      status: evaluateRes.status,
-      payload: evaluateRes.payload,
+  if (!bidRes.ok) {
+    issues.push(createIssue('P0', 'BID_FAILED', scenario.key, 'v2 bid failed', {
+      status: bidRes.status,
+      payload: bidRes.payload,
     }))
     return {
       key: scenario.key,
@@ -334,23 +342,26 @@ async function runOneScenario(baseUrl, scenario, options = {}) {
       payload,
       issues,
       evidence: {
-        stage: 'evaluate',
+        stage: 'v2_bid',
         beforeClicks,
       },
     }
   }
 
-  const requestId = String(evaluateRes.payload?.requestId || '').trim()
-  const decisionResult = String(evaluateRes.payload?.decision?.result || '').trim().toLowerCase()
-  const decisionReasonDetail = String(evaluateRes.payload?.decision?.reasonDetail || '').trim()
-  const ads = Array.isArray(evaluateRes.payload?.ads) ? evaluateRes.payload.ads : []
+  const requestId = String(bidRes.payload?.requestId || '').trim()
+  const winnerBid = bidRes.payload?.data?.bid && typeof bidRes.payload.data.bid === 'object'
+    ? bidRes.payload.data.bid
+    : null
+  const decisionResult = winnerBid ? 'served' : 'no_fill'
+  const decisionReasonDetail = String(bidRes.payload?.message || '').trim()
+  const ads = winnerBid ? [winnerBid] : []
   const firstAd = ads[0] || null
-  const firstAdId = String(firstAd?.item_id || firstAd?.itemId || firstAd?.adId || '').trim()
+  const firstAdId = String(firstAd?.bidId || firstAd?.item_id || firstAd?.itemId || firstAd?.adId || '').trim()
   const firstAdUrl = String(firstAd?.url || firstAd?.target_url || firstAd?.targetUrl || '').trim()
 
   if (!requestId) {
-    issues.push(createIssue('P0', 'MISSING_REQUEST_ID', scenario.key, 'evaluate response missing requestId', {
-      evaluate: evaluateRes.payload,
+    issues.push(createIssue('P0', 'MISSING_REQUEST_ID', scenario.key, 'v2 bid response missing requestId', {
+      bid: bidRes.payload,
     }))
   }
 

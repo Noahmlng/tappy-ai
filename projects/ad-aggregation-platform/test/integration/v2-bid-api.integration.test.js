@@ -111,7 +111,7 @@ async function stopGateway(handle) {
   }
 }
 
-test('v2 bid API returns unified response and legacy evaluate returns migration hint', async () => {
+test('v2 bid API returns unified response and legacy evaluate endpoint is removed', async () => {
   const port = 3950 + Math.floor(Math.random() * 120)
   const baseUrl = `http://${HOST}:${port}`
   const gateway = startGateway(port)
@@ -166,9 +166,8 @@ test('v2 bid API returns unified response and legacy evaluate returns migration 
       },
     })
 
-    assert.equal(legacyEvaluate.ok, true)
-    assert.equal(legacyEvaluate.payload?.status, 'deprecated')
-    assert.equal(legacyEvaluate.payload?.migration?.endpoint, '/api/v2/bid')
+    assert.equal(legacyEvaluate.status, 404)
+    assert.equal(legacyEvaluate.payload?.error?.code, 'NOT_FOUND')
   } catch (error) {
     const logs = gateway.getLogs()
     const message = error instanceof Error ? error.message : String(error)

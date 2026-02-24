@@ -138,23 +138,25 @@ async function issueRuntimeApiKey(baseUrl, input = {}, headers = {}) {
 }
 
 async function seedScopedRevenue(baseUrl, input, headers = {}) {
-  const evaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
+  const sessionId = `sess_${input.appId}_${Date.now()}`
+  const turnId = `turn_${input.appId}_${Date.now()}`
+  const query = `find product for ${input.accountId}`
+  const answerText = 'seed account-scoped revenue'
+  const bid = await requestJson(baseUrl, '/api/v2/bid', {
     method: 'POST',
     headers,
     body: {
-      appId: input.appId,
-      accountId: input.accountId,
-      sessionId: `sess_${input.appId}_${Date.now()}`,
-      turnId: `turn_${input.appId}_${Date.now()}`,
-      query: `find product for ${input.accountId}`,
-      answerText: 'seed account-scoped revenue',
-      intentScore: 0.84,
-      locale: 'en-US',
+      userId: sessionId,
+      chatId: sessionId,
       placementId: 'chat_inline_v1',
+      messages: [
+        { role: 'user', content: query },
+        { role: 'assistant', content: answerText },
+      ],
     },
   })
-  assert.equal(evaluate.ok, true, `evaluate failed: ${JSON.stringify(evaluate.payload)}`)
-  const requestId = String(evaluate.payload?.requestId || '').trim()
+  assert.equal(bid.ok, true, `v2 bid failed: ${JSON.stringify(bid.payload)}`)
+  const requestId = String(bid.payload?.requestId || '').trim()
   assert.equal(Boolean(requestId), true)
 
   const postback = await requestJson(baseUrl, '/api/v1/sdk/events', {
@@ -164,6 +166,8 @@ async function seedScopedRevenue(baseUrl, input, headers = {}) {
       eventType: 'postback',
       appId: input.appId,
       accountId: input.accountId,
+      sessionId,
+      turnId,
       requestId,
       placementId: 'chat_inline_v1',
       adId: `offer_${input.accountId}`,

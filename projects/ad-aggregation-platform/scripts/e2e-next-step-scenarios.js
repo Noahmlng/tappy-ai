@@ -146,45 +146,16 @@ function buildScenarioPayload(name) {
   throw new Error(`Unknown scenario: ${name}`)
 }
 
-function evaluateScenarioResult(name, response) {
-  const result = String(response?.decision?.result || '')
-  const reasonDetail = String(response?.decision?.reasonDetail || '')
+function evaluateScenarioResult(response) {
   const requestId = String(response?.requestId || '')
-  const inferenceFallback = Boolean(response?.meta?.inference_fallback)
-
+  const status = String(response?.status || '')
   if (!requestId) {
     return { ok: false, reason: 'missing_requestId' }
   }
-
-  if (name === 'shopping' || name === 'gifting_preference') {
-    if (result === 'served' || result === 'no_fill') {
-      return { ok: true, reason: result }
-    }
-    if (
-      result === 'blocked'
-      && inferenceFallback
-      && (reasonDetail === 'intent_non_commercial' || reasonDetail === 'intent_below_threshold')
-    ) {
-      return { ok: true, reason: `blocked_due_to_intent_fallback:${reasonDetail}` }
-    }
-    return { ok: false, reason: `unexpected_result:${result}:${reasonDetail}` }
+  if (status !== 'success') {
+    return { ok: false, reason: `unexpected_status:${status}` }
   }
-
-  if (name === 'non_commercial') {
-    if (result === 'blocked' && reasonDetail === 'intent_non_commercial') {
-      return { ok: true, reason: 'blocked_intent_non_commercial' }
-    }
-    return { ok: false, reason: `unexpected_result:${result}:${reasonDetail}` }
-  }
-
-  if (name === 'sensitive_topic') {
-    if (result === 'blocked' && reasonDetail.startsWith('blocked_topic:')) {
-      return { ok: true, reason: 'blocked_sensitive_topic' }
-    }
-    return { ok: false, reason: `unexpected_result:${result}:${reasonDetail}` }
-  }
-
-  return { ok: false, reason: 'unknown_scenario' }
+  return { ok: true, reason: response?.data?.bid ? 'served' : 'no_fill' }
 }
 
 async function waitForGateway(baseUrl) {
@@ -218,31 +189,54 @@ function startGatewayProcess(port) {
 }
 
 async function runScenario(baseUrl, name) {
-  const evaluatePayload = buildScenarioPayload(name)
-  const evaluateResponse = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
+  const scenarioPayload = buildScenarioPayload(name)
+  const bidPayload = {
+    userId: scenarioPayload.userId,
+    chatId: scenarioPayload.sessionId,
+    placementId: scenarioPayload.placementId,
+    messages: [
+      { role: 'user', content: String(scenarioPayload.context?.query || '') },
+      { role: 'assistant', content: String(scenarioPayload.context?.answerText || '') },
+    ],
+  }
+  const bidResponse = await requestJson(baseUrl, '/api/v2/bid', {
     method: 'POST',
-    body: evaluatePayload,
+    body: bidPayload,
   })
 
-  const check = evaluateScenarioResult(name, evaluateResponse)
+  const check = evaluateScenarioResult(bidResponse)
   if (!check.ok) {
     return {
       name,
       ok: false,
-      stage: 'evaluate',
+      stage: 'v2_bid',
       reason: check.reason,
-      requestId: String(evaluateResponse?.requestId || ''),
-      result: String(evaluateResponse?.decision?.result || ''),
-      reasonDetail: String(evaluateResponse?.decision?.reasonDetail || ''),
+      requestId: String(bidResponse?.requestId || ''),
+      status: String(bidResponse?.status || ''),
     }
   }
 
-  const requestId = String(evaluateResponse.requestId || '')
-  const eventPayload = { ...evaluatePayload, requestId }
-  await requestJson(baseUrl, '/api/v1/sdk/events', {
-    method: 'POST',
-    body: eventPayload,
-  })
+  const requestId = String(bidResponse.requestId || '')
+  const servedAdId = String(bidResponse?.data?.bid?.bidId || '')
+  if (servedAdId) {
+    const eventPayload = {
+      appId: 'simulator-chatbot',
+      sessionId: scenarioPayload.sessionId,
+      turnId: scenarioPayload.turnId,
+      query: String(scenarioPayload.context?.query || ''),
+      answerText: String(scenarioPayload.context?.answerText || ''),
+      intentScore: Number(scenarioPayload.context?.intent_score || 0),
+      locale: String(scenarioPayload.context?.locale || 'en-US'),
+      placementId: scenarioPayload.placementId,
+      requestId,
+      kind: 'impression',
+      adId: servedAdId,
+    }
+    await requestJson(baseUrl, '/api/v1/sdk/events', {
+      method: 'POST',
+      body: eventPayload,
+    })
+  }
 
   const decisions = await requestJson(
     baseUrl,
@@ -265,7 +259,7 @@ async function runScenario(baseUrl, name) {
   if (!decisionEvent) {
     return { name, ok: false, stage: 'event_log', reason: 'decision_event_not_found', requestId }
   }
-  if (!sdkEvent) {
+  if (servedAdId && !sdkEvent) {
     return { name, ok: false, stage: 'event_log', reason: 'sdk_event_not_found', requestId }
   }
 
@@ -275,8 +269,8 @@ async function runScenario(baseUrl, name) {
     stage: 'done',
     reason: check.reason,
     requestId,
-    result: String(evaluateResponse?.decision?.result || ''),
-    reasonDetail: String(evaluateResponse?.decision?.reasonDetail || ''),
+    result: servedAdId ? 'served' : 'no_fill',
+    reasonDetail: String(bidResponse?.message || ''),
     decisionLogResult: String(matchedDecision?.result || ''),
   }
 }

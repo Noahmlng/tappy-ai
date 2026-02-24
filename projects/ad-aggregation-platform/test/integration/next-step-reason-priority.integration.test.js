@@ -156,7 +156,7 @@ async function issueRuntimeApiKeyHeaders(baseUrl, input = {}, headers = {}) {
   }
 }
 
-test('next-step reason priority: intent_non_commercial wins over threshold when both apply', async () => {
+test('legacy evaluate endpoint is removed', async () => {
   const port = 3450 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${HOST}:${port}`
   const gateway = startGateway(port)
@@ -175,43 +175,23 @@ test('next-step reason priority: intent_non_commercial wins over threshold when 
       appId: 'simulator-chatbot',
     }, dashboardHeaders)
 
-    const enablePlacement = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_followup_v1', {
-      method: 'PUT',
-      headers: dashboardHeaders,
-      body: {
-        enabled: true,
-      },
-    })
-    assert.equal(enablePlacement.ok, true, 'chat_followup_v1 should be enabled for next-step checks')
-
     const evaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
       method: 'POST',
       headers: runtimeHeaders,
       body: {
-        appId: 'simulator-chatbot',
         sessionId: `reason_priority_session_${Date.now()}`,
         turnId: `reason_priority_turn_${Date.now()}`,
         userId: 'reason_priority_user',
-        event: 'followup_generation',
         placementId: 'chat_followup_v1',
-        placementKey: 'next_step.intent_card',
-        context: {
-          // Explicitly set a non-commercial low-score hint so both non_commercial
-          // and below-threshold conditions are true; non_commercial should win.
-          query: 'Explain why the sky is blue in simple physics terms.',
-          answerText: 'Rayleigh scattering causes shorter wavelengths to scatter more.',
-          locale: 'en-US',
-          intent_class: 'non_commercial',
-          intent_score: 0.1,
-          preference_facets: [],
-        },
+        query: 'Explain why the sky is blue in simple physics terms.',
+        answerText: 'Rayleigh scattering causes shorter wavelengths to scatter more.',
+        intentScore: 0.1,
+        locale: 'en-US',
       },
     })
 
-    assert.equal(evaluate.ok, true, `evaluate failed: ${JSON.stringify(evaluate.payload)}`)
-    assert.equal(evaluate.payload?.decision?.result, 'blocked')
-    assert.equal(evaluate.payload?.decision?.reasonDetail, 'intent_non_commercial')
-    assert.notEqual(evaluate.payload?.decision?.reasonDetail, 'intent_below_threshold')
+    assert.equal(evaluate.status, 404)
+    assert.equal(evaluate.payload?.error?.code, 'NOT_FOUND')
   } catch (error) {
     const logs = gateway.getLogs()
     const message = error instanceof Error ? error.message : String(error)
@@ -223,7 +203,7 @@ test('next-step reason priority: intent_non_commercial wins over threshold when 
   }
 })
 
-test('next-step decision logs: inference fallback reason/model/latency are recorded for dashboard observability', async () => {
+test('next-step decision logs are recorded through v2 bid flow', async () => {
   const port = 3550 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${HOST}:${port}`
   const gateway = startGateway(port)
@@ -251,31 +231,23 @@ test('next-step decision logs: inference fallback reason/model/latency are recor
     })
     assert.equal(enablePlacement.ok, true, 'chat_followup_v1 should be enabled for next-step checks')
 
-    const evaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
+    const bid = await requestJson(baseUrl, '/api/v2/bid', {
       method: 'POST',
       headers: runtimeHeaders,
       body: {
-        appId: 'simulator-chatbot',
-        sessionId: `inference_observe_session_${Date.now()}`,
-        turnId: `inference_observe_turn_${Date.now()}`,
-        userId: 'inference_observe_user',
-        event: 'followup_generation',
+        userId: `inference_observe_user_${Date.now()}`,
+        chatId: `inference_observe_chat_${Date.now()}`,
         placementId: 'chat_followup_v1',
-        placementKey: 'next_step.intent_card',
-        context: {
-          query: 'I want to buy a running shoe for daily gym training',
-          answerText: 'You can compare running shoes by cushioning and durability.',
-          locale: 'en-US',
-          intent_class: 'shopping',
-          intent_score: 0.95,
-          preference_facets: [],
-        },
+        messages: [
+          { role: 'user', content: 'I want to buy a running shoe for daily gym training' },
+          { role: 'assistant', content: 'You can compare running shoes by cushioning and durability.' },
+        ],
       },
     })
 
-    assert.equal(evaluate.ok, true, `evaluate failed: ${JSON.stringify(evaluate.payload)}`)
-    const requestId = String(evaluate.payload?.requestId || '').trim()
-    assert.equal(requestId.length > 0, true, 'evaluate must return requestId')
+    assert.equal(bid.ok, true, `v2 bid failed: ${JSON.stringify(bid.payload)}`)
+    const requestId = String(bid.payload?.requestId || '').trim()
+    assert.equal(requestId.length > 0, true, 'v2 bid must return requestId')
 
     const decisions = await requestJson(baseUrl, `/api/v1/dashboard/decisions?requestId=${encodeURIComponent(requestId)}`, {
       headers: dashboardHeaders,
@@ -286,19 +258,11 @@ test('next-step decision logs: inference fallback reason/model/latency are recor
     const row = items.find((item) => String(item?.requestId || '').trim() === requestId)
     assert.equal(Boolean(row), true, 'decision row should be present')
 
-    const inference = row?.intentInference
-    assert.equal(Boolean(inference && typeof inference === 'object'), true, 'intentInference must be recorded')
-    assert.equal(inference?.inferenceFallbackReason, 'missing_llm_config')
-    assert.equal(inference?.inferenceModel, 'glm-5')
-    assert.equal(Number.isFinite(inference?.inferenceLatencyMs), true)
-    assert.equal(inference.inferenceLatencyMs >= 0, true)
-
-    const inputInference = row?.input?.intentInference
-    assert.equal(Boolean(inputInference && typeof inputInference === 'object'), true, 'input.intentInference must be recorded')
-    assert.equal(inputInference?.inferenceFallbackReason, 'missing_llm_config')
-    assert.equal(inputInference?.inferenceModel, 'glm-5')
-    assert.equal(Number.isFinite(inputInference?.inferenceLatencyMs), true)
-    assert.equal(inputInference.inferenceLatencyMs >= 0, true)
+    assert.equal(['served', 'blocked', 'no_fill', 'error'].includes(String(row?.result || '')), true)
+    assert.equal(String(row?.requestId || '').trim(), requestId)
+    assert.equal(String(row?.placementId || '').trim(), 'chat_followup_v1')
+    assert.equal(Boolean(row?.runtime && typeof row.runtime === 'object'), true)
+    assert.equal(Boolean(row?.runtime?.bidV2), true)
   } catch (error) {
     const logs = gateway.getLogs()
     const message = error instanceof Error ? error.message : String(error)

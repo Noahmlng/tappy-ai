@@ -320,31 +320,23 @@ test('token security: agent access token enforces placement scope and audits den
     assert.equal(deniedConfig.status, 403)
     assert.equal(deniedConfig.payload?.error?.code, 'ACCESS_TOKEN_SCOPE_VIOLATION')
 
-    const deniedEvaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
+    const deniedBid = await requestJson(baseUrl, '/api/v2/bid', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
       body: {
-        appId: 'simulator-chatbot',
-        sessionId: `scope_session_${Date.now()}`,
-        turnId: `scope_turn_${Date.now()}`,
         userId: 'scope_user',
-        event: 'followup_generation',
+        chatId: `scope_session_${Date.now()}`,
         placementId: 'chat_followup_v1',
-        placementKey: 'next_step.intent_card',
-        context: {
-          query: 'Recommend family SUV options',
-          answerText: 'You can compare fuel economy and cargo space.',
-          locale: 'en-US',
-          intent_class: 'shopping',
-          intent_score: 0.95,
-          preference_facets: [],
-        },
+        messages: [
+          { role: 'user', content: 'Recommend family SUV options' },
+          { role: 'assistant', content: 'You can compare fuel economy and cargo space.' },
+        ],
       },
     })
-    assert.equal(deniedEvaluate.status, 403)
-    assert.equal(deniedEvaluate.payload?.error?.code, 'ACCESS_TOKEN_SCOPE_VIOLATION')
+    assert.equal(deniedBid.status, 403)
+    assert.equal(deniedBid.payload?.error?.code, 'ACCESS_TOKEN_SCOPE_VIOLATION')
 
     const denyItems = await querySecurityAudit(baseUrl, {
       action: 'agent_access_deny',

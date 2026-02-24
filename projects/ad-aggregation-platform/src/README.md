@@ -61,6 +61,6 @@
 - 入口：`sdk/client.js` -> `createAdsSdkClient(options)`。
 - 核心方法：
   - `fetchConfig`（`/api/v1/mediation/config`）
-  - `evaluate`（`/api/v1/sdk/evaluate`）
+  - `requestBid`（`/api/v2/bid`）
   - `reportEvent`（`/api/v1/sdk/events`）
-  - `runAttachFlow` / `runNextStepFlow`（内部统一执行 `config -> evaluate -> events`，并内置 fail-open）。
+  - `runAttachFlow` / `runNextStepFlow`（内部统一执行 `config -> v2/bid -> events`，并内置 fail-open）。

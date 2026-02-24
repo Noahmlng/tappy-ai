@@ -2,11 +2,12 @@
 
 - Version: v0.1
 - Last Updated: 2026-02-17
-- Scope: `next_step.intent_card` request/response protocol for SDK `evaluate` flow
+- Scope: `next_step.intent_card` request/response protocol for SDK `v2/bid + events` flow
 
 ## 1. Endpoint and Placement Scope
 
-- Endpoint: `POST /api/v1/sdk/evaluate`
+- Bid Endpoint: `POST /api/v2/bid`
+- Event Endpoint: `POST /api/v1/sdk/events`
 - Event: `followup_generation`
 - Placement Key: `next_step.intent_card`
 - Placement ID (default in simulator): `chat_followup_v1`

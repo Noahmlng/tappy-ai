@@ -8777,60 +8777,6 @@ async function requestHandler(req, res) {
     }
   }
 
-  if (pathname === '/api/v1/sdk/evaluate' && req.method === 'POST') {
-    try {
-      const payload = await readJsonBody(req)
-      const placementIdHint = String(payload?.placementId || '').trim()
-      const auth = await authorizeRuntimeCredential(req, {
-        operation: 'sdk_evaluate',
-        requiredScope: 'sdkEvaluate',
-        placementId: placementIdHint || '',
-      })
-      if (!auth.ok) {
-        sendJson(res, auth.status, {
-          error: auth.error,
-        })
-        return
-      }
-
-      const legacyCredential = auth?.credential && typeof auth.credential === 'object' ? auth.credential : {}
-      recordNetworkFlowObservation({
-        requestId: createId('legacy_eval'),
-        appId: String(legacyCredential.appId || '').trim(),
-        accountId: normalizeControlPlaneAccountId(
-          legacyCredential.accountId || legacyCredential.organizationId || resolveAccountIdForApp(legacyCredential.appId),
-          '',
-        ),
-        placementId: placementIdHint,
-        decisionResult: 'deprecated',
-        runtimeError: false,
-        failOpenApplied: true,
-        networkErrors: [],
-        snapshotUsage: {},
-        networkHealthSummary: summarizeNetworkHealthMap(getAllNetworkHealth()),
-      })
-
-      sendJson(res, 200, {
-        requestId: createId('legacy_eval'),
-        status: 'deprecated',
-        message: 'The /api/v1/sdk/evaluate endpoint is deprecated. Please migrate to POST /api/v2/bid with unified messages payload.',
-        migration: {
-          endpoint: '/api/v2/bid',
-          requiredFields: ['userId', 'chatId', 'placementId', 'messages'],
-        },
-      })
-      return
-    } catch (error) {
-      sendJson(res, 400, {
-        error: {
-          code: 'INVALID_REQUEST',
-          message: error instanceof Error ? error.message : 'Invalid request',
-        },
-      })
-      return
-    }
-  }
-
   if (pathname === '/api/v1/sdk/events' && req.method === 'POST') {
     try {
       const payload = await readJsonBody(req)

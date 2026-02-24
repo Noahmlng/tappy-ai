@@ -193,7 +193,7 @@ test('CPA postback facts drive dashboard revenue metrics and replace serve estim
     assert.equal(round(beforeSummary.payload?.revenueUsd), 0)
 
     const now = Date.now()
-    const evaluatePayload = {
+    const runtimePayload = {
       appId: 'simulator-chatbot',
       sessionId: `cpa_session_${now}`,
       turnId: `cpa_turn_${now}`,
@@ -203,28 +203,37 @@ test('CPA postback facts drive dashboard revenue metrics and replace serve estim
       locale: 'en-US',
       placementId: 'chat_inline_v1',
     }
+    const bidPayload = {
+      userId: runtimePayload.sessionId,
+      chatId: runtimePayload.sessionId,
+      placementId: runtimePayload.placementId,
+      messages: [
+        { role: 'user', content: runtimePayload.query },
+        { role: 'assistant', content: runtimePayload.answerText },
+      ],
+    }
 
-    const evaluateUnauthorized = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
+    const bidUnauthorized = await requestJson(baseUrl, '/api/v2/bid', {
       method: 'POST',
-      body: evaluatePayload,
+      body: bidPayload,
     })
-    assert.equal(evaluateUnauthorized.status, 401)
-    assert.equal(evaluateUnauthorized.payload?.error?.code, 'RUNTIME_AUTH_REQUIRED')
+    assert.equal(bidUnauthorized.status, 401)
+    assert.equal(bidUnauthorized.payload?.error?.code, 'RUNTIME_AUTH_REQUIRED')
 
-    const evaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
+    const bid = await requestJson(baseUrl, '/api/v2/bid', {
       method: 'POST',
       headers: runtimeHeaders,
-      body: evaluatePayload,
+      body: bidPayload,
     })
-    assert.equal(evaluate.ok, true, `evaluate failed: ${JSON.stringify(evaluate.payload)}`)
-    const requestId = String(evaluate.payload?.requestId || '').trim()
-    assert.equal(Boolean(requestId), true, 'evaluate should return requestId')
+    assert.equal(bid.ok, true, `v2 bid failed: ${JSON.stringify(bid.payload)}`)
+    const requestId = String(bid.payload?.requestId || '').trim()
+    assert.equal(Boolean(requestId), true, 'v2 bid should return requestId')
 
     const sdkEvent = await requestJson(baseUrl, '/api/v1/sdk/events', {
       method: 'POST',
       headers: runtimeHeaders,
       body: {
-        ...evaluatePayload,
+        ...runtimePayload,
         requestId,
         kind: 'impression',
       },
@@ -244,10 +253,10 @@ test('CPA postback facts drive dashboard revenue metrics and replace serve estim
     const conversionId = `conv_${now}`
     const successPostbackPayload = {
       eventType: 'postback',
-      appId: evaluatePayload.appId,
+      appId: runtimePayload.appId,
       accountId: 'org_simulator',
-      sessionId: evaluatePayload.sessionId,
-      turnId: evaluatePayload.turnId,
+      sessionId: runtimePayload.sessionId,
+      turnId: runtimePayload.turnId,
       requestId,
       placementId: 'chat_inline_v1',
       adId: 'offer_001',

@@ -8,7 +8,7 @@
 Provide one local API surface for both:
 
 1. `simulator-dashboard` (read/write config, read metrics/logs)
-2. `simulator-chatbot` (future SDK evaluate/events)
+2. `simulator-chatbot` (future SDK bid/events)
 
 This avoids hardcoding placement logic in Chatbot and keeps settings centralized.
 
@@ -35,10 +35,9 @@ Default address:
 9. `GET /api/v1/dashboard/network-health`
 10. `GET /api/v1/sdk/config`
 11. `POST /api/v2/bid`（统一 Messages -> 单 Bid 主链路）
-12. `POST /api/v1/sdk/evaluate`（兼容壳，返回迁移提示）
-13. `POST /api/v1/sdk/events`
-14. `POST /api/v1/intent-card/retrieve`
-15. `POST /api/v1/dev/reset`
+12. `POST /api/v1/sdk/events`
+13. `POST /api/v1/intent-card/retrieve`
+14. `POST /api/v1/dev/reset`
 
 ## Placement Config Versioning
 

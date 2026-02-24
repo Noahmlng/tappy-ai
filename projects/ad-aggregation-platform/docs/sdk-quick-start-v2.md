@@ -202,6 +202,5 @@ If you are integrating follow-up cards, use the dedicated next-step contract fro
 
 ## 9. Migration Note
 
-Legacy endpoint `/api/v1/sdk/evaluate` is deprecated.
-Use `/api/v2/bid` as the primary bid entry.
-
+Legacy endpoint `/api/v1/sdk/evaluate` has been removed.
+Use `/api/v2/bid` as the only bid entry.

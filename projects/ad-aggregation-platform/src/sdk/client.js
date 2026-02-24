@@ -1,6 +1,5 @@
 const DEFAULT_TIMEOUT_MS = Object.freeze({
   config: 3000,
-  evaluate: 20000,
   bid: 5000,
   events: 2500,
 })
@@ -237,7 +236,6 @@ export function createAdsSdkClient(options = {}) {
   const fetchImpl = options.fetchImpl || globalThis.fetch
   const timeouts = {
     config: toFiniteNumber(options.timeouts?.config, DEFAULT_TIMEOUT_MS.config) || DEFAULT_TIMEOUT_MS.config,
-    evaluate: toFiniteNumber(options.timeouts?.evaluate, DEFAULT_TIMEOUT_MS.evaluate) || DEFAULT_TIMEOUT_MS.evaluate,
     bid: toFiniteNumber(options.timeouts?.bid, DEFAULT_TIMEOUT_MS.bid) || DEFAULT_TIMEOUT_MS.bid,
     events: toFiniteNumber(options.timeouts?.events, DEFAULT_TIMEOUT_MS.events) || DEFAULT_TIMEOUT_MS.events,
   }
@@ -248,7 +246,7 @@ export function createAdsSdkClient(options = {}) {
 
   async function requestJson(pathname, req = {}) {
     const startedAt = Date.now()
-    const timeoutMs = Math.max(1, toFiniteNumber(req.timeoutMs, DEFAULT_TIMEOUT_MS.evaluate))
+    const timeoutMs = Math.max(1, toFiniteNumber(req.timeoutMs, DEFAULT_TIMEOUT_MS.bid))
 
     async function executeRequest(includeAuthorization) {
       const controller = new AbortController()
@@ -315,32 +313,6 @@ export function createAdsSdkClient(options = {}) {
       throw error
     }
     return response
-  }
-
-  async function evaluate(payload, options = {}) {
-    const body = JSON.stringify(payload && typeof payload === 'object' ? payload : {})
-    const response = await requestJson('/v1/sdk/evaluate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body,
-      timeoutMs: toFiniteNumber(options.timeoutMs, timeouts.evaluate),
-    })
-    if (!response.ok) {
-      const message = response?.payload?.error?.message || `evaluate_failed:${response.status}`
-      const error = new Error(message)
-      error.status = response.status
-      error.payload = response.payload
-      throw error
-    }
-    return {
-      ...response,
-      deprecated: true,
-      migration: response?.payload?.migration && typeof response.payload.migration === 'object'
-        ? response.payload.migration
-        : { endpoint: '/v2/bid' },
-    }
   }
 
   async function requestBid(input = {}, reqOptions = {}) {
@@ -836,7 +808,6 @@ export function createAdsSdkClient(options = {}) {
 
   return {
     fetchConfig,
-    evaluate,
     requestBid,
     reportEvent,
     runManagedFlow,
