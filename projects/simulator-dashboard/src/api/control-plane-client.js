@@ -1,4 +1,13 @@
 const API_BASE_URL = (import.meta.env.VITE_SIMULATOR_API_BASE_URL || '/api').replace(/\/$/, '')
+let dashboardAccessToken = ''
+
+export function setDashboardAccessToken(token) {
+  dashboardAccessToken = String(token || '').trim()
+}
+
+export function getDashboardAccessToken() {
+  return dashboardAccessToken
+}
 
 export class ControlPlaneApiError extends Error {
   constructor(message, details = {}) {
@@ -29,6 +38,9 @@ function buildUrl(pathname, query) {
 async function request(pathname, options = {}) {
   const headers = {
     ...(options.headers || {}),
+  }
+  if (!headers.Authorization && dashboardAccessToken) {
+    headers.Authorization = `Bearer ${dashboardAccessToken}`
   }
 
   let body = options.body
@@ -80,6 +92,9 @@ export const controlPlaneClient = {
     getState(query) {
       return request('/v1/dashboard/state', { query: query || {} })
     },
+    getUsageRevenue(query) {
+      return request('/v1/dashboard/usage-revenue', { query: query || {} })
+    },
     updatePlacement(placementId, patch) {
       return request(`/v1/dashboard/placements/${encodeURIComponent(placementId)}`, {
         method: 'PUT',
@@ -115,6 +130,30 @@ export const controlPlaneClient = {
       return request('/v1/public/quick-start/verify', {
         method: 'POST',
         body: payload || {},
+      })
+    },
+  },
+  auth: {
+    register(payload) {
+      return request('/v1/public/dashboard/register', {
+        method: 'POST',
+        body: payload || {},
+      })
+    },
+    login(payload) {
+      return request('/v1/public/dashboard/login', {
+        method: 'POST',
+        body: payload || {},
+      })
+    },
+    me(query) {
+      return request('/v1/public/dashboard/me', {
+        query: query || {},
+      })
+    },
+    logout() {
+      return request('/v1/public/dashboard/logout', {
+        method: 'POST',
       })
     },
   },

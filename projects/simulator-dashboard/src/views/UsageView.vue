@@ -6,70 +6,66 @@ import { scopeState } from '../state/scope-state'
 
 const isLoading = computed(() => Boolean(dashboardState.meta.loading))
 const scopeLabel = computed(() => `account=${scopeState.accountId} · app=${scopeState.appId}`)
-
-const latestDay = computed(() => {
-  const list = Array.isArray(dashboardState.metricsByDay) ? dashboardState.metricsByDay : []
-  return list[list.length - 1] || null
-})
+const settlement = computed(() => dashboardState.settlementAggregates || {})
+const totals = computed(() => settlement.value.totals || {})
 
 const usageCards = computed(() => {
-  const summary = dashboardState.metricsSummary || {}
-  const stats = dashboardState.networkFlowStats || {}
-  const day = latestDay.value
-
-  const requests24h = Number(stats.totalRuntimeEvaluations || day?.impressions || 0)
-  const runtimeErrors = Number(stats.runtimeErrors || 0)
-  const successRate = requests24h > 0
-    ? (1 - Math.min(runtimeErrors, requests24h) / requests24h)
-    : 0
-  const spend24h = Number(day?.revenueUsd || 0)
+  const row = totals.value
+  const requests = Number(row.requests || 0)
+  const settledConversions = Number(row.settledConversions || 0)
+  const settledRevenueUsd = Number(row.settledRevenueUsd || 0)
+  const cpa = Number(row.cpa || 0)
+  const ctr = Number(row.ctr || 0)
+  const fillRate = Number(row.fillRate || 0)
 
   return [
     {
-      label: 'Requests (24h)',
-      value: requests24h.toLocaleString(),
-      sub: 'Latest traffic window',
+      label: 'Requests',
+      value: requests.toLocaleString(),
+      sub: 'Scoped usage volume',
     },
     {
-      label: 'Success Rate',
-      value: `${(successRate * 100).toFixed(2)}%`,
-      sub: `Runtime errors: ${runtimeErrors.toLocaleString()}`,
+      label: 'Settled Conversions',
+      value: settledConversions.toLocaleString(),
+      sub: 'Postback success only',
     },
     {
-      label: 'Estimated Spend (24h)',
-      value: `$${spend24h.toFixed(2)}`,
-      sub: `eCPM: $${Number(summary.ecpm || 0).toFixed(2)}`,
+      label: 'Settled Revenue',
+      value: `$${settledRevenueUsd.toFixed(2)}`,
+      sub: `${String(settlement.value.currency || 'USD')} settlement`,
+    },
+    {
+      label: 'CPA',
+      value: `$${cpa.toFixed(2)}`,
+      sub: 'Revenue / settled conversions',
+    },
+    {
+      label: 'CTR · Fill Rate',
+      value: `${(ctr * 100).toFixed(2)}% · ${(fillRate * 100).toFixed(1)}%`,
+      sub: 'Delivery effectiveness',
     },
   ]
 })
 
-const billingSummary = computed(() => {
-  const summary = dashboardState.metricsSummary || {}
-  const day = latestDay.value
-  const impressions24h = Number(day?.impressions || 0)
-  const ctr = Number(summary.ctr || 0)
-  const clicks24h = Math.round(impressions24h * ctr)
-  const revenue24h = Number(day?.revenueUsd || 0)
+const accountRows = computed(() => (
+  Array.isArray(settlement.value.byAccount) ? settlement.value.byAccount : []
+))
 
-  return [
-    { metric: 'Revenue (24h est.)', value: `$${revenue24h.toFixed(2)}` },
-    { metric: 'Billable impressions (24h est.)', value: impressions24h.toLocaleString() },
-    { metric: 'Clicks (24h est.)', value: clicks24h.toLocaleString() },
-    { metric: 'CTR (rolling)', value: `${(ctr * 100).toFixed(2)}%` },
-    { metric: 'Fill Rate (rolling)', value: `${(Number(summary.fillRate || 0) * 100).toFixed(1)}%` },
-    { metric: 'eCPM (rolling)', value: `$${Number(summary.ecpm || 0).toFixed(2)}` },
-  ]
-})
+const appRows = computed(() => (
+  Array.isArray(settlement.value.byApp) ? settlement.value.byApp : []
+))
+
+const placementRows = computed(() => (
+  Array.isArray(settlement.value.byPlacement) ? settlement.value.byPlacement : []
+))
 
 const dailyRows = computed(() => {
   const list = Array.isArray(dashboardState.metricsByDay) ? dashboardState.metricsByDay : []
-  const ctr = Number(dashboardState.metricsSummary?.ctr || 0)
   return list.map((row) => {
-    const impressions = Number(row.impressions || 0)
     return {
       day: row.day,
-      impressions,
-      clicks: Math.round(impressions * ctr),
+      impressions: Number(row.impressions || 0),
+      clicks: Number(row.clicks || 0),
       revenueUsd: Number(row.revenueUsd || 0),
     }
   })
@@ -87,16 +83,16 @@ onMounted(() => {
 <template>
   <section class="page">
     <header class="page-header">
-      <p class="eyebrow">Observability</p>
-      <h2>Usage</h2>
+      <p class="eyebrow">Settlement Analytics</p>
+      <h2>Usage & Revenue</h2>
       <p class="subtitle">
-        Request volume, success rate, and basic billing summary.
+        Settlement-model metrics (CPA) with account/app/placement aggregations.
       </p>
     </header>
 
     <article class="panel">
       <div class="panel-toolbar">
-        <h3>24h Summary</h3>
+        <h3>Settlement Summary</h3>
         <button class="button" type="button" :disabled="isLoading" @click="refreshUsage">
           {{ isLoading ? 'Refreshing...' : 'Refresh' }}
         </button>
@@ -104,6 +100,7 @@ onMounted(() => {
       <p class="muted">
         Source:
         <strong>{{ dashboardState.meta.connected ? 'public API' : 'local fallback' }}</strong>
+        <span> · model={{ settlement.settlementModel || 'CPA' }}</span>
         <span> · {{ scopeLabel }}</span>
         <span v-if="dashboardState.meta.lastSyncedAt">
           · last synced {{ new Date(dashboardState.meta.lastSyncedAt).toLocaleString() }}
@@ -114,7 +111,7 @@ onMounted(() => {
       </p>
     </article>
 
-    <div class="grid grid-3">
+    <div class="grid">
       <article v-for="card in usageCards" :key="card.label" class="panel metric">
         <h3>{{ card.label }}</h3>
         <p class="metric-value">{{ card.value }}</p>
@@ -124,32 +121,107 @@ onMounted(() => {
 
     <div class="grid">
       <article class="panel">
-        <h3>Basic Billing Summary</h3>
+        <h3>By Account</h3>
         <table class="table">
           <thead>
             <tr>
-              <th>Metric</th>
-              <th>Value</th>
+              <th>Account</th>
+              <th>Requests</th>
+              <th>Conversions</th>
+              <th>Revenue</th>
+              <th>CPA</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in billingSummary" :key="row.metric">
-              <td>{{ row.metric }}</td>
-              <td>{{ row.value }}</td>
+            <tr v-for="row in accountRows" :key="row.accountId">
+              <td><code>{{ row.accountId }}</code></td>
+              <td>{{ Number(row.requests || 0).toLocaleString() }}</td>
+              <td>{{ Number(row.settledConversions || 0).toLocaleString() }}</td>
+              <td>${{ Number(row.settledRevenueUsd || 0).toFixed(2) }}</td>
+              <td>${{ Number(row.cpa || 0).toFixed(2) }}</td>
+            </tr>
+            <tr v-if="accountRows.length === 0">
+              <td colspan="6" class="muted">No settled account metrics yet.</td>
             </tr>
           </tbody>
         </table>
       </article>
 
       <article class="panel">
-        <h3>7-Day Usage Trend</h3>
+        <h3>By App</h3>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th>App</th>
+              <th>Requests</th>
+              <th>Conversions</th>
+              <th>Revenue</th>
+              <th>CPA</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in appRows" :key="`${row.accountId}::${row.appId}`">
+              <td><code>{{ row.accountId }}</code></td>
+              <td><code>{{ row.appId }}</code></td>
+              <td>{{ Number(row.requests || 0).toLocaleString() }}</td>
+              <td>{{ Number(row.settledConversions || 0).toLocaleString() }}</td>
+              <td>${{ Number(row.settledRevenueUsd || 0).toFixed(2) }}</td>
+              <td>${{ Number(row.cpa || 0).toFixed(2) }}</td>
+            </tr>
+            <tr v-if="appRows.length === 0">
+              <td colspan="6" class="muted">No settled app metrics yet.</td>
+            </tr>
+          </tbody>
+        </table>
+      </article>
+    </div>
+
+    <div class="grid">
+      <article class="panel">
+        <h3>By Placement</h3>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>App</th>
+              <th>Placement</th>
+              <th>Layer</th>
+              <th>Requests</th>
+              <th>Conversions</th>
+              <th>Revenue</th>
+              <th>CTR</th>
+              <th>Fill Rate</th>
+              <th>CPA</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in placementRows" :key="`${row.accountId}::${row.appId}::${row.placementId}`">
+              <td><code>{{ row.appId }}</code></td>
+              <td><code>{{ row.placementId }}</code></td>
+              <td>{{ row.layer || '-' }}</td>
+              <td>{{ Number(row.requests || 0).toLocaleString() }}</td>
+              <td>{{ Number(row.settledConversions || 0).toLocaleString() }}</td>
+              <td>${{ Number(row.settledRevenueUsd || 0).toFixed(2) }}</td>
+              <td>{{ (Number(row.ctr || 0) * 100).toFixed(2) }}%</td>
+              <td>{{ (Number(row.fillRate || 0) * 100).toFixed(1) }}%</td>
+              <td>${{ Number(row.cpa || 0).toFixed(2) }}</td>
+            </tr>
+            <tr v-if="placementRows.length === 0">
+              <td colspan="9" class="muted">No settled placement metrics yet.</td>
+            </tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="panel">
+        <h3>7-Day Trend (Settled Revenue)</h3>
         <table class="table">
           <thead>
             <tr>
               <th>Day</th>
               <th>Impressions</th>
-              <th>Clicks (est.)</th>
-              <th>Revenue</th>
+              <th>Clicks</th>
+              <th>Settled Revenue</th>
             </tr>
           </thead>
           <tbody>

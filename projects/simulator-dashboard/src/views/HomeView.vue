@@ -46,19 +46,20 @@ const integrationStatus = computed(() => {
 
 const kpis24h = computed(() => {
   const summary = dashboardState.metricsSummary || {}
-  const stats = dashboardState.networkFlowStats || {}
-  const daily = Array.isArray(dashboardState.metricsByDay) ? dashboardState.metricsByDay : []
-  const latestDay = daily[daily.length - 1] || null
-  const requests24h = Number(stats.totalRuntimeEvaluations || summary.impressions || 0)
-  const estimatedRevenue24h = Number(latestDay?.revenueUsd || 0)
+  const settlement = dashboardState.settlementAggregates || {}
+  const totals = settlement.totals || {}
+  const requests = Number(totals.requests || summary.impressions || 0)
+  const settledRevenue = Number(totals.settledRevenueUsd || 0)
+  const settledConversions = Number(totals.settledConversions || 0)
   const ctr = Number(summary.ctr || 0)
   const fillRate = Number(summary.fillRate || 0)
 
   return [
-    { label: 'Requests (24h)', value: requests24h.toLocaleString() },
-    { label: 'CTR (24h)', value: `${(ctr * 100).toFixed(2)}%` },
-    { label: 'Fill Rate (24h)', value: `${(fillRate * 100).toFixed(1)}%` },
-    { label: 'Revenue (24h est.)', value: `$${estimatedRevenue24h.toFixed(2)}` },
+    { label: 'Requests', value: requests.toLocaleString() },
+    { label: 'CTR', value: `${(ctr * 100).toFixed(2)}%` },
+    { label: 'Fill Rate', value: `${(fillRate * 100).toFixed(1)}%` },
+    { label: 'Settled Conversions', value: settledConversions.toLocaleString() },
+    { label: 'Settled Revenue', value: `$${settledRevenue.toFixed(2)}` },
   ]
 })
 
@@ -83,7 +84,7 @@ onMounted(() => {
       <p class="eyebrow">Dashboard v1</p>
       <h2>Home</h2>
       <p class="subtitle">
-        Integration readiness and key 24-hour metrics.
+        Integration readiness and key scoped settlement metrics.
       </p>
     </header>
 

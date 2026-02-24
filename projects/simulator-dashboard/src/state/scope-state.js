@@ -11,10 +11,14 @@ function cleanText(value) {
 }
 
 function normalizeScope(input = {}) {
-  const appId = cleanText(input.appId || DEFAULT_SCOPE.appId)
-  const accountId = cleanText(input.accountId || DEFAULT_SCOPE.accountId)
+  const source = input && typeof input === 'object' ? input : {}
+  const hasAppId = Object.prototype.hasOwnProperty.call(source, 'appId')
+    || Object.prototype.hasOwnProperty.call(source, 'app_id')
+  const rawAppId = hasAppId ? source.appId : DEFAULT_SCOPE.appId
+  const appId = cleanText(rawAppId)
+  const accountId = cleanText(source.accountId || DEFAULT_SCOPE.accountId)
   return {
-    appId: appId || DEFAULT_SCOPE.appId,
+    appId: hasAppId ? appId : (appId || DEFAULT_SCOPE.appId),
     accountId: accountId || DEFAULT_SCOPE.accountId,
   }
 }

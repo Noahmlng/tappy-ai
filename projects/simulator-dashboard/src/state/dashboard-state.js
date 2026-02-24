@@ -25,6 +25,27 @@ function shapeState(value) {
     metricsByPlacement: Array.isArray(value.metricsByPlacement)
       ? value.metricsByPlacement
       : fallback.metricsByPlacement,
+    settlementAggregates: value.settlementAggregates && typeof value.settlementAggregates === 'object'
+      ? value.settlementAggregates
+      : (fallback.settlementAggregates || {
+        settlementModel: 'CPA',
+        currency: 'USD',
+        totals: {
+          requests: 0,
+          served: 0,
+          impressions: 0,
+          clicks: 0,
+          settledConversions: 0,
+          settledRevenueUsd: 0,
+          ctr: 0,
+          fillRate: 0,
+          ecpm: 0,
+          cpa: 0,
+        },
+        byAccount: [],
+        byApp: [],
+        byPlacement: [],
+      }),
     placements: Array.isArray(value.placements) ? value.placements : fallback.placements,
     placementAuditLogs: Array.isArray(value.placementAuditLogs)
       ? value.placementAuditLogs
@@ -89,6 +110,7 @@ function persist() {
       metricsSummary: dashboardState.metricsSummary,
       metricsByDay: dashboardState.metricsByDay,
       metricsByPlacement: dashboardState.metricsByPlacement,
+      settlementAggregates: dashboardState.settlementAggregates,
       placements: dashboardState.placements,
       placementAuditLogs: dashboardState.placementAuditLogs,
       networkHealth: dashboardState.networkHealth,
@@ -108,6 +130,7 @@ function applySnapshot(snapshot) {
   dashboardState.metricsSummary = next.metricsSummary
   dashboardState.metricsByDay = next.metricsByDay
   dashboardState.metricsByPlacement = next.metricsByPlacement
+  dashboardState.settlementAggregates = next.settlementAggregates
   dashboardState.placements = next.placements
   dashboardState.placementAuditLogs = next.placementAuditLogs
   dashboardState.networkHealth = next.networkHealth

@@ -43,6 +43,11 @@ a {
   padding: 16px;
 }
 
+.app-shell.auth-shell {
+  grid-template-columns: minmax(0, 760px);
+  justify-content: center;
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -100,6 +105,10 @@ a {
 .content-pane {
   padding: 16px;
   min-height: calc(100vh - 32px);
+}
+
+.content-pane.auth-content {
+  min-height: auto;
 }
 
 .page {

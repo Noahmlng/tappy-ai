@@ -36,12 +36,17 @@ const MAX_NETWORK_FLOW_LOGS = 300
 const MAX_CONTROL_PLANE_AUDIT_LOGS = 800
 const MAX_INTEGRATION_TOKENS = 500
 const MAX_AGENT_ACCESS_TOKENS = 1200
+const MAX_DASHBOARD_USERS = 500
+const MAX_DASHBOARD_SESSIONS = 1500
 const DECISION_REASON_ENUM = new Set(['served', 'no_fill', 'blocked', 'error'])
 const CONTROL_PLANE_ENVIRONMENTS = new Set(['sandbox', 'staging', 'prod'])
 const CONTROL_PLANE_KEY_STATUS = new Set(['active', 'revoked'])
 const DEFAULT_CONTROL_PLANE_APP_ID = 'simulator-chatbot'
 const DEFAULT_CONTROL_PLANE_ORG_ID = 'org_simulator'
 const TRACKING_ACCOUNT_QUERY_PARAM = 'aid'
+const DASHBOARD_SESSION_PREFIX = 'dsh_'
+const DASHBOARD_SESSION_TTL_SECONDS = toPositiveInteger(process.env.SIMULATOR_DASHBOARD_SESSION_TTL_SECONDS, 86400 * 7)
+const DASHBOARD_AUTH_REQUIRED = String(process.env.SIMULATOR_DASHBOARD_AUTH_REQUIRED || 'false').trim().toLowerCase() === 'true'
 const MIN_AGENT_ACCESS_TTL_SECONDS = 60
 const MAX_AGENT_ACCESS_TTL_SECONDS = 900
 const TOKEN_EXCHANGE_FORBIDDEN_FIELDS = new Set([
@@ -194,6 +199,20 @@ const POSTBACK_CONVERSION_ALLOWED_FIELDS = new Set([
   'payoutUsd',
   'payout_usd',
 ])
+const DASHBOARD_REGISTER_ALLOWED_FIELDS = new Set([
+  'email',
+  'password',
+  'displayName',
+  'display_name',
+  'accountId',
+  'account_id',
+  'appId',
+  'app_id',
+])
+const DASHBOARD_LOGIN_ALLOWED_FIELDS = new Set([
+  'email',
+  'password',
+])
 
 const runtimeMemory = {
   cooldownBySessionPlacement: new Map(),
@@ -263,6 +282,29 @@ function normalizeControlPlaneAccountId(value, fallback = DEFAULT_CONTROL_PLANE_
   if (normalized) return normalized
   if (fallback === '') return ''
   return String(fallback || '').trim() || DEFAULT_CONTROL_PLANE_ORG_ID
+}
+
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function hashPasswordWithSalt(password, salt) {
+  return createHash('sha256').update(`${String(salt || '')}:${String(password || '')}`).digest('hex')
+}
+
+function passwordHashRecord(password) {
+  const salt = randomToken(16)
+  return {
+    passwordSalt: salt,
+    passwordHash: hashPasswordWithSalt(password, salt),
+  }
+}
+
+function verifyPasswordRecord(password, record) {
+  const passwordHash = String(record?.passwordHash || '').trim()
+  const passwordSalt = String(record?.passwordSalt || '').trim()
+  if (!passwordHash || !passwordSalt) return false
+  return hashPasswordWithSalt(password, passwordSalt) === passwordHash
 }
 
 function randomToken(length = 12) {
@@ -648,6 +690,144 @@ function toPublicAgentAccessTokenRecord(record, plainToken = '') {
   }
 }
 
+function createDashboardUserRecord(input = {}) {
+  const now = nowIso()
+  const email = normalizeEmail(input.email)
+  const accountId = normalizeControlPlaneAccountId(input.accountId || input.account_id)
+  const appId = String(input.appId || input.app_id || '').trim()
+  const displayName = String(input.displayName || input.display_name || '').trim() || email
+  const { passwordHash, passwordSalt } = passwordHashRecord(String(input.password || ''))
+
+  return {
+    userId: String(input.userId || '').trim() || `usr_${randomToken(18)}`,
+    email,
+    displayName,
+    accountId,
+    appId,
+    status: 'active',
+    passwordHash,
+    passwordSalt,
+    createdAt: now,
+    updatedAt: now,
+    lastLoginAt: '',
+    metadata: input.metadata && typeof input.metadata === 'object' ? input.metadata : {},
+  }
+}
+
+function normalizeDashboardUserRecord(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const userId = String(raw.userId || raw.user_id || raw.id || '').trim()
+  const email = normalizeEmail(raw.email)
+  const accountId = normalizeControlPlaneAccountId(raw.accountId || raw.account_id || raw.organizationId || raw.organization_id, '')
+  if (!userId || !email || !accountId) return null
+  const status = String(raw.status || '').trim().toLowerCase() || 'active'
+  return {
+    userId,
+    email,
+    displayName: String(raw.displayName || raw.display_name || '').trim() || email,
+    accountId,
+    appId: String(raw.appId || raw.app_id || '').trim(),
+    status: status === 'disabled' ? 'disabled' : 'active',
+    passwordHash: String(raw.passwordHash || raw.password_hash || '').trim(),
+    passwordSalt: String(raw.passwordSalt || raw.password_salt || '').trim(),
+    createdAt: String(raw.createdAt || raw.created_at || nowIso()),
+    updatedAt: String(raw.updatedAt || raw.updated_at || nowIso()),
+    lastLoginAt: String(raw.lastLoginAt || raw.last_login_at || ''),
+    metadata: raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : {},
+  }
+}
+
+function toPublicDashboardUserRecord(raw) {
+  const user = normalizeDashboardUserRecord(raw)
+  if (!user) return null
+  return {
+    userId: user.userId,
+    email: user.email,
+    displayName: user.displayName,
+    accountId: user.accountId,
+    appId: user.appId,
+    status: user.status,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+    lastLoginAt: user.lastLoginAt,
+  }
+}
+
+function createDashboardSessionRecord(input = {}) {
+  const issuedAt = nowIso()
+  const ttlSeconds = Math.max(300, toPositiveInteger(input.ttlSeconds, DASHBOARD_SESSION_TTL_SECONDS))
+  const expiresAtMs = Date.parse(issuedAt) + ttlSeconds * 1000
+  const accessToken = `${DASHBOARD_SESSION_PREFIX}${randomToken(48)}`
+  return {
+    sessionRecord: {
+      sessionId: String(input.sessionId || '').trim() || `dshs_${randomToken(16)}`,
+      tokenHash: hashToken(accessToken),
+      tokenType: 'dashboard_access_token',
+      userId: String(input.userId || '').trim(),
+      email: normalizeEmail(input.email || ''),
+      accountId: normalizeControlPlaneAccountId(input.accountId || input.account_id),
+      appId: String(input.appId || input.app_id || '').trim(),
+      status: 'active',
+      issuedAt,
+      expiresAt: new Date(expiresAtMs).toISOString(),
+      revokedAt: '',
+      metadata: input.metadata && typeof input.metadata === 'object' ? input.metadata : {},
+      updatedAt: issuedAt,
+    },
+    accessToken,
+  }
+}
+
+function normalizeDashboardSessionRecord(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const sessionId = String(raw.sessionId || raw.session_id || raw.id || '').trim()
+  const tokenHash = String(raw.tokenHash || raw.token_hash || '').trim()
+  const userId = String(raw.userId || raw.user_id || '').trim()
+  const accountId = normalizeControlPlaneAccountId(raw.accountId || raw.account_id || raw.organizationId || raw.organization_id, '')
+  if (!sessionId || !tokenHash || !userId || !accountId) return null
+  const status = String(raw.status || '').trim().toLowerCase() || 'active'
+  return {
+    sessionId,
+    tokenHash,
+    tokenType: 'dashboard_access_token',
+    userId,
+    email: normalizeEmail(raw.email || ''),
+    accountId,
+    appId: String(raw.appId || raw.app_id || '').trim(),
+    status: status === 'revoked' || status === 'expired' ? status : 'active',
+    issuedAt: String(raw.issuedAt || raw.issued_at || nowIso()),
+    expiresAt: String(raw.expiresAt || raw.expires_at || nowIso()),
+    revokedAt: String(raw.revokedAt || raw.revoked_at || ''),
+    metadata: raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : {},
+    updatedAt: String(raw.updatedAt || raw.updated_at || nowIso()),
+  }
+}
+
+function toPublicDashboardSessionRecord(raw, plainAccessToken = '') {
+  const session = normalizeDashboardSessionRecord(raw)
+  if (!session) return null
+  const issuedAtMs = Date.parse(session.issuedAt)
+  const expiresAtMs = Date.parse(session.expiresAt)
+  const ttlSeconds = (
+    Number.isFinite(issuedAtMs) && Number.isFinite(expiresAtMs) && expiresAtMs > issuedAtMs
+      ? Math.floor((expiresAtMs - issuedAtMs) / 1000)
+      : 0
+  )
+  return {
+    sessionId: session.sessionId,
+    tokenType: session.tokenType,
+    accessToken: plainAccessToken || undefined,
+    userId: session.userId,
+    email: session.email,
+    accountId: session.accountId,
+    appId: session.appId,
+    status: session.status,
+    issuedAt: session.issuedAt,
+    expiresAt: session.expiresAt,
+    ttlSeconds,
+  }
+}
+
 function cleanupExpiredIntegrationTokens() {
   const nowMs = Date.now()
   const rows = Array.isArray(state?.controlPlane?.integrationTokens) ? state.controlPlane.integrationTokens : []
@@ -673,6 +853,203 @@ function cleanupExpiredAgentAccessTokens() {
     if (expiresAtMs > nowMs) continue
     row.status = 'expired'
     row.updatedAt = nowIso()
+  }
+}
+
+function cleanupExpiredDashboardSessions() {
+  const nowMs = Date.now()
+  const rows = Array.isArray(state?.controlPlane?.dashboardSessions) ? state.controlPlane.dashboardSessions : []
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue
+    if (String(row.status || '').toLowerCase() !== 'active') continue
+    const expiresAtMs = Date.parse(String(row.expiresAt || ''))
+    if (!Number.isFinite(expiresAtMs)) continue
+    if (expiresAtMs > nowMs) continue
+    row.status = 'expired'
+    row.updatedAt = nowIso()
+  }
+}
+
+function findDashboardUserByEmail(email) {
+  const normalizedEmail = normalizeEmail(email)
+  if (!normalizedEmail) return null
+  const rows = Array.isArray(state?.controlPlane?.dashboardUsers) ? state.controlPlane.dashboardUsers : []
+  return rows.find((item) => normalizeEmail(item?.email) === normalizedEmail) || null
+}
+
+function findDashboardUserById(userId) {
+  const normalizedUserId = String(userId || '').trim()
+  if (!normalizedUserId) return null
+  const rows = Array.isArray(state?.controlPlane?.dashboardUsers) ? state.controlPlane.dashboardUsers : []
+  return rows.find((item) => String(item?.userId || '') === normalizedUserId) || null
+}
+
+function findDashboardSessionByPlaintext(accessToken) {
+  const token = String(accessToken || '').trim()
+  if (!token) return null
+  const tokenHash = hashToken(token)
+  const rows = Array.isArray(state?.controlPlane?.dashboardSessions) ? state.controlPlane.dashboardSessions : []
+  return rows.find((item) => String(item?.tokenHash || '') === tokenHash) || null
+}
+
+function findLatestAppForAccount(accountId) {
+  const normalizedAccountId = normalizeControlPlaneAccountId(accountId, '')
+  if (!normalizedAccountId) return null
+  const rows = Array.isArray(state?.controlPlane?.apps) ? state.controlPlane.apps : []
+  const matched = rows.filter((item) => normalizeControlPlaneAccountId(item?.accountId || item?.organizationId, '') === normalizedAccountId)
+  matched.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
+  return matched[0] || null
+}
+
+function appBelongsToAccount(appId, accountId) {
+  const normalizedAppId = String(appId || '').trim()
+  const normalizedAccountId = normalizeControlPlaneAccountId(accountId, '')
+  if (!normalizedAppId || !normalizedAccountId) return false
+  const app = resolveControlPlaneAppRecord(normalizedAppId)
+  if (!app) return false
+  return normalizeControlPlaneAccountId(app.accountId || app.organizationId, '') === normalizedAccountId
+}
+
+function resolveDashboardSession(req) {
+  cleanupExpiredDashboardSessions()
+  const token = parseBearerToken(req)
+  if (!token) return { kind: 'none' }
+  if (!token.startsWith(DASHBOARD_SESSION_PREFIX)) {
+    return {
+      kind: 'invalid',
+      status: 401,
+      code: 'DASHBOARD_TOKEN_INVALID',
+      message: 'Dashboard access token is invalid.',
+    }
+  }
+  const session = findDashboardSessionByPlaintext(token)
+  if (!session) {
+    return {
+      kind: 'invalid',
+      status: 401,
+      code: 'DASHBOARD_TOKEN_INVALID',
+      message: 'Dashboard access token is invalid.',
+    }
+  }
+
+  const status = String(session.status || '').trim().toLowerCase()
+  if (status !== 'active') {
+    return {
+      kind: 'invalid',
+      status: 401,
+      code: status === 'expired' ? 'DASHBOARD_TOKEN_EXPIRED' : 'DASHBOARD_TOKEN_INACTIVE',
+      message: status === 'expired'
+        ? 'Dashboard access token has expired.'
+        : `Dashboard access token is not active (${status || 'unknown'}).`,
+      session,
+    }
+  }
+
+  const expiresAtMs = Date.parse(String(session.expiresAt || ''))
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+    session.status = 'expired'
+    session.updatedAt = nowIso()
+    persistState(state)
+    return {
+      kind: 'invalid',
+      status: 401,
+      code: 'DASHBOARD_TOKEN_EXPIRED',
+      message: 'Dashboard access token has expired.',
+      session,
+    }
+  }
+
+  const user = findDashboardUserById(session.userId)
+  if (!user || String(user.status || '').toLowerCase() !== 'active') {
+    session.status = 'revoked'
+    session.updatedAt = nowIso()
+    persistState(state)
+    return {
+      kind: 'invalid',
+      status: 401,
+      code: 'DASHBOARD_USER_INVALID',
+      message: 'Dashboard user is invalid or disabled.',
+      session,
+    }
+  }
+
+  return {
+    kind: 'dashboard_session',
+    accessToken: token,
+    session,
+    user,
+  }
+}
+
+function authorizeDashboardScope(req, searchParams, options = {}) {
+  const option = options && typeof options === 'object' ? options : {}
+  const requireAuth = option.requireAuth === true || DASHBOARD_AUTH_REQUIRED
+  const requestedScope = parseScopeFiltersFromSearchParams(searchParams)
+  const resolved = resolveDashboardSession(req)
+
+  if (resolved.kind === 'none') {
+    if (requireAuth) {
+      return {
+        ok: false,
+        status: 401,
+        error: {
+          code: 'DASHBOARD_AUTH_REQUIRED',
+          message: 'Dashboard authentication is required.',
+        },
+      }
+    }
+    return {
+      ok: true,
+      scope: requestedScope,
+      authMode: 'anonymous',
+      session: null,
+      user: null,
+    }
+  }
+
+  if (resolved.kind === 'invalid') {
+    return {
+      ok: false,
+      status: resolved.status,
+      error: {
+        code: resolved.code,
+        message: resolved.message,
+      },
+    }
+  }
+
+  const session = resolved.session
+  const user = resolved.user
+  const enforcedAccountId = normalizeControlPlaneAccountId(user.accountId || session.accountId, '')
+  let enforcedAppId = String(requestedScope.appId || '').trim()
+  if (enforcedAppId && !appBelongsToAccount(enforcedAppId, enforcedAccountId)) {
+    return {
+      ok: false,
+      status: 403,
+      error: {
+        code: 'DASHBOARD_SCOPE_VIOLATION',
+        message: `appId ${enforcedAppId} does not belong to your account.`,
+      },
+    }
+  }
+
+  session.updatedAt = nowIso()
+  session.metadata = session.metadata && typeof session.metadata === 'object' ? session.metadata : {}
+  session.metadata.lastUsedAt = session.updatedAt
+
+  user.lastLoginAt = user.lastLoginAt || session.updatedAt
+  user.updatedAt = session.updatedAt
+
+  persistState(state)
+  return {
+    ok: true,
+    scope: {
+      accountId: enforcedAccountId,
+      appId: enforcedAppId,
+    },
+    authMode: 'dashboard_session',
+    session,
+    user,
   }
 }
 
@@ -829,6 +1206,8 @@ function createInitialControlPlaneState() {
     apiKeys: [keyRecord],
     integrationTokens: [],
     agentAccessTokens: [],
+    dashboardUsers: [],
+    dashboardSessions: [],
   }
 }
 
@@ -945,12 +1324,31 @@ function ensureControlPlaneState(raw) {
     }))
     .slice(0, MAX_AGENT_ACCESS_TOKENS)
 
+  const dashboardUserRows = Array.isArray(raw.dashboardUsers || raw.users)
+    ? (raw.dashboardUsers || raw.users)
+    : []
+  const dashboardUsers = dashboardUserRows
+    .map((item) => normalizeDashboardUserRecord(item))
+    .filter((item) => item && Boolean(item.accountId))
+    .slice(0, MAX_DASHBOARD_USERS)
+
+  const knownUserIds = new Set(dashboardUsers.map((item) => item.userId))
+  const dashboardSessionRows = Array.isArray(raw.dashboardSessions || raw.sessions)
+    ? (raw.dashboardSessions || raw.sessions)
+    : []
+  const dashboardSessions = dashboardSessionRows
+    .map((item) => normalizeDashboardSessionRecord(item))
+    .filter((item) => item && knownUserIds.has(item.userId))
+    .slice(0, MAX_DASHBOARD_SESSIONS)
+
   return {
     apps,
     appEnvironments,
     apiKeys,
     integrationTokens,
     agentAccessTokens,
+    dashboardUsers,
+    dashboardSessions,
   }
 }
 
@@ -1165,6 +1563,40 @@ function normalizePostbackConversionPayload(payload, routeName) {
     occurredAt: normalizeIsoTimestamp(input.eventAt || input.event_at, nowIso(), 'eventAt'),
     cpaUsd: Number.isFinite(cpaUsd) ? round(cpaUsd, 4) : 0,
     currency,
+  }
+}
+
+function normalizeDashboardRegisterPayload(payload, routeName) {
+  const input = payload && typeof payload === 'object' ? payload : {}
+  validateNoExtraFields(input, DASHBOARD_REGISTER_ALLOWED_FIELDS, routeName)
+  const email = normalizeEmail(requiredNonEmptyString(input.email, 'email'))
+  const password = requiredNonEmptyString(input.password, 'password')
+  if (password.length < 8) {
+    throw new Error('password must contain at least 8 characters.')
+  }
+  const accountId = normalizeControlPlaneAccountId(
+    requiredNonEmptyString(input.accountId || input.account_id, 'accountId'),
+    '',
+  )
+  const appId = String(input.appId || input.app_id || '').trim()
+  const displayName = String(input.displayName || input.display_name || '').trim()
+  return {
+    email,
+    password,
+    accountId,
+    appId,
+    displayName,
+  }
+}
+
+function normalizeDashboardLoginPayload(payload, routeName) {
+  const input = payload && typeof payload === 'object' ? payload : {}
+  validateNoExtraFields(input, DASHBOARD_LOGIN_ALLOWED_FIELDS, routeName)
+  const email = normalizeEmail(requiredNonEmptyString(input.email, 'email'))
+  const password = requiredNonEmptyString(input.password, 'password')
+  return {
+    email,
+    password,
   }
 }
 
@@ -3185,6 +3617,234 @@ function computeScopedNetworkFlowStats(rows) {
   return stats
 }
 
+function createSettlementAggregateRow(seed = {}) {
+  return {
+    accountId: String(seed.accountId || '').trim(),
+    appId: String(seed.appId || '').trim(),
+    placementId: String(seed.placementId || '').trim(),
+    layer: String(seed.layer || '').trim(),
+    requests: 0,
+    served: 0,
+    impressions: 0,
+    clicks: 0,
+    settledConversions: 0,
+    settledRevenueUsd: 0,
+    ctr: 0,
+    fillRate: 0,
+    ecpm: 0,
+    cpa: 0,
+  }
+}
+
+function finalizeSettlementAggregateRow(row) {
+  const requests = toPositiveInteger(row?.requests, 0)
+  const served = toPositiveInteger(row?.served, 0)
+  const impressions = toPositiveInteger(row?.impressions, 0)
+  const clicks = toPositiveInteger(row?.clicks, 0)
+  const settledConversions = toPositiveInteger(row?.settledConversions, 0)
+  const settledRevenueUsd = round(clampNumber(row?.settledRevenueUsd, 0, Number.MAX_SAFE_INTEGER, 0), 4)
+  const ctr = impressions > 0 ? clicks / impressions : 0
+  const fillRate = requests > 0 ? served / requests : 0
+  const ecpm = impressions > 0 ? (settledRevenueUsd / impressions) * 1000 : 0
+  const cpa = settledConversions > 0 ? settledRevenueUsd / settledConversions : 0
+
+  return {
+    accountId: String(row?.accountId || '').trim(),
+    appId: String(row?.appId || '').trim(),
+    placementId: String(row?.placementId || '').trim(),
+    layer: String(row?.layer || '').trim(),
+    requests,
+    served,
+    impressions,
+    clicks,
+    settledConversions,
+    settledRevenueUsd: round(settledRevenueUsd, 2),
+    ctr: round(ctr, 4),
+    fillRate: round(fillRate, 4),
+    ecpm: round(ecpm, 2),
+    cpa: round(cpa, 2),
+  }
+}
+
+function buildDecisionDimensionMap(decisionRows = []) {
+  const map = new Map()
+  for (const row of decisionRows) {
+    const requestId = String(row?.requestId || '').trim()
+    if (!requestId || map.has(requestId)) continue
+    const appId = String(row?.appId || '').trim()
+    map.set(requestId, {
+      accountId: normalizeControlPlaneAccountId(row?.accountId || resolveAccountIdForApp(appId), ''),
+      appId,
+      placementId: String(row?.placementId || '').trim(),
+    })
+  }
+  return map
+}
+
+function resolveFactDimensions(row, decisionDimensionMap = new Map()) {
+  const requestId = String(row?.requestId || '').trim()
+  const dimension = decisionDimensionMap.get(requestId)
+  const appId = String(row?.appId || dimension?.appId || '').trim()
+  const accountId = normalizeControlPlaneAccountId(
+    row?.accountId || dimension?.accountId || resolveAccountIdForApp(appId),
+    '',
+  )
+  const placementId = String(row?.placementId || dimension?.placementId || '').trim()
+  return {
+    accountId,
+    appId,
+    placementId,
+  }
+}
+
+function ensureSettlementMapRow(map, key, seed) {
+  if (!map.has(key)) {
+    map.set(key, createSettlementAggregateRow(seed))
+  }
+  return map.get(key)
+}
+
+function upsertSettlementForDecision(row, maps) {
+  const appId = String(row?.appId || '').trim()
+  const accountId = normalizeControlPlaneAccountId(row?.accountId || resolveAccountIdForApp(appId), '')
+  const placementId = String(row?.placementId || '').trim()
+  const layer = layerFromPlacementKey(String(row?.placementKey || resolvePlacementKeyById(placementId)))
+
+  if (!accountId || !appId) return
+
+  const totals = maps.totals
+  const account = ensureSettlementMapRow(maps.byAccount, accountId, { accountId })
+  const app = ensureSettlementMapRow(maps.byApp, `${accountId}::${appId}`, { accountId, appId })
+  const placement = placementId
+    ? ensureSettlementMapRow(
+      maps.byPlacement,
+      `${accountId}::${appId}::${placementId}`,
+      { accountId, appId, placementId, layer },
+    )
+    : null
+
+  const targets = placement ? [totals, account, app, placement] : [totals, account, app]
+  for (const target of targets) {
+    target.requests += 1
+    if (String(row?.result || '') === 'served') {
+      target.served += 1
+      target.impressions += 1
+    }
+  }
+}
+
+function upsertSettlementForClick(row, maps) {
+  if (String(row?.eventType || '') !== 'sdk_event') return
+  const kind = String(row?.kind || row?.event || '').trim().toLowerCase()
+  if (kind !== 'click') return
+
+  const appId = String(row?.appId || '').trim()
+  const accountId = normalizeControlPlaneAccountId(row?.accountId || resolveAccountIdForApp(appId), '')
+  const placementId = String(row?.placementId || '').trim()
+  const layer = layerFromPlacementKey(String(row?.placementKey || resolvePlacementKeyById(placementId)))
+
+  if (!accountId || !appId) return
+
+  const totals = maps.totals
+  const account = ensureSettlementMapRow(maps.byAccount, accountId, { accountId })
+  const app = ensureSettlementMapRow(maps.byApp, `${accountId}::${appId}`, { accountId, appId })
+  const placement = placementId
+    ? ensureSettlementMapRow(
+      maps.byPlacement,
+      `${accountId}::${appId}::${placementId}`,
+      { accountId, appId, placementId, layer },
+    )
+    : null
+
+  const targets = placement ? [totals, account, app, placement] : [totals, account, app]
+  for (const target of targets) {
+    target.clicks += 1
+  }
+}
+
+function upsertSettlementForFact(row, maps, decisionDimensionMap) {
+  const revenueUsd = conversionFactRevenueUsd(row)
+  if (revenueUsd <= 0) return
+
+  const dimension = resolveFactDimensions(row, decisionDimensionMap)
+  const accountId = dimension.accountId
+  const appId = dimension.appId
+  const placementId = dimension.placementId
+  if (!accountId || !appId) return
+  const layer = layerFromPlacementKey(String(row?.placementKey || resolvePlacementKeyById(placementId)))
+
+  const totals = maps.totals
+  const account = ensureSettlementMapRow(maps.byAccount, accountId, { accountId })
+  const app = ensureSettlementMapRow(maps.byApp, `${accountId}::${appId}`, { accountId, appId })
+  const placement = placementId
+    ? ensureSettlementMapRow(
+      maps.byPlacement,
+      `${accountId}::${appId}::${placementId}`,
+      { accountId, appId, placementId, layer },
+    )
+    : null
+
+  const targets = placement ? [totals, account, app, placement] : [totals, account, app]
+  for (const target of targets) {
+    target.settledConversions += 1
+    target.settledRevenueUsd = round(target.settledRevenueUsd + revenueUsd, 4)
+  }
+}
+
+function rankSettlementRows(rows = []) {
+  return rows.sort((a, b) => {
+    if (b.settledRevenueUsd !== a.settledRevenueUsd) return b.settledRevenueUsd - a.settledRevenueUsd
+    if (b.settledConversions !== a.settledConversions) return b.settledConversions - a.settledConversions
+    if (b.impressions !== a.impressions) return b.impressions - a.impressions
+    return String(a.appId || a.accountId || a.placementId || '').localeCompare(
+      String(b.appId || b.accountId || b.placementId || ''),
+    )
+  })
+}
+
+function computeSettlementAggregates(scope = {}) {
+  const decisionRows = filterRowsByScope(state.decisionLogs, scope)
+  const eventRows = filterRowsByScope(state.eventLogs, scope)
+  const factRows = filterRowsByScope(state.conversionFacts, scope)
+
+  const maps = {
+    totals: createSettlementAggregateRow({}),
+    byAccount: new Map(),
+    byApp: new Map(),
+    byPlacement: new Map(),
+  }
+  const decisionDimensionMap = buildDecisionDimensionMap(decisionRows)
+
+  for (const row of decisionRows) {
+    upsertSettlementForDecision(row, maps)
+  }
+  for (const row of eventRows) {
+    upsertSettlementForClick(row, maps)
+  }
+  for (const row of factRows) {
+    upsertSettlementForFact(row, maps, decisionDimensionMap)
+  }
+
+  const byAccount = rankSettlementRows(
+    Array.from(maps.byAccount.values()).map((item) => finalizeSettlementAggregateRow(item)),
+  )
+  const byApp = rankSettlementRows(
+    Array.from(maps.byApp.values()).map((item) => finalizeSettlementAggregateRow(item)),
+  )
+  const byPlacement = rankSettlementRows(
+    Array.from(maps.byPlacement.values()).map((item) => finalizeSettlementAggregateRow(item)),
+  )
+
+  return {
+    settlementModel: 'CPA',
+    currency: 'USD',
+    totals: finalizeSettlementAggregateRow(maps.totals),
+    byAccount,
+    byApp,
+    byPlacement,
+  }
+}
+
 function getDashboardStatePayload(scopeInput = {}) {
   const scope = normalizeScopeFilters(scopeInput)
   const hasScope = scopeHasFilters(scope)
@@ -3234,6 +3894,9 @@ function getDashboardStatePayload(scopeInput = {}) {
     : shouldApplyScope
     ? computeScopedNetworkFlowStats(networkFlowLogs)
     : state.networkFlowStats
+  const settlementAggregates = emptyScoped
+    ? computeSettlementAggregates({ appId: '__none__', accountId: '__none__' })
+    : computeSettlementAggregates(shouldApplyScope ? scope : {})
 
   return {
     scope,
@@ -3241,6 +3904,7 @@ function getDashboardStatePayload(scopeInput = {}) {
     metricsSummary,
     metricsByDay,
     metricsByPlacement,
+    settlementAggregates,
     placements: emptyScoped ? [] : state.placements,
     placementAuditLogs: emptyScoped ? [] : state.placementAuditLogs,
     controlPlaneAuditLogs,
@@ -3368,6 +4032,39 @@ function hasRequiredAgentScope(scope, requiredScope) {
 function getExchangeForbiddenFields(payload) {
   if (!payload || typeof payload !== 'object') return []
   return [...TOKEN_EXCHANGE_FORBIDDEN_FIELDS].filter((key) => Object.prototype.hasOwnProperty.call(payload, key))
+}
+
+function issueDashboardSession(user, options = {}) {
+  const inputUser = normalizeDashboardUserRecord(user)
+  if (!inputUser) {
+    throw new Error('dashboard user is invalid.')
+  }
+  cleanupExpiredDashboardSessions()
+  const { sessionRecord, accessToken } = createDashboardSessionRecord({
+    userId: inputUser.userId,
+    email: inputUser.email,
+    accountId: inputUser.accountId,
+    appId: inputUser.appId,
+    ttlSeconds: options.ttlSeconds,
+    metadata: options.metadata,
+  })
+  state.controlPlane.dashboardSessions = [sessionRecord, ...state.controlPlane.dashboardSessions]
+    .slice(0, MAX_DASHBOARD_SESSIONS)
+  return {
+    sessionRecord,
+    accessToken,
+  }
+}
+
+function revokeDashboardSessionByToken(accessToken) {
+  const session = findDashboardSessionByPlaintext(accessToken)
+  if (!session) return null
+  if (String(session.status || '').toLowerCase() !== 'revoked') {
+    session.status = 'revoked'
+    session.revokedAt = nowIso()
+    session.updatedAt = session.revokedAt
+  }
+  return session
 }
 
 function recordSecurityDenyAudit({
@@ -3889,6 +4586,171 @@ async function requestHandler(req, res) {
     sendJson(res, 200, {
       items: queryControlPlaneAudits(requestUrl.searchParams),
     })
+    return
+  }
+
+  if (pathname === '/api/v1/public/dashboard/register' && req.method === 'POST') {
+    try {
+      const payload = await readJsonBody(req)
+      const request = normalizeDashboardRegisterPayload(payload, 'public/dashboard/register')
+      const existing = findDashboardUserByEmail(request.email)
+      if (existing) {
+        sendJson(res, 409, {
+          error: {
+            code: 'DASHBOARD_USER_EXISTS',
+            message: `dashboard user already exists for email ${request.email}.`,
+          },
+        })
+        return
+      }
+
+      let appId = String(request.appId || '').trim()
+      if (!appId) {
+        const accountApp = findLatestAppForAccount(request.accountId)
+        appId = String(accountApp?.appId || '').trim()
+      }
+      if (!appId) {
+        const generated = request.accountId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 42) || 'customer'
+        appId = `${generated}_app`
+      }
+      const ensured = ensureControlPlaneAppAndEnvironment(appId, 'staging', request.accountId)
+      if (!appBelongsToAccount(ensured.appId, request.accountId)) {
+        sendJson(res, 403, {
+          error: {
+            code: 'DASHBOARD_SCOPE_VIOLATION',
+            message: `appId ${ensured.appId} does not belong to accountId ${request.accountId}.`,
+          },
+        })
+        return
+      }
+
+      const userRecord = createDashboardUserRecord({
+        email: request.email,
+        password: request.password,
+        displayName: request.displayName,
+        accountId: request.accountId,
+        appId: ensured.appId,
+      })
+
+      state.controlPlane.dashboardUsers = [userRecord, ...state.controlPlane.dashboardUsers]
+        .slice(0, MAX_DASHBOARD_USERS)
+      const { sessionRecord, accessToken } = issueDashboardSession(userRecord, {
+        metadata: { source: 'register' },
+      })
+      userRecord.lastLoginAt = sessionRecord.issuedAt
+      userRecord.updatedAt = sessionRecord.issuedAt
+      persistState(state)
+
+      sendJson(res, 201, {
+        user: toPublicDashboardUserRecord(userRecord),
+        session: toPublicDashboardSessionRecord(sessionRecord, accessToken),
+      })
+      return
+    } catch (error) {
+      sendJson(res, 400, {
+        error: {
+          code: 'INVALID_REQUEST',
+          message: error instanceof Error ? error.message : 'Invalid request',
+        },
+      })
+      return
+    }
+  }
+
+  if (pathname === '/api/v1/public/dashboard/login' && req.method === 'POST') {
+    try {
+      const payload = await readJsonBody(req)
+      const request = normalizeDashboardLoginPayload(payload, 'public/dashboard/login')
+      const user = findDashboardUserByEmail(request.email)
+      if (!user) {
+        sendJson(res, 401, {
+          error: {
+            code: 'DASHBOARD_LOGIN_FAILED',
+            message: 'email or password is incorrect.',
+          },
+        })
+        return
+      }
+      if (String(user.status || '').toLowerCase() !== 'active') {
+        sendJson(res, 403, {
+          error: {
+            code: 'DASHBOARD_USER_DISABLED',
+            message: 'dashboard user is disabled.',
+          },
+        })
+        return
+      }
+      if (!verifyPasswordRecord(request.password, user)) {
+        sendJson(res, 401, {
+          error: {
+            code: 'DASHBOARD_LOGIN_FAILED',
+            message: 'email or password is incorrect.',
+          },
+        })
+        return
+      }
+
+      const { sessionRecord, accessToken } = issueDashboardSession(user, {
+        metadata: { source: 'login' },
+      })
+      user.lastLoginAt = sessionRecord.issuedAt
+      user.updatedAt = sessionRecord.issuedAt
+      persistState(state)
+
+      sendJson(res, 200, {
+        user: toPublicDashboardUserRecord(user),
+        session: toPublicDashboardSessionRecord(sessionRecord, accessToken),
+      })
+      return
+    } catch (error) {
+      sendJson(res, 400, {
+        error: {
+          code: 'INVALID_REQUEST',
+          message: error instanceof Error ? error.message : 'Invalid request',
+        },
+      })
+      return
+    }
+  }
+
+  if (pathname === '/api/v1/public/dashboard/me' && req.method === 'GET') {
+    const auth = authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
+    if (!auth.ok) {
+      sendJson(res, auth.status, { error: auth.error })
+      return
+    }
+    sendJson(res, 200, {
+      user: toPublicDashboardUserRecord(auth.user),
+      session: toPublicDashboardSessionRecord(auth.session),
+      scope: auth.scope,
+    })
+    return
+  }
+
+  if (pathname === '/api/v1/public/dashboard/logout' && req.method === 'POST') {
+    const resolved = resolveDashboardSession(req)
+    if (resolved.kind === 'none') {
+      sendJson(res, 401, {
+        error: {
+          code: 'DASHBOARD_AUTH_REQUIRED',
+          message: 'Dashboard authentication is required.',
+        },
+      })
+      return
+    }
+    if (resolved.kind === 'invalid') {
+      sendJson(res, resolved.status, {
+        error: {
+          code: resolved.code,
+          message: resolved.message,
+        },
+      })
+      return
+    }
+
+    revokeDashboardSessionByToken(resolved.accessToken)
+    persistState(state)
+    sendJson(res, 200, { ok: true })
     return
   }
 
@@ -4482,13 +5344,23 @@ async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/dashboard/state' && req.method === 'GET') {
-    const scope = parseScopeFiltersFromSearchParams(requestUrl.searchParams)
+    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    if (!auth.ok) {
+      sendJson(res, auth.status, { error: auth.error })
+      return
+    }
+    const scope = auth.scope
     sendJson(res, 200, getDashboardStatePayload(scope))
     return
   }
 
   if (pathname === '/api/v1/dashboard/placements' && req.method === 'GET') {
-    const scope = parseScopeFiltersFromSearchParams(requestUrl.searchParams)
+    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    if (!auth.ok) {
+      sendJson(res, auth.status, { error: auth.error })
+      return
+    }
+    const scope = auth.scope
     const hasScope = scopeHasFilters(scope)
     const placements = hasScope && getScopedApps(scope).length === 0 ? [] : state.placements
     sendJson(res, 200, { placements })
@@ -4497,6 +5369,11 @@ async function requestHandler(req, res) {
 
   if (pathname.startsWith('/api/v1/dashboard/placements/') && req.method === 'PUT') {
     try {
+      const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+      if (!auth.ok) {
+        sendJson(res, auth.status, { error: auth.error })
+        return
+      }
       const placementId = decodeURIComponent(pathname.replace('/api/v1/dashboard/placements/', ''))
       const target = state.placements.find((item) => item.placementId === placementId)
 
@@ -4562,23 +5439,49 @@ async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/dashboard/metrics/summary' && req.method === 'GET') {
-    const scope = parseScopeFiltersFromSearchParams(requestUrl.searchParams)
+    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    if (!auth.ok) {
+      sendJson(res, auth.status, { error: auth.error })
+      return
+    }
+    const scope = auth.scope
     const snapshot = getDashboardStatePayload(scope)
     sendJson(res, 200, snapshot.metricsSummary)
     return
   }
 
   if (pathname === '/api/v1/dashboard/metrics/by-day' && req.method === 'GET') {
-    const scope = parseScopeFiltersFromSearchParams(requestUrl.searchParams)
+    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    if (!auth.ok) {
+      sendJson(res, auth.status, { error: auth.error })
+      return
+    }
+    const scope = auth.scope
     const snapshot = getDashboardStatePayload(scope)
     sendJson(res, 200, { items: snapshot.metricsByDay })
     return
   }
 
   if (pathname === '/api/v1/dashboard/metrics/by-placement' && req.method === 'GET') {
-    const scope = parseScopeFiltersFromSearchParams(requestUrl.searchParams)
+    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    if (!auth.ok) {
+      sendJson(res, auth.status, { error: auth.error })
+      return
+    }
+    const scope = auth.scope
     const snapshot = getDashboardStatePayload(scope)
     sendJson(res, 200, { items: snapshot.metricsByPlacement })
+    return
+  }
+
+  if (pathname === '/api/v1/dashboard/usage-revenue' && req.method === 'GET') {
+    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    if (!auth.ok) {
+      sendJson(res, auth.status, { error: auth.error })
+      return
+    }
+    const snapshot = getDashboardStatePayload(auth.scope)
+    sendJson(res, 200, snapshot.settlementAggregates)
     return
   }
 
@@ -4586,7 +5489,12 @@ async function requestHandler(req, res) {
     const result = requestUrl.searchParams.get('result')
     const placementId = requestUrl.searchParams.get('placementId')
     const requestId = requestUrl.searchParams.get('requestId')
-    const scope = parseScopeFiltersFromSearchParams(requestUrl.searchParams)
+    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    if (!auth.ok) {
+      sendJson(res, auth.status, { error: auth.error })
+      return
+    }
+    const scope = auth.scope
 
     let rows = filterRowsByScope(state.decisionLogs, scope)
 
@@ -4610,7 +5518,12 @@ async function requestHandler(req, res) {
     const placementId = requestUrl.searchParams.get('placementId')
     const requestId = requestUrl.searchParams.get('requestId')
     const eventType = requestUrl.searchParams.get('eventType')
-    const scope = parseScopeFiltersFromSearchParams(requestUrl.searchParams)
+    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    if (!auth.ok) {
+      sendJson(res, auth.status, { error: auth.error })
+      return
+    }
+    const scope = auth.scope
 
     let rows = filterRowsByScope(state.eventLogs, scope)
 
@@ -4632,8 +5545,17 @@ async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/dashboard/audit/logs' && req.method === 'GET') {
+    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    if (!auth.ok) {
+      sendJson(res, auth.status, { error: auth.error })
+      return
+    }
+    let rows = queryControlPlaneAudits(requestUrl.searchParams)
+    if (scopeHasFilters(auth.scope)) {
+      rows = rows.filter((row) => recordMatchesScope(row, auth.scope))
+    }
     sendJson(res, 200, {
-      items: queryControlPlaneAudits(requestUrl.searchParams),
+      items: rows,
     })
     return
   }
@@ -4649,7 +5571,12 @@ async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/dashboard/network-health' && req.method === 'GET') {
-    const scope = parseScopeFiltersFromSearchParams(requestUrl.searchParams)
+    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    if (!auth.ok) {
+      sendJson(res, auth.status, { error: auth.error })
+      return
+    }
+    const scope = auth.scope
     const networkHealth = getAllNetworkHealth()
     const scopedFlowLogs = filterRowsByScope(state.networkFlowLogs, scope)
     sendJson(res, 200, {
