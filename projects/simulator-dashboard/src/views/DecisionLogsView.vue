@@ -53,20 +53,20 @@ function displayReason(row) {
     <header class="page-header page-header-split">
       <div class="header-stack">
         <p class="eyebrow">Logs</p>
-        <h2>Decision Logs</h2>
-        <p class="subtitle">Filter by result and placement.</p>
+        <h2>Logs</h2>
+        <p class="subtitle">Filter</p>
       </div>
       <div class="header-actions">
         <button class="button" type="button" :disabled="isLoading" @click="refreshLogs">
-          {{ isLoading ? 'Refreshing...' : 'Refresh Logs' }}
+          {{ isLoading ? 'Sync...' : 'Sync' }}
         </button>
       </div>
     </header>
 
     <article class="panel panel-soft">
       <div class="panel-toolbar">
-        <h3>Requests</h3>
-        <p class="muted">{{ filteredLogs.length }} row(s)</p>
+        <h3>Rows</h3>
+        <p class="muted">{{ filteredLogs.length }}</p>
       </div>
 
       <div class="filters">
@@ -94,7 +94,7 @@ function displayReason(row) {
           <thead>
             <tr>
               <th>Time</th>
-              <th>Request ID</th>
+              <th>Req ID</th>
               <th>Placement</th>
               <th>Result</th>
               <th>Reason</th>
@@ -111,7 +111,7 @@ function displayReason(row) {
               <td>{{ displayReason(row) }}</td>
             </tr>
             <tr v-if="filteredLogs.length === 0">
-              <td colspan="5" class="muted">No logs found.</td>
+              <td colspan="5" class="muted">No rows.</td>
             </tr>
           </tbody>
         </table>

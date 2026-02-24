@@ -36,25 +36,25 @@ const totals = computed(() => dashboardState.settlementAggregates?.totals || {})
 const refreshBusy = computed(() => Boolean(isLoading.value || readiness.loading || appSelection.loading))
 const lastSyncedLabel = computed(() => {
   const raw = dashboardState.meta?.lastSyncedAt
-  if (!raw) return 'No sync yet'
+  if (!raw) return 'Not synced'
   const value = new Date(raw)
-  if (Number.isNaN(value.getTime())) return 'No sync yet'
-  return `Last synced ${value.toLocaleString()}`
+  if (Number.isNaN(value.getTime())) return 'Not synced'
+  return value.toLocaleString()
 })
 const connectionStatus = computed(() => {
   if (dashboardState.meta?.connected) {
-    return { label: 'Public API online', tone: 'good' }
+    return { label: 'Online', tone: 'good' }
   }
-  return { label: 'Offline snapshot', tone: 'warn' }
+  return { label: 'Offline', tone: 'warn' }
 })
 const readinessStatus = computed(() => {
-  if (!scopeReady.value) return { label: 'Action required', tone: 'warn' }
+  if (!scopeReady.value) return { label: 'Need action', tone: 'warn' }
   if (hasActiveKey.value && placementEnabled.value) {
     return verifyPassed.value
       ? { label: 'Verified', tone: 'good' }
-      : { label: 'Ready to verify', tone: 'good' }
+      : { label: 'Ready', tone: 'good' }
   }
-  return { label: 'Action required', tone: 'warn' }
+  return { label: 'Need action', tone: 'warn' }
 })
 
 const kpis = computed(() => {
@@ -95,38 +95,38 @@ const verifyPassed = computed(() => {
 
 const checklistRows = computed(() => ([
   {
-    label: 'Scope ready',
+    label: 'Scope',
     done: scopeReady.value,
-    detail: scopeReady.value ? scopeLabel.value : 'No app selected.',
+    detail: scopeReady.value ? scopeLabel.value : 'Select app',
     actionTo: '/api-keys',
-    actionLabel: 'Open API Keys',
+    actionLabel: 'API Keys',
   },
   {
-    label: 'Active key',
+    label: 'Key',
     done: hasActiveKey.value,
     detail: hasActiveKey.value
-      ? `${readiness.activeKeyCount} active key(s) in ${integrationForm.environment}`
-      : `No active key in ${integrationForm.environment}.`,
+      ? `${readiness.activeKeyCount} active · ${integrationForm.environment}`
+      : `No active · ${integrationForm.environment}`,
     actionTo: '/api-keys',
-    actionLabel: 'Create key',
+    actionLabel: 'Create',
   },
   {
-    label: 'Placement enabled',
+    label: 'Placement',
     done: placementEnabled.value,
     detail: placementEnabled.value
-      ? `${integrationForm.placementId} is enabled.`
-      : `${integrationForm.placementId} is disabled or missing.`,
+      ? `${integrationForm.placementId} enabled`
+      : `${integrationForm.placementId} disabled`,
     actionTo: '/config',
-    actionLabel: 'Open config',
+    actionLabel: 'Config',
   },
   {
-    label: 'Verification',
+    label: 'Verify',
     done: verifyPassed.value,
     detail: verifyPassed.value
-      ? `Verified with requestId ${String(verifyResult.value?.requestId || '-')}`
-      : 'Run integration verify to complete onboarding.',
+      ? `request ${String(verifyResult.value?.requestId || '-')}`
+      : 'Run verify',
     actionTo: '/logs',
-    actionLabel: 'Open logs',
+    actionLabel: 'Logs',
   },
 ]))
 
@@ -135,11 +135,11 @@ const nextAction = computed(() => {
   if (pending) return pending
 
   return {
-    label: 'All set',
+    label: 'Done',
     done: true,
-    detail: 'Scope, key, placement, and verification are all ready.',
+    detail: 'All checks pass.',
     actionTo: '/logs',
-    actionLabel: 'Open logs',
+    actionLabel: 'Logs',
   }
 })
 
@@ -223,7 +223,7 @@ async function hydrateAppOptions() {
     }
   } catch (error) {
     appSelection.options = []
-    appSelection.error = error instanceof Error ? error.message : 'Failed to load app list.'
+    appSelection.error = error instanceof Error ? error.message : 'App list unavailable.'
   } finally {
     appSelection.loading = false
   }
@@ -269,7 +269,7 @@ async function refreshReadiness(options = {}) {
     readiness.activeKeyCount = keys.filter((item) => String(item?.status || '').toLowerCase() === 'active').length
   } catch (error) {
     readiness.activeKeyCount = 0
-    readiness.error = error instanceof Error ? error.message : 'Failed to read key readiness.'
+    readiness.error = error instanceof Error ? error.message : 'Key check failed.'
   } finally {
     readiness.loading = false
   }
@@ -282,10 +282,10 @@ async function runIntegrationVerify() {
 
   try {
     if (!scopeReady.value) {
-      throw new Error('Scope is empty. Please select an app first.')
+      throw new Error('Select app.')
     }
     if (!hasActiveKey.value) {
-      throw new Error(`No active API key for appId=${scopeState.appId} environment=${integrationForm.environment}.`)
+      throw new Error('No active key.')
     }
 
     const payload = await controlPlaneClient.quickStart.verify({
@@ -298,7 +298,7 @@ async function runIntegrationVerify() {
     verifyResult.value = payload
     await refreshReadiness({ reloadDashboard: true, reloadApps: false })
   } catch (error) {
-    verifyError.value = error instanceof Error ? error.message : 'Integration verify failed.'
+    verifyError.value = error instanceof Error ? error.message : 'Verify failed.'
   } finally {
     verifyLoading.value = false
   }
@@ -325,13 +325,13 @@ onMounted(() => {
     <header class="page-header page-header-split">
       <div class="header-stack">
         <p class="eyebrow">Dashboard</p>
-        <h2>Revenue + Integration</h2>
-        <p class="subtitle">Scope: {{ scopeLabel }}</p>
+        <h2>Revenue + Verify</h2>
+        <p class="subtitle">{{ scopeLabel }}</p>
       </div>
       <div class="header-actions">
         <span :class="metaPillClass(readinessStatus.tone)">{{ readinessStatus.label }}</span>
         <button class="button" type="button" :disabled="refreshBusy" @click="refreshHome">
-          {{ refreshBusy ? 'Refreshing...' : 'Refresh' }}
+          {{ refreshBusy ? 'Sync...' : 'Sync' }}
         </button>
       </div>
     </header>
@@ -340,13 +340,13 @@ onMounted(() => {
       <div class="panel-toolbar">
         <div>
           <p class="eyebrow">Status</p>
-          <h3>Today at a glance</h3>
+          <h3>Overview</h3>
         </div>
         <p class="muted panel-note">{{ lastSyncedLabel }}</p>
       </div>
       <div class="toolbar-actions">
         <span :class="metaPillClass(connectionStatus.tone)">{{ connectionStatus.label }}</span>
-        <p class="muted">Scope: {{ scopeLabel }}</p>
+        <p class="muted">{{ scopeLabel }}</p>
       </div>
       <p class="muted" v-if="dashboardState.meta.error">{{ dashboardState.meta.error }}</p>
     </article>
@@ -360,14 +360,14 @@ onMounted(() => {
 
     <article class="panel panel-soft">
       <div class="panel-toolbar">
-        <h3>Self-Serve Integration</h3>
+        <h3>Integration</h3>
         <button
           class="button"
           type="button"
           :disabled="verifyLoading || !scopeReady || readiness.loading || !hasActiveKey"
           @click="runIntegrationVerify"
         >
-          {{ verifyLoading ? 'Running...' : 'Run Verify' }}
+          {{ verifyLoading ? 'Running...' : 'Verify' }}
         </button>
       </div>
 
@@ -397,12 +397,12 @@ onMounted(() => {
       <article class="panel panel-soft minimal-focus">
         <div class="panel-toolbar">
           <h4>{{ nextAction.label }}</h4>
-          <span :class="statusClass(nextAction.done)">{{ nextAction.done ? 'done' : 'action needed' }}</span>
+          <span :class="statusClass(nextAction.done)">{{ nextAction.done ? 'done' : 'next' }}</span>
         </div>
         <p class="muted">{{ nextAction.detail }}</p>
         <div class="toolbar-actions">
           <RouterLink :to="nextAction.actionTo" class="button button-secondary">{{ nextAction.actionLabel }}</RouterLink>
-          <RouterLink to="/logs" class="text-link">Open decision logs</RouterLink>
+          <RouterLink to="/logs" class="text-link">Logs</RouterLink>
         </div>
       </article>
 
@@ -411,7 +411,7 @@ onMounted(() => {
       <p class="muted" v-if="verifyError">{{ verifyError }}</p>
 
       <details v-if="verifyEvidence" class="verify-disclosure">
-        <summary>View verify evidence</summary>
+        <summary>Evidence</summary>
         <div class="kv-grid">
           <p><strong>requestId</strong><span><code>{{ verifyEvidence.requestId }}</code></span></p>
           <p><strong>status</strong><span>{{ verifyEvidence.status }}</span></p>

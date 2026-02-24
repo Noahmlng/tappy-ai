@@ -92,7 +92,7 @@ async function hydrateAppOptions() {
     }
   } catch (error) {
     appSelection.options = []
-    appSelection.error = error instanceof Error ? error.message : 'Failed to load app list.'
+    appSelection.error = error instanceof Error ? error.message : 'App list unavailable.'
   } finally {
     appSelection.loading = false
   }
@@ -148,35 +148,35 @@ onMounted(() => {
   <section class="page">
     <header class="page-header page-header-split">
       <div class="header-stack">
-        <p class="eyebrow">API Keys</p>
-        <h2>Get Key</h2>
-        <p class="subtitle">Create and manage runtime keys.</p>
+        <p class="eyebrow">Keys</p>
+        <h2>Runtime Keys</h2>
+        <p class="subtitle">Create · rotate · revoke</p>
       </div>
       <div class="header-actions">
         <button class="button" type="button" :disabled="refreshBusy" @click="refreshKeys()">
-          {{ refreshBusy ? 'Refreshing...' : 'Refresh Keys' }}
+          {{ refreshBusy ? 'Sync...' : 'Sync' }}
         </button>
       </div>
     </header>
 
     <article class="panel create-key-form">
       <h3>Scope</h3>
-      <p class="muted">Account: <strong>{{ scopeState.accountId || '-' }}</strong></p>
+      <p class="muted">Account <strong>{{ scopeState.accountId || '-' }}</strong></p>
       <label v-if="hasMultipleApps">
         App
         <select class="input" :value="scopeState.appId" @change="onChangeApp($event.target.value)">
           <option v-for="item in appSelection.options" :key="item.appId" :value="item.appId">{{ item.label }}</option>
         </select>
       </label>
-      <p v-else class="muted">App: <strong>{{ scopeState.appId || '-' }}</strong></p>
+      <p v-else class="muted">App <strong>{{ scopeState.appId || '-' }}</strong></p>
       <p class="muted" v-if="appSelection.error">{{ appSelection.error }}</p>
     </article>
 
     <article class="panel">
       <div class="panel-toolbar">
-        <h3>Create Key</h3>
+        <h3>Create</h3>
         <button class="button" type="button" :disabled="isBusy || !scopeState.appId" @click="handleCreate">
-          {{ isBusy ? 'Creating...' : 'Create Key' }}
+          {{ isBusy ? 'Creating...' : 'Create' }}
         </button>
       </div>
       <div class="form-grid">
@@ -191,7 +191,7 @@ onMounted(() => {
           >
         </label>
         <label>
-          Environment
+          Env
           <select v-model="draft.environment" class="input">
             <option v-for="env in environmentOptions" :key="env" :value="env">
               {{ env }}
@@ -200,7 +200,7 @@ onMounted(() => {
         </label>
       </div>
       <div v-if="apiKeysState.meta.lastRevealedSecret" class="secret-banner">
-        <strong>Secret (shown once)</strong>
+        <strong>Secret (once)</strong>
         <code>{{ apiKeysState.meta.lastRevealedSecret }}</code>
       </div>
     </article>
@@ -208,7 +208,7 @@ onMounted(() => {
     <article class="panel panel-soft">
       <div class="panel-toolbar">
         <h3>Keys</h3>
-        <p class="muted">{{ rows.length }} key(s)</p>
+        <p class="muted">{{ rows.length }}</p>
       </div>
       <p class="muted" v-if="apiKeysState.meta.error">{{ apiKeysState.meta.error }}</p>
 
@@ -219,7 +219,7 @@ onMounted(() => {
               <th>Name</th>
               <th>Env</th>
               <th>Status</th>
-              <th>Masked Key</th>
+              <th>Masked</th>
               <th>Created</th>
               <th>Actions</th>
             </tr>
@@ -257,7 +257,7 @@ onMounted(() => {
               </td>
             </tr>
             <tr v-if="rows.length === 0">
-              <td colspan="6" class="muted">No keys found.</td>
+              <td colspan="6" class="muted">No keys.</td>
             </tr>
           </tbody>
         </table>
