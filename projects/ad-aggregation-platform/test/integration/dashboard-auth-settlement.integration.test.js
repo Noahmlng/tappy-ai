@@ -440,6 +440,97 @@ test('dashboard placement config is isolated per account app', async () => {
   }
 })
 
+test('dashboard placements create route is available and scoped by account app', async () => {
+  const port = 4580 + Math.floor(Math.random() * 200)
+  const baseUrl = `http://${HOST}:${port}`
+  const gateway = startGateway(port)
+
+  try {
+    await waitForGateway(baseUrl)
+    const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
+    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+
+    const registerAccountA = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+      method: 'POST',
+      body: {
+        email: 'placement-create-account-a@example.com',
+        password: 'pass12345',
+        accountId: 'acct_create_a',
+        appId: 'simulator-chatbot-create-a',
+      },
+    })
+    assert.equal(registerAccountA.status, 201, `register account A failed: ${JSON.stringify(registerAccountA.payload)}`)
+    const dashboardAHeaders = registerAccountA.payload?.session?.accessToken
+      ? { Authorization: `Bearer ${String(registerAccountA.payload.session.accessToken)}` }
+      : {}
+
+    const registerAccountB = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+      method: 'POST',
+      body: {
+        email: 'placement-create-account-b@example.com',
+        password: 'pass12345',
+        accountId: 'acct_create_b',
+        appId: 'simulator-chatbot-create-b',
+      },
+    })
+    assert.equal(registerAccountB.status, 201, `register account B failed: ${JSON.stringify(registerAccountB.payload)}`)
+    const dashboardBHeaders = registerAccountB.payload?.session?.accessToken
+      ? { Authorization: `Bearer ${String(registerAccountB.payload.session.accessToken)}` }
+      : {}
+
+    const placementId = `follow_up_custom_${Date.now()}`
+    const createPlacement = await requestJson(baseUrl, '/api/v1/dashboard/placements', {
+      method: 'POST',
+      headers: dashboardAHeaders,
+      body: {
+        placementId,
+        surface: 'FOLLOW_UP',
+        enabled: false,
+      },
+    })
+    assert.equal(createPlacement.status, 201, `create placement failed: ${JSON.stringify(createPlacement.payload)}`)
+    assert.equal(String(createPlacement.payload?.appId || ''), 'simulator-chatbot-create-a')
+    assert.equal(String(createPlacement.payload?.placement?.placementId || ''), placementId)
+    assert.equal(Boolean(createPlacement.payload?.placement?.enabled), false)
+
+    const duplicateCreate = await requestJson(baseUrl, '/api/v1/dashboard/placements', {
+      method: 'POST',
+      headers: dashboardAHeaders,
+      body: {
+        placementId,
+      },
+    })
+    assert.equal(duplicateCreate.status, 409)
+    assert.equal(duplicateCreate.payload?.error?.code, 'PLACEMENT_EXISTS')
+
+    const placementsA = await requestJson(baseUrl, '/api/v1/dashboard/placements', {
+      headers: dashboardAHeaders,
+    })
+    assert.equal(placementsA.ok, true, `placements A failed: ${JSON.stringify(placementsA.payload)}`)
+    const foundA = Array.isArray(placementsA.payload?.placements)
+      ? placementsA.payload.placements.find((row) => String(row?.placementId || '') === placementId)
+      : null
+    assert.equal(Boolean(foundA), true, 'account A should include created placement')
+
+    const placementsB = await requestJson(baseUrl, '/api/v1/dashboard/placements', {
+      headers: dashboardBHeaders,
+    })
+    assert.equal(placementsB.ok, true, `placements B failed: ${JSON.stringify(placementsB.payload)}`)
+    const foundB = Array.isArray(placementsB.payload?.placements)
+      ? placementsB.payload.placements.find((row) => String(row?.placementId || '') === placementId)
+      : null
+    assert.equal(Boolean(foundB), false, 'account B should not see account A placement')
+  } catch (error) {
+    const logs = gateway.getLogs()
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `[dashboard-placements-create] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`,
+    )
+  } finally {
+    await stopGateway(gateway)
+  }
+})
+
 test('dashboard register enforces account ownership proof for claimed accounts', async () => {
   const port = 4380 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${HOST}:${port}`

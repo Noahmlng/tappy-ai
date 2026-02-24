@@ -6373,6 +6373,135 @@ async function requestHandler(req, res) {
     return
   }
 
+  if (pathname === '/api/v1/dashboard/placements' && req.method === 'POST') {
+    try {
+      const auth = authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
+      if (!auth.ok) {
+        sendJson(res, auth.status, { error: auth.error })
+        return
+      }
+
+      const scope = auth.scope
+      const scopedAppId = resolvePlacementScopeAppId(scope, auth.user?.appId || auth.session?.appId || '')
+      if (!scopedAppId) {
+        sendJson(res, 403, {
+          error: {
+            code: 'DASHBOARD_SCOPE_VIOLATION',
+            message: 'appId is required for placement mutation under current dashboard scope.',
+          },
+        })
+        return
+      }
+      const placementConfig = getPlacementConfigForApp(scopedAppId, scope.accountId, { createIfMissing: true })
+      if (!placementConfig) {
+        sendJson(res, 404, {
+          error: {
+            code: 'PLACEMENT_CONFIG_NOT_FOUND',
+            message: `placement config not found for appId ${scopedAppId}.`,
+          },
+        })
+        return
+      }
+
+      const payload = await readJsonBody(req)
+      const placementId = String(payload?.placementId || payload?.placement_id || '').trim()
+      if (!placementId) {
+        sendJson(res, 400, {
+          error: {
+            code: 'INVALID_REQUEST',
+            message: 'placementId is required.',
+          },
+        })
+        return
+      }
+
+      const exists = Array.isArray(placementConfig.placements)
+        ? placementConfig.placements.find((item) => item.placementId === placementId)
+        : null
+      if (exists) {
+        sendJson(res, 409, {
+          error: {
+            code: 'PLACEMENT_EXISTS',
+            message: `Placement already exists: ${placementId}`,
+          },
+        })
+        return
+      }
+
+      const nextConfigVersion = toPositiveInteger(placementConfig.placementConfigVersion, 1) + 1
+      const basePlacement = normalizePlacement({
+        placementId,
+        placementKey: resolvePlacementKeyById(placementId, scopedAppId),
+        configVersion: nextConfigVersion,
+      })
+      const created = buildPlacementFromPatch(basePlacement, payload, nextConfigVersion)
+      created.placementId = placementId
+      created.placementKey = String(created.placementKey || '').trim() || resolvePlacementKeyById(placementId, scopedAppId)
+
+      placementConfig.placements = Array.isArray(placementConfig.placements)
+        ? [...placementConfig.placements, created]
+        : [created]
+      placementConfig.placementConfigVersion = nextConfigVersion
+      placementConfig.updatedAt = nowIso()
+      state.placementConfigVersion = Math.max(
+        toPositiveInteger(state.placementConfigVersion, 1),
+        nextConfigVersion,
+      )
+      if (scopedAppId === DEFAULT_CONTROL_PLANE_APP_ID) {
+        syncLegacyPlacementSnapshot()
+      }
+
+      const actor = resolveAuditActor(req, 'dashboard')
+      const scopedAccountId = normalizeControlPlaneAccountId(
+        placementConfig.accountId || resolveAccountIdForApp(scopedAppId),
+        '',
+      )
+      const patch = payload && typeof payload === 'object' ? payload : {}
+      recordPlacementAudit({
+        appId: scopedAppId,
+        accountId: scopedAccountId,
+        placementId,
+        configVersion: nextConfigVersion,
+        actor,
+        patch,
+        before: null,
+        after: JSON.parse(JSON.stringify(created)),
+      })
+      recordControlPlaneAudit({
+        action: 'config_publish',
+        actor,
+        accountId: scopedAccountId,
+        appId: scopedAppId,
+        environment: 'staging',
+        resourceType: 'placement',
+        resourceId: placementId,
+        metadata: {
+          operation: 'create',
+          configVersion: nextConfigVersion,
+          patch,
+        },
+      })
+
+      persistState(state)
+
+      sendJson(res, 201, {
+        appId: scopedAppId,
+        placementConfigVersion: toPositiveInteger(placementConfig.placementConfigVersion, 1),
+        placement: created,
+        changed: true,
+      })
+      return
+    } catch (error) {
+      sendJson(res, 400, {
+        error: {
+          code: 'INVALID_REQUEST',
+          message: error instanceof Error ? error.message : 'Invalid request',
+        },
+      })
+      return
+    }
+  }
+
   if (pathname.startsWith('/api/v1/dashboard/placements/') && req.method === 'PUT') {
     try {
       const auth = authorizeDashboardScope(req, requestUrl.searchParams)
