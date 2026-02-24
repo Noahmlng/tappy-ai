@@ -84,6 +84,10 @@ function startGateway(port) {
       ...process.env,
       SIMULATOR_GATEWAY_HOST: HOST,
       SIMULATOR_GATEWAY_PORT: String(port),
+      OPENROUTER_API_KEY: '',
+      OPENROUTER_MODEL: 'glm-5',
+      CJ_TOKEN: 'mock-cj-token',
+      PARTNERSTACK_API_KEY: 'mock-partnerstack-key',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -115,12 +119,13 @@ async function stopGateway(handle) {
   }
 }
 
-async function issueRuntimeApiKeyHeaders(baseUrl, input = {}) {
+async function issueRuntimeApiKeyHeaders(baseUrl, input = {}, headers = {}) {
   const accountId = String(input.accountId || 'org_simulator')
   const appId = String(input.appId || 'simulator-chatbot')
   const environment = String(input.environment || 'staging')
   const created = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
     method: 'POST',
+    headers,
     body: {
       accountId,
       appId,
@@ -249,17 +254,21 @@ test('dashboard v1 external e2e happy path: config -> evaluate -> events', async
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
 
-    const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, {
-      accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
-    })
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'dashboard-v1-owner@example.com',
       accountId: 'org_simulator',
       appId: 'simulator-chatbot',
     })
+    const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, {
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    }, dashboardHeaders)
 
-    const keys = await requestJson(baseUrl, '/api/v1/public/credentials/keys?appId=simulator-chatbot&environment=staging')
+    const keys = await requestJson(
+      baseUrl,
+      '/api/v1/public/credentials/keys?appId=simulator-chatbot&environment=staging',
+      { headers: dashboardHeaders },
+    )
     assert.equal(keys.ok, true, `list keys failed: ${JSON.stringify(keys.payload)}`)
     const keyRows = Array.isArray(keys.payload?.keys) ? keys.payload.keys : []
     assert.equal(keyRows.length > 0, true, 'at least one active key should exist for onboarding')
@@ -352,10 +361,15 @@ test('dashboard v1 external e2e fail-open: ads failure does not block primary re
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
 
-    const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, {
+    const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
+      email: 'dashboard-v1-failopen@example.com',
       accountId: 'org_simulator',
       appId: 'simulator-chatbot',
     })
+    const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, {
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    }, dashboardHeaders)
 
     const resultOnInvalidPayload = await runExternalTurnFailOpen(
       baseUrl,

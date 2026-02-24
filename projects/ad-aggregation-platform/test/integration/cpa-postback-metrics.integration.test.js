@@ -139,12 +139,13 @@ async function registerDashboardHeaders(baseUrl, input = {}) {
   }
 }
 
-async function issueRuntimeApiKeyHeaders(baseUrl, input = {}) {
+async function issueRuntimeApiKeyHeaders(baseUrl, input = {}, headers = {}) {
   const accountId = String(input.accountId || 'org_simulator')
   const appId = String(input.appId || 'simulator-chatbot')
   const environment = String(input.environment || 'staging')
   const created = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
     method: 'POST',
+    headers,
     body: {
       accountId,
       appId,
@@ -183,7 +184,7 @@ test('CPA postback facts drive dashboard revenue metrics and replace serve estim
     const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, {
       accountId: 'org_simulator',
       appId: 'simulator-chatbot',
-    })
+    }, dashboardHeaders)
 
     const beforeSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary', {
       headers: dashboardHeaders,

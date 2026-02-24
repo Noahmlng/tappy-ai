@@ -111,6 +111,29 @@ async function stopGateway(handle) {
   }
 }
 
+async function registerDashboardHeaders(baseUrl, input = {}) {
+  const now = Date.now()
+  const email = String(input.email || `owner_${now}@example.com`)
+  const password = String(input.password || 'pass12345')
+  const accountId = String(input.accountId || 'org_simulator')
+  const appId = String(input.appId || 'simulator-chatbot')
+  const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+    method: 'POST',
+    body: {
+      email,
+      password,
+      accountId,
+      appId,
+    },
+  })
+  assert.equal(register.status, 201, `dashboard register failed: ${JSON.stringify(register.payload)}`)
+  const accessToken = String(register.payload?.session?.accessToken || '').trim()
+  assert.equal(Boolean(accessToken), true, 'dashboard register should return access token')
+  return {
+    Authorization: `Bearer ${accessToken}`,
+  }
+}
+
 test('integration token: issues one-time token with short ttl and audit log', async () => {
   const port = 4950 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${HOST}:${port}`
@@ -121,9 +144,16 @@ test('integration token: issues one-time token with short ttl and audit log', as
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
 
+    const authHeaders = await registerDashboardHeaders(baseUrl, {
+      email: 'integration-admin@example.com',
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
+
     const issue = await requestJson(baseUrl, '/api/v1/public/agent/integration-token', {
       method: 'POST',
       headers: {
+        ...authHeaders,
         'x-dashboard-actor': 'agent-admin',
       },
       body: {
@@ -179,8 +209,15 @@ test('integration token: enforces ttl range and active-key precondition', async 
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
 
+    const authHeaders = await registerDashboardHeaders(baseUrl, {
+      email: 'integration-policy@example.com',
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
+
     const invalidTtl = await requestJson(baseUrl, '/api/v1/public/agent/integration-token', {
       method: 'POST',
+      headers: authHeaders,
       body: {
         appId: 'simulator-chatbot',
         environment: 'staging',
@@ -190,7 +227,11 @@ test('integration token: enforces ttl range and active-key precondition', async 
     assert.equal(invalidTtl.status, 400)
     assert.equal(invalidTtl.payload?.error?.code, 'INVALID_REQUEST')
 
-    const listKeys = await requestJson(baseUrl, '/api/v1/public/credentials/keys?appId=simulator-chatbot&environment=staging')
+    const listKeys = await requestJson(
+      baseUrl,
+      '/api/v1/public/credentials/keys?appId=simulator-chatbot&environment=staging',
+      { headers: authHeaders },
+    )
     assert.equal(listKeys.ok, true, `list keys failed: ${JSON.stringify(listKeys.payload)}`)
     const keys = Array.isArray(listKeys.payload?.keys) ? listKeys.payload.keys : []
     assert.equal(keys.length > 0, true, 'staging keys should exist after reset')
@@ -199,12 +240,13 @@ test('integration token: enforces ttl range and active-key precondition', async 
       await requestJson(
         baseUrl,
         `/api/v1/public/credentials/keys/${encodeURIComponent(String(row.keyId || ''))}/revoke`,
-        { method: 'POST' },
+        { method: 'POST', headers: authHeaders },
       )
     }
 
     const withoutKey = await requestJson(baseUrl, '/api/v1/public/agent/integration-token', {
       method: 'POST',
+      headers: authHeaders,
       body: {
         appId: 'simulator-chatbot',
         environment: 'staging',

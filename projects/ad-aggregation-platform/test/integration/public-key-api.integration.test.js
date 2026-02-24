@@ -111,6 +111,29 @@ async function stopGateway(handle) {
   }
 }
 
+async function registerDashboardHeaders(baseUrl, input = {}) {
+  const now = Date.now()
+  const email = String(input.email || `owner_${now}@example.com`)
+  const password = String(input.password || 'pass12345')
+  const accountId = String(input.accountId || 'org_simulator')
+  const appId = String(input.appId || 'simulator-chatbot')
+  const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+    method: 'POST',
+    body: {
+      email,
+      password,
+      accountId,
+      appId,
+    },
+  })
+  assert.equal(register.status, 201, `dashboard register failed: ${JSON.stringify(register.payload)}`)
+  const accessToken = String(register.payload?.session?.accessToken || '').trim()
+  assert.equal(Boolean(accessToken), true, 'dashboard register should return access token')
+  return {
+    Authorization: `Bearer ${accessToken}`,
+  }
+}
+
 test('public key api supports create/list/rotate/revoke lifecycle', async () => {
   const port = 3650 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${HOST}:${port}`
@@ -122,12 +145,25 @@ test('public key api supports create/list/rotate/revoke lifecycle', async () => 
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
 
-    const listBefore = await requestJson(baseUrl, '/api/v1/public/credentials/keys')
+    const unauthorized = await requestJson(baseUrl, '/api/v1/public/credentials/keys')
+    assert.equal(unauthorized.status, 401)
+    assert.equal(unauthorized.payload?.error?.code, 'DASHBOARD_AUTH_REQUIRED')
+
+    const authHeaders = await registerDashboardHeaders(baseUrl, {
+      email: 'owner-acct-demo@example.com',
+      accountId: 'acct_demo',
+      appId: 'simulator-chatbot-acct-demo',
+    })
+
+    const listBefore = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
+      headers: authHeaders,
+    })
     assert.equal(listBefore.ok, true, `list before create failed: ${JSON.stringify(listBefore.payload)}`)
     assert.equal(Array.isArray(listBefore.payload?.keys), true)
 
     const create = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
       method: 'POST',
+      headers: authHeaders,
       body: {
         accountId: 'acct_demo',
         appId: 'simulator-chatbot-acct-demo',
@@ -150,13 +186,17 @@ test('public key api supports create/list/rotate/revoke lifecycle', async () => 
     assert.equal(typeof createdKey.maskedKey, 'string')
     const createdMaskedKey = createdKey.maskedKey
 
-    const listAfterCreate = await requestJson(baseUrl, '/api/v1/public/credentials/keys?environment=prod')
+    const listAfterCreate = await requestJson(baseUrl, '/api/v1/public/credentials/keys?environment=prod', {
+      headers: authHeaders,
+    })
     assert.equal(listAfterCreate.ok, true, `list after create failed: ${JSON.stringify(listAfterCreate.payload)}`)
     const createdListRow = (listAfterCreate.payload?.keys || []).find((row) => row.keyId === keyId)
     assert.equal(Boolean(createdListRow), true, 'created key should appear in list')
     assert.equal(createdListRow.accountId, 'acct_demo')
 
-    const listByAccount = await requestJson(baseUrl, '/api/v1/public/credentials/keys?accountId=acct_demo')
+    const listByAccount = await requestJson(baseUrl, '/api/v1/public/credentials/keys?accountId=acct_demo', {
+      headers: authHeaders,
+    })
     assert.equal(listByAccount.ok, true, `list by account failed: ${JSON.stringify(listByAccount.payload)}`)
     assert.equal(
       (listByAccount.payload?.keys || []).some((row) => row.keyId === keyId),
@@ -164,10 +204,16 @@ test('public key api supports create/list/rotate/revoke lifecycle', async () => 
       'created key should appear in scoped account list',
     )
 
+    const crossAccountQuery = await requestJson(baseUrl, '/api/v1/public/credentials/keys?accountId=org_simulator', {
+      headers: authHeaders,
+    })
+    assert.equal(crossAccountQuery.status, 403)
+    assert.equal(crossAccountQuery.payload?.error?.code, 'DASHBOARD_SCOPE_VIOLATION')
+
     const rotate = await requestJson(
       baseUrl,
       `/api/v1/public/credentials/keys/${encodeURIComponent(keyId)}/rotate`,
-      { method: 'POST' },
+      { method: 'POST', headers: authHeaders },
     )
     assert.equal(rotate.ok, true, `rotate failed: ${JSON.stringify(rotate.payload)}`)
     assert.equal(rotate.payload?.key?.keyId, keyId)
@@ -179,13 +225,15 @@ test('public key api supports create/list/rotate/revoke lifecycle', async () => 
     const revoke = await requestJson(
       baseUrl,
       `/api/v1/public/credentials/keys/${encodeURIComponent(keyId)}/revoke`,
-      { method: 'POST' },
+      { method: 'POST', headers: authHeaders },
     )
     assert.equal(revoke.ok, true, `revoke failed: ${JSON.stringify(revoke.payload)}`)
     assert.equal(revoke.payload?.key?.keyId, keyId)
     assert.equal(revoke.payload?.key?.status, 'revoked')
 
-    const listRevoked = await requestJson(baseUrl, '/api/v1/public/credentials/keys?status=revoked')
+    const listRevoked = await requestJson(baseUrl, '/api/v1/public/credentials/keys?status=revoked', {
+      headers: authHeaders,
+    })
     assert.equal(listRevoked.ok, true, `list revoked failed: ${JSON.stringify(listRevoked.payload)}`)
     const revokedRow = (listRevoked.payload?.keys || []).find((row) => row.keyId === keyId)
     assert.equal(Boolean(revokedRow), true, 'revoked key should appear in revoked list')
@@ -194,7 +242,7 @@ test('public key api supports create/list/rotate/revoke lifecycle', async () => 
     const rotateMissing = await requestJson(
       baseUrl,
       '/api/v1/public/credentials/keys/key_not_found/rotate',
-      { method: 'POST' },
+      { method: 'POST', headers: authHeaders },
     )
     assert.equal(rotateMissing.status, 404)
     assert.equal(rotateMissing.payload?.error?.code, 'KEY_NOT_FOUND')

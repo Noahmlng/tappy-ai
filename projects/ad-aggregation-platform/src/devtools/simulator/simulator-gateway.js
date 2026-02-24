@@ -1054,6 +1054,47 @@ function authorizeDashboardScope(req, searchParams, options = {}) {
   }
 }
 
+function resolveAuthorizedDashboardAccount(auth) {
+  const accountId = normalizeControlPlaneAccountId(
+    auth?.scope?.accountId || auth?.user?.accountId || auth?.session?.accountId || '',
+    '',
+  )
+  return accountId
+}
+
+function validateDashboardAccountOwnership(requestedAccountId, authorizedAccountId) {
+  const requested = normalizeControlPlaneAccountId(requestedAccountId, '')
+  const authorized = normalizeControlPlaneAccountId(authorizedAccountId, '')
+  if (!requested || !authorized) return { ok: true }
+  if (requested === authorized) return { ok: true }
+  return {
+    ok: false,
+    status: 403,
+    error: {
+      code: 'DASHBOARD_SCOPE_VIOLATION',
+      message: `accountId ${requested} does not belong to your dashboard scope.`,
+    },
+  }
+}
+
+function validateDashboardAppOwnership(appId, authorizedAccountId) {
+  const normalizedAppId = String(appId || '').trim()
+  if (!normalizedAppId) return { ok: true }
+  const app = resolveControlPlaneAppRecord(normalizedAppId)
+  if (!app) return { ok: true }
+  const appAccountId = normalizeControlPlaneAccountId(app.accountId || app.organizationId, '')
+  const scopedAccountId = normalizeControlPlaneAccountId(authorizedAccountId, '')
+  if (!appAccountId || !scopedAccountId || appAccountId === scopedAccountId) return { ok: true }
+  return {
+    ok: false,
+    status: 403,
+    error: {
+      code: 'DASHBOARD_SCOPE_VIOLATION',
+      message: `appId ${normalizedAppId} does not belong to your account.`,
+    },
+  }
+}
+
 function findIntegrationTokenByPlaintext(integrationToken) {
   const token = String(integrationToken || '').trim()
   if (!token) return null
@@ -4768,9 +4809,46 @@ async function requestHandler(req, res) {
 
   if (pathname === '/api/v1/public/agent/integration-token' && req.method === 'POST') {
     try {
+      const auth = authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
+      if (!auth.ok) {
+        sendJson(res, auth.status, { error: auth.error })
+        return
+      }
+      const scopedAccountId = resolveAuthorizedDashboardAccount(auth)
+      if (!scopedAccountId) {
+        sendJson(res, 403, {
+          error: {
+            code: 'DASHBOARD_SCOPE_VIOLATION',
+            message: 'Dashboard account scope is missing.',
+          },
+        })
+        return
+      }
+
       const payload = await readJsonBody(req)
-      const appId = String(payload?.appId || payload?.app_id || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
-      const accountId = normalizeControlPlaneAccountId(payload?.accountId || payload?.account_id || '', '')
+      let appId = String(payload?.appId || payload?.app_id || '').trim()
+      const accountOwnership = validateDashboardAccountOwnership(
+        payload?.accountId || payload?.account_id || '',
+        scopedAccountId,
+      )
+      if (!accountOwnership.ok) {
+        sendJson(res, accountOwnership.status, { error: accountOwnership.error })
+        return
+      }
+      const appOwnership = validateDashboardAppOwnership(appId, scopedAccountId)
+      if (!appOwnership.ok) {
+        sendJson(res, appOwnership.status, { error: appOwnership.error })
+        return
+      }
+      if (!appId) {
+        appId = String(auth.user?.appId || '').trim()
+          || String(findLatestAppForAccount(scopedAccountId)?.appId || '').trim()
+      }
+      if (!appId) {
+        const generated = scopedAccountId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 42) || 'customer'
+        appId = `${generated}_app`
+      }
+
       const requestedEnvironment = String(payload?.environment || payload?.env || '').trim().toLowerCase()
       const environment = requestedEnvironment || 'staging'
       if (!CONTROL_PLANE_ENVIRONMENTS.has(environment)) {
@@ -4785,7 +4863,7 @@ async function requestHandler(req, res) {
       const placementId = String(payload?.placementId || payload?.placement_id || '').trim() || 'chat_inline_v1'
       const activeKey = findActiveApiKey({
         appId,
-        accountId,
+        accountId: scopedAccountId,
         environment,
       })
       if (!activeKey) {
@@ -4798,7 +4876,7 @@ async function requestHandler(req, res) {
         return
       }
 
-      const ensured = ensureControlPlaneAppAndEnvironment(appId, environment, accountId)
+      const ensured = ensureControlPlaneAppAndEnvironment(appId, environment, scopedAccountId)
       cleanupExpiredIntegrationTokens()
 
       const { tokenRecord, token } = createIntegrationTokenRecord({
@@ -5153,11 +5231,37 @@ async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/public/credentials/keys' && req.method === 'GET') {
+    const auth = authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
+    if (!auth.ok) {
+      sendJson(res, auth.status, { error: auth.error })
+      return
+    }
+    const scopedAccountId = resolveAuthorizedDashboardAccount(auth)
+    if (!scopedAccountId) {
+      sendJson(res, 403, {
+        error: {
+          code: 'DASHBOARD_SCOPE_VIOLATION',
+          message: 'Dashboard account scope is missing.',
+        },
+      })
+      return
+    }
+
     const appId = String(requestUrl.searchParams.get('appId') || '').trim()
     const accountId = normalizeControlPlaneAccountId(
       requestUrl.searchParams.get('accountId') || requestUrl.searchParams.get('account_id') || '',
       '',
     )
+    const accountOwnership = validateDashboardAccountOwnership(accountId, scopedAccountId)
+    if (!accountOwnership.ok) {
+      sendJson(res, accountOwnership.status, { error: accountOwnership.error })
+      return
+    }
+    const appOwnership = validateDashboardAppOwnership(appId, scopedAccountId)
+    if (!appOwnership.ok) {
+      sendJson(res, appOwnership.status, { error: appOwnership.error })
+      return
+    }
     const statusQuery = String(requestUrl.searchParams.get('status') || '').trim().toLowerCase()
     const environmentQuery = String(
       requestUrl.searchParams.get('environment') || requestUrl.searchParams.get('env') || '',
@@ -5184,9 +5288,9 @@ async function requestHandler(req, res) {
     }
 
     let keys = [...state.controlPlane.apiKeys]
-    if (accountId) {
-      keys = keys.filter((row) => normalizeControlPlaneAccountId(row.accountId || resolveAccountIdForApp(row.appId), '') === accountId)
-    }
+    keys = keys.filter((row) => (
+      normalizeControlPlaneAccountId(row.accountId || resolveAccountIdForApp(row.appId), '') === scopedAccountId
+    ))
     if (appId) {
       keys = keys.filter((row) => row.appId === appId)
     }
@@ -5207,9 +5311,45 @@ async function requestHandler(req, res) {
 
   if (pathname === '/api/v1/public/credentials/keys' && req.method === 'POST') {
     try {
+      const auth = authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
+      if (!auth.ok) {
+        sendJson(res, auth.status, { error: auth.error })
+        return
+      }
+      const scopedAccountId = resolveAuthorizedDashboardAccount(auth)
+      if (!scopedAccountId) {
+        sendJson(res, 403, {
+          error: {
+            code: 'DASHBOARD_SCOPE_VIOLATION',
+            message: 'Dashboard account scope is missing.',
+          },
+        })
+        return
+      }
+
       const payload = await readJsonBody(req)
-      const appId = String(payload?.appId || payload?.app_id || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
-      const accountId = normalizeControlPlaneAccountId(payload?.accountId || payload?.account_id || '', '')
+      let appId = String(payload?.appId || payload?.app_id || '').trim()
+      const accountOwnership = validateDashboardAccountOwnership(
+        payload?.accountId || payload?.account_id || '',
+        scopedAccountId,
+      )
+      if (!accountOwnership.ok) {
+        sendJson(res, accountOwnership.status, { error: accountOwnership.error })
+        return
+      }
+      const appOwnership = validateDashboardAppOwnership(appId, scopedAccountId)
+      if (!appOwnership.ok) {
+        sendJson(res, appOwnership.status, { error: appOwnership.error })
+        return
+      }
+      if (!appId) {
+        appId = String(auth.user?.appId || '').trim()
+          || String(findLatestAppForAccount(scopedAccountId)?.appId || '').trim()
+      }
+      if (!appId) {
+        const generated = scopedAccountId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 42) || 'customer'
+        appId = `${generated}_app`
+      }
       const requestedEnvironment = String(payload?.environment || payload?.env || '').trim().toLowerCase()
       const environment = requestedEnvironment || 'staging'
       if (!CONTROL_PLANE_ENVIRONMENTS.has(environment)) {
@@ -5218,7 +5358,7 @@ async function requestHandler(req, res) {
       const keyName = String(payload?.name || payload?.keyName || payload?.key_name || '').trim()
         || `primary-${environment}`
 
-      const ensured = ensureControlPlaneAppAndEnvironment(appId, environment, accountId)
+      const ensured = ensureControlPlaneAppAndEnvironment(appId, environment, scopedAccountId)
       const { keyRecord, secret } = createControlPlaneKeyRecord({
         appId: ensured.appId,
         accountId: ensured.accountId,
@@ -5260,6 +5400,22 @@ async function requestHandler(req, res) {
 
   const rotateKeyMatch = pathname.match(/^\/api\/v1\/public\/credentials\/keys\/([^/]+)\/rotate$/)
   if (rotateKeyMatch && req.method === 'POST') {
+    const auth = authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
+    if (!auth.ok) {
+      sendJson(res, auth.status, { error: auth.error })
+      return
+    }
+    const scopedAccountId = resolveAuthorizedDashboardAccount(auth)
+    if (!scopedAccountId) {
+      sendJson(res, 403, {
+        error: {
+          code: 'DASHBOARD_SCOPE_VIOLATION',
+          message: 'Dashboard account scope is missing.',
+        },
+      })
+      return
+    }
+
     const keyId = decodeURIComponent(rotateKeyMatch[1] || '').trim()
     const target = state.controlPlane.apiKeys.find((item) => item.keyId === keyId)
     if (!target) {
@@ -5267,6 +5423,16 @@ async function requestHandler(req, res) {
         error: {
           code: 'KEY_NOT_FOUND',
           message: `API key not found: ${keyId}`,
+        },
+      })
+      return
+    }
+    const targetAccountId = normalizeControlPlaneAccountId(target.accountId || resolveAccountIdForApp(target.appId), '')
+    if (targetAccountId !== scopedAccountId) {
+      sendJson(res, 403, {
+        error: {
+          code: 'DASHBOARD_SCOPE_VIOLATION',
+          message: `keyId ${keyId} does not belong to your account.`,
         },
       })
       return
@@ -5315,6 +5481,22 @@ async function requestHandler(req, res) {
 
   const revokeKeyMatch = pathname.match(/^\/api\/v1\/public\/credentials\/keys\/([^/]+)\/revoke$/)
   if (revokeKeyMatch && req.method === 'POST') {
+    const auth = authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
+    if (!auth.ok) {
+      sendJson(res, auth.status, { error: auth.error })
+      return
+    }
+    const scopedAccountId = resolveAuthorizedDashboardAccount(auth)
+    if (!scopedAccountId) {
+      sendJson(res, 403, {
+        error: {
+          code: 'DASHBOARD_SCOPE_VIOLATION',
+          message: 'Dashboard account scope is missing.',
+        },
+      })
+      return
+    }
+
     const keyId = decodeURIComponent(revokeKeyMatch[1] || '').trim()
     const target = state.controlPlane.apiKeys.find((item) => item.keyId === keyId)
     if (!target) {
@@ -5322,6 +5504,16 @@ async function requestHandler(req, res) {
         error: {
           code: 'KEY_NOT_FOUND',
           message: `API key not found: ${keyId}`,
+        },
+      })
+      return
+    }
+    const targetAccountId = normalizeControlPlaneAccountId(target.accountId || resolveAccountIdForApp(target.appId), '')
+    if (targetAccountId !== scopedAccountId) {
+      sendJson(res, 403, {
+        error: {
+          code: 'DASHBOARD_SCOPE_VIOLATION',
+          message: `keyId ${keyId} does not belong to your account.`,
         },
       })
       return

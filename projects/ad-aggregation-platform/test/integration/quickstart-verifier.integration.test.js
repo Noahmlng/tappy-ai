@@ -111,6 +111,29 @@ async function stopGateway(handle) {
   }
 }
 
+async function registerDashboardHeaders(baseUrl, input = {}) {
+  const now = Date.now()
+  const email = String(input.email || `owner_${now}@example.com`)
+  const password = String(input.password || 'pass12345')
+  const accountId = String(input.accountId || 'org_simulator')
+  const appId = String(input.appId || 'simulator-chatbot')
+  const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+    method: 'POST',
+    body: {
+      email,
+      password,
+      accountId,
+      appId,
+    },
+  })
+  assert.equal(register.status, 201, `dashboard register failed: ${JSON.stringify(register.payload)}`)
+  const accessToken = String(register.payload?.session?.accessToken || '').trim()
+  assert.equal(Boolean(accessToken), true, 'dashboard register should return access token')
+  return {
+    Authorization: `Bearer ${accessToken}`,
+  }
+}
+
 test('quick start verifier runs config -> evaluate -> events and returns evidence', async () => {
   const port = 3850 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${HOST}:${port}`
@@ -121,6 +144,11 @@ test('quick start verifier runs config -> evaluate -> events and returns evidenc
 
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
+      email: 'quickstart-owner@example.com',
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
 
     const verify = await requestJson(baseUrl, '/api/v1/public/quick-start/verify', {
       method: 'POST',
@@ -144,6 +172,7 @@ test('quick start verifier runs config -> evaluate -> events and returns evidenc
     const decisionRows = await requestJson(
       baseUrl,
       `/api/v1/dashboard/decisions?requestId=${encodeURIComponent(requestId)}`,
+      { headers: dashboardHeaders },
     )
     assert.equal(decisionRows.ok, true, `decision query failed: ${JSON.stringify(decisionRows.payload)}`)
     assert.equal(Array.isArray(decisionRows.payload?.items), true)
@@ -152,6 +181,7 @@ test('quick start verifier runs config -> evaluate -> events and returns evidenc
     const eventRows = await requestJson(
       baseUrl,
       `/api/v1/dashboard/events?requestId=${encodeURIComponent(requestId)}&eventType=sdk_event`,
+      { headers: dashboardHeaders },
     )
     assert.equal(eventRows.ok, true, `event query failed: ${JSON.stringify(eventRows.payload)}`)
     assert.equal(Array.isArray(eventRows.payload?.items), true)
@@ -177,8 +207,15 @@ test('quick start verifier returns precondition failed when app has no active ke
 
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
+      email: 'quickstart-precondition@example.com',
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
 
-    const listKeys = await requestJson(baseUrl, '/api/v1/public/credentials/keys?environment=staging')
+    const listKeys = await requestJson(baseUrl, '/api/v1/public/credentials/keys?environment=staging', {
+      headers: dashboardHeaders,
+    })
     assert.equal(listKeys.ok, true, `key list failed: ${JSON.stringify(listKeys.payload)}`)
     const keys = Array.isArray(listKeys.payload?.keys) ? listKeys.payload.keys : []
     assert.equal(keys.length > 0, true, 'staging keys should exist after reset')
@@ -187,7 +224,7 @@ test('quick start verifier returns precondition failed when app has no active ke
       await requestJson(
         baseUrl,
         `/api/v1/public/credentials/keys/${encodeURIComponent(String(row.keyId || ''))}/revoke`,
-        { method: 'POST' },
+        { method: 'POST', headers: dashboardHeaders },
       )
     }
 

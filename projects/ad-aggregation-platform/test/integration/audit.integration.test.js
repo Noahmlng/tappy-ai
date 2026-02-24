@@ -111,6 +111,29 @@ async function stopGateway(handle) {
   }
 }
 
+async function registerDashboardHeaders(baseUrl, input = {}) {
+  const now = Date.now()
+  const email = String(input.email || `owner_${now}@example.com`)
+  const password = String(input.password || 'pass12345')
+  const accountId = String(input.accountId || 'org_simulator')
+  const appId = String(input.appId || 'simulator-chatbot')
+  const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+    method: 'POST',
+    body: {
+      email,
+      password,
+      accountId,
+      appId,
+    },
+  })
+  assert.equal(register.status, 201, `dashboard register failed: ${JSON.stringify(register.payload)}`)
+  const accessToken = String(register.payload?.session?.accessToken || '').trim()
+  assert.equal(Boolean(accessToken), true, 'dashboard register should return access token')
+  return {
+    Authorization: `Bearer ${accessToken}`,
+  }
+}
+
 test('control-plane audit records key lifecycle and config publish operations', async () => {
   const port = 4250 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${HOST}:${port}`
@@ -121,10 +144,16 @@ test('control-plane audit records key lifecycle and config publish operations', 
 
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
+      email: 'audit-owner@example.com',
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
 
     const create = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
       method: 'POST',
       headers: {
+        ...dashboardHeaders,
         'x-dashboard-actor': 'alice',
       },
       body: {
@@ -143,6 +172,7 @@ test('control-plane audit records key lifecycle and config publish operations', 
       {
         method: 'POST',
         headers: {
+          ...dashboardHeaders,
           'x-dashboard-actor': 'bob',
         },
       },
@@ -155,6 +185,7 @@ test('control-plane audit records key lifecycle and config publish operations', 
       {
         method: 'POST',
         headers: {
+          ...dashboardHeaders,
           'x-dashboard-actor': 'bob',
         },
       },
@@ -164,6 +195,7 @@ test('control-plane audit records key lifecycle and config publish operations', 
     const patch = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_inline_v1', {
       method: 'PUT',
       headers: {
+        ...dashboardHeaders,
         'x-dashboard-actor': 'publisher',
       },
       body: {
@@ -192,7 +224,11 @@ test('control-plane audit records key lifecycle and config publish operations', 
     assert.equal(configItems.length > 0, true, 'config publish audit should be queryable')
     assert.equal(configItems[0]?.actor, 'publisher')
 
-    const actorRows = await requestJson(baseUrl, '/api/v1/dashboard/audit/logs?actor=bob&resourceType=api_key')
+    const actorRows = await requestJson(
+      baseUrl,
+      '/api/v1/dashboard/audit/logs?actor=bob&resourceType=api_key',
+      { headers: dashboardHeaders },
+    )
     assert.equal(actorRows.ok, true, `actor filter failed: ${JSON.stringify(actorRows.payload)}`)
     const actorItems = Array.isArray(actorRows.payload?.items) ? actorRows.payload.items : []
     assert.equal(actorItems.length > 0, true, 'actor filter should return rotate/revoke logs')
@@ -222,8 +258,15 @@ test('config publish audit is only written when placement config changed', async
 
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
+      email: 'audit-no-change@example.com',
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
 
-    const listPlacements = await requestJson(baseUrl, '/api/v1/dashboard/placements')
+    const listPlacements = await requestJson(baseUrl, '/api/v1/dashboard/placements', {
+      headers: dashboardHeaders,
+    })
     assert.equal(listPlacements.ok, true, `placements list failed: ${JSON.stringify(listPlacements.payload)}`)
     const placements = Array.isArray(listPlacements.payload?.placements) ? listPlacements.payload.placements : []
     const target = placements.find((row) => row.placementId === 'chat_inline_v1')
@@ -231,6 +274,7 @@ test('config publish audit is only written when placement config changed', async
 
     const noChangePatch = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_inline_v1', {
       method: 'PUT',
+      headers: dashboardHeaders,
       body: {
         enabled: Boolean(target.enabled),
       },

@@ -105,10 +105,34 @@ async function stopGateway(handle) {
   if (!handle.child.killed) handle.child.kill('SIGKILL')
 }
 
-async function issueIntegrationToken(baseUrl) {
+async function registerDashboardHeaders(baseUrl, input = {}) {
+  const now = Date.now()
+  const email = String(input.email || `owner_${now}@example.com`)
+  const password = String(input.password || 'pass12345')
+  const accountId = String(input.accountId || 'org_simulator')
+  const appId = String(input.appId || 'simulator-chatbot')
+  const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+    method: 'POST',
+    body: {
+      email,
+      password,
+      accountId,
+      appId,
+    },
+  })
+  assert.equal(register.status, 201, `dashboard register failed: ${JSON.stringify(register.payload)}`)
+  const accessToken = String(register.payload?.session?.accessToken || '').trim()
+  assert.equal(Boolean(accessToken), true, 'dashboard register should return access token')
+  return {
+    Authorization: `Bearer ${accessToken}`,
+  }
+}
+
+async function issueIntegrationToken(baseUrl, authHeaders = {}) {
   const issue = await requestJson(baseUrl, '/api/v1/public/agent/integration-token', {
     method: 'POST',
     headers: {
+      ...authHeaders,
       'x-dashboard-actor': 'security-admin',
     },
     body: {
@@ -143,7 +167,12 @@ test('token security: rejects ttl out of range and writes deny audit', async () 
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
 
-    const issued = await issueIntegrationToken(baseUrl)
+    const authHeaders = await registerDashboardHeaders(baseUrl, {
+      email: 'token-security-ttl@example.com',
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
+    const issued = await issueIntegrationToken(baseUrl, authHeaders)
 
     const invalidTtl = await requestJson(baseUrl, '/api/v1/public/agent/token-exchange', {
       method: 'POST',
@@ -184,7 +213,12 @@ test('token security: blocks privilege escalation fields and replay, both audite
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
 
-    const issued = await issueIntegrationToken(baseUrl)
+    const authHeaders = await registerDashboardHeaders(baseUrl, {
+      email: 'token-security-scope@example.com',
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
+    const issued = await issueIntegrationToken(baseUrl, authHeaders)
     const scopeEscalation = await requestJson(baseUrl, '/api/v1/public/agent/token-exchange', {
       method: 'POST',
       body: {
@@ -246,7 +280,12 @@ test('token security: agent access token enforces placement scope and audits den
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
 
-    const issued = await issueIntegrationToken(baseUrl)
+    const authHeaders = await registerDashboardHeaders(baseUrl, {
+      email: 'token-security-placement@example.com',
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
+    const issued = await issueIntegrationToken(baseUrl, authHeaders)
     const exchange = await requestJson(baseUrl, '/api/v1/public/agent/token-exchange', {
       method: 'POST',
       body: {

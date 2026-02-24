@@ -111,6 +111,29 @@ async function stopGateway(handle) {
   }
 }
 
+async function registerDashboardHeaders(baseUrl, input = {}) {
+  const now = Date.now()
+  const email = String(input.email || `owner_${now}@example.com`)
+  const password = String(input.password || 'pass12345')
+  const accountId = String(input.accountId || 'org_simulator')
+  const appId = String(input.appId || 'simulator-chatbot')
+  const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+    method: 'POST',
+    body: {
+      email,
+      password,
+      accountId,
+      appId,
+    },
+  })
+  assert.equal(register.status, 201, `dashboard register failed: ${JSON.stringify(register.payload)}`)
+  const accessToken = String(register.payload?.session?.accessToken || '').trim()
+  assert.equal(Boolean(accessToken), true, 'dashboard register should return access token')
+  return {
+    Authorization: `Bearer ${accessToken}`,
+  }
+}
+
 test('token exchange: exchanges one-time integration token into short-lived scoped access token', async () => {
   const port = 5350 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${HOST}:${port}`
@@ -121,9 +144,16 @@ test('token exchange: exchanges one-time integration token into short-lived scop
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
 
+    const authHeaders = await registerDashboardHeaders(baseUrl, {
+      email: 'exchange-owner@example.com',
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
+
     const issue = await requestJson(baseUrl, '/api/v1/public/agent/integration-token', {
       method: 'POST',
       headers: {
+        ...authHeaders,
         'x-dashboard-actor': 'agent-admin',
       },
       body: {

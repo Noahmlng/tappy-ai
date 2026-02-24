@@ -116,6 +116,29 @@ async function readGatewayState() {
   return JSON.parse(raw)
 }
 
+async function registerDashboardHeaders(baseUrl, input = {}) {
+  const now = Date.now()
+  const email = String(input.email || `owner_${now}@example.com`)
+  const password = String(input.password || 'pass12345')
+  const accountId = String(input.accountId || 'org_simulator')
+  const appId = String(input.appId || 'simulator-chatbot')
+  const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+    method: 'POST',
+    body: {
+      email,
+      password,
+      accountId,
+      appId,
+    },
+  })
+  assert.equal(register.status, 201, `dashboard register failed: ${JSON.stringify(register.payload)}`)
+  const accessToken = String(register.payload?.session?.accessToken || '').trim()
+  assert.equal(Boolean(accessToken), true, 'dashboard register should return access token')
+  return {
+    Authorization: `Bearer ${accessToken}`,
+  }
+}
+
 test('managed default: placement routing mode is fixed to managed_mediation', async () => {
   const port = 6250 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${HOST}:${port}`
@@ -125,8 +148,15 @@ test('managed default: placement routing mode is fixed to managed_mediation', as
     await waitForGateway(baseUrl)
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
+      email: 'managed-default-placement@example.com',
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
 
-    const placements = await requestJson(baseUrl, '/api/v1/dashboard/placements')
+    const placements = await requestJson(baseUrl, '/api/v1/dashboard/placements', {
+      headers: dashboardHeaders,
+    })
     assert.equal(placements.ok, true, `placements failed: ${JSON.stringify(placements.payload)}`)
     const items = Array.isArray(placements.payload?.placements) ? placements.payload.placements : []
     assert.equal(items.length > 0, true, 'default placements should exist')
@@ -138,6 +168,7 @@ test('managed default: placement routing mode is fixed to managed_mediation', as
 
     const patch = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_inline_v1', {
       method: 'PUT',
+      headers: dashboardHeaders,
       body: {
         routingMode: 'provider_direct',
       },
@@ -165,10 +196,16 @@ test('managed default: new app environment is initialized with managed_mediation
     await waitForGateway(baseUrl)
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
+      email: 'managed-default-env@example.com',
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
 
     const createKey = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
       method: 'POST',
       headers: {
+        ...dashboardHeaders,
         'x-dashboard-actor': 'routing-admin',
       },
       body: {

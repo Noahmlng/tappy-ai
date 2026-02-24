@@ -115,12 +115,13 @@ async function stopGateway(handle) {
   }
 }
 
-async function issueRuntimeApiKey(baseUrl, input = {}) {
+async function issueRuntimeApiKey(baseUrl, input = {}, headers = {}) {
   const accountId = String(input.accountId || 'org_simulator')
   const appId = String(input.appId || 'simulator-chatbot')
   const environment = String(input.environment || 'staging')
   const created = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
     method: 'POST',
+    headers,
     body: {
       accountId,
       appId,
@@ -211,11 +212,15 @@ test('dashboard auth: login session enforces account scope for settlement aggreg
     const runtimeOrgHeaders = await issueRuntimeApiKey(baseUrl, {
       accountId: 'org_simulator',
       appId: 'simulator-chatbot',
-    })
+    }, registerOrg.payload?.session?.accessToken
+      ? { Authorization: `Bearer ${String(registerOrg.payload.session.accessToken)}` }
+      : {})
     const runtimeOtherHeaders = await issueRuntimeApiKey(baseUrl, {
       accountId: 'acct_other',
       appId: 'simulator-chatbot-other',
-    })
+    }, registerOther.payload?.session?.accessToken
+      ? { Authorization: `Bearer ${String(registerOther.payload.session.accessToken)}` }
+      : {})
 
     await seedScopedRevenue(baseUrl, { accountId: 'org_simulator', appId: 'simulator-chatbot', cpaUsd: 3.2 }, runtimeOrgHeaders)
     await seedScopedRevenue(baseUrl, { accountId: 'acct_other', appId: 'simulator-chatbot-other', cpaUsd: 9.5 }, runtimeOtherHeaders)
