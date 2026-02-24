@@ -72,19 +72,6 @@ npm --prefix ./projects/ad-aggregation-platform run check:env
 npm --prefix ./projects/ad-aggregation-platform run db:migrate
 ```
 
-一次性导入成功品牌与可投放 offers：
-
-```bash
-npm --prefix ./projects/ad-aggregation-platform run house-ads:db:publish:brands
-npm --prefix ./projects/ad-aggregation-platform run house-ads:db:publish:offers
-```
-
-一键执行（迁移 + 品牌导入 + offers 导入）：
-
-```bash
-npm --prefix ./projects/ad-aggregation-platform run house-ads:db:bootstrap
-```
-
 ## 联调与 Smoke Test
 
 本地联调脚本：
