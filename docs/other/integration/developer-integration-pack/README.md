@@ -1,28 +1,40 @@
-# Developer Integration Pack Template
+# Developer Integration Pack
 
-- Version: v0.1
-- Last Updated: 2026-02-22
+- Version: v1.0
+- Last Updated: 2026-02-24
 - Audience: SDK integrators, product reviewers, release managers
 
-This folder contains a complete integration content pack for a new developer onboarding and production review.
+This folder tracks external integration docs for the V2 baseline:
+1. `GET /api/v1/mediation/config`
+2. `POST /api/v2/bid`
+3. `POST /api/v1/sdk/events`
 
-## Recommended publishing order
+## Document Index
+
+1. `01-one-pager.md` - product/system one pager (draft)
+2. `02-quickstart.md` - first integration quickstart (ready)
+3. `03-api-sdk-reference.md` - API and SDK contract reference (ready)
+4. `04-environment-and-credentials.md` - environment and credentials guide (draft)
+5. `05-network-adapter-support-matrix.md` - adapter capability matrix (draft)
+6. `06-callback-signature-guide.md` - callback/signature guidance (draft)
+7. `07-test-plan-and-checklist.md` - integration test checklist (draft)
+8. `08-troubleshooting-playbook.md` - troubleshooting playbook (draft)
+9. `09-version-and-compatibility-policy.md` - compatibility policy (draft)
+10. `10-release-and-rollback-runbook.md` - release/rollback runbook (draft)
+
+## Publishing Order
 
 1. `01-one-pager.md`
 2. `02-quickstart.md`
 3. `03-api-sdk-reference.md`
 4. `04-environment-and-credentials.md`
-5. `05-network-adapter-support-matrix.md`
-6. `06-callback-signature-guide.md`
-7. `07-test-plan-and-checklist.md`
-8. `08-troubleshooting-playbook.md`
-9. `09-version-and-compatibility-policy.md`
-10. `10-release-and-rollback-runbook.md`
+5. `08-troubleshooting-playbook.md`
+6. `09-version-and-compatibility-policy.md`
+7. `10-release-and-rollback-runbook.md`
 
-## Exit rule for "integration content complete"
+## Completion Rule
 
-- [ ] Every file above has owner, last updated date, and environment scope.
-- [ ] Quickstart can produce first successful ad in <= 15 minutes.
-- [ ] API examples are copy-paste runnable.
-- [ ] Troubleshooting playbook covers top 10 integration failures.
-- [ ] Runbook has tested rollback and communication plan.
+- [ ] All files include `Owner`, `Last Updated`, and environment scope.
+- [ ] Quickstart can produce first requestId in <= 15 minutes.
+- [ ] API examples are copy-paste runnable and aligned with current gateway behavior.
+- [ ] Troubleshooting includes no-bid, auth, scope mismatch, and payload validation failures.

@@ -1,37 +1,58 @@
 # Ads SDK Quick Start (Public, V2)
 
-- Version: v1.0
+- Version: v1.1
 - Last Updated: 2026-02-24
-- Audience: External developers integrating chat ads in AI applications
+- Audience: External developers integrating ads in AI chat applications
 
-This guide helps you complete first integration in 10 minutes:
-1. request one ad bid
-2. render ad safely (fail-open)
-3. report impression/click events
-4. verify with requestId in dashboard/logs
+This guide helps you run first integration in 10-15 minutes:
+1. fetch placement config
+2. request one bid (`/api/v2/bid`)
+3. render ad with fail-open behavior
+4. report events (`/api/v1/sdk/events`)
 
 ## 1. Prerequisites
 
-You need:
+Required values:
 1. `ADS_BASE_URL` (example: `https://your-gateway.example.com/api`)
-2. `ADS_API_KEY` (runtime API key)
-3. one enabled placement:
-   - `chat_inline_v1` (post-answer ad block)
-   - `chat_followup_v1` (follow-up ad card)
+2. `ADS_API_KEY` (runtime key; should have runtime scopes)
+3. `APP_ID`
+4. `ENVIRONMENT` (`sandbox` | `staging` | `prod`)
+5. enabled placement:
+   - `chat_inline_v1` (post-answer sponsored block), or
+   - `chat_followup_v1` (next-step intent card)
 
-## 2. Endpoint Overview
+## 2. API Flow (V2 Baseline)
 
-1. `POST /api/v2/bid`
+1. `GET /api/v1/mediation/config`
+- returns current placement config and `configVersion`
+
+2. `POST /api/v2/bid`
 - unified messages input
-- returns **single winner bid**
+- returns **single winner bid** or `data.bid=null`
 
-2. `POST /api/v1/sdk/events`
-- report impression/click/dismiss/postback events
-- correlate with `requestId`
+3. `POST /api/v1/sdk/events`
+- reports impression/click/dismiss/postback events
+- links events with `requestId`
 
-## 3. First Bid Request
+## 3. Step 1: Fetch Placement Config
 
-### Request
+```bash
+curl -sS -G "$ADS_BASE_URL/v1/mediation/config" \
+  -H "Authorization: Bearer $ADS_API_KEY" \
+  --data-urlencode "appId=$APP_ID" \
+  --data-urlencode "placementId=chat_inline_v1" \
+  --data-urlencode "environment=$ENVIRONMENT" \
+  --data-urlencode "schemaVersion=schema_v1" \
+  --data-urlencode "sdkVersion=1.0.0" \
+  --data-urlencode "requestAt=2026-02-24T12:00:00Z"
+```
+
+Success response includes:
+1. `placementId` / `placementKey`
+2. `configVersion`
+3. `placement` object (enabled, thresholds, caps, etc.)
+
+## 4. Step 2: Request First Bid
 
 ```bash
 curl -sS -X POST "$ADS_BASE_URL/v2/bid" \
@@ -42,14 +63,14 @@ curl -sS -X POST "$ADS_BASE_URL/v2/bid" \
     "chatId": "chat_8b5d9f5a",
     "placementId": "chat_inline_v1",
     "messages": [
-      { "role": "user", "content": "i want to buy a gift to my girlfriend" },
-      { "role": "assistant", "content": "what type of gift do you want?" },
-      { "role": "user", "content": "camera for vlogging" }
+      { "role": "user", "content": "I want to buy a gift for my girlfriend" },
+      { "role": "assistant", "content": "What kind of gift do you want?" },
+      { "role": "user", "content": "Camera for vlogging" }
     ]
   }'
 ```
 
-### Success Response (with bid)
+### Success with bid
 
 ```json
 {
@@ -62,12 +83,12 @@ curl -sS -X POST "$ADS_BASE_URL/v2/bid" \
       "price": 12.34,
       "advertiser": "DJI",
       "headline": "DJI",
-      "description": "Explore DJI’s lineup for creators.",
+      "description": "Explore DJI's lineup for creators.",
       "cta_text": "Learn More",
-      "url": "https://...",
-      "image_url": "https://...",
-      "dsp": "gravity",
-      "bidId": "v1_bid_xxx",
+      "url": "https://example.com",
+      "image_url": "https://example.com/cover.jpg",
+      "dsp": "partnerstack",
+      "bidId": "v2_bid_xxx",
       "placement": "block",
       "variant": "base"
     }
@@ -75,7 +96,7 @@ curl -sS -X POST "$ADS_BASE_URL/v2/bid" \
 }
 ```
 
-### No-Bid Response (normal)
+### Success with no bid (normal)
 
 ```json
 {
@@ -83,20 +104,18 @@ curl -sS -X POST "$ADS_BASE_URL/v2/bid" \
   "timestamp": "2026-02-24T10:31:24.787Z",
   "status": "success",
   "message": "No bid",
-  "data": { "bid": null }
+  "data": {
+    "bid": null
+  }
 }
 ```
 
-`No bid` is **not an error**. Always keep your main chat response path running.
+`No bid` is not an error. Your main chat flow should continue.
 
-## 4. Render (Fail-Open)
-
-Recommended behavior:
-1. if `data.bid == null`: skip ad render
-2. if request fails: swallow ad error, do not block assistant reply
+## 5. Step 3: Render with Fail-Open
 
 ```ts
-async function loadAd() {
+async function loadAd(messages) {
   try {
     const bidResp = await fetch(`${ADS_BASE_URL}/v2/bid`, {
       method: 'POST',
@@ -113,7 +132,7 @@ async function loadAd() {
     }).then((r) => r.json())
 
     if (!bidResp?.data?.bid) return null
-    return bidResp
+    return bidResp.data.bid
   } catch (err) {
     console.warn('[ads] fail-open', err)
     return null
@@ -121,9 +140,13 @@ async function loadAd() {
 }
 ```
 
-## 5. Report Events
+Recommended behavior:
+1. `data.bid == null`: skip rendering
+2. request timeout/failure: swallow ad error, do not block answer rendering
 
-### 5.1 Impression (`chat_inline_v1`)
+## 6. Step 4: Report Events
+
+### 6.1 Attach impression (`chat_inline_v1`)
 
 ```bash
 curl -sS -X POST "$ADS_BASE_URL/v1/sdk/events" \
@@ -139,68 +162,73 @@ curl -sS -X POST "$ADS_BASE_URL/v1/sdk/events" \
     "locale": "en-US",
     "kind": "impression",
     "placementId": "chat_inline_v1",
-    "adId": "v1_bid_xxx"
+    "adId": "v2_bid_xxx"
   }'
 ```
 
-### 5.2 Click (`chat_inline_v1`)
+### 6.2 Attach click (`chat_inline_v1`)
 
-Same payload, change `kind` to `click`.
+Use the same payload and set `kind` to `click`.
 
-### 5.3 Follow-up placement note
+### 6.3 Next-step event (`chat_followup_v1`, optional)
 
-For `chat_followup_v1`, events require next-step fields (`event`, `placementKey`, `context`).
-If you are integrating follow-up cards, use the dedicated next-step contract from platform support docs.
+```bash
+curl -sS -X POST "$ADS_BASE_URL/v1/sdk/events" \
+  -H "Authorization: Bearer $ADS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "requestId": "adreq_xxx",
+    "sessionId": "chat_8b5d9f5a",
+    "turnId": "turn_002",
+    "userId": "user_12139050",
+    "event": "followup_generation",
+    "kind": "impression",
+    "placementId": "chat_followup_v1",
+    "placementKey": "next_step.intent_card",
+    "adId": "v2_bid_xxx",
+    "context": {
+      "query": "camera for travel vlogging",
+      "answerText": "Let's compare compact options.",
+      "locale": "en-US",
+      "intent_class": "shopping",
+      "intent_score": 0.77,
+      "preference_facets": [
+        { "facet_key": "use_case", "facet_value": "travel", "confidence": 0.9 }
+      ]
+    }
+  }'
+```
 
-## 6. Minimal Client Contract
+## 7. Minimal Contract Rules
 
-### 6.1 `/api/v2/bid` required fields
+1. `/api/v2/bid` only accepts fields: `userId`, `chatId`, `placementId`, `messages`.
+2. `messages[*].role` must be `user | assistant | system`.
+3. `/api/v1/sdk/events` uses strict payload validation per event type.
+4. Unknown extra fields are rejected with `400`.
 
-1. `userId: string`
-2. `chatId: string`
-3. `placementId: chat_inline_v1 | chat_followup_v1`
-4. `messages: Array<{ role: user|assistant|system; content: string; timestamp?: ISO-8601 }>`
+## 8. Error Handling
 
-### 6.2 `/api/v1/sdk/events` minimal required fields for inline placement
+1. `400 INVALID_REQUEST` / `400 SDK_EVENTS_INVALID_PAYLOAD`
+- payload shape error or missing required fields
 
-1. `requestId`
-2. `sessionId`
-3. `turnId`
-4. `query`
-5. `answerText`
-6. `intentScore` (0~1)
-7. `locale`
-8. `kind` (`impression` or `click`)
-9. `placementId`
-10. `adId`
+2. `401`
+- missing/invalid/expired runtime credential
 
-## 7. Error Handling
+3. `403`
+- token scope/app/environment/placement mismatch
 
-1. `400 INVALID_REQUEST`
-- bad payload shape or missing required fields
+4. `5xx` (upstream/proxy/runtime transient failure)
+- retry with backoff and keep fail-open on UI path
 
-2. `401/403`
-- missing/invalid API key or scope mismatch
+## 9. Production Checklist
 
-3. `409 PRECONDITION_FAILED`
-- typically no active key / setup incomplete
+1. fail-open enabled for ad calls
+2. request timeout configured (`bid <= 1200ms` recommended)
+3. `requestId` persisted in app logs
+4. impression/click events use same `requestId`
+5. no-bid path validated
 
-4. `429`
-- rate limited, retry with backoff
+## 10. Migration Note
 
-5. `5xx`
-- server-side transient issue, retry with backoff + fail-open
-
-## 8. Production Checklist
-
-1. Fail-open enabled for all ad calls
-2. `requestId` persisted in app logs
-3. impression/click events report same `requestId`
-4. timeout configured (recommended: bid <= 1200ms)
-5. no-bid path tested
-6. dashboard/log search by `requestId` verified
-
-## 9. Migration Note
-
-Legacy endpoint `/api/v1/sdk/evaluate` has been removed.
-Use `/api/v2/bid` as the only bid entry.
+Legacy `POST /api/v1/sdk/evaluate` is no longer the primary integration path.
+Use `GET /api/v1/mediation/config` + `POST /api/v2/bid` + `POST /api/v1/sdk/events`.
