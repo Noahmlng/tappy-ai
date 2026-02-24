@@ -31,7 +31,7 @@ npm run dev
 - `VITE_ADS_API_KEY`（可选，不填时使用内置 staging key）
 - `VITE_ADS_BASE_URL`（可选，默认继承 `VITE_SIMULATOR_API_BASE_URL`）
 - `VITE_ADS_PLACEMENT_ID`（可选，默认：`chat_inline_v1`）
-- `VITE_ADS_BID_TIMEOUT_MS`（可选，默认：`1200`）
+- `VITE_ADS_BID_TIMEOUT_MS`（可选，默认：`5000`）
 
 ## Tool Call 说明
 

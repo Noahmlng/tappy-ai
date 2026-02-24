@@ -5,7 +5,7 @@ const INLINE_PLACEMENT_ID = 'chat_inline_v1'
 const DEFAULT_PLACEMENT_ID = import.meta.env.VITE_ADS_PLACEMENT_ID || INLINE_PLACEMENT_ID
 const ADS_BID_TIMEOUT_MS = Number.isFinite(Number(import.meta.env.VITE_ADS_BID_TIMEOUT_MS))
   ? Math.max(200, Number(import.meta.env.VITE_ADS_BID_TIMEOUT_MS))
-  : 1200
+  : 5000
 
 function toAdsMessages(messages = []) {
   return messages
