@@ -99,7 +99,7 @@ onMounted(() => {
       </div>
       <p class="muted">
         Source:
-        <strong>{{ dashboardState.meta.connected ? 'public API' : 'local fallback' }}</strong>
+        <strong>{{ dashboardState.meta.connected ? 'public API' : 'unavailable' }}</strong>
         <span> · model={{ settlement.settlementModel || 'CPA' }}</span>
         <span> · {{ scopeLabel }}</span>
         <span v-if="dashboardState.meta.lastSyncedAt">

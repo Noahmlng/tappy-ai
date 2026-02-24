@@ -1,17 +1,65 @@
 import { reactive } from 'vue'
 
 import { controlPlaneClient } from '../api/control-plane-client'
-import { mockDashboardState } from '../data/mockDashboard'
 import { getScopeQuery } from './scope-state'
 
-const STORAGE_KEY = 'ai-network-simulator-dashboard-state-v2'
+const STORAGE_KEY = 'ai-network-simulator-dashboard-state-v3'
+const STORAGE_SOURCE = 'remote_api'
 
-function clone(value) {
-  return JSON.parse(JSON.stringify(value))
+function buildEmptyDashboardState() {
+  return {
+    placementConfigVersion: 1,
+    metricsSummary: {
+      revenueUsd: 0,
+      impressions: 0,
+      clicks: 0,
+      ctr: 0,
+      ecpm: 0,
+      fillRate: 0,
+    },
+    metricsByDay: [],
+    metricsByPlacement: [],
+    settlementAggregates: {
+      settlementModel: 'CPA',
+      currency: 'USD',
+      totals: {
+        requests: 0,
+        served: 0,
+        impressions: 0,
+        clicks: 0,
+        settledConversions: 0,
+        settledRevenueUsd: 0,
+        ctr: 0,
+        fillRate: 0,
+        ecpm: 0,
+        cpa: 0,
+      },
+      byAccount: [],
+      byApp: [],
+      byPlacement: [],
+    },
+    placements: [],
+    placementAuditLogs: [],
+    networkHealth: {},
+    networkHealthSummary: { totalNetworks: 0, healthy: 0, degraded: 0, open: 0 },
+    networkFlowStats: {
+      totalRuntimeEvaluations: 0,
+      degradedRuntimeEvaluations: 0,
+      resilientServes: 0,
+      servedWithNetworkErrors: 0,
+      noFillWithNetworkErrors: 0,
+      runtimeErrors: 0,
+      circuitOpenEvaluations: 0,
+    },
+    networkFlowLogs: [],
+    decisionLogs: [],
+    controlPlaneApps: [],
+    scope: {},
+  }
 }
 
 function shapeState(value) {
-  const fallback = clone(mockDashboardState)
+  const fallback = buildEmptyDashboardState()
   if (!value || typeof value !== 'object') return fallback
 
   return {
@@ -77,15 +125,19 @@ function shapeState(value) {
 }
 
 function loadState() {
-  if (typeof window === 'undefined') return shapeState(mockDashboardState)
+  if (typeof window === 'undefined') return shapeState(buildEmptyDashboardState())
 
   const saved = window.localStorage.getItem(STORAGE_KEY)
-  if (!saved) return shapeState(mockDashboardState)
+  if (!saved) return shapeState(buildEmptyDashboardState())
 
   try {
-    return shapeState(JSON.parse(saved))
+    const parsed = JSON.parse(saved)
+    if (parsed?.source !== STORAGE_SOURCE) {
+      return shapeState(buildEmptyDashboardState())
+    }
+    return shapeState(parsed.snapshot)
   } catch {
-    return shapeState(mockDashboardState)
+    return shapeState(buildEmptyDashboardState())
   }
 }
 
@@ -106,20 +158,23 @@ function persist() {
   window.localStorage.setItem(
     STORAGE_KEY,
     JSON.stringify({
-      placementConfigVersion: dashboardState.placementConfigVersion,
-      metricsSummary: dashboardState.metricsSummary,
-      metricsByDay: dashboardState.metricsByDay,
-      metricsByPlacement: dashboardState.metricsByPlacement,
-      settlementAggregates: dashboardState.settlementAggregates,
-      placements: dashboardState.placements,
-      placementAuditLogs: dashboardState.placementAuditLogs,
-      networkHealth: dashboardState.networkHealth,
-      networkHealthSummary: dashboardState.networkHealthSummary,
-      networkFlowStats: dashboardState.networkFlowStats,
-      networkFlowLogs: dashboardState.networkFlowLogs,
-      decisionLogs: dashboardState.decisionLogs,
-      controlPlaneApps: dashboardState.controlPlaneApps,
-      scope: dashboardState.scope,
+      source: STORAGE_SOURCE,
+      snapshot: {
+        placementConfigVersion: dashboardState.placementConfigVersion,
+        metricsSummary: dashboardState.metricsSummary,
+        metricsByDay: dashboardState.metricsByDay,
+        metricsByPlacement: dashboardState.metricsByPlacement,
+        settlementAggregates: dashboardState.settlementAggregates,
+        placements: dashboardState.placements,
+        placementAuditLogs: dashboardState.placementAuditLogs,
+        networkHealth: dashboardState.networkHealth,
+        networkHealthSummary: dashboardState.networkHealthSummary,
+        networkFlowStats: dashboardState.networkFlowStats,
+        networkFlowLogs: dashboardState.networkFlowLogs,
+        decisionLogs: dashboardState.decisionLogs,
+        controlPlaneApps: dashboardState.controlPlaneApps,
+        scope: dashboardState.scope,
+      },
     }),
   )
 }
@@ -189,7 +244,7 @@ export async function hydrateDashboardState() {
     dashboardState.meta.connected = false
     dashboardState.meta.error = error instanceof Error
       ? error.message
-      : 'Gateway unavailable, fallback to local mock state'
+      : 'Dashboard API unavailable'
   } finally {
     dashboardState.meta.loading = false
   }
@@ -250,5 +305,25 @@ export function updateTriggerNumber(placementId, key, value) {
 }
 
 export function resetDashboardState() {
-  applySnapshot(mockDashboardState)
+  const next = shapeState(buildEmptyDashboardState())
+  dashboardState.placementConfigVersion = next.placementConfigVersion
+  dashboardState.metricsSummary = next.metricsSummary
+  dashboardState.metricsByDay = next.metricsByDay
+  dashboardState.metricsByPlacement = next.metricsByPlacement
+  dashboardState.settlementAggregates = next.settlementAggregates
+  dashboardState.placements = next.placements
+  dashboardState.placementAuditLogs = next.placementAuditLogs
+  dashboardState.networkHealth = next.networkHealth
+  dashboardState.networkHealthSummary = next.networkHealthSummary
+  dashboardState.networkFlowStats = next.networkFlowStats
+  dashboardState.networkFlowLogs = next.networkFlowLogs
+  dashboardState.decisionLogs = next.decisionLogs
+  dashboardState.controlPlaneApps = next.controlPlaneApps
+  dashboardState.scope = next.scope
+  dashboardState.meta.connected = false
+  dashboardState.meta.error = ''
+  dashboardState.meta.lastSyncedAt = ''
+  if (typeof window !== 'undefined') {
+    window.localStorage.removeItem(STORAGE_KEY)
+  }
 }

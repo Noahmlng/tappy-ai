@@ -18,7 +18,7 @@ const integrationStatus = computed(() => {
       status: dashboardState.meta.connected ? 'ready' : 'offline',
       detail: dashboardState.meta.connected
         ? 'Connected to public API'
-        : (dashboardState.meta.error || 'Using local fallback snapshot'),
+        : (dashboardState.meta.error || 'Dashboard API unavailable'),
     },
     {
       label: 'Placement Template',

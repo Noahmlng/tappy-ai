@@ -3,41 +3,11 @@ import { reactive } from 'vue'
 import { controlPlaneClient } from '../api/control-plane-client'
 import { getScopeQuery } from './scope-state'
 
-const STORAGE_KEY = 'ai-network-simulator-dashboard-api-keys-v1'
+const STORAGE_KEY = 'ai-network-simulator-dashboard-api-keys-v2'
+const STORAGE_SOURCE = 'remote_api'
 
 function nowIso() {
   return new Date().toISOString()
-}
-
-function randomString(len = 8) {
-  return Math.random().toString(36).slice(2, 2 + len)
-}
-
-function buildRawSecret(environment = 'staging') {
-  return `sk_${environment}_${randomString(6)}${randomString(10)}`
-}
-
-function maskSecret(secret) {
-  if (typeof secret !== 'string' || secret.length < 8) return '****'
-  return `${secret.slice(0, 6)}...${secret.slice(-4)}`
-}
-
-function defaultItems() {
-  const rawSecret = buildRawSecret('staging')
-  const scope = getScopeQuery()
-  return [
-    {
-      keyId: `key_${randomString(12)}`,
-      appId: String(scope.appId || 'simulator-chatbot'),
-      accountId: String(scope.accountId || 'org_simulator'),
-      name: 'primary-staging',
-      environment: 'staging',
-      status: 'active',
-      maskedKey: maskSecret(rawSecret),
-      createdAt: nowIso(),
-      lastUsedAt: '',
-    },
-  ]
 }
 
 function clone(value) {
@@ -76,20 +46,26 @@ function normalizeList(payload) {
 
 function persist(items) {
   if (typeof window === 'undefined') return
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
+  window.localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({
+      source: STORAGE_SOURCE,
+      items,
+    }),
+  )
 }
 
-function loadLocalItems() {
-  if (typeof window === 'undefined') return defaultItems()
+function loadCachedItems() {
+  if (typeof window === 'undefined') return []
   const raw = window.localStorage.getItem(STORAGE_KEY)
-  if (!raw) return defaultItems()
+  if (!raw) return []
 
   try {
     const parsed = JSON.parse(raw)
-    const normalized = normalizeList(parsed)
-    return normalized.length > 0 ? normalized : defaultItems()
+    if (parsed?.source !== STORAGE_SOURCE) return []
+    return normalizeList(parsed.items)
   } catch {
-    return defaultItems()
+    return []
   }
 }
 
@@ -102,33 +78,12 @@ function upsertItem(items, nextItem) {
   items.unshift(nextItem)
 }
 
-function createLocalItem(input) {
-  const secret = buildRawSecret(input.environment || 'staging')
-  const scope = getScopeQuery()
-  const appId = String(input.appId || scope.appId || 'simulator-chatbot')
-  const accountId = String(input.accountId || scope.accountId || 'org_simulator')
-  return {
-    item: {
-      keyId: `key_${randomString(12)}`,
-      appId,
-      accountId,
-      name: String(input.name || 'primary'),
-      environment: String(input.environment || 'staging'),
-      status: 'active',
-      maskedKey: maskSecret(secret),
-      createdAt: nowIso(),
-      lastUsedAt: '',
-    },
-    rawSecret: secret,
-  }
-}
-
 export const apiKeysState = reactive({
-  items: loadLocalItems(),
+  items: loadCachedItems(),
   meta: {
     loading: false,
     syncing: false,
-    syncMode: 'local',
+    syncMode: 'unknown',
     error: '',
     lastSyncedAt: '',
     lastRevealedSecret: '',
@@ -146,25 +101,15 @@ export async function hydrateApiKeys() {
   try {
     const payload = await controlPlaneClient.credentials.listKeys(getScopeQuery())
     const keys = normalizeList(payload)
-    if (keys.length > 0) {
-      applyItems(keys)
-      apiKeysState.meta.syncMode = 'remote'
-      apiKeysState.meta.error = ''
-      apiKeysState.meta.lastSyncedAt = nowIso()
-      return
-    }
-
-    const local = loadLocalItems()
-    applyItems(local)
-    apiKeysState.meta.syncMode = 'local'
-    apiKeysState.meta.error = 'Remote keys empty. Using local fallback.'
+    applyItems(keys)
+    apiKeysState.meta.syncMode = 'remote'
+    apiKeysState.meta.error = ''
+    apiKeysState.meta.lastSyncedAt = nowIso()
   } catch (error) {
-    const local = loadLocalItems()
-    applyItems(local)
-    apiKeysState.meta.syncMode = 'local'
+    apiKeysState.meta.syncMode = 'offline'
     apiKeysState.meta.error = error instanceof Error
       ? error.message
-      : 'Failed to load remote keys. Using local fallback.'
+      : 'Failed to load API keys from remote service.'
   } finally {
     apiKeysState.meta.loading = false
   }
@@ -181,38 +126,22 @@ export async function createApiKey(input) {
   }
 
   try {
-    if (apiKeysState.meta.syncMode === 'remote') {
-      const payload = await controlPlaneClient.credentials.createKey(scopedInput)
-      const normalized = normalizeItem(payload?.key || payload)
-      const secret = String(payload?.secret || payload?.apiKey || '')
-
-      if (normalized) {
-        upsertItem(apiKeysState.items, normalized)
-        persist(apiKeysState.items)
-        apiKeysState.meta.lastSyncedAt = nowIso()
-        apiKeysState.meta.error = ''
-        apiKeysState.meta.lastRevealedSecret = secret
-        return
-      }
+    const payload = await controlPlaneClient.credentials.createKey(scopedInput)
+    const normalized = normalizeItem(payload?.key || payload)
+    if (!normalized) {
       throw new Error('Unexpected create key response')
     }
-
-    const { item, rawSecret } = createLocalItem(scopedInput)
-    upsertItem(apiKeysState.items, item)
+    upsertItem(apiKeysState.items, normalized)
     persist(apiKeysState.items)
+    apiKeysState.meta.syncMode = 'remote'
     apiKeysState.meta.lastSyncedAt = nowIso()
-    apiKeysState.meta.lastRevealedSecret = rawSecret
     apiKeysState.meta.error = ''
+    apiKeysState.meta.lastRevealedSecret = String(payload?.secret || payload?.apiKey || '')
   } catch (error) {
-    apiKeysState.meta.syncMode = 'local'
-    const { item, rawSecret } = createLocalItem(scopedInput)
-    upsertItem(apiKeysState.items, item)
-    persist(apiKeysState.items)
-    apiKeysState.meta.lastSyncedAt = nowIso()
-    apiKeysState.meta.lastRevealedSecret = rawSecret
+    apiKeysState.meta.syncMode = 'offline'
     apiKeysState.meta.error = error instanceof Error
-      ? `${error.message} (switched to local mode)`
-      : 'Create failed on remote API. Switched to local mode.'
+      ? error.message
+      : 'Create API key failed on remote service.'
   } finally {
     apiKeysState.meta.syncing = false
   }
@@ -223,52 +152,22 @@ export async function rotateApiKey(keyId) {
   apiKeysState.meta.lastRevealedSecret = ''
 
   try {
-    if (apiKeysState.meta.syncMode === 'remote') {
-      const payload = await controlPlaneClient.credentials.rotateKey(keyId)
-      const normalized = normalizeItem(payload?.key || payload)
-      const secret = String(payload?.secret || payload?.apiKey || '')
-      if (normalized) {
-        upsertItem(apiKeysState.items, normalized)
-        persist(apiKeysState.items)
-        apiKeysState.meta.lastRevealedSecret = secret
-        apiKeysState.meta.lastSyncedAt = nowIso()
-        apiKeysState.meta.error = ''
-        return
-      }
+    const payload = await controlPlaneClient.credentials.rotateKey(keyId)
+    const normalized = normalizeItem(payload?.key || payload)
+    if (!normalized) {
       throw new Error('Unexpected rotate key response')
     }
-
-    const idx = apiKeysState.items.findIndex((row) => row.keyId === keyId)
-    if (idx < 0) return
-    const secret = buildRawSecret(apiKeysState.items[idx].environment)
-    apiKeysState.items[idx] = {
-      ...apiKeysState.items[idx],
-      maskedKey: maskSecret(secret),
-      status: 'active',
-      lastUsedAt: '',
-    }
+    upsertItem(apiKeysState.items, normalized)
     persist(apiKeysState.items)
+    apiKeysState.meta.syncMode = 'remote'
+    apiKeysState.meta.lastRevealedSecret = String(payload?.secret || payload?.apiKey || '')
     apiKeysState.meta.lastSyncedAt = nowIso()
-    apiKeysState.meta.lastRevealedSecret = secret
     apiKeysState.meta.error = ''
   } catch (error) {
-    apiKeysState.meta.syncMode = 'local'
-    const idx = apiKeysState.items.findIndex((row) => row.keyId === keyId)
-    if (idx >= 0) {
-      const secret = buildRawSecret(apiKeysState.items[idx].environment)
-      apiKeysState.items[idx] = {
-        ...apiKeysState.items[idx],
-        maskedKey: maskSecret(secret),
-        status: 'active',
-        lastUsedAt: '',
-      }
-      persist(apiKeysState.items)
-      apiKeysState.meta.lastRevealedSecret = secret
-    }
-    apiKeysState.meta.lastSyncedAt = nowIso()
+    apiKeysState.meta.syncMode = 'offline'
     apiKeysState.meta.error = error instanceof Error
-      ? `${error.message} (switched to local mode)`
-      : 'Rotate failed on remote API. Switched to local mode.'
+      ? error.message
+      : 'Rotate API key failed on remote service.'
   } finally {
     apiKeysState.meta.syncing = false
   }
@@ -278,38 +177,24 @@ export async function revokeApiKey(keyId) {
   apiKeysState.meta.syncing = true
 
   try {
-    if (apiKeysState.meta.syncMode === 'remote') {
-      const payload = await controlPlaneClient.credentials.revokeKey(keyId)
-      const normalized = normalizeItem(payload?.key || payload)
-      if (normalized) {
-        upsertItem(apiKeysState.items, normalized)
-      } else {
-        apiKeysState.items = apiKeysState.items.map((row) => (
-          row.keyId === keyId ? { ...row, status: 'revoked' } : row
-        ))
-      }
-      persist(apiKeysState.items)
-      apiKeysState.meta.lastSyncedAt = nowIso()
-      apiKeysState.meta.error = ''
-      return
+    const payload = await controlPlaneClient.credentials.revokeKey(keyId)
+    const normalized = normalizeItem(payload?.key || payload)
+    if (normalized) {
+      upsertItem(apiKeysState.items, normalized)
+    } else {
+      apiKeysState.items = apiKeysState.items.map((row) => (
+        row.keyId === keyId ? { ...row, status: 'revoked' } : row
+      ))
     }
-
-    apiKeysState.items = apiKeysState.items.map((row) => (
-      row.keyId === keyId ? { ...row, status: 'revoked' } : row
-    ))
     persist(apiKeysState.items)
+    apiKeysState.meta.syncMode = 'remote'
     apiKeysState.meta.lastSyncedAt = nowIso()
     apiKeysState.meta.error = ''
   } catch (error) {
-    apiKeysState.meta.syncMode = 'local'
-    apiKeysState.items = apiKeysState.items.map((row) => (
-      row.keyId === keyId ? { ...row, status: 'revoked' } : row
-    ))
-    persist(apiKeysState.items)
-    apiKeysState.meta.lastSyncedAt = nowIso()
+    apiKeysState.meta.syncMode = 'offline'
     apiKeysState.meta.error = error instanceof Error
-      ? `${error.message} (switched to local mode)`
-      : 'Revoke failed on remote API. Switched to local mode.'
+      ? error.message
+      : 'Revoke API key failed on remote service.'
   } finally {
     apiKeysState.meta.syncing = false
   }

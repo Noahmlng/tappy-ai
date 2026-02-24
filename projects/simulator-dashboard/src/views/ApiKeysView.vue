@@ -25,7 +25,7 @@ const scopeDraft = reactive({
 })
 
 const isBusy = computed(() => Boolean(apiKeysState.meta.loading || apiKeysState.meta.syncing))
-const syncMode = computed(() => String(apiKeysState.meta.syncMode || 'local'))
+const syncMode = computed(() => String(apiKeysState.meta.syncMode || 'unknown'))
 const rows = computed(() => Array.isArray(apiKeysState.items) ? apiKeysState.items : [])
 
 function formatDate(value) {
