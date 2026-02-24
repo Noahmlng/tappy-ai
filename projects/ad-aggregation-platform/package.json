@@ -35,7 +35,10 @@
     "house-ads:offers:merge": "node ./scripts/house-ads/merge-offers.js",
     "house-ads:offers:qa": "node ./scripts/house-ads/qa-offers.js",
     "house-ads:offers:publish": "node ./scripts/house-ads/publish-offer-creatives.js",
-    "house-ads:offers:bootstrap": "npm run house-ads:offers:build-jobs && npm run house-ads:offers:crawl && npm run house-ads:offers:normalize && npm run house-ads:offers:synthesize && npm run house-ads:offers:merge && npm run house-ads:offers:qa && npm run house-ads:offers:publish"
+    "house-ads:offers:bootstrap": "npm run house-ads:offers:build-jobs && npm run house-ads:offers:crawl && npm run house-ads:offers:normalize && npm run house-ads:offers:synthesize && npm run house-ads:offers:merge && npm run house-ads:offers:qa && npm run house-ads:offers:publish",
+    "house-ads:db:publish:brands": "node --env-file-if-exists=.env ./scripts/house-ads/publish-brands-to-supabase.js",
+    "house-ads:db:publish:offers": "node --env-file-if-exists=.env ./scripts/house-ads/publish-offers-to-supabase.js",
+    "house-ads:db:bootstrap": "npm run db:migrate && npm run house-ads:db:publish:brands && npm run house-ads:db:publish:offers"
   },
   "dependencies": {
     "pg": "^8.16.3"
