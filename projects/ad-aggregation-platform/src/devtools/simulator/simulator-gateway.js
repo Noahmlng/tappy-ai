@@ -6485,6 +6485,7 @@ function computeSettlementAggregates(scope = {}, factRowsInput = null, options =
 }
 
 async function getDashboardStatePayload(scopeInput = {}) {
+  await ensureSettlementStoreReady()
   const scope = normalizeScopeFilters(scopeInput)
   const hasScope = scopeHasFilters(scope)
   const networkHealth = getAllNetworkHealth()
