@@ -1,0 +1,11 @@
+{
+  "generatedAt": "2026-02-22T11:08:56.088Z",
+  "inputJobs": 3154,
+  "outputSignals": 3154,
+  "nonEmptySignals": 5,
+  "emptySignals": 3149,
+  "avgCandidatesPerBrand": 0.0022,
+  "maxCandidatesPerBrand": 3,
+  "minCandidatesPerBrand": 0,
+  "output": "data/house-ads/offers/raw/offer-signals/offer-signals-20260222-110807.jsonl"
+}
