@@ -79,28 +79,30 @@ const PREFER_CONFIGURED_KEY_ON_LOOPBACK = cleanText(
 const DEFAULT_EVALUATE_TIMEOUT_MS = 20000
 const API_BASE_HOSTNAME = resolveApiBaseHostname(API_BASE)
 
-function resolveLoopbackAuthMode(mode, preferConfiguredKeyOnLoopback) {
+function resolveLoopbackAuthMode(mode, preferConfiguredKeyOnLoopback, hasConfiguredKey) {
   if (mode === 'env_key' || mode === 'bootstrap' || mode === 'anonymous') {
     return mode
   }
-  if (preferConfiguredKeyOnLoopback) {
+  if (preferConfiguredKeyOnLoopback && hasConfiguredKey) {
     return 'env_key'
   }
-  return 'anonymous'
+  return 'bootstrap'
 }
 
 function resolveEffectiveApiKey(options = {}) {
   const isLoopback = options.isLoopback === true
   const mediationApiKey = cleanText(options.mediationApiKey)
   const bootstrapApiKey = cleanText(options.bootstrapApiKey)
+  const hasConfiguredKey = Boolean(mediationApiKey)
   const loopbackAuthMode = resolveLoopbackAuthMode(
     cleanText(options.loopbackAuthMode).toLowerCase(),
     options.preferConfiguredKeyOnLoopback === true,
+    hasConfiguredKey,
   )
 
   if (!isLoopback) return mediationApiKey
-  if (loopbackAuthMode === 'env_key') return mediationApiKey
-  if (loopbackAuthMode === 'bootstrap') return bootstrapApiKey
+  if (loopbackAuthMode === 'env_key') return mediationApiKey || bootstrapApiKey
+  if (loopbackAuthMode === 'bootstrap') return bootstrapApiKey || mediationApiKey
   return ''
 }
 

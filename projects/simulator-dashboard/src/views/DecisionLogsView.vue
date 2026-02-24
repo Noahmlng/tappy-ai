@@ -1,10 +1,19 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
-import { dashboardState } from '../state/dashboard-state'
+import { dashboardState, hydrateDashboardState } from '../state/dashboard-state'
 
 const resultFilter = ref('ALL')
 const placementFilter = ref('ALL')
+const isLoading = computed(() => Boolean(dashboardState.meta.loading))
+
+function refreshDecisionLogs() {
+  hydrateDashboardState()
+}
+
+onMounted(() => {
+  refreshDecisionLogs()
+})
 
 const placementOptions = computed(() => {
   return ['ALL', ...dashboardState.placements.map((item) => item.placementId)]
@@ -106,6 +115,13 @@ function getIntentInferenceMeta(row) {
     </header>
 
     <article class="panel">
+      <div class="panel-toolbar">
+        <h3>Decision Records</h3>
+        <button class="button" type="button" :disabled="isLoading" @click="refreshDecisionLogs">
+          {{ isLoading ? 'Refreshing...' : 'Refresh' }}
+        </button>
+      </div>
+
       <div class="filters">
         <label>
           Result
