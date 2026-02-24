@@ -13,9 +13,9 @@ const sidebarCollapsed = ref(false)
 const navItems = computed(() => {
   if (!authState.authenticated) return []
   return [
-    { to: '/home', label: 'Home', icon: 'home' },
-    { to: '/api-keys', label: 'API Keys', icon: 'key' },
-    { to: '/config', label: 'Config', icon: 'sliders' },
+    { to: '/home', label: 'Revenue', icon: 'home' },
+    { to: '/api-keys', label: 'Key', icon: 'key' },
+    { to: '/config', label: 'Placement', icon: 'sliders' },
     { to: '/logs', label: 'Logs', icon: 'list' },
   ]
 })

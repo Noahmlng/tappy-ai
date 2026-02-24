@@ -29,19 +29,19 @@ const routes = [
     path: '/home',
     name: 'home',
     component: HomeView,
-    meta: { navLabel: 'Home', requiresAuth: true },
+    meta: { navLabel: 'Revenue', requiresAuth: true },
   },
   {
     path: '/api-keys',
     name: 'apiKeys',
     component: ApiKeysView,
-    meta: { navLabel: 'API Keys', requiresAuth: true },
+    meta: { navLabel: 'Key', requiresAuth: true },
   },
   {
     path: '/config',
     name: 'config',
     component: PlacementsView,
-    meta: { navLabel: 'Config', requiresAuth: true },
+    meta: { navLabel: 'Placement', requiresAuth: true },
   },
   {
     path: '/logs',

@@ -21,28 +21,25 @@ onMounted(() => {
 
 <template>
   <section class="page">
-    <header class="page-header">
-      <p class="eyebrow">Config</p>
-      <h2>Placement Config</h2>
-      <p class="subtitle">Only core runtime knobs are exposed here.</p>
-    </header>
-
-    <article class="panel panel-toolbar">
-      <div>
-        <h3>Current Version: {{ dashboardState.placementConfigVersion }}</h3>
-        <p class="muted">Placement enable switch + fanout + timeout.</p>
+    <header class="page-header page-header-split">
+      <div class="header-stack">
+        <p class="eyebrow">Placement</p>
+        <h2>Placement</h2>
+        <p class="subtitle">Enable + limits</p>
       </div>
-      <button class="button" type="button" :disabled="dashboardState.meta.loading" @click="refreshConfig">
-        {{ dashboardState.meta.loading ? 'Refreshing...' : 'Refresh' }}
-      </button>
-    </article>
+      <div class="header-actions">
+        <button class="button" type="button" :disabled="dashboardState.meta.loading" @click="refreshConfig">
+          {{ dashboardState.meta.loading ? 'Sync...' : 'Sync' }}
+        </button>
+      </div>
+    </header>
 
     <div class="placement-card-grid">
       <article v-for="placement in placements" :key="placement.placementId" class="panel">
         <div class="panel-head">
           <div>
             <h3>{{ placement.placementId }}</h3>
-            <p class="muted">{{ placement.surface || '-' }} · bidders {{ Array.isArray(placement.bidders) ? placement.bidders.length : 0 }}</p>
+            <p class="muted">{{ placement.surface || '-' }} · {{ Array.isArray(placement.bidders) ? placement.bidders.length : 0 }} bidders</p>
           </div>
           <label class="inline-switch">
             <input
@@ -50,13 +47,13 @@ onMounted(() => {
               :checked="placement.enabled"
               @change="setPlacementEnabled(placement.placementId, $event.target.checked)"
             >
-            <span>{{ placement.enabled ? 'Enabled' : 'Disabled' }}</span>
+            <span>{{ placement.enabled ? 'On' : 'Off' }}</span>
           </label>
         </div>
 
         <div class="form-grid">
           <label>
-            Max Fanout
+            Fanout
             <input
               class="input"
               type="number"
@@ -67,7 +64,7 @@ onMounted(() => {
             >
           </label>
           <label>
-            Global Timeout (ms)
+            Timeout (ms)
             <input
               class="input"
               type="number"
@@ -81,7 +78,7 @@ onMounted(() => {
       </article>
 
       <article v-if="placements.length === 0" class="panel">
-        <p class="muted">No placements found.</p>
+        <p class="muted">No placement.</p>
       </article>
     </div>
   </section>

@@ -149,8 +149,8 @@ onMounted(() => {
     <header class="page-header page-header-split">
       <div class="header-stack">
         <p class="eyebrow">Keys</p>
-        <h2>Runtime Keys</h2>
-        <p class="subtitle">Create · rotate · revoke</p>
+        <h2>Key</h2>
+        <p class="subtitle">Create, rotate, revoke</p>
       </div>
       <div class="header-actions">
         <button class="button" type="button" :disabled="refreshBusy" @click="refreshKeys()">
