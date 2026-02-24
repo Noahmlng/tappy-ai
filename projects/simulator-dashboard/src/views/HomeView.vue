@@ -1,73 +1,53 @@
 <script setup>
 import { computed, onMounted } from 'vue'
+import { RouterLink } from 'vue-router'
 
 import { dashboardState, hydrateDashboardState } from '../state/dashboard-state'
 import { scopeState } from '../state/scope-state'
 
 const isLoading = computed(() => Boolean(dashboardState.meta?.loading))
-const scopeLabel = computed(() => `account=${scopeState.accountId} · app=${scopeState.appId}`)
 
-const integrationStatus = computed(() => {
-  const hasPlacements = Array.isArray(dashboardState.placements) && dashboardState.placements.length > 0
-  const hasEnabledPlacement = hasPlacements && dashboardState.placements.some((row) => row.enabled)
-  const hasRecentDecision = Array.isArray(dashboardState.decisionLogs) && dashboardState.decisionLogs.length > 0
+const totals = computed(() => dashboardState.settlementAggregates?.totals || {})
 
-  return [
-    {
-      label: 'Public API Connectivity',
-      status: dashboardState.meta.connected ? 'ready' : 'offline',
-      detail: dashboardState.meta.connected
-        ? 'Connected to public API'
-        : (dashboardState.meta.error || 'Dashboard API unavailable'),
-    },
-    {
-      label: 'Placement Template',
-      status: hasPlacements ? 'ready' : 'pending',
-      detail: hasPlacements
-        ? `${dashboardState.placements.length} placement template(s) available`
-        : 'No placement template found',
-    },
-    {
-      label: 'Serving Ready',
-      status: hasEnabledPlacement ? 'ready' : 'pending',
-      detail: hasEnabledPlacement
-        ? 'At least one placement is enabled'
-        : 'Enable one placement to start serving',
-    },
-    {
-      label: 'Recent Request Trace',
-      status: hasRecentDecision ? 'ready' : 'pending',
-      detail: hasRecentDecision
-        ? `${dashboardState.decisionLogs.length} recent decision log(s) found`
-        : 'No recent decision logs',
-    },
-  ]
-})
-
-const kpis24h = computed(() => {
-  const summary = dashboardState.metricsSummary || {}
-  const settlement = dashboardState.settlementAggregates || {}
-  const totals = settlement.totals || {}
-  const requests = Number(totals.requests || summary.impressions || 0)
-  const settledRevenue = Number(totals.settledRevenueUsd || 0)
-  const settledConversions = Number(totals.settledConversions || 0)
-  const ctr = Number(summary.ctr || 0)
-  const fillRate = Number(summary.fillRate || 0)
+const kpis = computed(() => {
+  const row = totals.value
+  const requests = Number(row.requests || 0)
+  const conversions = Number(row.settledConversions || 0)
+  const revenue = Number(row.settledRevenueUsd || 0)
+  const cpa = Number(row.cpa || 0)
 
   return [
+    { label: 'Revenue', value: `$${revenue.toFixed(2)}` },
     { label: 'Requests', value: requests.toLocaleString() },
-    { label: 'CTR', value: `${(ctr * 100).toFixed(2)}%` },
-    { label: 'Fill Rate', value: `${(fillRate * 100).toFixed(1)}%` },
-    { label: 'Settled Conversions', value: settledConversions.toLocaleString() },
-    { label: 'Settled Revenue', value: `$${settledRevenue.toFixed(2)}` },
+    { label: 'Conversions', value: conversions.toLocaleString() },
+    { label: 'CPA', value: `$${cpa.toFixed(2)}` },
   ]
 })
 
-function statusClass(status) {
-  if (status === 'ready') return 'status-pill good'
-  if (status === 'offline') return 'status-pill bad'
-  return 'status-pill warn'
-}
+const quickLinks = [
+  {
+    to: '/api-keys',
+    title: 'Get API Key',
+    description: 'Create or rotate runtime keys.',
+  },
+  {
+    to: '/config',
+    title: 'Configure Placement',
+    description: 'Enable placement and set fanout/timeout.',
+  },
+  {
+    to: '/logs',
+    title: 'View Logs',
+    description: 'Check recent request outcomes.',
+  },
+]
+
+const recentLogs = computed(() => {
+  const rows = Array.isArray(dashboardState.decisionLogs) ? dashboardState.decisionLogs : []
+  return rows.slice(0, 5)
+})
+
+const scopeLabel = computed(() => `${scopeState.accountId} / ${scopeState.appId}`)
 
 function refreshHome() {
   hydrateDashboardState()
@@ -81,42 +61,68 @@ onMounted(() => {
 <template>
   <section class="page">
     <header class="page-header">
-      <p class="eyebrow">Dashboard v1</p>
-      <h2>Home</h2>
+      <p class="eyebrow">Dashboard</p>
+      <h2>Revenue</h2>
       <p class="subtitle">
-        Integration readiness and key scoped settlement metrics.
+        Scope: {{ scopeLabel }}
       </p>
     </header>
 
-    <article class="panel">
-      <div class="panel-toolbar">
-        <h3>Integration Status</h3>
-        <button class="button" type="button" :disabled="isLoading" @click="refreshHome">
-          {{ isLoading ? 'Refreshing...' : 'Refresh' }}
-        </button>
+    <article class="panel panel-toolbar">
+      <div>
+        <h3>Today at a glance</h3>
+        <p class="muted" v-if="dashboardState.meta.lastSyncedAt">
+          Last synced: {{ new Date(dashboardState.meta.lastSyncedAt).toLocaleString() }}
+        </p>
+        <p class="muted" v-if="dashboardState.meta.error">{{ dashboardState.meta.error }}</p>
       </div>
-
-      <div class="status-grid">
-        <article v-for="item in integrationStatus" :key="item.label" class="status-item">
-          <div class="panel-head">
-            <strong>{{ item.label }}</strong>
-            <span :class="statusClass(item.status)">{{ item.status }}</span>
-          </div>
-          <p class="muted">{{ item.detail }}</p>
-        </article>
-      </div>
-
-      <p v-if="dashboardState.meta.lastSyncedAt" class="muted">
-        Scope: {{ scopeLabel }} ·
-        Last synced: {{ new Date(dashboardState.meta.lastSyncedAt).toLocaleString() }}
-      </p>
+      <button class="button" type="button" :disabled="isLoading" @click="refreshHome">
+        {{ isLoading ? 'Refreshing...' : 'Refresh' }}
+      </button>
     </article>
 
     <div class="kpi-grid">
-      <article v-for="kpi in kpis24h" :key="kpi.label" class="kpi-card">
-        <p class="kpi-label">{{ kpi.label }}</p>
-        <p class="kpi-value">{{ kpi.value }}</p>
+      <article v-for="item in kpis" :key="item.label" class="kpi-card">
+        <p class="kpi-label">{{ item.label }}</p>
+        <p class="kpi-value">{{ item.value }}</p>
       </article>
     </div>
+
+    <div class="quick-link-grid">
+      <RouterLink
+        v-for="item in quickLinks"
+        :key="item.to"
+        :to="item.to"
+        class="panel quick-link"
+      >
+        <h3>{{ item.title }}</h3>
+        <p class="muted">{{ item.description }}</p>
+      </RouterLink>
+    </div>
+
+    <article class="panel">
+      <h3>Recent Logs</h3>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Request ID</th>
+            <th>Placement</th>
+            <th>Result</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in recentLogs" :key="row.id || row.requestId">
+            <td>{{ row.createdAt || '-' }}</td>
+            <td>{{ row.requestId || '-' }}</td>
+            <td>{{ row.placementId || '-' }}</td>
+            <td>{{ row.result || '-' }}</td>
+          </tr>
+          <tr v-if="recentLogs.length === 0">
+            <td colspan="4" class="muted">No logs yet.</td>
+          </tr>
+        </tbody>
+      </table>
+    </article>
   </section>
 </template>

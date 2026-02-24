@@ -2,7 +2,6 @@
 import { computed, ref } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 
-import { featureFlags } from './config/feature-flags'
 import { authState, logoutDashboardUser } from './state/auth-state'
 
 const route = useRoute()
@@ -12,21 +11,12 @@ const sidebarOpen = ref(false)
 
 const navItems = computed(() => {
   if (!authState.authenticated) return []
-  const items = [
-    { to: '/overview', label: 'Overview' },
+  return [
+    { to: '/home', label: 'Home' },
     { to: '/api-keys', label: 'API Keys' },
-    { to: '/integrations', label: 'Integrations' },
-    { to: '/agent-onboarding', label: 'Agent Onboarding' },
-    { to: '/quick-start', label: 'Quick Start' },
-    { to: '/usage', label: 'Usage' },
-    { to: '/decision-logs', label: 'Decision Logs' },
+    { to: '/config', label: 'Config' },
+    { to: '/logs', label: 'Logs' },
   ]
-
-  if (featureFlags.enableInternalReset) {
-    items.push({ to: '/internal-reset', label: 'Internal Reset' })
-  }
-
-  return items
 })
 
 function toggleSidebar() {
@@ -67,8 +57,8 @@ async function handleLogout() {
       :class="{ open: sidebarOpen }"
     >
       <div>
-        <p class="eyebrow">AI Native Network</p>
-        <h1 class="title">Developer Dashboard</h1>
+        <p class="eyebrow">AI Native Ads</p>
+        <h1 class="title">Simple Dashboard</h1>
       </div>
 
       <nav class="nav-list">
@@ -84,14 +74,11 @@ async function handleLogout() {
         </RouterLink>
       </nav>
 
-      <p class="muted">
-        Signed in:
-        <strong>{{ authState.user?.email || '-' }}</strong>
+      <p class="muted nav-meta">
+        {{ authState.user?.email || '-' }}
       </p>
-
-      <p class="muted">
-        Account:
-        <strong>{{ authState.user?.accountId || '-' }}</strong>
+      <p class="muted nav-meta">
+        {{ authState.user?.accountId || '-' }}
       </p>
 
       <button class="button button-secondary" type="button" @click="handleLogout">

@@ -7,20 +7,24 @@ const resultFilter = ref('ALL')
 const placementFilter = ref('ALL')
 const isLoading = computed(() => Boolean(dashboardState.meta.loading))
 
-function refreshDecisionLogs() {
+function refreshLogs() {
   hydrateDashboardState()
 }
 
 onMounted(() => {
-  refreshDecisionLogs()
+  refreshLogs()
 })
 
 const placementOptions = computed(() => {
-  return ['ALL', ...dashboardState.placements.map((item) => item.placementId)]
+  const placementIds = Array.isArray(dashboardState.placements)
+    ? dashboardState.placements.map((item) => item.placementId)
+    : []
+  return ['ALL', ...placementIds]
 })
 
 const filteredLogs = computed(() => {
-  return dashboardState.decisionLogs.filter((row) => {
+  const rows = Array.isArray(dashboardState.decisionLogs) ? dashboardState.decisionLogs : []
+  return rows.filter((row) => {
     const matchResult = resultFilter.value === 'ALL' || row.result === resultFilter.value
     const matchPlacement = placementFilter.value === 'ALL' || row.placementId === placementFilter.value
     return matchResult && matchPlacement
@@ -30,94 +34,32 @@ const filteredLogs = computed(() => {
 function resultPillClass(result) {
   if (result === 'served') return 'status-pill good'
   if (result === 'error') return 'status-pill bad'
-  if (result === 'blocked') return 'status-pill warn'
   return 'status-pill warn'
 }
 
-function getReasonDetail(row) {
-  return typeof row?.reasonDetail === 'string' ? row.reasonDetail.trim() : ''
-}
-
-function getRuntimeErrorMessage(row) {
-  return typeof row?.runtime?.message === 'string' ? row.runtime.message.trim() : ''
-}
-
-function getDisplayReason(row) {
-  if (row?.result === 'error') {
-    return getRuntimeErrorMessage(row) || getReasonDetail(row) || row?.reason || 'unknown_error'
+function displayReason(row) {
+  if (typeof row?.reasonDetail === 'string' && row.reasonDetail.trim()) {
+    return row.reasonDetail.trim()
   }
-
-  if (row?.result === 'no_fill' || row?.result === 'blocked') {
-    return getReasonDetail(row) || row?.reason || '-'
+  if (typeof row?.reason === 'string' && row.reason.trim()) {
+    return row.reason.trim()
   }
-
-  return getReasonDetail(row) || row?.reason || '-'
-}
-
-function formatIntentScore(value) {
-  return Number.isFinite(value) ? value.toFixed(2) : '-'
-}
-
-function clipText(value, maxLength = 140) {
-  const text = typeof value === 'string' ? value.trim() : ''
-  if (!text) return '-'
-  if (text.length <= maxLength) return text
-  return `${text.slice(0, maxLength)}...`
-}
-
-function getInputQuery(row) {
-  return clipText(row?.input?.query, 120)
-}
-
-function getInputAnswer(row) {
-  return clipText(row?.input?.answerText, 180)
-}
-
-function getEntityItems(row) {
-  return Array.isArray(row?.runtime?.entityItems) ? row.runtime.entityItems : []
-}
-
-function getAds(row) {
-  return Array.isArray(row?.ads) ? row.ads : []
-}
-
-function formatConfidence(value) {
-  return Number.isFinite(value) ? value.toFixed(2) : '0.00'
-}
-
-function getIntentInferenceMeta(row) {
-  if (!row || typeof row !== 'object') return null
-  const value = row.intentInference
-  if (!value || typeof value !== 'object') return null
-
-  return {
-    inferenceFallbackReason: typeof value.inferenceFallbackReason === 'string'
-      ? value.inferenceFallbackReason.trim()
-      : '',
-    inferenceModel: typeof value.inferenceModel === 'string'
-      ? value.inferenceModel.trim()
-      : '',
-    inferenceLatencyMs: Number.isFinite(value.inferenceLatencyMs)
-      ? Math.max(0, Math.floor(value.inferenceLatencyMs))
-      : 0,
-  }
+  return '-'
 }
 </script>
 
 <template>
   <section class="page">
-    <header class="section-head">
-      <div class="page-header">
-        <p class="eyebrow">Observability</p>
-        <h2>Decision Logs</h2>
-      </div>
-      <p class="muted">Use reasons to explain why an ad was served, blocked, or no-filled.</p>
+    <header class="page-header">
+      <p class="eyebrow">Logs</p>
+      <h2>Decision Logs</h2>
+      <p class="subtitle">Filter by result and placement.</p>
     </header>
 
     <article class="panel">
       <div class="panel-toolbar">
-        <h3>Decision Records</h3>
-        <button class="button" type="button" :disabled="isLoading" @click="refreshDecisionLogs">
+        <h3>Requests</h3>
+        <button class="button" type="button" :disabled="isLoading" @click="refreshLogs">
           {{ isLoading ? 'Refreshing...' : 'Refresh' }}
         </button>
       </div>
@@ -145,63 +87,25 @@ function getIntentInferenceMeta(row) {
       <table class="table">
         <thead>
           <tr>
+            <th>Time</th>
             <th>Request ID</th>
             <th>Placement</th>
-            <th>Status</th>
-            <th>Input</th>
-            <th>Entities</th>
-            <th>Ads</th>
-            <th>Created At</th>
+            <th>Result</th>
+            <th>Reason</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="row in filteredLogs" :key="row.id || row.requestId">
-            <td>{{ row.requestId }}</td>
-            <td>{{ row.placementId }}</td>
+            <td>{{ row.createdAt || '-' }}</td>
+            <td>{{ row.requestId || '-' }}</td>
+            <td>{{ row.placementId || '-' }}</td>
             <td>
-              <span :class="resultPillClass(row.result)">{{ row.result }}</span>
-              <p class="text-detail">{{ getDisplayReason(row) }}</p>
-              <p class="text-detail">intent {{ formatIntentScore(row.intentScore) }}</p>
-              <template v-if="getIntentInferenceMeta(row)">
-                <p class="text-detail">
-                  infer {{ getIntentInferenceMeta(row).inferenceModel || '-' }} ·
-                  {{ getIntentInferenceMeta(row).inferenceLatencyMs }}ms
-                </p>
-                <p class="text-detail">
-                  fallback {{ getIntentInferenceMeta(row).inferenceFallbackReason || 'none' }}
-                </p>
-              </template>
+              <span :class="resultPillClass(row.result)">{{ row.result || '-' }}</span>
             </td>
-            <td>
-              <p class="text-detail"><strong>Q:</strong> {{ getInputQuery(row) }}</p>
-              <p class="text-detail">A: {{ getInputAnswer(row) }}</p>
-            </td>
-            <td>
-              <p v-if="getEntityItems(row).length === 0" class="text-detail">none</p>
-              <div v-else>
-                <p
-                  v-for="(entity, idx) in getEntityItems(row)"
-                  :key="`${row.requestId}_entity_${idx}`"
-                  class="text-detail"
-                >
-                  <strong>{{ entity.entityText || entity.normalizedText || '-' }}</strong>
-                  <span class="muted"> ({{ entity.entityType || 'unknown' }}, {{ formatConfidence(entity.confidence) }})</span>
-                </p>
-              </div>
-            </td>
-            <td>
-              <p v-if="getAds(row).length === 0" class="text-detail">none</p>
-              <div v-else>
-                <div
-                  v-for="(ad, idx) in getAds(row)"
-                  :key="`${row.requestId}_ad_${idx}`"
-                >
-                  <p class="text-detail"><strong>{{ clipText(ad.title || ad.entityText || '-', 64) }}</strong></p>
-                  <p class="text-detail muted">{{ clipText(ad.targetUrl || '-', 72) }}</p>
-                </div>
-              </div>
-            </td>
-            <td>{{ row.createdAt }}</td>
+            <td>{{ displayReason(row) }}</td>
+          </tr>
+          <tr v-if="filteredLogs.length === 0">
+            <td colspan="5" class="muted">No logs found.</td>
           </tr>
         </tbody>
       </table>

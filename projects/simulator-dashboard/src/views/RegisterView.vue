@@ -29,7 +29,7 @@ async function handleRegister() {
       appId: draft.appId,
     })
     await hydrateDashboardState()
-    await router.replace('/usage')
+    await router.replace('/home')
   } catch (error) {
     submitError.value = error instanceof Error ? error.message : 'Register failed'
   }

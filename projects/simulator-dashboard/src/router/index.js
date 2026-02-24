@@ -1,22 +1,17 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-import { isFeatureEnabled } from '../config/feature-flags'
 import { authState, hydrateAuthSession } from '../state/auth-state'
-import AgentOnboardingView from '../views/AgentOnboardingView.vue'
 import ApiKeysView from '../views/ApiKeysView.vue'
 import DecisionLogsView from '../views/DecisionLogsView.vue'
-import IntegrationsView from '../views/IntegrationsView.vue'
-import InternalResetView from '../views/InternalResetView.vue'
+import HomeView from '../views/HomeView.vue'
 import LoginView from '../views/LoginView.vue'
-import OverviewView from '../views/OverviewView.vue'
-import QuickStartView from '../views/QuickStartView.vue'
+import PlacementsView from '../views/PlacementsView.vue'
 import RegisterView from '../views/RegisterView.vue'
-import UsageView from '../views/UsageView.vue'
 
 const routes = [
   {
     path: '/',
-    redirect: '/overview',
+    redirect: '/home',
   },
   {
     path: '/login',
@@ -31,20 +26,10 @@ const routes = [
     meta: { publicRoute: true },
   },
   {
-    path: '/overview',
-    name: 'overview',
-    component: OverviewView,
-    meta: { navLabel: 'Overview', requiresAuth: true },
-  },
-  {
     path: '/home',
-    redirect: '/overview',
-  },
-  {
-    path: '/quick-start',
-    name: 'quickStart',
-    component: QuickStartView,
-    meta: { navLabel: 'Quick Start', requiresAuth: true },
+    name: 'home',
+    component: HomeView,
+    meta: { navLabel: 'Home', requiresAuth: true },
   },
   {
     path: '/api-keys',
@@ -53,44 +38,22 @@ const routes = [
     meta: { navLabel: 'API Keys', requiresAuth: true },
   },
   {
-    path: '/integrations',
-    name: 'integrations',
-    component: IntegrationsView,
-    meta: { navLabel: 'Integrations', requiresAuth: true },
+    path: '/config',
+    name: 'config',
+    component: PlacementsView,
+    meta: { navLabel: 'Config', requiresAuth: true },
   },
   {
-    path: '/usage',
-    name: 'usage',
-    component: UsageView,
-    meta: { navLabel: 'Usage', requiresAuth: true },
-  },
-  {
-    path: '/agent-onboarding',
-    name: 'agentOnboarding',
-    component: AgentOnboardingView,
-    meta: { navLabel: 'Agent Onboarding', requiresAuth: true },
-  },
-  {
-    path: '/decision-logs',
-    name: 'decisionLogs',
+    path: '/logs',
+    name: 'logs',
     component: DecisionLogsView,
-    meta: { navLabel: 'Decision Logs', requiresAuth: true },
+    meta: { navLabel: 'Logs', requiresAuth: true },
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    redirect: '/home',
   },
 ]
-
-if (isFeatureEnabled('enableInternalReset')) {
-  routes.push({
-    path: '/internal-reset',
-    name: 'internalReset',
-    component: InternalResetView,
-    meta: { navLabel: 'Internal Reset', requiresAuth: true },
-  })
-}
-
-routes.push({
-  path: '/:pathMatch(.*)*',
-  redirect: '/overview',
-})
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -106,10 +69,10 @@ router.beforeEach(async (to) => {
   const requiresAuth = Boolean(to.meta?.requiresAuth)
 
   if (isPublic && authState.authenticated) {
-    return '/overview'
+    return '/home'
   }
   if (requiresAuth && !authState.authenticated) {
-    const redirectTarget = String(to.fullPath || '/overview')
+    const redirectTarget = String(to.fullPath || '/home')
     return {
       path: '/login',
       query: { redirect: redirectTarget },

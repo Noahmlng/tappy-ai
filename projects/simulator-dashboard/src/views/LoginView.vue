@@ -24,7 +24,7 @@ async function handleLogin() {
       password: draft.password,
     })
     await hydrateDashboardState()
-    const redirect = String(route.query.redirect || '/usage')
+    const redirect = String(route.query.redirect || '/home')
     await router.replace(redirect)
   } catch (error) {
     submitError.value = error instanceof Error ? error.message : 'Login failed'
@@ -38,7 +38,7 @@ async function handleLogin() {
       <p class="eyebrow">Customer Access</p>
       <h2>Sign In</h2>
       <p class="subtitle">
-        Sign in to view your account-scoped usage and settled revenue.
+        Sign in to manage revenue, keys, config, and logs.
       </p>
     </header>
 
