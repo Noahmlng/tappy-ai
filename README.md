@@ -214,6 +214,7 @@
 - 项目结构：`docs/other/project-structure.md`
 - Placement 框架：`docs/design/ai-assistant-placement-framework.md`
 - Gateway 设计：`projects/ad-aggregation-platform/docs/local-simulator-gateway.md`
+- SDK Quick Start（V2）：`projects/ad-aggregation-platform/docs/sdk-quick-start-v2.md`
 - SDK 设置草案：`projects/ad-aggregation-platform/archive/temporary-docs/sdk-placement-settings-draft.md`
 - Chatbot SDK 接入设计：`projects/simulator-chatbot/docs/sdk-integration-design.md`
 
