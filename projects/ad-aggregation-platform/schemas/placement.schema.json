@@ -39,6 +39,40 @@
         "maxPerUserPerDay": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": false
+    },
+    "bidders": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["networkId"],
+        "properties": {
+          "networkId": { "type": "string", "minLength": 1 },
+          "endpoint": { "type": "string" },
+          "timeoutMs": { "type": "integer", "minimum": 1 },
+          "enabled": { "type": "boolean" },
+          "policyWeight": { "type": "number" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "fallback": {
+      "type": "object",
+      "properties": {
+        "store": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "floorPrice": { "type": "number", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "maxFanout": { "type": "integer", "minimum": 1 },
+    "globalTimeoutMs": { "type": "integer", "minimum": 1 },
+    "routingMode": {
+      "type": "string"
     }
   },
   "additionalProperties": false

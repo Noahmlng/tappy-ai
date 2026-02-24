@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-network.local/schemas/v2-bid-response.schema.json",
+  "title": "V2 Bid Response",
+  "type": "object",
+  "required": ["requestId", "timestamp", "status", "message", "data"],
+  "properties": {
+    "requestId": { "type": "string", "minLength": 1 },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "status": { "type": "string", "enum": ["success"] },
+    "message": { "type": "string", "minLength": 1 },
+    "data": {
+      "type": "object",
+      "required": ["bid"],
+      "properties": {
+        "bid": {
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": [
+                "price",
+                "advertiser",
+                "headline",
+                "description",
+                "cta_text",
+                "url",
+                "dsp",
+                "bidId",
+                "placement",
+                "variant"
+              ],
+              "properties": {
+                "price": { "type": "number", "minimum": 0 },
+                "advertiser": { "type": "string", "minLength": 1 },
+                "headline": { "type": "string", "minLength": 1 },
+                "description": { "type": "string" },
+                "cta_text": { "type": "string", "minLength": 1 },
+                "url": { "type": "string", "format": "uri" },
+                "image_url": { "type": "string", "format": "uri" },
+                "dsp": { "type": "string", "minLength": 1 },
+                "bidId": { "type": "string", "minLength": 1 },
+                "placement": { "type": "string", "minLength": 1 },
+                "variant": { "type": "string", "minLength": 1 }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

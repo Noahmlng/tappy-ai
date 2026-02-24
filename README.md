@@ -55,25 +55,27 @@
 - `placementKey`: `next_step.intent_card`
 - `surface`: `FOLLOW_UP`
 - `format`: `CARD`
-- 默认状态：`enabled=false`
+- 默认状态：`enabled=true`
 - 用途：在回答后 Next-Step 区域给出意图驱动的推荐卡片。
 
 ### 接入方式（按广告位）
 
 1. `attach.post_answer_render`（`chat_inline_v1`）
 - Chatbot 在回答完成后触发：`runAttachAdsFlow()`。
-- 前端请求：`POST /api/v1/sdk/evaluate`（Attach payload）。
-- Gateway 落地为 `answer_completed` 事件并走 `evaluateRequest()`。
-- Runtime 执行 `runAdsRetrievalPipeline()`，返回 `decision + ads[]`。
+- 前端通过 SDK 单入口 `requestBid()` 触发。
+- 前端请求：`POST /api/v2/bid`（统一 messages payload）。
+- Gateway 落地为 `v2_bid_request` 事件并走统一单 Bid 决策。
+- Runtime 并发 bidder 报价并返回单一 winner bid。
 - 前端落到 `msg.attachAdSlot` 并渲染 Sponsored links；同时上报 `POST /api/v1/sdk/events`。
 
 2. `next_step.intent_card`（`chat_followup_v1`）
 - Chatbot 触发：`runNextStepIntentCardFlow()`（事件：`followup_generation`）。
-- 前端请求：`POST /api/v1/sdk/evaluate`（Next-Step payload，带 `context.intent_*`）。
-- Gateway 先做意图推理 `inferIntentWithLlm()`，再进入 `evaluateRequest()`。
-- Runtime 返回后由 Gateway 组装 `next-step-intent-card-response`。
+- 前端通过 SDK 单入口 `requestBid()` 触发。
+- 前端请求：`POST /api/v2/bid`（统一 messages payload）。
+- Gateway 统一走单 Bid 聚合，必要时触发 Store 兜底。
+- Runtime 返回 winner bid 后由 Gateway 映射为 placement 输出。
 - 前端落到 `msg.nextStepAdSlot` 并渲染 IntentCard；同时上报 `POST /api/v1/sdk/events`。
-- 当前状态：前端开关 `ENABLE_NEXT_STEP_FLOW=false`，且默认 placement 也为 `enabled=false`，因此默认联调中不主动展示。
+- 兼容说明：`/api/v1/sdk/evaluate` 已降级为迁移提示壳，建议统一迁移至 `/api/v2/bid`。
 
 ### 契约与配置入口
 
@@ -81,6 +83,9 @@
 - 通用请求/响应：
   - `projects/ad-aggregation-platform/schemas/ad-request.schema.json`
   - `projects/ad-aggregation-platform/schemas/ad-response.schema.json`
+- V2 单 Bid 请求/响应：
+  - `projects/ad-aggregation-platform/schemas/v2-bid-request.schema.json`
+  - `projects/ad-aggregation-platform/schemas/v2-bid-response.schema.json`
 - Next-Step 专用请求/响应：
   - `projects/ad-aggregation-platform/schemas/next-step-intent-card-request.schema.json`
   - `projects/ad-aggregation-platform/schemas/next-step-intent-card-response.schema.json`

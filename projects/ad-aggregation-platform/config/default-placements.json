@@ -15,12 +15,36 @@
     "frequencyCap": {
       "maxPerSession": 0,
       "maxPerUserPerDay": 0
-    }
+    },
+    "bidders": [
+      {
+        "networkId": "partnerstack",
+        "endpoint": "",
+        "timeoutMs": 800,
+        "enabled": true,
+        "policyWeight": 0
+      },
+      {
+        "networkId": "cj",
+        "endpoint": "",
+        "timeoutMs": 800,
+        "enabled": true,
+        "policyWeight": 0
+      }
+    ],
+    "fallback": {
+      "store": {
+        "enabled": true,
+        "floorPrice": 0
+      }
+    },
+    "maxFanout": 3,
+    "globalTimeoutMs": 1200
   },
   {
     "placementId": "chat_followup_v1",
     "placementKey": "next_step.intent_card",
-    "enabled": false,
+    "enabled": true,
     "surface": "FOLLOW_UP",
     "format": "CARD",
     "trigger": {
@@ -33,6 +57,30 @@
     "frequencyCap": {
       "maxPerSession": 0,
       "maxPerUserPerDay": 0
-    }
+    },
+    "bidders": [
+      {
+        "networkId": "partnerstack",
+        "endpoint": "",
+        "timeoutMs": 800,
+        "enabled": true,
+        "policyWeight": 0.2
+      },
+      {
+        "networkId": "cj",
+        "endpoint": "",
+        "timeoutMs": 800,
+        "enabled": true,
+        "policyWeight": 0.1
+      }
+    ],
+    "fallback": {
+      "store": {
+        "enabled": true,
+        "floorPrice": 0
+      }
+    },
+    "maxFanout": 3,
+    "globalTimeoutMs": 1200
   }
 ]

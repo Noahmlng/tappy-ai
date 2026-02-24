@@ -90,7 +90,8 @@ function startGateway(port) {
     env: {
       ...process.env,
       SIMULATOR_GATEWAY_HOST: HOST,
-      SIMULATOR_GATEWAY_PORT: String(port)
+      SIMULATOR_GATEWAY_PORT: String(port),
+      SIMULATOR_RUNTIME_AUTH_REQUIRED: 'false',
     },
     stdio: ['ignore', 'pipe', 'pipe']
   })
@@ -136,6 +137,56 @@ function buildAttachMvpPayload() {
   }
 }
 
+function buildV2BidPayload(attachPayload) {
+  return {
+    userId: String(attachPayload?.sessionId || ''),
+    chatId: String(attachPayload?.sessionId || ''),
+    placementId: 'chat_inline_v1',
+    messages: [
+      { role: 'user', content: String(attachPayload?.query || '') },
+      { role: 'assistant', content: String(attachPayload?.answerText || '') },
+    ],
+  }
+}
+
+async function registerDashboardHeaders(baseUrl) {
+  const now = Date.now()
+  const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+    method: 'POST',
+    body: {
+      email: `closed_loop_${now}@example.com`,
+      password: 'pass12345',
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    },
+  })
+  assert.equal(register.status, 201, `dashboard register failed: ${JSON.stringify(register.payload)}`)
+  const accessToken = String(register.payload?.session?.accessToken || '').trim()
+  assert.equal(Boolean(accessToken), true, 'dashboard register should return access token')
+  return {
+    Authorization: `Bearer ${accessToken}`,
+  }
+}
+
+async function issueRuntimeApiKeyHeaders(baseUrl, dashboardHeaders) {
+  const created = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
+    method: 'POST',
+    headers: dashboardHeaders,
+    body: {
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+      environment: 'staging',
+      name: `runtime-${Date.now()}`,
+    },
+  })
+  assert.equal(created.status, 201, `issue runtime key failed: ${JSON.stringify(created.payload)}`)
+  const secret = String(created.payload?.secret || '').trim()
+  assert.equal(Boolean(secret), true, 'runtime key create should return secret')
+  return {
+    Authorization: `Bearer ${secret}`,
+  }
+}
+
 function buildArchiveRecord({ requestId, delivery, sdkEvent }) {
   const archiveStatus = 'partial_pending'
 
@@ -161,11 +212,16 @@ test('e2e: minimal closed-loop request -> delivery -> event -> archive', async (
   const baseUrl = `http://${HOST}:${port}`
   const gateway = startGateway(port)
   let placementPatched = false
+  let dashboardHeaders = {}
+  let runtimeHeaders = {}
 
   try {
     await waitForGateway(baseUrl)
+    dashboardHeaders = await registerDashboardHeaders(baseUrl)
+    runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, dashboardHeaders)
     const patchResponse = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_inline_v1', {
       method: 'PUT',
+      headers: dashboardHeaders,
       body: {
         enabled: false
       }
@@ -174,31 +230,34 @@ test('e2e: minimal closed-loop request -> delivery -> event -> archive', async (
     placementPatched = true
 
     const requestPayload = buildAttachMvpPayload()
+    const bidPayload = buildV2BidPayload(requestPayload)
 
-    const deliveryResponse = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
+    const deliveryResponse = await requestJson(baseUrl, '/api/v2/bid', {
       method: 'POST',
-      body: requestPayload
+      headers: runtimeHeaders,
+      body: bidPayload
     })
 
     assert.equal(deliveryResponse.ok, true, `delivery request failed: ${JSON.stringify(deliveryResponse.payload)}`)
 
     const requestId = String(deliveryResponse.payload?.requestId || '').trim()
-    const deliveryResult = String(deliveryResponse.payload?.decision?.result || '').trim()
+    const deliveryMessage = String(deliveryResponse.payload?.message || '').trim()
 
     assert.equal(requestId.length > 0, true, 'fail condition: request stage must return non-empty requestId')
     assert.equal(
-      deliveryResult,
-      'blocked',
-      `fail condition: delivery.result must be blocked under forced placement disable, got ${deliveryResult || 'empty'}`
+      deliveryMessage,
+      'No bid',
+      `fail condition: delivery message must be No bid under forced placement disable, got ${deliveryMessage || 'empty'}`
     )
     assert.equal(
-      ['blocked', 'served', 'no_fill', 'error'].includes(deliveryResult),
+      ['Bid successful', 'No bid'].includes(deliveryMessage),
       true,
-      `fail condition: delivery.result must be one of blocked/served/no_fill/error, got ${deliveryResult || 'empty'}`
+      `fail condition: delivery message must be one of Bid successful/No bid, got ${deliveryMessage || 'empty'}`
     )
 
     const eventResponse = await requestJson(baseUrl, '/api/v1/sdk/events', {
       method: 'POST',
+      headers: runtimeHeaders,
       body: {
         ...requestPayload,
         requestId
@@ -209,8 +268,12 @@ test('e2e: minimal closed-loop request -> delivery -> event -> archive', async (
     assert.equal(eventResponse.payload?.ok, true, 'fail condition: event stage must return { ok: true }')
 
     const [decisionsResponse, eventsResponse] = await Promise.all([
-      requestJson(baseUrl, `/api/v1/dashboard/decisions?requestId=${encodeURIComponent(requestId)}`),
-      requestJson(baseUrl, `/api/v1/dashboard/events?requestId=${encodeURIComponent(requestId)}`)
+      requestJson(baseUrl, `/api/v1/dashboard/decisions?requestId=${encodeURIComponent(requestId)}`, {
+        headers: dashboardHeaders,
+      }),
+      requestJson(baseUrl, `/api/v1/dashboard/events?requestId=${encodeURIComponent(requestId)}`, {
+        headers: dashboardHeaders,
+      }),
     ])
 
     assert.equal(decisionsResponse.ok, true, 'fail condition: dashboard decisions query must succeed')
@@ -240,6 +303,7 @@ test('e2e: minimal closed-loop request -> delivery -> event -> archive', async (
     if (placementPatched) {
       await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_inline_v1', {
         method: 'PUT',
+        headers: dashboardHeaders,
         body: {
           enabled: true
         }

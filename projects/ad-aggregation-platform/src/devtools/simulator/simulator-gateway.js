@@ -5,7 +5,7 @@ import http from 'node:http'
 import { createHash } from 'node:crypto'
 
 import defaultPlacements from '../../../config/default-placements.json' with { type: 'json' }
-import { runAdsRetrievalPipeline } from '../../runtime/index.js'
+import { runAdsRetrievalPipeline, runBidAggregationPipeline } from '../../runtime/index.js'
 import { getAllNetworkHealth } from '../../runtime/network-health-state.js'
 import { inferIntentWithLlm } from '../../providers/intent/index.js'
 import {
@@ -119,6 +119,19 @@ const EVENT_SURFACE_MAP = {
 const ATTACH_MVP_PLACEMENT_KEY = 'attach.post_answer_render'
 const ATTACH_MVP_EVENT = 'answer_completed'
 const NEXT_STEP_INTENT_CARD_PLACEMENT_KEY = 'next_step.intent_card'
+const V2_BID_EVENT = 'v2_bid_request'
+const V2_BID_ALLOWED_FIELDS = new Set([
+  'userId',
+  'chatId',
+  'placementId',
+  'messages',
+])
+const V2_BID_MESSAGE_ALLOWED_FIELDS = new Set([
+  'role',
+  'content',
+  'timestamp',
+])
+const V2_BID_MESSAGE_ROLES = new Set(['user', 'assistant', 'system'])
 const MANAGED_ROUTING_MODE = 'managed_mediation'
 const NEXT_STEP_INTENT_CARD_EVENTS = new Set(['followup_generation', 'follow_up_generation'])
 const POSTBACK_EVENT_TYPES = new Set(['postback'])
@@ -1722,6 +1735,58 @@ function requiredNonEmptyString(value, fieldName) {
   return text
 }
 
+function normalizeV2BidMessages(value) {
+  if (!Array.isArray(value)) {
+    throw new Error('messages must be an array.')
+  }
+
+  const messages = value
+    .map((item, index) => {
+      if (!item || typeof item !== 'object') {
+        throw new Error(`messages[${index}] must be an object.`)
+      }
+      validateNoExtraFields(item, V2_BID_MESSAGE_ALLOWED_FIELDS, `messages[${index}]`)
+      const role = String(item.role || '').trim().toLowerCase()
+      if (!V2_BID_MESSAGE_ROLES.has(role)) {
+        throw new Error(`messages[${index}].role must be user, assistant, or system.`)
+      }
+      const content = requiredNonEmptyString(item.content, `messages[${index}].content`)
+      const timestamp = String(item.timestamp || '').trim()
+      if (timestamp && !Number.isFinite(Date.parse(timestamp))) {
+        throw new Error(`messages[${index}].timestamp must be a valid ISO-8601 datetime.`)
+      }
+      return {
+        role,
+        content,
+        ...(timestamp ? { timestamp: new Date(timestamp).toISOString() } : {}),
+      }
+    })
+    .filter(Boolean)
+
+  if (messages.length === 0) {
+    throw new Error('messages must contain at least one valid message.')
+  }
+
+  return messages
+}
+
+function normalizeV2BidPayload(payload, routeName) {
+  const input = payload && typeof payload === 'object' ? payload : {}
+  validateNoExtraFields(input, V2_BID_ALLOWED_FIELDS, routeName)
+
+  const userId = requiredNonEmptyString(input.userId, 'userId')
+  const chatId = requiredNonEmptyString(input.chatId, 'chatId')
+  const placementId = requiredNonEmptyString(input.placementId, 'placementId')
+  const messages = normalizeV2BidMessages(input.messages)
+
+  return {
+    userId,
+    chatId,
+    placementId,
+    messages,
+  }
+}
+
 function normalizeAttachEventKind(value) {
   const kind = String(value || '').trim().toLowerCase()
   if (!kind) return 'impression'
@@ -2314,6 +2379,64 @@ function layerFromPlacementKey(placementKey = '') {
   return 'unknown'
 }
 
+function normalizeBidderConfig(value) {
+  const input = value && typeof value === 'object' ? value : {}
+  const networkId = String(input.networkId || input.network_id || '').trim().toLowerCase()
+  if (!networkId) return null
+
+  return {
+    networkId,
+    endpoint: String(input.endpoint || '').trim(),
+    timeoutMs: toPositiveInteger(input.timeoutMs ?? input.timeout_ms, 800),
+    enabled: input.enabled !== false,
+    policyWeight: clampNumber(input.policyWeight ?? input.policy_weight, -1000, 1000, 0),
+  }
+}
+
+function normalizePlacementBidders(value = []) {
+  const rows = Array.isArray(value) ? value : []
+  const dedupe = new Set()
+  const normalized = []
+
+  for (const row of rows) {
+    const bidder = normalizeBidderConfig(row)
+    if (!bidder) continue
+    if (dedupe.has(bidder.networkId)) continue
+    dedupe.add(bidder.networkId)
+    normalized.push(bidder)
+  }
+
+  if (normalized.length > 0) return normalized
+
+  return [
+    {
+      networkId: 'partnerstack',
+      endpoint: '',
+      timeoutMs: 800,
+      enabled: true,
+      policyWeight: 0,
+    },
+    {
+      networkId: 'cj',
+      endpoint: '',
+      timeoutMs: 800,
+      enabled: true,
+      policyWeight: 0,
+    },
+  ]
+}
+
+function normalizePlacementFallback(value) {
+  const input = value && typeof value === 'object' ? value : {}
+  const store = input.store && typeof input.store === 'object' ? input.store : {}
+  return {
+    store: {
+      enabled: store.enabled === true,
+      floorPrice: clampNumber(store.floorPrice, 0, Number.MAX_SAFE_INTEGER, 0),
+    },
+  }
+}
+
 function normalizePlacement(raw) {
   const placementId = String(raw?.placementId || '').trim()
   const placementKey = String(raw?.placementKey || PLACEMENT_KEY_BY_ID[placementId] || '').trim()
@@ -2338,6 +2461,10 @@ function normalizePlacement(raw) {
       maxPerSession: toPositiveInteger(raw?.frequencyCap?.maxPerSession, 0),
       maxPerUserPerDay: toPositiveInteger(raw?.frequencyCap?.maxPerUserPerDay, 0),
     },
+    bidders: normalizePlacementBidders(raw?.bidders),
+    fallback: normalizePlacementFallback(raw?.fallback),
+    maxFanout: toPositiveInteger(raw?.maxFanout, 3),
+    globalTimeoutMs: toPositiveInteger(raw?.globalTimeoutMs, 1200),
   }
 }
 
@@ -4132,6 +4259,223 @@ function buildRuntimeAdRequest(request, placement, intentScore, requestId = '') 
   }
 }
 
+function deriveBidMessageContext(messages = []) {
+  const rows = Array.isArray(messages) ? messages : []
+  let query = ''
+  let answerText = ''
+
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const row = rows[index]
+    const role = String(row?.role || '').trim().toLowerCase()
+    const content = String(row?.content || '').trim()
+    if (!content) continue
+    if (!query && role === 'user') {
+      query = content
+    }
+    if (!answerText && role === 'assistant') {
+      answerText = content
+    }
+    if (query && answerText) break
+  }
+
+  return {
+    query,
+    answerText,
+    recentTurns: rows.slice(-8),
+  }
+}
+
+function toDecisionAdFromBid(bid) {
+  if (!bid || typeof bid !== 'object') return null
+  const adId = String(bid.bidId || '').trim() || String(bid.url || '').trim()
+  if (!adId) return null
+
+  return {
+    adId,
+    title: String(bid.headline || '').trim(),
+    description: String(bid.description || '').trim(),
+    targetUrl: String(bid.url || '').trim(),
+    disclosure: 'Sponsored',
+    sourceNetwork: String(bid.dsp || '').trim(),
+    tracking: {
+      clickUrl: String(bid.url || '').trim(),
+    },
+    bidValue: clampNumber(bid.price, 0, Number.MAX_SAFE_INTEGER, 0),
+  }
+}
+
+async function evaluateV2BidRequest(payload) {
+  const request = payload && typeof payload === 'object' ? payload : {}
+  request.appId = String(request.appId || DEFAULT_CONTROL_PLANE_APP_ID).trim()
+  request.accountId = normalizeControlPlaneAccountId(
+    request.accountId || resolveAccountIdForApp(request.appId),
+    '',
+  )
+  const requestId = createId('adreq')
+  const timestamp = nowIso()
+  const placement = pickPlacementForRequest({
+    appId: request.appId,
+    accountId: request.accountId,
+    placementId: request.placementId,
+  })
+  const messageContext = deriveBidMessageContext(request.messages)
+
+  const decisionRequest = {
+    appId: request.appId,
+    accountId: request.accountId,
+    sessionId: request.chatId,
+    userId: request.userId,
+    turnId: '',
+    event: V2_BID_EVENT,
+    placementId: request.placementId,
+    placementKey: String(placement?.placementKey || '').trim(),
+    context: {
+      query: messageContext.query,
+      answerText: messageContext.answerText,
+      locale: 'en-US',
+      intentScore: 0,
+    },
+  }
+
+  const blockedTopic = matchBlockedTopic(
+    {
+      query: messageContext.query,
+      answerText: messageContext.answerText,
+    },
+    normalizeStringList(placement?.trigger?.blockedTopics),
+  )
+  if (blockedTopic) {
+    const decision = createDecision('blocked', `blocked_topic:${blockedTopic}`, 0)
+    await recordDecisionForRequest({
+      request: decisionRequest,
+      placement,
+      requestId,
+      decision,
+      runtime: {
+        bidV2: true,
+        reason: 'blocked_topic',
+      },
+      ads: [],
+    })
+    persistState(state)
+    return {
+      requestId,
+      timestamp,
+      status: 'success',
+      message: 'No bid',
+      data: {
+        bid: null,
+      },
+      diagnostics: {
+        reason: 'blocked_topic',
+      },
+    }
+  }
+
+  if (!placement || placement.enabled === false) {
+    const decision = createDecision('no_fill', 'placement_unavailable', 0)
+    await recordDecisionForRequest({
+      request: decisionRequest,
+      placement: placement || null,
+      requestId,
+      decision,
+      runtime: {
+        bidV2: true,
+        reason: 'placement_unavailable',
+      },
+      ads: [],
+    })
+    persistState(state)
+    return {
+      requestId,
+      timestamp,
+      status: 'success',
+      message: 'No bid',
+      data: {
+        bid: null,
+      },
+      diagnostics: {
+        reason: 'placement_unavailable',
+      },
+    }
+  }
+
+  const aggregation = await runBidAggregationPipeline({
+    requestId,
+    appId: request.appId,
+    accountId: request.accountId,
+    userId: request.userId,
+    chatId: request.chatId,
+    placementId: placement.placementId,
+    placement,
+    messages: request.messages,
+    locale: 'en-US',
+  })
+
+  const winnerBid = aggregation?.winnerBid && typeof aggregation.winnerBid === 'object'
+    ? aggregation.winnerBid
+    : null
+  const decision = winnerBid
+    ? createDecision('served', 'runtime_eligible', 0)
+    : createDecision('no_fill', 'runtime_no_bid', 0)
+  const runtimeDebug = {
+    networkErrors: Array.isArray(aggregation?.diagnostics?.bidders)
+      ? aggregation.diagnostics.bidders
+        .filter((item) => item?.ok === false)
+        .map((item) => ({
+          network: String(item.networkId || '').trim(),
+          errorCode: item?.timeout ? 'timeout' : 'error',
+          message: String(item.error || 'bidder_failed'),
+        }))
+      : [],
+    snapshotUsage: {},
+    networkHealth: getAllNetworkHealth(),
+  }
+  recordRuntimeNetworkStats(decision.result, runtimeDebug, {
+    requestId,
+    appId: request.appId,
+    accountId: request.accountId,
+    placementId: placement.placementId,
+  })
+  const decisionAd = winnerBid ? toDecisionAdFromBid(winnerBid) : null
+
+  await recordDecisionForRequest({
+    request: decisionRequest,
+    placement,
+    requestId,
+    decision,
+    runtime: {
+      bidV2: true,
+      diagnostics: aggregation?.diagnostics || {},
+      metrics: {
+        bid_latency_ms: toPositiveInteger(aggregation?.diagnostics?.bidLatencyMs, 0),
+        fanout_count: toPositiveInteger(aggregation?.diagnostics?.fanoutCount, 0),
+        timeout_rate: (() => {
+          const fanout = toPositiveInteger(aggregation?.diagnostics?.fanoutCount, 0)
+          const timeoutCount = toPositiveInteger(aggregation?.diagnostics?.timeoutCount, 0)
+          return fanout > 0 ? Number((timeoutCount / fanout).toFixed(4)) : 0
+        })(),
+        no_bid_rate: winnerBid ? 0 : 1,
+        store_fallback_rate: aggregation?.diagnostics?.storeFallbackUsed ? 1 : 0,
+        winner_network_share: winnerBid ? String(winnerBid.dsp || '') : '',
+      },
+    },
+    ads: decisionAd ? [decisionAd] : [],
+  })
+  persistState(state)
+
+  return {
+    requestId,
+    timestamp,
+    status: 'success',
+    message: winnerBid ? 'Bid successful' : 'No bid',
+    data: {
+      bid: winnerBid,
+    },
+    diagnostics: aggregation?.diagnostics || {},
+  }
+}
+
 function summarizeRuntimeDebug(debug) {
   if (!debug || typeof debug !== 'object') return {}
   const entityItems = Array.isArray(debug.entities)
@@ -4672,6 +5016,10 @@ function applyPlacementPatch(placement, patch, configVersion) {
   placement.placementKey = next.placementKey
   placement.trigger = next.trigger
   placement.frequencyCap = next.frequencyCap
+  placement.bidders = next.bidders
+  placement.fallback = next.fallback
+  placement.maxFanout = next.maxFanout
+  placement.globalTimeoutMs = next.globalTimeoutMs
 
   return placement
 }
@@ -7292,72 +7640,14 @@ async function requestHandler(req, res) {
     }
   }
 
-  if (pathname === '/api/v1/sdk/evaluate' && req.method === 'POST') {
+  if (pathname === '/api/v2/bid' && req.method === 'POST') {
     try {
       const payload = await readJsonBody(req)
-      if (isNextStepIntentCardPayload(payload)) {
-        const request = normalizeNextStepIntentCardPayload(payload, 'sdk/evaluate')
-        const auth = authorizeRuntimeCredential(req, {
-          operation: 'sdk_evaluate',
-          requiredScope: 'sdkEvaluate',
-          placementId: request.placementId,
-        })
-        if (!auth.ok) {
-          sendJson(res, auth.status, {
-            error: auth.error,
-          })
-          return
-        }
-        applyRuntimeCredentialScope(request, auth)
-
-        const inferenceStartedAt = Date.now()
-        const { inference, resolvedContext } = await resolveIntentInferenceForNextStep(request)
-        const inferenceLatencyMs = Math.max(0, Date.now() - inferenceStartedAt)
-        const result = await evaluateRequest({
-          appId: request.appId,
-          accountId: request.accountId,
-          sessionId: request.sessionId,
-          turnId: request.turnId,
-          userId: request.userId,
-          event: request.event,
-          placementId: request.placementId,
-          placementKey: request.placementKey,
-          context: {
-            query: resolvedContext.query,
-            answerText: resolvedContext.answerText,
-            intentClass: resolvedContext.intentClass,
-            intentScore: resolvedContext.intentScore,
-            preferenceFacets: resolvedContext.preferenceFacets,
-            constraints: resolvedContext.constraints,
-            expectedRevenue: resolvedContext.expectedRevenue,
-            locale: resolvedContext.locale,
-            intentInferenceMeta: {
-              inferenceFallbackReason: String(inference?.fallbackReason || ''),
-              inferenceModel: String(inference?.model || ''),
-              inferenceLatencyMs,
-            },
-          },
-        })
-        sendJson(
-          res,
-          200,
-          buildNextStepIntentCardResponse(
-            result,
-            {
-              ...request,
-              context: resolvedContext,
-            },
-            inference,
-          ),
-        )
-        return
-      }
-
-      const request = normalizeAttachMvpPayload(payload, 'sdk/evaluate')
+      const request = normalizeV2BidPayload(payload, 'v2/bid')
       const auth = authorizeRuntimeCredential(req, {
-        operation: 'sdk_evaluate',
+        operation: 'v2_bid',
         requiredScope: 'sdkEvaluate',
-        placementId: request.placementId || 'chat_inline_v1',
+        placementId: request.placementId,
       })
       if (!auth.ok) {
         sendJson(res, auth.status, {
@@ -7365,23 +7655,89 @@ async function requestHandler(req, res) {
         })
         return
       }
-      applyRuntimeCredentialScope(request, auth)
 
-      const result = await evaluateRequest({
-        appId: request.appId,
-        accountId: request.accountId,
-        sessionId: request.sessionId,
-        turnId: request.turnId,
-        event: ATTACH_MVP_EVENT,
-        placementKey: ATTACH_MVP_PLACEMENT_KEY,
-        context: {
-          query: request.query,
-          answerText: request.answerText,
-          intentScore: request.intentScore,
-          locale: request.locale,
+      const scopedRequest = auth.mode === 'anonymous'
+        ? {
+            appId: DEFAULT_CONTROL_PLANE_APP_ID,
+            accountId: normalizeControlPlaneAccountId(resolveAccountIdForApp(DEFAULT_CONTROL_PLANE_APP_ID), ''),
+            placementId: request.placementId,
+          }
+        : applyRuntimeCredentialScope({
+            appId: DEFAULT_CONTROL_PLANE_APP_ID,
+            accountId: '',
+            placementId: request.placementId,
+          }, auth)
+
+      const result = await evaluateV2BidRequest({
+        ...request,
+        appId: scopedRequest.appId,
+        accountId: scopedRequest.accountId,
+        placementId: scopedRequest.placementId || request.placementId,
+      })
+
+      sendJson(res, 200, {
+        requestId: String(result.requestId || ''),
+        timestamp: String(result.timestamp || nowIso()),
+        status: 'success',
+        message: String(result.message || 'No bid'),
+        data: {
+          bid: result?.data?.bid || null,
         },
       })
-      sendJson(res, 200, result)
+      return
+    } catch (error) {
+      sendJson(res, 400, {
+        error: {
+          code: 'INVALID_REQUEST',
+          message: error instanceof Error ? error.message : 'Invalid request',
+        },
+      })
+      return
+    }
+  }
+
+  if (pathname === '/api/v1/sdk/evaluate' && req.method === 'POST') {
+    try {
+      const payload = await readJsonBody(req)
+      const placementIdHint = String(payload?.placementId || '').trim()
+      const auth = authorizeRuntimeCredential(req, {
+        operation: 'sdk_evaluate',
+        requiredScope: 'sdkEvaluate',
+        placementId: placementIdHint || '',
+      })
+      if (!auth.ok) {
+        sendJson(res, auth.status, {
+          error: auth.error,
+        })
+        return
+      }
+
+      const legacyCredential = auth?.credential && typeof auth.credential === 'object' ? auth.credential : {}
+      recordNetworkFlowObservation({
+        requestId: createId('legacy_eval'),
+        appId: String(legacyCredential.appId || '').trim(),
+        accountId: normalizeControlPlaneAccountId(
+          legacyCredential.accountId || legacyCredential.organizationId || resolveAccountIdForApp(legacyCredential.appId),
+          '',
+        ),
+        placementId: placementIdHint,
+        decisionResult: 'deprecated',
+        runtimeError: false,
+        failOpenApplied: true,
+        networkErrors: [],
+        snapshotUsage: {},
+        networkHealthSummary: summarizeNetworkHealthMap(getAllNetworkHealth()),
+      })
+
+      sendJson(res, 200, {
+        requestId: createId('legacy_eval'),
+        status: 'deprecated',
+        message: 'The /api/v1/sdk/evaluate endpoint is deprecated. Please migrate to POST /api/v2/bid with unified messages payload.',
+        migration: {
+          endpoint: '/api/v2/bid',
+          requiredFields: ['userId', 'chatId', 'placementId', 'messages'],
+        },
+      })
       return
     } catch (error) {
       sendJson(res, 400, {

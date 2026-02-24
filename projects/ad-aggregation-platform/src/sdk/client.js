@@ -1,6 +1,7 @@
 const DEFAULT_TIMEOUT_MS = Object.freeze({
   config: 3000,
   evaluate: 20000,
+  bid: 5000,
   events: 2500,
 })
 
@@ -73,6 +74,74 @@ function normalizeDecision(raw) {
     reason,
     reasonDetail: reasonDetail || reason,
     intentScore: toFiniteNumber(input.intentScore, 0),
+  }
+}
+
+function normalizeBidMessages(messages) {
+  if (!Array.isArray(messages)) return []
+  const allowedRoles = new Set(['user', 'assistant', 'system'])
+  return messages
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null
+      const role = cleanText(String(item.role || '').toLowerCase())
+      const content = cleanText(item.content)
+      const timestamp = cleanText(item.timestamp)
+      if (!allowedRoles.has(role) || !content) return null
+      return {
+        role,
+        content,
+        ...(timestamp ? { timestamp } : {}),
+      }
+    })
+    .filter(Boolean)
+}
+
+function deriveSignalsFromMessages(messages = []) {
+  const normalized = normalizeBidMessages(messages)
+  let query = ''
+  let answerText = ''
+  for (let index = normalized.length - 1; index >= 0; index -= 1) {
+    const row = normalized[index]
+    if (!query && row.role === 'user') query = row.content
+    if (!answerText && row.role === 'assistant') answerText = row.content
+    if (query && answerText) break
+  }
+  return {
+    normalized,
+    query,
+    answerText,
+    recentTurns: normalized.slice(-8),
+  }
+}
+
+function normalizeV2BidResponse(raw) {
+  const input = raw && typeof raw === 'object' ? raw : {}
+  const bid = input?.data?.bid && typeof input.data.bid === 'object'
+    ? input.data.bid
+    : null
+
+  return {
+    requestId: cleanText(input.requestId),
+    timestamp: cleanText(input.timestamp),
+    status: cleanText(input.status || 'success') || 'success',
+    message: cleanText(input.message || (bid ? 'Bid successful' : 'No bid')),
+    data: {
+      bid: bid
+        ? {
+            price: toFiniteNumber(bid.price, 0),
+            advertiser: cleanText(bid.advertiser),
+            headline: cleanText(bid.headline),
+            description: cleanText(bid.description),
+            cta_text: cleanText(bid.cta_text || bid.ctaText),
+            url: cleanText(bid.url),
+            image_url: cleanText(bid.image_url || bid.imageUrl),
+            dsp: cleanText(bid.dsp),
+            bidId: cleanText(bid.bidId),
+            placement: cleanText(bid.placement),
+            variant: cleanText(bid.variant),
+          }
+        : null,
+    },
   }
 }
 
@@ -169,6 +238,7 @@ export function createAdsSdkClient(options = {}) {
   const timeouts = {
     config: toFiniteNumber(options.timeouts?.config, DEFAULT_TIMEOUT_MS.config) || DEFAULT_TIMEOUT_MS.config,
     evaluate: toFiniteNumber(options.timeouts?.evaluate, DEFAULT_TIMEOUT_MS.evaluate) || DEFAULT_TIMEOUT_MS.evaluate,
+    bid: toFiniteNumber(options.timeouts?.bid, DEFAULT_TIMEOUT_MS.bid) || DEFAULT_TIMEOUT_MS.bid,
     events: toFiniteNumber(options.timeouts?.events, DEFAULT_TIMEOUT_MS.events) || DEFAULT_TIMEOUT_MS.events,
   }
 
@@ -265,6 +335,63 @@ export function createAdsSdkClient(options = {}) {
       throw error
     }
     return response
+  }
+
+  async function requestBid(input = {}, reqOptions = {}) {
+    const userId = cleanText(input.userId)
+    const chatId = cleanText(input.chatId)
+    const placementId = cleanText(input.placementId)
+    const messageSignals = deriveSignalsFromMessages(input.messages)
+
+    if (!userId) {
+      throw new Error('requestBid requires userId')
+    }
+    if (!chatId) {
+      throw new Error('requestBid requires chatId')
+    }
+    if (!placementId) {
+      throw new Error('requestBid requires placementId')
+    }
+    if (messageSignals.normalized.length === 0) {
+      throw new Error('requestBid requires at least one valid message')
+    }
+
+    const payload = {
+      userId,
+      chatId,
+      placementId,
+      messages: messageSignals.normalized,
+    }
+
+    const response = await requestJson('/v2/bid', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      timeoutMs: toFiniteNumber(reqOptions.timeoutMs, timeouts.bid),
+    })
+
+    if (!response.ok) {
+      const message = response?.payload?.error?.message || `bid_failed:${response.status}`
+      const error = new Error(message)
+      error.status = response.status
+      error.payload = response.payload
+      throw error
+    }
+
+    return {
+      ...normalizeV2BidResponse(response.payload),
+      _sdkSignals: {
+        query: messageSignals.query,
+        answerText: messageSignals.answerText,
+        recentTurns: messageSignals.recentTurns,
+      },
+      evidence: {
+        latencyMs: response.latencyMs,
+        status: response.status,
+      },
+    }
   }
 
   async function reportEvent(payload, options = {}) {
@@ -609,6 +736,7 @@ export function createAdsSdkClient(options = {}) {
   return {
     fetchConfig,
     evaluate,
+    requestBid,
     reportEvent,
     runManagedFlow,
     runAttachFlow,

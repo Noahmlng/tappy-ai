@@ -34,10 +34,11 @@ Default address:
 8. `GET /api/v1/dashboard/placement-audits`
 9. `GET /api/v1/dashboard/network-health`
 10. `GET /api/v1/sdk/config`
-11. `POST /api/v1/sdk/evaluate`
-12. `POST /api/v1/sdk/events`
-13. `POST /api/v1/intent-card/retrieve`
-14. `POST /api/v1/dev/reset`
+11. `POST /api/v2/bid`（统一 Messages -> 单 Bid 主链路）
+12. `POST /api/v1/sdk/evaluate`（兼容壳，返回迁移提示）
+13. `POST /api/v1/sdk/events`
+14. `POST /api/v1/intent-card/retrieve`
+15. `POST /api/v1/dev/reset`
 
 ## Placement Config Versioning
 
@@ -70,6 +71,57 @@ Default address:
    - `eventType=decision`（决策事件，含 `result` + `requestId`）
    - `eventType=sdk_event`（SDK 上报事件，支持携带 `requestId`）
 3. `GET /api/v1/dashboard/events` 支持按 `result/placementId/requestId/eventType` 过滤。
+
+## V2 Bid API
+
+Endpoint:
+- `POST /api/v2/bid`
+
+Request body:
+
+```json
+{
+  "userId": "user_123",
+  "chatId": "chat_123",
+  "placementId": "chat_inline_v1",
+  "messages": [
+    { "role": "user", "content": "i want to buy a camera" },
+    { "role": "assistant", "content": "what type are you looking for?" },
+    { "role": "user", "content": "for vlogging" }
+  ]
+}
+```
+
+Response body:
+
+```json
+{
+  "requestId": "adreq_xxx",
+  "timestamp": "2026-02-24T10:31:24.787Z",
+  "status": "success",
+  "message": "Bid successful",
+  "data": {
+    "bid": {
+      "price": 12.34,
+      "advertiser": "Brand",
+      "headline": "Brand Camera",
+      "description": "Compact camera for creators.",
+      "cta_text": "Learn More",
+      "url": "https://example.com",
+      "dsp": "partnerstack",
+      "bidId": "v2_bid_xxx",
+      "placement": "block",
+      "variant": "base"
+    }
+  }
+}
+```
+
+No-bid 语义：
+1. `HTTP 200`
+2. `status=success`
+3. `data.bid=null`
+4. `message=No bid`
 
 ## Network Health & Circuit Visualization
 

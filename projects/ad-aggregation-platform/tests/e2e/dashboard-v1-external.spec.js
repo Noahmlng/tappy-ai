@@ -164,7 +164,7 @@ async function registerDashboardHeaders(baseUrl, input = {}) {
   }
 }
 
-function buildExternalEvaluatePayload() {
+function buildExternalEventPayload() {
   const now = Date.now()
   return {
     appId: 'simulator-chatbot',
@@ -178,7 +178,19 @@ function buildExternalEvaluatePayload() {
   }
 }
 
-async function runExternalTurnFailOpen(baseUrl, evaluatePayload, failMode = 'none', runtimeHeaders = {}) {
+function buildExternalBidPayload(eventPayload) {
+  return {
+    userId: String(eventPayload?.sessionId || ''),
+    chatId: String(eventPayload?.sessionId || ''),
+    placementId: 'chat_inline_v1',
+    messages: [
+      { role: 'user', content: String(eventPayload?.query || '') },
+      { role: 'assistant', content: String(eventPayload?.answerText || '') },
+    ],
+  }
+}
+
+async function runExternalTurnFailOpen(baseUrl, bidPayload, eventPayload, failMode = 'none', runtimeHeaders = {}) {
   const primaryResponse = {
     ok: true,
     message: 'Primary assistant response is returned to user.',
@@ -193,34 +205,34 @@ async function runExternalTurnFailOpen(baseUrl, evaluatePayload, failMode = 'non
 
   try {
     if (failMode === 'network_error') {
-      await requestJson('http://127.0.0.1:1', '/api/v1/sdk/evaluate', {
+      await requestJson('http://127.0.0.1:1', '/api/v2/bid', {
         method: 'POST',
-        body: evaluatePayload,
+        body: bidPayload,
         timeoutMs: 300,
       })
       throw new Error('expected network failure did not happen')
     }
 
-    const evalPayload = failMode === 'invalid_payload'
-      ? { appId: evaluatePayload.appId }
-      : evaluatePayload
-    const evaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
+    const requestPayload = failMode === 'invalid_payload'
+      ? { placementId: String(bidPayload?.placementId || 'chat_inline_v1') }
+      : bidPayload
+    const bid = await requestJson(baseUrl, '/api/v2/bid', {
       method: 'POST',
       headers: runtimeHeaders,
-      body: evalPayload,
+      body: requestPayload,
     })
 
-    adResult.evaluateStatus = evaluate.status
-    if (!evaluate.ok) {
-      throw new Error(`evaluate_failed:${evaluate.status}`)
+    adResult.evaluateStatus = bid.status
+    if (!bid.ok) {
+      throw new Error(`bid_failed:${bid.status}`)
     }
 
-    adResult.requestId = String(evaluate.payload?.requestId || '')
+    adResult.requestId = String(bid.payload?.requestId || '')
     const events = await requestJson(baseUrl, '/api/v1/sdk/events', {
       method: 'POST',
       headers: runtimeHeaders,
       body: {
-        ...evaluatePayload,
+        ...eventPayload,
         requestId: adResult.requestId,
       },
     })
@@ -244,7 +256,7 @@ async function runExternalTurnFailOpen(baseUrl, evaluatePayload, failMode = 'non
   }
 }
 
-test('dashboard v1 external e2e happy path: config -> evaluate -> events', async () => {
+test('dashboard v1 external e2e happy path: config -> v2 bid -> events', async () => {
   const port = 4600 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${HOST}:${port}`
   const gateway = startGateway(port)
@@ -283,24 +295,25 @@ test('dashboard v1 external e2e happy path: config -> evaluate -> events', async
     assert.equal(String(config.payload?.placementId || ''), 'chat_inline_v1')
     assert.equal(Number.isFinite(config.payload?.configVersion), true)
 
-    const evaluatePayload = buildExternalEvaluatePayload()
-    const evaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
+    const eventPayload = buildExternalEventPayload()
+    const bidPayload = buildExternalBidPayload(eventPayload)
+    const bid = await requestJson(baseUrl, '/api/v2/bid', {
       method: 'POST',
       headers: runtimeHeaders,
-      body: evaluatePayload,
+      body: bidPayload,
     })
-    assert.equal(evaluate.ok, true, `evaluate failed: ${JSON.stringify(evaluate.payload)}`)
+    assert.equal(bid.ok, true, `v2 bid failed: ${JSON.stringify(bid.payload)}`)
 
-    const requestId = String(evaluate.payload?.requestId || '').trim()
-    const result = String(evaluate.payload?.decision?.result || '').trim()
-    assert.equal(requestId.length > 0, true, 'evaluate should return non-empty requestId')
-    assert.equal(['served', 'blocked', 'no_fill', 'error'].includes(result), true)
+    const requestId = String(bid.payload?.requestId || '').trim()
+    const message = String(bid.payload?.message || '').trim()
+    assert.equal(requestId.length > 0, true, 'v2 bid should return non-empty requestId')
+    assert.equal(['Bid successful', 'No bid'].includes(message), true)
 
     const events = await requestJson(baseUrl, '/api/v1/sdk/events', {
       method: 'POST',
       headers: runtimeHeaders,
       body: {
-        ...evaluatePayload,
+        ...eventPayload,
         requestId,
       },
     })
@@ -373,17 +386,19 @@ test('dashboard v1 external e2e fail-open: ads failure does not block primary re
 
     const resultOnInvalidPayload = await runExternalTurnFailOpen(
       baseUrl,
-      buildExternalEvaluatePayload(),
+      buildExternalBidPayload(buildExternalEventPayload()),
+      buildExternalEventPayload(),
       'invalid_payload',
       runtimeHeaders,
     )
     assert.equal(resultOnInvalidPayload.primaryResponse.ok, true, 'primary response should remain available')
-    assert.equal(resultOnInvalidPayload.failOpenApplied, true, 'fail-open should trigger on evaluate 400')
-    assert.match(resultOnInvalidPayload.adResult.error, /evaluate_failed:400/)
+    assert.equal(resultOnInvalidPayload.failOpenApplied, true, 'fail-open should trigger on v2 bid 400')
+    assert.match(resultOnInvalidPayload.adResult.error, /bid_failed:400/)
 
     const resultOnNetworkError = await runExternalTurnFailOpen(
       baseUrl,
-      buildExternalEvaluatePayload(),
+      buildExternalBidPayload(buildExternalEventPayload()),
+      buildExternalEventPayload(),
       'network_error',
       runtimeHeaders,
     )

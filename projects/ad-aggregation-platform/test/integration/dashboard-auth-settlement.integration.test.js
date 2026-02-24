@@ -391,44 +391,53 @@ test('dashboard placement config is isolated per account app', async () => {
     assert.equal(Boolean(sdkBInline), true)
     assert.equal(Boolean(sdkBInline?.enabled), true, 'sdk config for account B app should stay enabled')
 
-    const evaluateA = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
+    const evaluateA = await requestJson(baseUrl, '/api/v2/bid', {
       method: 'POST',
       headers: runtimeAHeaders,
       body: {
-        appId: 'simulator-chatbot-a',
-        accountId: 'acct_a',
-        sessionId: `sess_a_${Date.now()}`,
-        turnId: `turn_a_${Date.now()}`,
-        query: 'find product for tenant A',
-        answerText: 'seed decision',
-        intentScore: 0.95,
-        locale: 'en-US',
+        userId: 'tenant_a_user',
+        chatId: `sess_a_${Date.now()}`,
+        placementId: 'chat_inline_v1',
+        messages: [
+          { role: 'user', content: 'find product for tenant A' },
+          { role: 'assistant', content: 'seed decision' },
+        ],
       },
     })
-    assert.equal(evaluateA.ok, true, `evaluate A failed: ${JSON.stringify(evaluateA.payload)}`)
-    assert.equal(String(evaluateA.payload?.decision?.result || ''), 'blocked')
-    assert.equal(String(evaluateA.payload?.decision?.reasonDetail || ''), 'placement_disabled')
+    assert.equal(evaluateA.ok, true, `bid A failed: ${JSON.stringify(evaluateA.payload)}`)
+    assert.equal(evaluateA.payload?.status, 'success')
+    assert.equal(evaluateA.payload?.message, 'No bid')
+    assert.equal(evaluateA.payload?.data?.bid, null)
 
-    const evaluateB = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
+    const evaluateB = await requestJson(baseUrl, '/api/v2/bid', {
       method: 'POST',
       headers: runtimeBHeaders,
       body: {
-        appId: 'simulator-chatbot-b',
-        accountId: 'acct_b',
-        sessionId: `sess_b_${Date.now()}`,
-        turnId: `turn_b_${Date.now()}`,
-        query: 'find product for tenant B',
-        answerText: 'seed decision',
-        intentScore: 0.95,
-        locale: 'en-US',
+        userId: 'tenant_b_user',
+        chatId: `sess_b_${Date.now()}`,
+        placementId: 'chat_inline_v1',
+        messages: [
+          { role: 'user', content: 'find product for tenant B' },
+          { role: 'assistant', content: 'seed decision' },
+        ],
       },
     })
-    assert.equal(evaluateB.ok, true, `evaluate B failed: ${JSON.stringify(evaluateB.payload)}`)
-    assert.notEqual(
-      String(evaluateB.payload?.decision?.reasonDetail || ''),
-      'placement_disabled',
-      'account B should not inherit account A placement disable',
-    )
+    assert.equal(evaluateB.ok, true, `bid B failed: ${JSON.stringify(evaluateB.payload)}`)
+    assert.equal(evaluateB.payload?.status, 'success')
+
+    const dashboardStateA = await requestJson(baseUrl, '/api/v1/dashboard/state', {
+      headers: dashboardAHeaders,
+    })
+    assert.equal(dashboardStateA.ok, true, `dashboard state A failed: ${JSON.stringify(dashboardStateA.payload)}`)
+    const reasonDetailA = String(dashboardStateA.payload?.decisionLogs?.[0]?.reasonDetail || '')
+    assert.equal(reasonDetailA, 'placement_unavailable')
+
+    const dashboardStateB = await requestJson(baseUrl, '/api/v1/dashboard/state', {
+      headers: dashboardBHeaders,
+    })
+    assert.equal(dashboardStateB.ok, true, `dashboard state B failed: ${JSON.stringify(dashboardStateB.payload)}`)
+    const reasonDetailB = String(dashboardStateB.payload?.decisionLogs?.[0]?.reasonDetail || '')
+    assert.notEqual(reasonDetailB, 'placement_unavailable', 'account B should not inherit account A placement disable')
   } catch (error) {
     const logs = gateway.getLogs()
     const message = error instanceof Error ? error.message : String(error)
