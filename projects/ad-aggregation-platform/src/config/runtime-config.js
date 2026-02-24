@@ -16,6 +16,12 @@ function readEnv(env, key, { required = true } = {}) {
   return value.trim()
 }
 
+function toPositiveInteger(value, fallback) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric) || numeric <= 0) return fallback
+  return Math.floor(numeric)
+}
+
 export function loadRuntimeConfig(env = process.env, options = {}) {
   const strict = options?.strict !== false
 
@@ -29,6 +35,12 @@ export function loadRuntimeConfig(env = process.env, options = {}) {
     },
     partnerstack: {
       apiKey: readEnv(env, 'PARTNERSTACK_API_KEY', { required: strict })
+    },
+    houseAds: {
+      source: readEnv(env, 'HOUSE_ADS_SOURCE', { required: false }) || 'supabase',
+      dbCacheTtlMs: toPositiveInteger(readEnv(env, 'HOUSE_ADS_DB_CACHE_TTL_MS', { required: false }), 15000),
+      dbFetchLimit: toPositiveInteger(readEnv(env, 'HOUSE_ADS_DB_FETCH_LIMIT', { required: false }), 1500),
+      dbUrl: readEnv(env, 'SUPABASE_DB_URL', { required: false })
     }
   }
 }
