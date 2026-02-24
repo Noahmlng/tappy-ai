@@ -6151,27 +6151,29 @@ async function requestHandler(req, res) {
       })
       const configLatencyMs = Math.max(0, Date.now() - configStartedAt)
 
-      const evaluateStartedAt = Date.now()
-      const evaluate = await evaluateRequest({
+      const bidStartedAt = Date.now()
+      const bidResult = await evaluateV2BidRequest({
         appId: request.appId,
         accountId: request.accountId,
-        sessionId: request.sessionId,
-        turnId: request.turnId,
-        event: ATTACH_MVP_EVENT,
+        userId: request.sessionId,
+        chatId: request.sessionId,
         placementId: request.placementId,
-        placementKey: ATTACH_MVP_PLACEMENT_KEY,
-        context: {
-          query: request.query,
-          answerText: request.answerText,
-          intentScore: request.intentScore,
-          locale: request.locale,
-        },
+        messages: [
+          { role: 'user', content: request.query },
+          { role: 'assistant', content: request.answerText },
+        ],
       })
-      const evaluateLatencyMs = Math.max(0, Date.now() - evaluateStartedAt)
+      const bidLatencyMs = Math.max(0, Date.now() - bidStartedAt)
+      const winnerBid = bidResult?.data?.bid && typeof bidResult.data.bid === 'object'
+        ? bidResult.data.bid
+        : null
+      const requestId = String(bidResult?.requestId || '').trim()
+      const status = winnerBid ? 'served' : 'no_fill'
+      const statusReason = winnerBid ? 'runtime_eligible' : 'runtime_no_bid'
 
       const eventStartedAt = Date.now()
       await recordAttachSdkEvent({
-        requestId: evaluate.requestId || '',
+        requestId,
         appId: request.appId,
         accountId: request.accountId,
         sessionId: request.sessionId,
@@ -6186,8 +6188,8 @@ async function requestHandler(req, res) {
 
       sendJson(res, 200, {
         ok: true,
-        requestId: evaluate.requestId || '',
-        status: String(evaluate?.decision?.result || ''),
+        requestId,
+        status,
         evidence: {
           config: {
             status: configResult.statusCode,
@@ -6195,12 +6197,22 @@ async function requestHandler(req, res) {
             configVersion: configResult.payload?.configVersion || 0,
             latencyMs: configLatencyMs,
           },
+          bid: {
+            status: 200,
+            requestId,
+            message: String(bidResult?.message || ''),
+            hasBid: Boolean(winnerBid),
+            bidId: winnerBid ? String(winnerBid.bidId || '') : '',
+            dsp: winnerBid ? String(winnerBid.dsp || '') : '',
+            price: winnerBid ? clampNumber(winnerBid.price, 0, Number.MAX_SAFE_INTEGER, 0) : 0,
+            latencyMs: bidLatencyMs,
+          },
           evaluate: {
             status: 200,
-            requestId: evaluate.requestId || '',
-            result: String(evaluate?.decision?.result || ''),
-            reasonDetail: String(evaluate?.decision?.reasonDetail || ''),
-            latencyMs: evaluateLatencyMs,
+            requestId,
+            result: status,
+            reasonDetail: statusReason,
+            latencyMs: bidLatencyMs,
           },
           events: {
             status: 200,

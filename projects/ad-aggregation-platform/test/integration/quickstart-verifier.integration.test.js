@@ -134,7 +134,7 @@ async function registerDashboardHeaders(baseUrl, input = {}) {
   }
 }
 
-test('quick start verifier runs config -> evaluate -> events and returns evidence', async () => {
+test('quick start verifier runs config -> v2 bid -> events and returns evidence', async () => {
   const port = 3850 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${HOST}:${port}`
   const gateway = startGateway(port)
@@ -149,10 +149,22 @@ test('quick start verifier runs config -> evaluate -> events and returns evidenc
       accountId: 'org_simulator',
       appId: 'simulator-chatbot',
     })
+    const createKey = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
+      method: 'POST',
+      headers: dashboardHeaders,
+      body: {
+        accountId: 'org_simulator',
+        appId: 'simulator-chatbot',
+        environment: 'staging',
+        name: 'quickstart-active-key',
+      },
+    })
+    assert.equal(createKey.status, 201, `key create failed: ${JSON.stringify(createKey.payload)}`)
 
     const verify = await requestJson(baseUrl, '/api/v1/public/quick-start/verify', {
       method: 'POST',
       body: {
+        accountId: 'org_simulator',
         appId: 'simulator-chatbot',
         environment: 'staging',
         placementId: 'chat_inline_v1',
@@ -213,7 +225,19 @@ test('quick start verifier returns precondition failed when app has no active ke
       appId: 'simulator-chatbot',
     })
 
-    const listKeys = await requestJson(baseUrl, '/api/v1/public/credentials/keys?environment=staging', {
+    const createKey = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
+      method: 'POST',
+      headers: dashboardHeaders,
+      body: {
+        accountId: 'org_simulator',
+        appId: 'simulator-chatbot',
+        environment: 'staging',
+        name: 'precondition-test-key',
+      },
+    })
+    assert.equal(createKey.status, 201, `key create failed: ${JSON.stringify(createKey.payload)}`)
+
+    const listKeys = await requestJson(baseUrl, '/api/v1/public/credentials/keys?appId=simulator-chatbot&environment=staging', {
       headers: dashboardHeaders,
     })
     assert.equal(listKeys.ok, true, `key list failed: ${JSON.stringify(listKeys.payload)}`)
@@ -231,6 +255,7 @@ test('quick start verifier returns precondition failed when app has no active ke
     const verify = await requestJson(baseUrl, '/api/v1/public/quick-start/verify', {
       method: 'POST',
       body: {
+        accountId: 'org_simulator',
         appId: 'simulator-chatbot',
         environment: 'staging',
         placementId: 'chat_inline_v1',

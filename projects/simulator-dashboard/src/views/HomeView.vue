@@ -1,11 +1,29 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
+import { controlPlaneClient } from '../api/control-plane-client'
 import { dashboardState, hydrateDashboardState } from '../state/dashboard-state'
 import { scopeState } from '../state/scope-state'
 
 const isLoading = computed(() => Boolean(dashboardState.meta?.loading))
+const scopeLabel = computed(() => `${scopeState.accountId || '-'} / ${scopeState.appId || '-'}`)
+const scopeReady = computed(() => Boolean(scopeState.accountId && scopeState.appId))
+
+const integrationForm = reactive({
+  environment: 'staging',
+  placementId: 'chat_inline_v1',
+})
+
+const readiness = reactive({
+  loading: false,
+  error: '',
+  activeKeyCount: 0,
+})
+
+const verifyLoading = ref(false)
+const verifyError = ref('')
+const verifyResult = ref(null)
 
 const totals = computed(() => dashboardState.settlementAggregates?.totals || {})
 
@@ -47,11 +65,155 @@ const recentLogs = computed(() => {
   return rows.slice(0, 5)
 })
 
-const scopeLabel = computed(() => `${scopeState.accountId} / ${scopeState.appId}`)
+const placementOptions = computed(() => {
+  const current = Array.isArray(dashboardState.placements) ? dashboardState.placements : []
+  const ids = new Set(['chat_inline_v1', 'chat_followup_v1'])
+  for (const row of current) {
+    const id = String(row?.placementId || '').trim()
+    if (id) ids.add(id)
+  }
+  return Array.from(ids)
+})
+
+const selectedPlacement = computed(() => {
+  const current = Array.isArray(dashboardState.placements) ? dashboardState.placements : []
+  return current.find((row) => String(row?.placementId || '') === String(integrationForm.placementId || '')) || null
+})
+
+const placementEnabled = computed(() => Boolean(selectedPlacement.value?.enabled))
+const hasActiveKey = computed(() => readiness.activeKeyCount > 0)
+const verifyPassed = computed(() => {
+  const payload = verifyResult.value
+  return Boolean(payload?.ok && String(payload?.requestId || '').trim())
+})
+
+const checklistRows = computed(() => ([
+  {
+    label: 'Scope ready',
+    done: scopeReady.value,
+    detail: scopeReady.value ? scopeLabel.value : 'Set accountId + appId in API Keys page.',
+    actionTo: '/api-keys',
+    actionLabel: 'Open API Keys',
+  },
+  {
+    label: 'Active key',
+    done: hasActiveKey.value,
+    detail: hasActiveKey.value
+      ? `${readiness.activeKeyCount} active key(s) in ${integrationForm.environment}`
+      : `No active key in ${integrationForm.environment}.`,
+    actionTo: '/api-keys',
+    actionLabel: 'Create key',
+  },
+  {
+    label: 'Placement enabled',
+    done: placementEnabled.value,
+    detail: placementEnabled.value
+      ? `${integrationForm.placementId} is enabled.`
+      : `${integrationForm.placementId} is disabled or missing.`,
+    actionTo: '/config',
+    actionLabel: 'Open config',
+  },
+  {
+    label: 'Verification',
+    done: verifyPassed.value,
+    detail: verifyPassed.value
+      ? `Verified with requestId ${String(verifyResult.value?.requestId || '-')}`
+      : 'Run integration verify to complete onboarding.',
+    actionTo: '/logs',
+    actionLabel: 'Open logs',
+  },
+]))
+
+const verifyEvidence = computed(() => {
+  const payload = verifyResult.value
+  if (!payload || typeof payload !== 'object') return null
+  const evidence = payload.evidence && typeof payload.evidence === 'object' ? payload.evidence : {}
+  const bid = evidence.bid && typeof evidence.bid === 'object' ? evidence.bid : null
+  const evaluate = evidence.evaluate && typeof evidence.evaluate === 'object' ? evidence.evaluate : null
+  const bidResult = bid
+    ? (bid.hasBid ? 'bid_found' : 'no_bid')
+    : (evaluate?.result || '-')
+
+  return {
+    requestId: String(payload.requestId || ''),
+    status: String(payload.status || ''),
+    configStatus: Number(evidence?.config?.status || 0),
+    bidResult,
+    bidLatencyMs: Number(bid?.latencyMs || evaluate?.latencyMs || 0),
+    eventsStatus: Number(evidence?.events?.status || 0),
+  }
+})
+
+function statusClass(done) {
+  return done ? 'status-pill good' : 'status-pill warn'
+}
+
+async function refreshReadiness(options = {}) {
+  const reloadDashboard = options?.reloadDashboard !== false
+  if (reloadDashboard) {
+    await hydrateDashboardState()
+  }
+
+  readiness.loading = true
+  readiness.error = ''
+
+  try {
+    if (!scopeReady.value) {
+      readiness.activeKeyCount = 0
+      return
+    }
+
+    const payload = await controlPlaneClient.credentials.listKeys({
+      accountId: scopeState.accountId,
+      appId: scopeState.appId,
+      environment: integrationForm.environment,
+    })
+    const keys = Array.isArray(payload?.keys) ? payload.keys : []
+    readiness.activeKeyCount = keys.filter((item) => String(item?.status || '').toLowerCase() === 'active').length
+  } catch (error) {
+    readiness.activeKeyCount = 0
+    readiness.error = error instanceof Error ? error.message : 'Failed to read key readiness.'
+  } finally {
+    readiness.loading = false
+  }
+}
+
+async function runIntegrationVerify() {
+  verifyLoading.value = true
+  verifyError.value = ''
+  verifyResult.value = null
+
+  try {
+    if (!scopeReady.value) {
+      throw new Error('Scope is empty. Please set accountId and appId first.')
+    }
+
+    const payload = await controlPlaneClient.quickStart.verify({
+      accountId: scopeState.accountId,
+      appId: scopeState.appId,
+      environment: integrationForm.environment,
+      placementId: integrationForm.placementId,
+    })
+
+    verifyResult.value = payload
+    await refreshReadiness({ reloadDashboard: true })
+  } catch (error) {
+    verifyError.value = error instanceof Error ? error.message : 'Integration verify failed.'
+  } finally {
+    verifyLoading.value = false
+  }
+}
 
 function refreshHome() {
-  hydrateDashboardState()
+  refreshReadiness({ reloadDashboard: true })
 }
+
+watch(
+  () => integrationForm.environment,
+  () => {
+    refreshReadiness({ reloadDashboard: false })
+  },
+)
 
 onMounted(() => {
   refreshHome()
@@ -62,7 +224,7 @@ onMounted(() => {
   <section class="page">
     <header class="page-header">
       <p class="eyebrow">Dashboard</p>
-      <h2>Revenue</h2>
+      <h2>Revenue + Integration</h2>
       <p class="subtitle">
         Scope: {{ scopeLabel }}
       </p>
@@ -76,8 +238,8 @@ onMounted(() => {
         </p>
         <p class="muted" v-if="dashboardState.meta.error">{{ dashboardState.meta.error }}</p>
       </div>
-      <button class="button" type="button" :disabled="isLoading" @click="refreshHome">
-        {{ isLoading ? 'Refreshing...' : 'Refresh' }}
+      <button class="button" type="button" :disabled="isLoading || readiness.loading" @click="refreshHome">
+        {{ isLoading || readiness.loading ? 'Refreshing...' : 'Refresh' }}
       </button>
     </article>
 
@@ -87,6 +249,60 @@ onMounted(() => {
         <p class="kpi-value">{{ item.value }}</p>
       </article>
     </div>
+
+    <article class="panel">
+      <div class="panel-toolbar">
+        <h3>Self-Serve Integration</h3>
+        <button class="button" type="button" :disabled="verifyLoading" @click="runIntegrationVerify">
+          {{ verifyLoading ? 'Running...' : 'Run Verify' }}
+        </button>
+      </div>
+
+      <div class="form-grid">
+        <label>
+          Environment
+          <select v-model="integrationForm.environment" class="input">
+            <option value="sandbox">sandbox</option>
+            <option value="staging">staging</option>
+            <option value="prod">prod</option>
+          </select>
+        </label>
+        <label>
+          Placement
+          <select v-model="integrationForm.placementId" class="input">
+            <option v-for="item in placementOptions" :key="item" :value="item">{{ item }}</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="step-list">
+        <div v-for="item in checklistRows" :key="item.label" class="step-row">
+          <div>
+            <div class="step-title">
+              <strong>{{ item.label }}</strong>
+              <span :class="statusClass(item.done)">{{ item.done ? 'done' : 'pending' }}</span>
+            </div>
+            <p class="muted">{{ item.detail }}</p>
+          </div>
+          <RouterLink :to="item.actionTo" class="button button-secondary">{{ item.actionLabel }}</RouterLink>
+        </div>
+      </div>
+
+      <p class="muted" v-if="readiness.error">{{ readiness.error }}</p>
+      <p class="muted" v-if="verifyError">{{ verifyError }}</p>
+
+      <div v-if="verifyEvidence" class="verify-evidence">
+        <h4>Last Verify Evidence</h4>
+        <div class="kv-grid">
+          <p><strong>requestId</strong><span><code>{{ verifyEvidence.requestId }}</code></span></p>
+          <p><strong>status</strong><span>{{ verifyEvidence.status }}</span></p>
+          <p><strong>config status</strong><span>{{ verifyEvidence.configStatus }}</span></p>
+          <p><strong>bid result</strong><span>{{ verifyEvidence.bidResult }}</span></p>
+          <p><strong>bid latency</strong><span>{{ verifyEvidence.bidLatencyMs }}ms</span></p>
+          <p><strong>events status</strong><span>{{ verifyEvidence.eventsStatus }}</span></p>
+        </div>
+      </div>
+    </article>
 
     <div class="quick-link-grid">
       <RouterLink

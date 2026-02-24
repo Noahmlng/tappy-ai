@@ -306,6 +306,36 @@ a {
   font-size: 0.85rem;
 }
 
+.step-list {
+  display: grid;
+  gap: 10px;
+}
+
+.step-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-btn);
+  padding: 10px;
+}
+
+.step-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.verify-evidence {
+  border: 1px solid var(--accent-border);
+  background: var(--accent-soft);
+  border-radius: var(--radius-card);
+  padding: var(--card-padding);
+  display: grid;
+  gap: 8px;
+}
+
 .chip {
   font-size: 0.75rem;
   color: var(--muted);
@@ -705,6 +735,11 @@ a {
 
   .quick-link-grid {
     grid-template-columns: 1fr;
+  }
+
+  .step-row {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 
