@@ -27,12 +27,7 @@ npm run dev
 - `VITE_DEEPSEEK_API_KEY`
 - `VITE_DEEPSEEK_MODEL`（默认：`deepseek-reasoner`）
 - `SIMULATOR_API_PROXY_TARGET`（开发代理目标，默认：`http://127.0.0.1:3100`）
-- `VITE_SIMULATOR_API_BASE_URL`（浏览器 API base，默认：`/api`）
-- `MEDIATION_API_BASE_URL`（外部接入 API base，例如：`http://127.0.0.1:3100/api`）
-- `MEDIATION_API_KEY`（从 Dashboard API Keys 获取；runtime 以 key scope 推断 app/account/env）
-- `VITE_ENABLE_NEXT_STEP_FLOW`（建议首接入先设为 `false`，attach 跑通后再打开）
-- `MEDIATION_ENV`（可选：`sandbox|staging|prod`，默认 `staging`）
-- `PLACEMENT_ID`（例如：`chat_inline_v1`）
+- `VITE_SIMULATOR_API_BASE_URL`（可选，浏览器 API base，默认：`/api`）
 
 ## Tool Call 说明
 
@@ -43,16 +38,3 @@ npm run dev
 - Assistant 回复完成后会展示可点击追问项。
 - Sidebar 内置 Turn Trace 面板，可按轮查看链路事件。
 - Sidebar 内置 System Prompt 面板，可实时编辑当前会话提示词。
-
-## Ads Platform 接入设计
-
-- `docs/sdk-integration-design.md`：Chatbot Simulator 接入广告平台官方 SDK client 的完整设计（架构、触发点、数据模型、分阶段计划）
-- Simulator 侧仅调用平台 client wrapper：`src/api/adsPlatformClient.js`
-
-## 外部开发者首接入（模拟）
-
-1. 从广告系统团队拿到 `MEDIATION_API_KEY` 与 runtime endpoint。
-2. 在 `.env.local` 填入最小配置：`MEDIATION_API_BASE_URL`、`MEDIATION_API_KEY`、`MEDIATION_ENV`、`PLACEMENT_ID`。
-3. 首轮仅跑 attach（`VITE_ENABLE_NEXT_STEP_FLOW=false`），验证回答后 sponsored 区块与 turn trace。
-4. attach 稳定后再打开 `next_step.intent_card`。
-5. SDK 以广告系统团队提供版本为准；拿到接入信息后替换到 `src/api/adsPlatformClient.js` 的调用层即可。
