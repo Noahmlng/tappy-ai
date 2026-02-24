@@ -1,152 +1,207 @@
-# SDK Quick Start（V2 单 Bid）
+# Ads SDK Quick Start (Public, V2)
 
-本指南目标：10 分钟内跑通 `requestBid -> 渲染 -> events 上报`。
+- Version: v1.0
+- Last Updated: 2026-02-24
+- Audience: External developers integrating chat ads in AI applications
 
-## 1. 前置准备
+This guide helps you complete first integration in 10 minutes:
+1. request one ad bid
+2. render ad safely (fail-open)
+3. report impression/click events
+4. verify with requestId in dashboard/logs
 
-1. 打开 Dashboard：`http://localhost:3003`
-2. 在 `API Keys` 页面创建一个 `staging` key
-3. 在 `Config` 页面确认 placement 已启用
-   - `chat_inline_v1`（主回答后附加广告）
-   - `chat_followup_v1`（follow-up 位）
-4. 记下：
-   - `API_BASE_URL`（本地默认 `http://127.0.0.1:3100/api`）
-   - `API_KEY`
+## 1. Prerequisites
 
-## 2. 初始化 SDK Client
+You need:
+1. `ADS_BASE_URL` (example: `https://your-gateway.example.com/api`)
+2. `ADS_API_KEY` (runtime API key)
+3. one enabled placement:
+   - `chat_inline_v1` (post-answer ad block)
+   - `chat_followup_v1` (follow-up ad card)
 
-当前仓库 SDK 实现在：
-`projects/ad-aggregation-platform/src/sdk/client.js`
+## 2. Endpoint Overview
 
-```ts
-import { createAdsSdkClient } from '../ad-aggregation-platform/src/sdk/client.js'
+1. `POST /api/v2/bid`
+- unified messages input
+- returns **single winner bid**
 
-const sdk = createAdsSdkClient({
-  apiBaseUrl: 'http://127.0.0.1:3100/api',
-  apiKey: process.env.AI_ADS_API_KEY,
-})
-```
+2. `POST /api/v1/sdk/events`
+- report impression/click/dismiss/postback events
+- correlate with `requestId`
 
-## 3. 请求单 Bid（核心）
+## 3. First Bid Request
 
-```ts
-const placementId = 'chat_inline_v1'
-const chatId = `chat_${Date.now()}`
-const turnId = `turn_${Date.now()}`
-
-const messages = [
-  { role: 'user', content: 'I want to buy a gift for my girlfriend' },
-  { role: 'assistant', content: 'Sure, what category are you considering?' },
-  { role: 'user', content: 'camera for vlogging' },
-]
-
-const bidResp = await sdk.requestBid({
-  userId: 'user_001',
-  chatId,
-  placementId,
-  messages,
-})
-
-// no-bid 也是 200：status=success + data.bid=null
-if (!bidResp.data.bid) {
-  // fail-open：主流程继续，不阻塞聊天
-  return
-}
-
-const bid = bidResp.data.bid
-// bid 字段：price/advertiser/headline/description/cta_text/url/image_url/dsp/bidId...
-```
-
-## 4. 渲染广告（最小建议）
-
-收到 `bidResp.data.bid` 后，按你 UI 结构渲染：
-
-1. 标题：`headline`
-2. 描述：`description`
-3. CTA：`cta_text`
-4. 落地链接：`url`
-5. 图片（可选）：`image_url`
-6. 广告标识：`Sponsored`
-
-## 5. 上报事件（impression/click）
-
-`chat_inline_v1` 事件上报走 `POST /api/v1/sdk/events`，最小字段示例：
-
-```ts
-// impression
-await sdk.reportEvent({
-  requestId: bidResp.requestId,
-  sessionId: chatId,
-  turnId,
-  query: bidResp._sdkSignals?.query || messages[messages.length - 1].content,
-  answerText: bidResp._sdkSignals?.answerText || '',
-  intentScore: 0.8,
-  locale: 'en-US',
-  kind: 'impression', // impression | click
-  placementId,
-  adId: bid.bidId,
-})
-
-// click（用户点击时）
-await sdk.reportEvent({
-  requestId: bidResp.requestId,
-  sessionId: chatId,
-  turnId,
-  query: bidResp._sdkSignals?.query || messages[messages.length - 1].content,
-  answerText: bidResp._sdkSignals?.answerText || '',
-  intentScore: 0.8,
-  locale: 'en-US',
-  kind: 'click',
-  placementId,
-  adId: bid.bidId,
-})
-```
-
-## 6. Fail-open 约定（强烈建议）
-
-广告链路任何异常都不要阻塞主回答：
-
-```ts
-try {
-  const bidResp = await sdk.requestBid(...)
-  // render + events
-} catch (err) {
-  console.warn('[ads] fail-open:', err)
-  // 忽略广告错误，继续主对话
-}
-```
-
-## 7. 自助验收（Dashboard）
-
-在 `Home` 页面 `Self-Serve Integration` 区域点 `Run Verify`：
-
-会执行：
-1. config 检查
-2. `POST /api/v2/bid`
-3. `POST /api/v1/sdk/events`
-
-并返回 `requestId` 与证据；随后在 `Logs` 页面可按 `requestId` 查到记录。
-
-## 8. 直接 HTTP 接入（不使用 SDK helper）
+### Request
 
 ```bash
-curl -sS -X POST "http://127.0.0.1:3100/api/v2/bid" \
-  -H "Authorization: Bearer $AI_ADS_API_KEY" \
+curl -sS -X POST "$ADS_BASE_URL/v2/bid" \
+  -H "Authorization: Bearer $ADS_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "userId":"user_001",
-    "chatId":"chat_001",
-    "placementId":"chat_inline_v1",
-    "messages":[
-      {"role":"user","content":"camera for vlogging"}
+    "userId": "user_12139050",
+    "chatId": "chat_8b5d9f5a",
+    "placementId": "chat_inline_v1",
+    "messages": [
+      { "role": "user", "content": "i want to buy a gift to my girlfriend" },
+      { "role": "assistant", "content": "what type of gift do you want?" },
+      { "role": "user", "content": "camera for vlogging" }
     ]
   }'
 ```
 
-## 9. 常见问题
+### Success Response (with bid)
 
-1. `401/403`：API key 无效或 scope 不匹配。
-2. `400`：`messages` 字段不合法（role 只能 `user|assistant|system`，content 不能为空）。
-3. 返回 `No bid`：属于正常语义（`HTTP 200` + `data.bid=null`），不要当作异常。
-4. 看不到日志：先确认 `events` 上报是否携带了同一个 `requestId`。
+```json
+{
+  "requestId": "adreq_xxx",
+  "timestamp": "2026-02-24T10:31:24.787Z",
+  "status": "success",
+  "message": "Bid successful",
+  "data": {
+    "bid": {
+      "price": 12.34,
+      "advertiser": "DJI",
+      "headline": "DJI",
+      "description": "Explore DJI’s lineup for creators.",
+      "cta_text": "Learn More",
+      "url": "https://...",
+      "image_url": "https://...",
+      "dsp": "gravity",
+      "bidId": "v1_bid_xxx",
+      "placement": "block",
+      "variant": "base"
+    }
+  }
+}
+```
+
+### No-Bid Response (normal)
+
+```json
+{
+  "requestId": "adreq_xxx",
+  "timestamp": "2026-02-24T10:31:24.787Z",
+  "status": "success",
+  "message": "No bid",
+  "data": { "bid": null }
+}
+```
+
+`No bid` is **not an error**. Always keep your main chat response path running.
+
+## 4. Render (Fail-Open)
+
+Recommended behavior:
+1. if `data.bid == null`: skip ad render
+2. if request fails: swallow ad error, do not block assistant reply
+
+```ts
+async function loadAd() {
+  try {
+    const bidResp = await fetch(`${ADS_BASE_URL}/v2/bid`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${ADS_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        userId: 'user_12139050',
+        chatId: 'chat_8b5d9f5a',
+        placementId: 'chat_inline_v1',
+        messages,
+      }),
+    }).then((r) => r.json())
+
+    if (!bidResp?.data?.bid) return null
+    return bidResp
+  } catch (err) {
+    console.warn('[ads] fail-open', err)
+    return null
+  }
+}
+```
+
+## 5. Report Events
+
+### 5.1 Impression (`chat_inline_v1`)
+
+```bash
+curl -sS -X POST "$ADS_BASE_URL/v1/sdk/events" \
+  -H "Authorization: Bearer $ADS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "requestId": "adreq_xxx",
+    "sessionId": "chat_8b5d9f5a",
+    "turnId": "turn_001",
+    "query": "camera for vlogging",
+    "answerText": "You can compare Sony ZV-1 and DJI options.",
+    "intentScore": 0.80,
+    "locale": "en-US",
+    "kind": "impression",
+    "placementId": "chat_inline_v1",
+    "adId": "v1_bid_xxx"
+  }'
+```
+
+### 5.2 Click (`chat_inline_v1`)
+
+Same payload, change `kind` to `click`.
+
+### 5.3 Follow-up placement note
+
+For `chat_followup_v1`, events require next-step fields (`event`, `placementKey`, `context`).
+If you are integrating follow-up cards, use the dedicated next-step contract from platform support docs.
+
+## 6. Minimal Client Contract
+
+### 6.1 `/api/v2/bid` required fields
+
+1. `userId: string`
+2. `chatId: string`
+3. `placementId: chat_inline_v1 | chat_followup_v1`
+4. `messages: Array<{ role: user|assistant|system; content: string; timestamp?: ISO-8601 }>`
+
+### 6.2 `/api/v1/sdk/events` minimal required fields for inline placement
+
+1. `requestId`
+2. `sessionId`
+3. `turnId`
+4. `query`
+5. `answerText`
+6. `intentScore` (0~1)
+7. `locale`
+8. `kind` (`impression` or `click`)
+9. `placementId`
+10. `adId`
+
+## 7. Error Handling
+
+1. `400 INVALID_REQUEST`
+- bad payload shape or missing required fields
+
+2. `401/403`
+- missing/invalid API key or scope mismatch
+
+3. `409 PRECONDITION_FAILED`
+- typically no active key / setup incomplete
+
+4. `429`
+- rate limited, retry with backoff
+
+5. `5xx`
+- server-side transient issue, retry with backoff + fail-open
+
+## 8. Production Checklist
+
+1. Fail-open enabled for all ad calls
+2. `requestId` persisted in app logs
+3. impression/click events report same `requestId`
+4. timeout configured (recommended: bid <= 1200ms)
+5. no-bid path tested
+6. dashboard/log search by `requestId` verified
+
+## 9. Migration Note
+
+Legacy endpoint `/api/v1/sdk/evaluate` is deprecated.
+Use `/api/v2/bid` as the primary bid entry.
 
