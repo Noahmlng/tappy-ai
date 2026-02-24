@@ -493,6 +493,16 @@ samp,
   box-shadow: 0 10px 18px -14px rgba(15, 23, 42, 0.25);
 }
 
+.panel-soft {
+  background: #fcfcfd;
+}
+
+.panel-note {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
 .panel-toolbar,
 .panel-head,
 .section-head {
@@ -518,6 +528,62 @@ samp,
 .page-header {
   display: grid;
   gap: var(--space-8);
+}
+
+.page-header-split {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--space-16);
+}
+
+.header-stack {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-8);
+}
+
+.meta-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 9px;
+  border-radius: var(--radius-pill);
+  border: var(--border);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
+  background: #fff;
+  color: #4b5563;
+}
+
+.meta-pill.good {
+  border-color: var(--good-line);
+  background: var(--good-bg);
+  color: var(--good-text);
+}
+
+.meta-pill.warn {
+  border-color: var(--warn-line);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.meta-pill.bad {
+  border-color: var(--bad-line);
+  background: var(--bad-bg);
+  color: var(--bad-text);
 }
 
 .page-header h2 {
@@ -626,6 +692,25 @@ samp,
   background: #f8faff;
 }
 
+.quick-link-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+
+.quick-link-arrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #8892a3;
+  transition: transform var(--motion-hover), color var(--motion-hover);
+}
+
+.quick-link:hover .quick-link-arrow {
+  transform: translateX(3px);
+  color: var(--brand-blue);
+}
+
 .inline-switch {
   display: inline-flex;
   align-items: center;
@@ -643,6 +728,14 @@ samp,
   border-radius: var(--radius-card);
   background: #fff;
   padding: var(--space-12);
+}
+
+.step-row-done {
+  border-left: 2px solid #8dc7a0;
+}
+
+.step-row-pending {
+  border-left: 2px solid #f1bf85;
 }
 
 .step-title {
@@ -994,6 +1087,15 @@ samp,
   .quick-link-grid,
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .page-header-split {
+    align-items: flex-start;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .step-row {

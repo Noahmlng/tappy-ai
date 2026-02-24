@@ -31,8 +31,28 @@ const readiness = reactive({
 const verifyLoading = ref(false)
 const verifyError = ref('')
 const verifyResult = ref(null)
+const resultOrder = ['served', 'blocked', 'no_fill', 'error']
 
 const totals = computed(() => dashboardState.settlementAggregates?.totals || {})
+const refreshBusy = computed(() => Boolean(isLoading.value || readiness.loading || appSelection.loading))
+const lastSyncedLabel = computed(() => {
+  const raw = dashboardState.meta?.lastSyncedAt
+  if (!raw) return 'No sync yet'
+  const value = new Date(raw)
+  if (Number.isNaN(value.getTime())) return 'No sync yet'
+  return `Last synced ${value.toLocaleString()}`
+})
+const connectionStatus = computed(() => {
+  if (dashboardState.meta?.connected) {
+    return { label: 'Public API online', tone: 'good' }
+  }
+  return { label: 'Offline snapshot', tone: 'warn' }
+})
+const readinessStatus = computed(() => {
+  if (!scopeReady.value) return { label: 'Scope missing', tone: 'warn' }
+  if (hasActiveKey.value) return { label: 'Ready to verify', tone: 'good' }
+  return { label: 'Key required', tone: 'warn' }
+})
 
 const kpis = computed(() => {
   const row = totals.value
@@ -70,6 +90,23 @@ const quickLinks = [
 const recentLogs = computed(() => {
   const rows = Array.isArray(dashboardState.decisionLogs) ? dashboardState.decisionLogs : []
   return rows.slice(0, 5)
+})
+const recentResultSummary = computed(() => {
+  const rows = Array.isArray(dashboardState.decisionLogs) ? dashboardState.decisionLogs : []
+  const counts = {
+    served: 0,
+    blocked: 0,
+    no_fill: 0,
+    error: 0,
+  }
+  for (const row of rows.slice(0, 25)) {
+    const key = String(row?.result || '').trim()
+    if (Object.hasOwn(counts, key)) counts[key] += 1
+  }
+  return resultOrder
+    .filter((key) => counts[key] > 0)
+    .map((key) => `${key} ${counts[key]}`)
+    .join(' · ') || 'No recent outcomes'
 })
 
 const placementOptions = computed(() => {
@@ -154,6 +191,18 @@ const verifyEvidence = computed(() => {
 
 function statusClass(done) {
   return done ? 'status-pill good' : 'status-pill warn'
+}
+
+function metaPillClass(tone) {
+  if (tone === 'good') return 'meta-pill good'
+  if (tone === 'bad') return 'meta-pill bad'
+  return 'meta-pill warn'
+}
+
+function resultPillClass(result) {
+  if (result === 'served') return 'status-pill good'
+  if (result === 'error') return 'status-pill bad'
+  return 'status-pill warn'
 }
 
 function normalizeAppOptions(controlPlaneApps = []) {
@@ -305,25 +354,30 @@ onMounted(() => {
 
 <template>
   <section class="page">
-    <header class="page-header">
-      <p class="eyebrow">Dashboard</p>
-      <h2>Revenue + Integration</h2>
-      <p class="subtitle">
-        Scope: {{ scopeLabel }}
-      </p>
+    <header class="page-header page-header-split">
+      <div class="header-stack">
+        <p class="eyebrow">Dashboard</p>
+        <h2>Revenue + Integration</h2>
+        <p class="subtitle">Scope: {{ scopeLabel }}</p>
+      </div>
+      <div class="header-actions">
+        <span :class="metaPillClass(connectionStatus.tone)">{{ connectionStatus.label }}</span>
+        <span :class="metaPillClass(readinessStatus.tone)">{{ readinessStatus.label }}</span>
+        <button class="button" type="button" :disabled="refreshBusy" @click="refreshHome">
+          {{ refreshBusy ? 'Refreshing...' : 'Refresh' }}
+        </button>
+      </div>
     </header>
 
-    <article class="panel panel-toolbar">
-      <div>
-        <h3>Today at a glance</h3>
-        <p class="muted" v-if="dashboardState.meta.lastSyncedAt">
-          Last synced: {{ new Date(dashboardState.meta.lastSyncedAt).toLocaleString() }}
-        </p>
-        <p class="muted" v-if="dashboardState.meta.error">{{ dashboardState.meta.error }}</p>
+    <article class="panel panel-soft">
+      <div class="panel-toolbar">
+        <div>
+          <p class="eyebrow">Snapshot</p>
+          <h3>Today at a glance</h3>
+        </div>
+        <p class="muted panel-note">{{ lastSyncedLabel }}</p>
       </div>
-      <button class="button" type="button" :disabled="isLoading || readiness.loading || appSelection.loading" @click="refreshHome">
-        {{ isLoading || readiness.loading || appSelection.loading ? 'Refreshing...' : 'Refresh' }}
-      </button>
+      <p class="muted" v-if="dashboardState.meta.error">{{ dashboardState.meta.error }}</p>
     </article>
 
     <div class="kpi-grid">
@@ -333,7 +387,7 @@ onMounted(() => {
       </article>
     </div>
 
-    <article class="panel">
+    <article class="panel panel-soft">
       <div class="panel-toolbar">
         <h3>Self-Serve Integration</h3>
         <button
@@ -370,7 +424,12 @@ onMounted(() => {
       </div>
 
       <div class="step-list">
-        <div v-for="item in checklistRows" :key="item.label" class="step-row">
+        <div
+          v-for="item in checklistRows"
+          :key="item.label"
+          class="step-row"
+          :class="item.done ? 'step-row-done' : 'step-row-pending'"
+        >
           <div>
             <div class="step-title">
               <strong>{{ item.label }}</strong>
@@ -406,13 +465,19 @@ onMounted(() => {
         :to="item.to"
         class="panel quick-link"
       >
-        <h3>{{ item.title }}</h3>
+        <div class="quick-link-head">
+          <h3>{{ item.title }}</h3>
+          <span class="quick-link-arrow">-></span>
+        </div>
         <p class="muted">{{ item.description }}</p>
       </RouterLink>
     </div>
 
-    <article class="panel">
-      <h3>Recent Logs</h3>
+    <article class="panel panel-soft">
+      <div class="panel-toolbar">
+        <h3>Recent Logs</h3>
+        <p class="muted">{{ recentResultSummary }}</p>
+      </div>
       <div class="table-wrapper">
         <table class="table">
           <thead>
@@ -428,7 +493,9 @@ onMounted(() => {
               <td>{{ row.createdAt || '-' }}</td>
               <td>{{ row.requestId || '-' }}</td>
               <td>{{ row.placementId || '-' }}</td>
-              <td>{{ row.result || '-' }}</td>
+              <td>
+                <span :class="resultPillClass(row.result)">{{ row.result || '-' }}</span>
+              </td>
             </tr>
             <tr v-if="recentLogs.length === 0">
               <td colspan="4" class="muted">No logs yet.</td>

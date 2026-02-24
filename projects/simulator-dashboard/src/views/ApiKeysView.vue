@@ -27,6 +27,7 @@ const appSelection = reactive({
 const environmentOptions = ['sandbox', 'staging', 'prod']
 
 const isBusy = computed(() => Boolean(apiKeysState.meta.loading || apiKeysState.meta.syncing))
+const refreshBusy = computed(() => Boolean(isBusy.value || appSelection.loading))
 const rows = computed(() => Array.isArray(apiKeysState.items) ? apiKeysState.items : [])
 const hasMultipleApps = computed(() => appSelection.options.length > 1)
 
@@ -145,10 +146,17 @@ onMounted(() => {
 
 <template>
   <section class="page">
-    <header class="page-header">
-      <p class="eyebrow">API Keys</p>
-      <h2>Get Key</h2>
-      <p class="subtitle">Create and manage runtime keys.</p>
+    <header class="page-header page-header-split">
+      <div class="header-stack">
+        <p class="eyebrow">API Keys</p>
+        <h2>Get Key</h2>
+        <p class="subtitle">Create and manage runtime keys.</p>
+      </div>
+      <div class="header-actions">
+        <button class="button" type="button" :disabled="refreshBusy" @click="refreshKeys()">
+          {{ refreshBusy ? 'Refreshing...' : 'Refresh Keys' }}
+        </button>
+      </div>
     </header>
 
     <article class="panel create-key-form">
@@ -197,12 +205,10 @@ onMounted(() => {
       </div>
     </article>
 
-    <article class="panel">
+    <article class="panel panel-soft">
       <div class="panel-toolbar">
         <h3>Keys</h3>
-        <button class="button button-secondary" type="button" :disabled="isBusy || appSelection.loading" @click="refreshKeys()">
-          {{ apiKeysState.meta.loading || appSelection.loading ? 'Refreshing...' : 'Refresh' }}
-        </button>
+        <p class="muted">{{ rows.length }} key(s)</p>
       </div>
       <p class="muted" v-if="apiKeysState.meta.error">{{ apiKeysState.meta.error }}</p>
 

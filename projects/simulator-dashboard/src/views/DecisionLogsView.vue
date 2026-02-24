@@ -50,18 +50,23 @@ function displayReason(row) {
 
 <template>
   <section class="page">
-    <header class="page-header">
-      <p class="eyebrow">Logs</p>
-      <h2>Decision Logs</h2>
-      <p class="subtitle">Filter by result and placement.</p>
+    <header class="page-header page-header-split">
+      <div class="header-stack">
+        <p class="eyebrow">Logs</p>
+        <h2>Decision Logs</h2>
+        <p class="subtitle">Filter by result and placement.</p>
+      </div>
+      <div class="header-actions">
+        <button class="button" type="button" :disabled="isLoading" @click="refreshLogs">
+          {{ isLoading ? 'Refreshing...' : 'Refresh Logs' }}
+        </button>
+      </div>
     </header>
 
-    <article class="panel">
+    <article class="panel panel-soft">
       <div class="panel-toolbar">
         <h3>Requests</h3>
-        <button class="button" type="button" :disabled="isLoading" @click="refreshLogs">
-          {{ isLoading ? 'Refreshing...' : 'Refresh' }}
-        </button>
+        <p class="muted">{{ filteredLogs.length }} row(s)</p>
       </div>
 
       <div class="filters">
