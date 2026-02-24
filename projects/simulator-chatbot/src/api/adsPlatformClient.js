@@ -5,6 +5,14 @@ function cleanText(value) {
   return value.trim()
 }
 
+function toPositiveInteger(value, fallback) {
+  const numeric = Number(value)
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return Math.floor(numeric)
+  }
+  return fallback
+}
+
 function isLoopbackHostname(hostname) {
   const host = String(hostname || '').trim().toLowerCase()
   if (!host) return false
@@ -81,7 +89,12 @@ const STRICT_MANUAL_MODE = cleanText(
   import.meta.env.MEDIATION_STRICT_MANUAL_MODE ||
   '',
 ).toLowerCase() === 'true'
-const DEFAULT_EVALUATE_TIMEOUT_MS = 20000
+const DEFAULT_EVALUATE_TIMEOUT_MS = toPositiveInteger(
+  import.meta.env.VITE_MEDIATION_EVALUATE_TIMEOUT_MS ||
+    import.meta.env.MEDIATION_EVALUATE_TIMEOUT_MS ||
+    30000,
+  30000,
+)
 const API_BASE_HOSTNAME = resolveApiBaseHostname(API_BASE)
 
 function resolveLoopbackAuthMode(mode, preferConfiguredKeyOnLoopback, hasConfiguredKey, strictManualMode) {
