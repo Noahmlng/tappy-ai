@@ -5,9 +5,20 @@ import http from 'node:http'
 import { createHash } from 'node:crypto'
 
 import defaultPlacements from '../../../config/default-placements.json' with { type: 'json' }
-import { runAdsRetrievalPipeline, runBidAggregationPipeline } from '../../runtime/index.js'
+import { loadRuntimeConfig } from '../../config/runtime-config.js'
+import { runAdsRetrievalPipeline } from '../../runtime/index.js'
 import { getAllNetworkHealth } from '../../runtime/network-health-state.js'
 import { inferIntentWithLlm } from '../../providers/intent/index.js'
+import { scoreIntentOpportunityFirst } from '../../runtime/intent-scoring.js'
+import { retrieveOpportunityCandidates } from '../../runtime/opportunity-retrieval.js'
+import { rankOpportunityCandidates } from '../../runtime/opportunity-ranking.js'
+import { createOpportunityWriter } from '../../runtime/opportunity-writer.js'
+import {
+  syncInventoryNetworks,
+  getInventoryStatus,
+  buildInventoryEmbeddings,
+  materializeServingSnapshot,
+} from '../../runtime/inventory-sync.js'
 import {
   createIntentCardVectorIndex,
   normalizeIntentCardCatalogItems,
@@ -279,6 +290,7 @@ const runtimeMemory = {
   cooldownBySessionPlacement: new Map(),
   perSessionPlacementCount: new Map(),
   perUserPlacementDayCount: new Map(),
+  opportunityContextByRequest: new Map(),
 }
 
 function nowIso() {
@@ -337,6 +349,43 @@ function shouldPersistConversionFactsToStateFile() {
 
 function shouldPersistControlPlaneToStateFile() {
   return !isSupabaseSettlementStore()
+}
+
+function createOpportunityChainWriter() {
+  return createOpportunityWriter({
+    pool: isPostgresSettlementStore() ? settlementStore.pool : null,
+    state,
+    requestContext: runtimeMemory.opportunityContextByRequest,
+  })
+}
+
+function isLlmIntentFallbackEnabled() {
+  return String(process.env.SIMULATOR_INTENT_LLM_FALLBACK || 'true').trim().toLowerCase() !== 'false'
+}
+
+function deriveInventoryNetworksFromPlacement(placement = {}) {
+  const bidders = Array.isArray(placement?.bidders) ? placement.bidders : []
+  const enabled = bidders
+    .filter((item) => item?.enabled !== false)
+    .map((item) => String(item?.networkId || '').trim().toLowerCase())
+    .filter((item) => ['partnerstack', 'cj', 'house'].includes(item))
+  if (enabled.length === 0) {
+    return ['partnerstack', 'cj', 'house']
+  }
+  if (
+    placement?.fallback?.store?.enabled === true
+    && !enabled.includes('house')
+  ) {
+    return [...enabled, 'house']
+  }
+  return enabled
+}
+
+function mapOpportunityReasonToDecision(reasonCode = '', served = false) {
+  if (served) return 'served'
+  if (reasonCode === 'policy_blocked') return 'blocked'
+  if (reasonCode === 'inventory_no_match' || reasonCode === 'rank_below_floor') return 'no_fill'
+  return 'error'
 }
 
 function normalizeDbTimestamp(value, fallback = '') {
@@ -4067,6 +4116,7 @@ function clearRuntimeMemory() {
   runtimeMemory.cooldownBySessionPlacement.clear()
   runtimeMemory.perSessionPlacementCount.clear()
   runtimeMemory.perUserPlacementDayCount.clear()
+  runtimeMemory.opportunityContextByRequest.clear()
 }
 
 let state = loadState()
@@ -5186,13 +5236,15 @@ function toDecisionAdFromBid(bid) {
   }
 }
 
-async function evaluateV2BidRequest(payload) {
+async function evaluateV2BidOpportunityFirst(payload) {
   const request = payload && typeof payload === 'object' ? payload : {}
   request.appId = String(request.appId || DEFAULT_CONTROL_PLANE_APP_ID).trim()
   request.accountId = normalizeControlPlaneAccountId(
     request.accountId || resolveAccountIdForApp(request.appId),
     '',
   )
+
+  const startedAt = Date.now()
   const requestId = createId('adreq')
   const timestamp = nowIso()
   const placement = pickPlacementForRequest({
@@ -5200,7 +5252,59 @@ async function evaluateV2BidRequest(payload) {
     accountId: request.accountId,
     placementId: request.placementId,
   })
+  const placementId = String(placement?.placementId || request.placementId || 'chat_inline_v1').trim()
+  const placementKey = String(placement?.placementKey || PLACEMENT_KEY_BY_ID[placementId] || '').trim()
   const messageContext = deriveBidMessageContext(request.messages)
+  const writer = createOpportunityChainWriter()
+
+  const stageStatusMap = {
+    intent: 'pending',
+    opportunity: 'pending',
+    retrieval: 'pending',
+    ranking: 'pending',
+    delivery: 'pending',
+    attribution: 'pending',
+  }
+
+  const blockedTopics = normalizeStringList(placement?.trigger?.blockedTopics)
+  const intentThreshold = clampNumber(placement?.trigger?.intentThreshold, 0, 1, 0.6)
+  let reasonCode = 'inventory_no_match'
+  let winnerBid = null
+  let opportunityRecord = null
+  let retrievalDebug = {
+    lexicalHitCount: 0,
+    vectorHitCount: 0,
+    fusedHitCount: 0,
+  }
+  let rankingDebug = {}
+  let intent = {
+    score: 0,
+    class: 'non_commercial',
+    source: 'rule',
+    latencyMs: 0,
+  }
+
+  if (!placement || placement.enabled === false) {
+    reasonCode = 'policy_blocked'
+    stageStatusMap.intent = 'skipped'
+    stageStatusMap.opportunity = 'pending'
+    stageStatusMap.retrieval = 'skipped'
+    stageStatusMap.ranking = 'skipped'
+    stageStatusMap.delivery = 'pending'
+  } else {
+    const runtimeConfig = loadRuntimeConfig(process.env, { strict: false })
+    intent = await scoreIntentOpportunityFirst({
+      query: messageContext.query,
+      answerText: messageContext.answerText,
+      locale: 'en-US',
+      recentTurns: messageContext.recentTurns,
+    }, {
+      runtimeConfig,
+      useLlmFallback: isLlmIntentFallbackEnabled(),
+      llmTimeoutMs: 300,
+    })
+    stageStatusMap.intent = 'ok'
+  }
 
   const decisionRequest = {
     appId: request.appId,
@@ -5209,137 +5313,189 @@ async function evaluateV2BidRequest(payload) {
     userId: request.userId,
     turnId: '',
     event: V2_BID_EVENT,
-    placementId: request.placementId,
-    placementKey: String(placement?.placementKey || '').trim(),
+    placementId,
+    placementKey,
     context: {
       query: messageContext.query,
       answerText: messageContext.answerText,
       locale: 'en-US',
-      intentScore: 0,
+      intentScore: intent.score,
+      intentClass: intent.class,
+      intentInferenceMeta: {
+        inferenceModel: intent?.llm?.model || '',
+        inferenceFallbackReason: intent?.llm?.fallbackReason || '',
+        inferenceLatencyMs: toPositiveInteger(intent.llmLatencyMs, 0),
+      },
     },
   }
 
-  const blockedTopic = matchBlockedTopic(
-    {
-      query: messageContext.query,
-      answerText: messageContext.answerText,
-    },
-    normalizeStringList(placement?.trigger?.blockedTopics),
-  )
-  if (blockedTopic) {
-    const decision = createDecision('blocked', `blocked_topic:${blockedTopic}`, 0)
-    await recordDecisionForRequest({
-      request: decisionRequest,
-      placement,
-      requestId,
-      decision,
-      runtime: {
-        bidV2: true,
-        reason: 'blocked_topic',
-      },
-      ads: [],
-    })
-    persistState(state)
-    return {
-      requestId,
-      timestamp,
-      status: 'success',
-      message: 'No bid',
-      data: {
-        bid: null,
-      },
-      diagnostics: {
-        reason: 'blocked_topic',
-      },
-    }
-  }
-
-  if (!placement || placement.enabled === false) {
-    const decision = createDecision('no_fill', 'placement_unavailable', 0)
-    await recordDecisionForRequest({
-      request: decisionRequest,
-      placement: placement || null,
-      requestId,
-      decision,
-      runtime: {
-        bidV2: true,
-        reason: 'placement_unavailable',
-      },
-      ads: [],
-    })
-    persistState(state)
-    return {
-      requestId,
-      timestamp,
-      status: 'success',
-      message: 'No bid',
-      data: {
-        bid: null,
-      },
-      diagnostics: {
-        reason: 'placement_unavailable',
-      },
-    }
-  }
-
-  const aggregation = await runBidAggregationPipeline({
+  opportunityRecord = await writer.createOpportunityRecord({
     requestId,
     appId: request.appId,
-    accountId: request.accountId,
-    userId: request.userId,
-    chatId: request.chatId,
-    placementId: placement.placementId,
-    placement,
-    messages: request.messages,
-    locale: 'en-US',
+    placementId,
+    state: 'received',
+    placementConfigVersion: placement?.configVersion || 1,
+    payload: {
+      messageContext,
+      intent,
+      intentThreshold,
+      blockedTopics,
+      placementKey,
+      createdBy: 'v2_bid_opportunity_first',
+    },
   })
+  stageStatusMap.opportunity = 'persisted'
 
-  const winnerBid = aggregation?.winnerBid && typeof aggregation.winnerBid === 'object'
-    ? aggregation.winnerBid
-    : null
-  const decision = winnerBid
-    ? createDecision('served', 'runtime_eligible', 0)
-    : createDecision('no_fill', 'runtime_no_bid', 0)
+  if (!placement || placement.enabled === false) {
+    reasonCode = 'policy_blocked'
+    stageStatusMap.retrieval = 'skipped'
+    stageStatusMap.ranking = 'skipped'
+  } else {
+    const blockedTopic = matchBlockedTopic(
+      {
+        query: messageContext.query,
+        answerText: messageContext.answerText,
+      },
+      blockedTopics,
+    )
+
+    if (blockedTopic) {
+      reasonCode = 'policy_blocked'
+      stageStatusMap.retrieval = 'blocked'
+      stageStatusMap.ranking = 'blocked'
+      rankingDebug = {
+        policyBlockedTopic: blockedTopic,
+      }
+    } else if (intent.score < intentThreshold) {
+      reasonCode = 'policy_blocked'
+      stageStatusMap.retrieval = 'blocked'
+      stageStatusMap.ranking = 'blocked'
+      rankingDebug = {
+        intentBelowThreshold: true,
+        threshold: intentThreshold,
+        intentScore: intent.score,
+      }
+    } else {
+      const retrieval = await retrieveOpportunityCandidates({
+        query: messageContext.query,
+        filters: {
+          networks: deriveInventoryNetworksFromPlacement(placement),
+          market: 'US',
+          language: 'en-US',
+        },
+        lexicalTopK: 28,
+        vectorTopK: 28,
+        finalTopK: 24,
+      }, {
+        pool: isPostgresSettlementStore() ? settlementStore.pool : null,
+      })
+
+      retrievalDebug = retrieval?.debug && typeof retrieval.debug === 'object'
+        ? retrieval.debug
+        : retrievalDebug
+      stageStatusMap.retrieval = toPositiveInteger(retrievalDebug.fusedHitCount, 0) > 0 ? 'hit' : 'miss'
+
+      const ranking = rankOpportunityCandidates({
+        candidates: Array.isArray(retrieval?.candidates) ? retrieval.candidates : [],
+        query: messageContext.query,
+        answerText: messageContext.answerText,
+        blockedTopics,
+        intentScore: intent.score,
+        scoreFloor: 0.32,
+        placement: 'block',
+      })
+
+      rankingDebug = ranking?.debug && typeof ranking.debug === 'object' ? ranking.debug : {}
+      reasonCode = String(ranking?.reasonCode || 'inventory_no_match')
+      stageStatusMap.ranking = ranking?.winner ? 'selected' : 'no_fill'
+      winnerBid = ranking?.winner?.bid && typeof ranking.winner.bid === 'object'
+        ? ranking.winner.bid
+        : null
+    }
+  }
+
+  const deliveryStatus = winnerBid ? 'served' : 'no_fill'
+  await writer.writeDeliveryRecord({
+    requestId,
+    opportunityKey: opportunityRecord.opportunityKey,
+    appId: request.appId,
+    placementId,
+    deliveryStatus,
+    noFillReasonCode: winnerBid ? '' : reasonCode,
+    payload: {
+      stageStatusMap,
+      reasonCode,
+      retrievalDebug,
+      rankingDebug,
+      intent,
+      winnerBid: winnerBid || null,
+    },
+  })
+  await writer.updateOpportunityState(
+    opportunityRecord.opportunityKey,
+    winnerBid ? 'served' : 'no_fill',
+    {
+      reasonCode,
+      deliveryStatus,
+      updatedAt: nowIso(),
+    },
+  )
+  stageStatusMap.delivery = 'persisted'
+
+  const decisionResult = mapOpportunityReasonToDecision(reasonCode, Boolean(winnerBid))
+  const decision = createDecision(
+    decisionResult,
+    winnerBid ? 'runtime_eligible' : reasonCode,
+    clampNumber(intent.score, 0, 1, 0),
+  )
+
   const runtimeDebug = {
-    networkErrors: Array.isArray(aggregation?.diagnostics?.bidders)
-      ? aggregation.diagnostics.bidders
-        .filter((item) => item?.ok === false)
-        .map((item) => ({
-          network: String(item.networkId || '').trim(),
-          errorCode: item?.timeout ? 'timeout' : 'error',
-          message: String(item.error || 'bidder_failed'),
-        }))
-      : [],
+    bidV2: true,
+    reasonCode,
+    stageStatusMap,
+    retrievalDebug,
+    rankingDebug,
+    intent,
+    networkErrors: [],
     snapshotUsage: {},
     networkHealth: getAllNetworkHealth(),
   }
+
+  const counterPlacement = placement || {
+    placementId,
+  }
+  if (winnerBid) {
+    recordServeCounters(counterPlacement, {
+      sessionId: request.chatId,
+      userId: request.userId,
+    })
+  } else {
+    recordBlockedOrNoFill(counterPlacement)
+  }
+
   recordRuntimeNetworkStats(decision.result, runtimeDebug, {
     requestId,
     appId: request.appId,
     accountId: request.accountId,
-    placementId: placement.placementId,
+    placementId,
   })
-  const decisionAd = winnerBid ? toDecisionAdFromBid(winnerBid) : null
 
+  const decisionAd = winnerBid ? toDecisionAdFromBid(winnerBid) : null
   await recordDecisionForRequest({
     request: decisionRequest,
-    placement,
+    placement: placement || {
+      placementId,
+      placementKey,
+    },
     requestId,
     decision,
     runtime: {
-      bidV2: true,
-      diagnostics: aggregation?.diagnostics || {},
+      ...runtimeDebug,
       metrics: {
-        bid_latency_ms: toPositiveInteger(aggregation?.diagnostics?.bidLatencyMs, 0),
-        fanout_count: toPositiveInteger(aggregation?.diagnostics?.fanoutCount, 0),
-        timeout_rate: (() => {
-          const fanout = toPositiveInteger(aggregation?.diagnostics?.fanoutCount, 0)
-          const timeoutCount = toPositiveInteger(aggregation?.diagnostics?.timeoutCount, 0)
-          return fanout > 0 ? Number((timeoutCount / fanout).toFixed(4)) : 0
-        })(),
-        no_bid_rate: winnerBid ? 0 : 1,
-        store_fallback_rate: aggregation?.diagnostics?.storeFallbackUsed ? 1 : 0,
-        winner_network_share: winnerBid ? String(winnerBid.dsp || '') : '',
+        bid_latency_ms: Math.max(0, Date.now() - startedAt),
+        retrieval_hit_count: toPositiveInteger(retrievalDebug?.fusedHitCount, 0),
+        lexical_hit_count: toPositiveInteger(retrievalDebug?.lexicalHitCount, 0),
+        vector_hit_count: toPositiveInteger(retrievalDebug?.vectorHitCount, 0),
       },
     },
     ads: decisionAd ? [decisionAd] : [],
@@ -5351,11 +5507,31 @@ async function evaluateV2BidRequest(payload) {
     timestamp,
     status: 'success',
     message: winnerBid ? 'Bid successful' : 'No bid',
+    opportunityId: opportunityRecord.opportunityKey,
+    intent: {
+      score: clampNumber(intent.score, 0, 1, 0),
+      class: String(intent.class || 'non_commercial'),
+      source: String(intent.source || 'rule'),
+    },
+    decisionTrace: {
+      stageStatus: stageStatusMap,
+      reasonCode,
+    },
     data: {
       bid: winnerBid,
     },
-    diagnostics: aggregation?.diagnostics || {},
+    diagnostics: {
+      reasonCode,
+      stageStatusMap,
+      retrievalDebug,
+      rankingDebug,
+      bidLatencyMs: Math.max(0, Date.now() - startedAt),
+    },
   }
+}
+
+async function evaluateV2BidRequest(payload) {
+  return await evaluateV2BidOpportunityFirst(payload)
 }
 
 function summarizeRuntimeDebug(debug) {
@@ -5540,6 +5716,15 @@ async function recordDecisionForRequest({ request, placement, requestId, decisio
 
   if (runtime && typeof runtime === 'object') {
     payload.runtime = runtime
+    if (runtime.stageStatusMap && typeof runtime.stageStatusMap === 'object') {
+      payload.stage_status_map = runtime.stageStatusMap
+    }
+    if (typeof runtime.reasonCode === 'string' && runtime.reasonCode.trim()) {
+      payload.reason_code = runtime.reasonCode.trim()
+    }
+    if (runtime.retrievalDebug && typeof runtime.retrievalDebug === 'object') {
+      payload.retrieval_debug = runtime.retrievalDebug
+    }
   }
 
   await recordDecision(payload)
@@ -8721,6 +8906,75 @@ async function requestHandler(req, res) {
     }
   }
 
+  if (pathname === '/api/v1/internal/inventory/status' && req.method === 'GET') {
+    try {
+      const status = await getInventoryStatus(isPostgresSettlementStore() ? settlementStore.pool : null)
+      sendJson(res, 200, status)
+      return
+    } catch (error) {
+      sendJson(res, 500, {
+        error: {
+          code: 'INVENTORY_STATUS_FAILED',
+          message: error instanceof Error ? error.message : 'Failed to fetch inventory status',
+        },
+      })
+      return
+    }
+  }
+
+  if (pathname === '/api/v1/internal/inventory/sync' && req.method === 'POST') {
+    try {
+      const payload = await readJsonBody(req).catch(() => ({}))
+      if (!isPostgresSettlementStore()) {
+        sendJson(res, 503, {
+          error: {
+            code: 'INVENTORY_SYNC_UNAVAILABLE',
+            message: 'Inventory sync requires postgres settlement store.',
+          },
+        })
+        return
+      }
+
+      const body = payload && typeof payload === 'object' ? payload : {}
+      const networks = Array.isArray(body.networks)
+        ? body.networks.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean)
+        : ['partnerstack', 'cj', 'house']
+
+      const syncResult = await syncInventoryNetworks(settlementStore.pool, {
+        networks,
+        search: String(body.search || '').trim(),
+        limit: toPositiveInteger(body.limit, 240),
+        trigger: 'internal_api',
+      })
+      const embeddingResult = body.buildEmbeddings === false
+        ? null
+        : await buildInventoryEmbeddings(settlementStore.pool, {
+          limit: toPositiveInteger(body.embeddingLimit, 6000),
+        })
+      const snapshotResult = body.materializeSnapshot === false
+        ? null
+        : await materializeServingSnapshot(settlementStore.pool)
+      const status = await getInventoryStatus(settlementStore.pool)
+
+      sendJson(res, 200, {
+        ok: Boolean(syncResult?.ok),
+        sync: syncResult,
+        embeddings: embeddingResult,
+        snapshot: snapshotResult,
+        status,
+      })
+      return
+    } catch (error) {
+      sendJson(res, 500, {
+        error: {
+          code: 'INVENTORY_SYNC_FAILED',
+          message: error instanceof Error ? error.message : 'Inventory sync failed',
+        },
+      })
+      return
+    }
+  }
+
   if (pathname === '/api/v2/bid' && req.method === 'POST') {
     try {
       const payload = await readJsonBody(req)
@@ -8761,6 +9015,16 @@ async function requestHandler(req, res) {
         timestamp: String(result.timestamp || nowIso()),
         status: 'success',
         message: String(result.message || 'No bid'),
+        opportunityId: String(result.opportunityId || ''),
+        intent: result?.intent && typeof result.intent === 'object'
+          ? result.intent
+          : undefined,
+        decisionTrace: result?.decisionTrace && typeof result.decisionTrace === 'object'
+          ? result.decisionTrace
+          : undefined,
+        diagnostics: result?.diagnostics && typeof result.diagnostics === 'object'
+          ? result.diagnostics
+          : undefined,
         data: {
           bid: result?.data?.bid || null,
         },
@@ -8780,6 +9044,7 @@ async function requestHandler(req, res) {
   if (pathname === '/api/v1/sdk/events' && req.method === 'POST') {
     try {
       const payload = await readJsonBody(req)
+      const opportunityWriter = createOpportunityChainWriter()
       let responsePayload = { ok: true }
       if (isPostbackConversionPayload(payload)) {
         const request = normalizePostbackConversionPayload(payload, 'sdk/events')
@@ -8821,6 +9086,26 @@ async function requestHandler(req, res) {
           idempotencyKey: fact.idempotencyKey,
           revenueUsd: fact.revenueUsd,
           duplicate,
+        })
+        await opportunityWriter.writeEventRecord({
+          requestId: request.requestId,
+          appId: request.appId,
+          placementId: fact.placementId,
+          eventType: 'postback',
+          eventLayer: 'attribution',
+          eventStatus: request.postbackStatus,
+          kind: request.postbackType,
+          occurredAt: request.occurredAt,
+          eventSeq: request.eventSeq,
+          conversionId: request.conversionId,
+          postbackStatus: request.postbackStatus,
+          payload: {
+            factId: fact.factId,
+            revenueUsd: fact.revenueUsd,
+            duplicate,
+            cpaUsd: request.cpaUsd,
+            currency: request.currency,
+          },
         })
 
         responsePayload = {
@@ -8874,6 +9159,22 @@ async function requestHandler(req, res) {
           placementId: normalizedPlacementId,
           placementKey: request.placementKey,
         })
+        await opportunityWriter.writeEventRecord({
+          requestId: request.requestId || '',
+          appId: request.appId,
+          placementId: normalizedPlacementId,
+          eventType: 'sdk_event',
+          eventLayer: 'sdk',
+          eventStatus: 'recorded',
+          kind: request.kind,
+          event: request.event,
+          occurredAt: nowIso(),
+          payload: {
+            placementKey: request.placementKey,
+            intentClass: inferredIntentClass || '',
+            intentScore: Number.isFinite(inferredIntentScore) ? inferredIntentScore : 0,
+          },
+        })
       } else {
         const request = normalizeAttachMvpPayload(payload, 'sdk/events')
         const auth = await authorizeRuntimeCredential(req, {
@@ -8909,6 +9210,22 @@ async function requestHandler(req, res) {
           adId: request.adId || '',
           placementId: request.placementId || 'chat_inline_v1',
           placementKey: ATTACH_MVP_PLACEMENT_KEY,
+        })
+        await opportunityWriter.writeEventRecord({
+          requestId: request.requestId || '',
+          appId: request.appId,
+          placementId: request.placementId || 'chat_inline_v1',
+          eventType: 'sdk_event',
+          eventLayer: 'sdk',
+          eventStatus: 'recorded',
+          kind: request.kind,
+          event: request.kind === 'click' ? 'click' : ATTACH_MVP_EVENT,
+          occurredAt: nowIso(),
+          payload: {
+            intentScore: request.intentScore,
+            locale: request.locale,
+            adId: request.adId || '',
+          },
         })
       }
 
