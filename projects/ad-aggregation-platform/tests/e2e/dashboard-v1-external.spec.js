@@ -115,6 +115,50 @@ async function stopGateway(handle) {
   }
 }
 
+async function issueRuntimeApiKeyHeaders(baseUrl, input = {}) {
+  const accountId = String(input.accountId || 'org_simulator')
+  const appId = String(input.appId || 'simulator-chatbot')
+  const environment = String(input.environment || 'staging')
+  const created = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
+    method: 'POST',
+    body: {
+      accountId,
+      appId,
+      environment,
+      name: `runtime-${environment}`,
+    },
+  })
+  assert.equal(created.status, 201, `issue runtime key failed: ${JSON.stringify(created.payload)}`)
+  const secret = String(created.payload?.secret || '').trim()
+  assert.equal(Boolean(secret), true, 'runtime key create should return secret')
+  return {
+    Authorization: `Bearer ${secret}`,
+  }
+}
+
+async function registerDashboardHeaders(baseUrl, input = {}) {
+  const now = Date.now()
+  const email = String(input.email || `owner_${now}@example.com`)
+  const password = String(input.password || 'pass12345')
+  const accountId = String(input.accountId || 'org_simulator')
+  const appId = String(input.appId || 'simulator-chatbot')
+  const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+    method: 'POST',
+    body: {
+      email,
+      password,
+      accountId,
+      appId,
+    },
+  })
+  assert.equal(register.status, 201, `dashboard register failed: ${JSON.stringify(register.payload)}`)
+  const accessToken = String(register.payload?.session?.accessToken || '').trim()
+  assert.equal(Boolean(accessToken), true, 'dashboard register should return access token')
+  return {
+    Authorization: `Bearer ${accessToken}`,
+  }
+}
+
 function buildExternalEvaluatePayload() {
   const now = Date.now()
   return {
@@ -129,7 +173,7 @@ function buildExternalEvaluatePayload() {
   }
 }
 
-async function runExternalTurnFailOpen(baseUrl, evaluatePayload, failMode = 'none') {
+async function runExternalTurnFailOpen(baseUrl, evaluatePayload, failMode = 'none', runtimeHeaders = {}) {
   const primaryResponse = {
     ok: true,
     message: 'Primary assistant response is returned to user.',
@@ -157,6 +201,7 @@ async function runExternalTurnFailOpen(baseUrl, evaluatePayload, failMode = 'non
       : evaluatePayload
     const evaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
       method: 'POST',
+      headers: runtimeHeaders,
       body: evalPayload,
     })
 
@@ -168,6 +213,7 @@ async function runExternalTurnFailOpen(baseUrl, evaluatePayload, failMode = 'non
     adResult.requestId = String(evaluate.payload?.requestId || '')
     const events = await requestJson(baseUrl, '/api/v1/sdk/events', {
       method: 'POST',
+      headers: runtimeHeaders,
       body: {
         ...evaluatePayload,
         requestId: adResult.requestId,
@@ -203,6 +249,16 @@ test('dashboard v1 external e2e happy path: config -> evaluate -> events', async
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
 
+    const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, {
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
+    const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
+      email: 'dashboard-v1-owner@example.com',
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
+
     const keys = await requestJson(baseUrl, '/api/v1/public/credentials/keys?appId=simulator-chatbot&environment=staging')
     assert.equal(keys.ok, true, `list keys failed: ${JSON.stringify(keys.payload)}`)
     const keyRows = Array.isArray(keys.payload?.keys) ? keys.payload.keys : []
@@ -211,6 +267,7 @@ test('dashboard v1 external e2e happy path: config -> evaluate -> events', async
     const config = await requestJson(
       baseUrl,
       '/api/v1/mediation/config?appId=simulator-chatbot&placementId=chat_inline_v1&environment=staging&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z',
+      { headers: runtimeHeaders },
     )
     assert.equal(config.ok, true, `config failed: ${JSON.stringify(config.payload)}`)
     assert.equal(config.status, 200)
@@ -220,6 +277,7 @@ test('dashboard v1 external e2e happy path: config -> evaluate -> events', async
     const evaluatePayload = buildExternalEvaluatePayload()
     const evaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
       method: 'POST',
+      headers: runtimeHeaders,
       body: evaluatePayload,
     })
     assert.equal(evaluate.ok, true, `evaluate failed: ${JSON.stringify(evaluate.payload)}`)
@@ -231,6 +289,7 @@ test('dashboard v1 external e2e happy path: config -> evaluate -> events', async
 
     const events = await requestJson(baseUrl, '/api/v1/sdk/events', {
       method: 'POST',
+      headers: runtimeHeaders,
       body: {
         ...evaluatePayload,
         requestId,
@@ -240,19 +299,22 @@ test('dashboard v1 external e2e happy path: config -> evaluate -> events', async
     assert.equal(events.payload?.ok, true, 'events should return { ok: true }')
 
     const [decisions, sdkEvents, scopedDecisions, scopedEvents, mismatchScopeDecisions] = await Promise.all([
-      requestJson(baseUrl, `/api/v1/dashboard/decisions?requestId=${encodeURIComponent(requestId)}`),
-      requestJson(baseUrl, `/api/v1/dashboard/events?requestId=${encodeURIComponent(requestId)}&eventType=sdk_event`),
+      requestJson(baseUrl, `/api/v1/dashboard/decisions?requestId=${encodeURIComponent(requestId)}`, { headers: dashboardHeaders }),
+      requestJson(baseUrl, `/api/v1/dashboard/events?requestId=${encodeURIComponent(requestId)}&eventType=sdk_event`, { headers: dashboardHeaders }),
       requestJson(
         baseUrl,
         `/api/v1/dashboard/decisions?requestId=${encodeURIComponent(requestId)}&appId=simulator-chatbot&accountId=org_simulator`,
+        { headers: dashboardHeaders },
       ),
       requestJson(
         baseUrl,
         `/api/v1/dashboard/events?requestId=${encodeURIComponent(requestId)}&eventType=sdk_event&appId=simulator-chatbot&accountId=org_simulator`,
+        { headers: dashboardHeaders },
       ),
       requestJson(
         baseUrl,
-        `/api/v1/dashboard/decisions?requestId=${encodeURIComponent(requestId)}&accountId=acct_missing`,
+        `/api/v1/dashboard/decisions?requestId=${encodeURIComponent(requestId)}&accountId=acct_missing&appId=simulator-chatbot-other`,
+        { headers: dashboardHeaders },
       ),
     ])
 
@@ -263,14 +325,12 @@ test('dashboard v1 external e2e happy path: config -> evaluate -> events', async
     const eventRows = Array.isArray(sdkEvents.payload?.items) ? sdkEvents.payload.items : []
     const scopedDecisionRows = Array.isArray(scopedDecisions.payload?.items) ? scopedDecisions.payload.items : []
     const scopedEventRows = Array.isArray(scopedEvents.payload?.items) ? scopedEvents.payload.items : []
-    const mismatchRows = Array.isArray(mismatchScopeDecisions.payload?.items)
-      ? mismatchScopeDecisions.payload.items
-      : []
     assert.equal(decisionRows.some((row) => String(row?.requestId || '') === requestId), true)
     assert.equal(eventRows.some((row) => String(row?.requestId || '') === requestId), true)
     assert.equal(scopedDecisionRows.some((row) => String(row?.requestId || '') === requestId), true)
     assert.equal(scopedEventRows.some((row) => String(row?.requestId || '') === requestId), true)
-    assert.equal(mismatchRows.length, 0, 'mismatch account scope should return empty list')
+    assert.equal(mismatchScopeDecisions.status, 403)
+    assert.equal(mismatchScopeDecisions.payload?.error?.code, 'DASHBOARD_SCOPE_VIOLATION')
   } catch (error) {
     const logs = gateway.getLogs()
     const message = error instanceof Error ? error.message : String(error)
@@ -292,12 +352,27 @@ test('dashboard v1 external e2e fail-open: ads failure does not block primary re
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
 
-    const resultOnInvalidPayload = await runExternalTurnFailOpen(baseUrl, buildExternalEvaluatePayload(), 'invalid_payload')
+    const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, {
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
+
+    const resultOnInvalidPayload = await runExternalTurnFailOpen(
+      baseUrl,
+      buildExternalEvaluatePayload(),
+      'invalid_payload',
+      runtimeHeaders,
+    )
     assert.equal(resultOnInvalidPayload.primaryResponse.ok, true, 'primary response should remain available')
     assert.equal(resultOnInvalidPayload.failOpenApplied, true, 'fail-open should trigger on evaluate 400')
     assert.match(resultOnInvalidPayload.adResult.error, /evaluate_failed:400/)
 
-    const resultOnNetworkError = await runExternalTurnFailOpen(baseUrl, buildExternalEvaluatePayload(), 'network_error')
+    const resultOnNetworkError = await runExternalTurnFailOpen(
+      baseUrl,
+      buildExternalEvaluatePayload(),
+      'network_error',
+      runtimeHeaders,
+    )
     assert.equal(resultOnNetworkError.primaryResponse.ok, true, 'primary response should remain available')
     assert.equal(resultOnNetworkError.failOpenApplied, true, 'fail-open should trigger on network error')
     assert.equal(resultOnNetworkError.adResult.error.length > 0, true)

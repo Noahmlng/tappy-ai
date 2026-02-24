@@ -116,6 +116,50 @@ async function stopGateway(handle) {
   }
 }
 
+async function registerDashboardHeaders(baseUrl, input = {}) {
+  const now = Date.now()
+  const email = String(input.email || `owner_${now}@example.com`)
+  const password = String(input.password || 'pass12345')
+  const accountId = String(input.accountId || 'org_simulator')
+  const appId = String(input.appId || 'simulator-chatbot')
+  const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+    method: 'POST',
+    body: {
+      email,
+      password,
+      accountId,
+      appId,
+    },
+  })
+  assert.equal(register.status, 201, `dashboard register failed: ${JSON.stringify(register.payload)}`)
+  const accessToken = String(register.payload?.session?.accessToken || '').trim()
+  assert.equal(Boolean(accessToken), true, 'dashboard register should return access token')
+  return {
+    Authorization: `Bearer ${accessToken}`,
+  }
+}
+
+async function issueRuntimeApiKeyHeaders(baseUrl, input = {}) {
+  const accountId = String(input.accountId || 'org_simulator')
+  const appId = String(input.appId || 'simulator-chatbot')
+  const environment = String(input.environment || 'staging')
+  const created = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
+    method: 'POST',
+    body: {
+      accountId,
+      appId,
+      environment,
+      name: `runtime-${environment}`,
+    },
+  })
+  assert.equal(created.status, 201, `issue runtime key failed: ${JSON.stringify(created.payload)}`)
+  const secret = String(created.payload?.secret || '').trim()
+  assert.equal(Boolean(secret), true, 'runtime key create should return secret')
+  return {
+    Authorization: `Bearer ${secret}`,
+  }
+}
+
 test('CPA postback facts drive dashboard revenue metrics and replace serve estimation', async () => {
   const port = 3920 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${HOST}:${port}`
@@ -127,7 +171,23 @@ test('CPA postback facts drive dashboard revenue metrics and replace serve estim
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
 
-    const beforeSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary')
+    const beforeSummaryUnauthorized = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary')
+    assert.equal(beforeSummaryUnauthorized.status, 401)
+    assert.equal(beforeSummaryUnauthorized.payload?.error?.code, 'DASHBOARD_AUTH_REQUIRED')
+
+    const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
+      email: 'owner-cpa@example.com',
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
+    const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, {
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
+
+    const beforeSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary', {
+      headers: dashboardHeaders,
+    })
     assert.equal(beforeSummary.ok, true)
     assert.equal(round(beforeSummary.payload?.revenueUsd), 0)
 
@@ -143,8 +203,16 @@ test('CPA postback facts drive dashboard revenue metrics and replace serve estim
       placementId: 'chat_inline_v1',
     }
 
+    const evaluateUnauthorized = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
+      method: 'POST',
+      body: evaluatePayload,
+    })
+    assert.equal(evaluateUnauthorized.status, 401)
+    assert.equal(evaluateUnauthorized.payload?.error?.code, 'RUNTIME_AUTH_REQUIRED')
+
     const evaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
       method: 'POST',
+      headers: runtimeHeaders,
       body: evaluatePayload,
     })
     assert.equal(evaluate.ok, true, `evaluate failed: ${JSON.stringify(evaluate.payload)}`)
@@ -153,6 +221,7 @@ test('CPA postback facts drive dashboard revenue metrics and replace serve estim
 
     const sdkEvent = await requestJson(baseUrl, '/api/v1/sdk/events', {
       method: 'POST',
+      headers: runtimeHeaders,
       body: {
         ...evaluatePayload,
         requestId,
@@ -161,7 +230,9 @@ test('CPA postback facts drive dashboard revenue metrics and replace serve estim
     })
     assert.equal(sdkEvent.ok, true, `sdk event failed: ${JSON.stringify(sdkEvent.payload)}`)
 
-    const afterSdkEventSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary')
+    const afterSdkEventSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary', {
+      headers: dashboardHeaders,
+    })
     assert.equal(afterSdkEventSummary.ok, true)
     assert.equal(
       round(afterSdkEventSummary.payload?.revenueUsd),
@@ -188,35 +259,47 @@ test('CPA postback facts drive dashboard revenue metrics and replace serve estim
 
     const successPostback = await requestJson(baseUrl, '/api/v1/sdk/events', {
       method: 'POST',
+      headers: runtimeHeaders,
       body: successPostbackPayload,
     })
     assert.equal(successPostback.ok, true, `postback failed: ${JSON.stringify(successPostback.payload)}`)
     assert.equal(successPostback.payload?.ok, true)
     assert.equal(successPostback.payload?.duplicate, false)
 
-    const afterPostbackSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary')
+    const afterPostbackSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary', {
+      headers: dashboardHeaders,
+    })
     assert.equal(afterPostbackSummary.ok, true)
     assert.equal(round(afterPostbackSummary.payload?.revenueUsd), 2.75)
 
     const scopedSummary = await requestJson(
       baseUrl,
       '/api/v1/dashboard/metrics/summary?appId=simulator-chatbot&accountId=org_simulator',
+      { headers: dashboardHeaders },
     )
     assert.equal(scopedSummary.ok, true)
     assert.equal(round(scopedSummary.payload?.revenueUsd), 2.75)
 
-    const mismatchSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary?accountId=acct_missing')
+    const mismatchSummary = await requestJson(
+      baseUrl,
+      '/api/v1/dashboard/metrics/summary?accountId=acct_missing',
+      { headers: dashboardHeaders },
+    )
     assert.equal(mismatchSummary.ok, true)
-    assert.equal(round(mismatchSummary.payload?.revenueUsd), 0)
+    assert.equal(round(mismatchSummary.payload?.revenueUsd), 2.75)
 
-    const byPlacement = await requestJson(baseUrl, '/api/v1/dashboard/metrics/by-placement')
+    const byPlacement = await requestJson(baseUrl, '/api/v1/dashboard/metrics/by-placement', {
+      headers: dashboardHeaders,
+    })
     assert.equal(byPlacement.ok, true)
     const placementRows = Array.isArray(byPlacement.payload?.items) ? byPlacement.payload.items : []
     const inlineRow = placementRows.find((row) => String(row?.placementId || '') === 'chat_inline_v1')
     assert.equal(Boolean(inlineRow), true)
     assert.equal(round(inlineRow.revenueUsd), 2.75)
 
-    const byDay = await requestJson(baseUrl, '/api/v1/dashboard/metrics/by-day')
+    const byDay = await requestJson(baseUrl, '/api/v1/dashboard/metrics/by-day', {
+      headers: dashboardHeaders,
+    })
     assert.equal(byDay.ok, true)
     const dayRows = Array.isArray(byDay.payload?.items) ? byDay.payload.items : []
     const totalDayRevenue = round(dayRows.reduce((sum, row) => sum + Number(row?.revenueUsd || 0), 0))
@@ -224,17 +307,21 @@ test('CPA postback facts drive dashboard revenue metrics and replace serve estim
 
     const duplicatedPostback = await requestJson(baseUrl, '/api/v1/sdk/events', {
       method: 'POST',
+      headers: runtimeHeaders,
       body: successPostbackPayload,
     })
     assert.equal(duplicatedPostback.ok, true)
     assert.equal(duplicatedPostback.payload?.duplicate, true)
 
-    const afterDuplicateSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary')
+    const afterDuplicateSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary', {
+      headers: dashboardHeaders,
+    })
     assert.equal(afterDuplicateSummary.ok, true)
     assert.equal(round(afterDuplicateSummary.payload?.revenueUsd), 2.75)
 
     const pendingPostback = await requestJson(baseUrl, '/api/v1/sdk/events', {
       method: 'POST',
+      headers: runtimeHeaders,
       body: {
         ...successPostbackPayload,
         conversionId: `${conversionId}_pending`,
@@ -244,13 +331,16 @@ test('CPA postback facts drive dashboard revenue metrics and replace serve estim
     })
     assert.equal(pendingPostback.ok, true)
 
-    const afterPendingSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary')
+    const afterPendingSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary', {
+      headers: dashboardHeaders,
+    })
     assert.equal(afterPendingSummary.ok, true)
     assert.equal(round(afterPendingSummary.payload?.revenueUsd), 2.75)
 
     const postbackLogs = await requestJson(
       baseUrl,
       `/api/v1/dashboard/events?eventType=postback&requestId=${encodeURIComponent(requestId)}`,
+      { headers: dashboardHeaders },
     )
     assert.equal(postbackLogs.ok, true)
     const postbackRows = Array.isArray(postbackLogs.payload?.items) ? postbackLogs.payload.items : []

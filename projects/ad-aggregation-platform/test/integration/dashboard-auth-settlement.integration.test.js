@@ -115,9 +115,31 @@ async function stopGateway(handle) {
   }
 }
 
-async function seedScopedRevenue(baseUrl, input) {
+async function issueRuntimeApiKey(baseUrl, input = {}) {
+  const accountId = String(input.accountId || 'org_simulator')
+  const appId = String(input.appId || 'simulator-chatbot')
+  const environment = String(input.environment || 'staging')
+  const created = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
+    method: 'POST',
+    body: {
+      accountId,
+      appId,
+      environment,
+      name: `runtime-${environment}`,
+    },
+  })
+  assert.equal(created.status, 201, `issue runtime key failed: ${JSON.stringify(created.payload)}`)
+  const secret = String(created.payload?.secret || '').trim()
+  assert.equal(Boolean(secret), true, 'runtime key create should return secret')
+  return {
+    Authorization: `Bearer ${secret}`,
+  }
+}
+
+async function seedScopedRevenue(baseUrl, input, headers = {}) {
   const evaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
     method: 'POST',
+    headers,
     body: {
       appId: input.appId,
       accountId: input.accountId,
@@ -136,6 +158,7 @@ async function seedScopedRevenue(baseUrl, input) {
 
   const postback = await requestJson(baseUrl, '/api/v1/sdk/events', {
     method: 'POST',
+    headers,
     body: {
       eventType: 'postback',
       appId: input.appId,
@@ -185,12 +208,21 @@ test('dashboard auth: login session enforces account scope for settlement aggreg
     })
     assert.equal(registerOther.status, 201, `register other failed: ${JSON.stringify(registerOther.payload)}`)
 
-    await seedScopedRevenue(baseUrl, { accountId: 'org_simulator', appId: 'simulator-chatbot', cpaUsd: 3.2 })
-    await seedScopedRevenue(baseUrl, { accountId: 'acct_other', appId: 'simulator-chatbot-other', cpaUsd: 9.5 })
+    const runtimeOrgHeaders = await issueRuntimeApiKey(baseUrl, {
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
+    const runtimeOtherHeaders = await issueRuntimeApiKey(baseUrl, {
+      accountId: 'acct_other',
+      appId: 'simulator-chatbot-other',
+    })
+
+    await seedScopedRevenue(baseUrl, { accountId: 'org_simulator', appId: 'simulator-chatbot', cpaUsd: 3.2 }, runtimeOrgHeaders)
+    await seedScopedRevenue(baseUrl, { accountId: 'acct_other', appId: 'simulator-chatbot-other', cpaUsd: 9.5 }, runtimeOtherHeaders)
 
     const openUsage = await requestJson(baseUrl, '/api/v1/dashboard/usage-revenue')
-    assert.equal(openUsage.ok, true)
-    assert.equal(round(openUsage.payload?.totals?.settledRevenueUsd), 12.7)
+    assert.equal(openUsage.status, 401)
+    assert.equal(openUsage.payload?.error?.code, 'DASHBOARD_AUTH_REQUIRED')
 
     const loginOrg = await requestJson(baseUrl, '/api/v1/public/dashboard/login', {
       method: 'POST',

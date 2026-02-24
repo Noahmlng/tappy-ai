@@ -46,7 +46,8 @@ const DEFAULT_CONTROL_PLANE_ORG_ID = 'org_simulator'
 const TRACKING_ACCOUNT_QUERY_PARAM = 'aid'
 const DASHBOARD_SESSION_PREFIX = 'dsh_'
 const DASHBOARD_SESSION_TTL_SECONDS = toPositiveInteger(process.env.SIMULATOR_DASHBOARD_SESSION_TTL_SECONDS, 86400 * 7)
-const DASHBOARD_AUTH_REQUIRED = String(process.env.SIMULATOR_DASHBOARD_AUTH_REQUIRED || 'false').trim().toLowerCase() === 'true'
+const DASHBOARD_AUTH_REQUIRED = String(process.env.SIMULATOR_DASHBOARD_AUTH_REQUIRED || 'true').trim().toLowerCase() !== 'false'
+const RUNTIME_AUTH_REQUIRED = String(process.env.SIMULATOR_RUNTIME_AUTH_REQUIRED || 'true').trim().toLowerCase() !== 'false'
 const MIN_AGENT_ACCESS_TTL_SECONDS = 60
 const MAX_AGENT_ACCESS_TTL_SECONDS = 900
 const TOKEN_EXCHANGE_FORBIDDEN_FIELDS = new Set([
@@ -4183,6 +4184,7 @@ function resolveRuntimeCredential(req) {
 
 function authorizeRuntimeCredential(req, options = {}) {
   const requirement = options && typeof options === 'object' ? options : {}
+  const allowAnonymous = requirement.allowAnonymous === true
   const requiredScope = String(requirement.requiredScope || '').trim()
   const requiredAppId = String(requirement.appId || '').trim()
   const requiredEnvironment = String(requirement.environment || '').trim()
@@ -4191,7 +4193,17 @@ function authorizeRuntimeCredential(req, options = {}) {
 
   const resolved = resolveRuntimeCredential(req)
   if (resolved.kind === 'none') {
-    return { ok: true, mode: 'anonymous' }
+    if (allowAnonymous || !RUNTIME_AUTH_REQUIRED) {
+      return { ok: true, mode: 'anonymous' }
+    }
+    return {
+      ok: false,
+      status: 401,
+      error: {
+        code: 'RUNTIME_AUTH_REQUIRED',
+        message: 'Runtime authentication is required.',
+      },
+    }
   }
 
   if (resolved.kind === 'invalid') {
