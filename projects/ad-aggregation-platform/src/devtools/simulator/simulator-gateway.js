@@ -1555,6 +1555,34 @@ function injectTrackingScopeIntoAd(ad, scope = {}) {
   }
 }
 
+function injectTrackingScopeIntoBid(bid, scope = {}) {
+  if (!bid || typeof bid !== 'object') return bid
+
+  const params = {
+    [TRACKING_ACCOUNT_QUERY_PARAM]: String(scope.accountId || '').trim(),
+  }
+  const scopedBid = {
+    ...bid,
+  }
+
+  const rawUrl = String(bid.url || '').trim()
+  if (rawUrl) {
+    scopedBid.url = appendQueryParams(rawUrl, params)
+  }
+
+  const rawTargetUrl = String(bid.targetUrl || '').trim()
+  if (rawTargetUrl) {
+    scopedBid.targetUrl = appendQueryParams(rawTargetUrl, params)
+  }
+
+  const rawTrackingUrl = String(bid.trackingUrl || '').trim()
+  if (rawTrackingUrl) {
+    scopedBid.trackingUrl = appendQueryParams(rawTrackingUrl, params)
+  }
+
+  return scopedBid
+}
+
 function injectTrackingScopeIntoAds(ads, scope = {}) {
   if (!Array.isArray(ads)) return []
   return ads.map((item) => injectTrackingScopeIntoAd(item, scope))
@@ -5411,6 +5439,11 @@ async function evaluateV2BidOpportunityFirst(payload) {
       winnerBid = ranking?.winner?.bid && typeof ranking.winner.bid === 'object'
         ? ranking.winner.bid
         : null
+      if (winnerBid) {
+        winnerBid = injectTrackingScopeIntoBid(winnerBid, {
+          accountId: request.accountId,
+        })
+      }
     }
   }
 
