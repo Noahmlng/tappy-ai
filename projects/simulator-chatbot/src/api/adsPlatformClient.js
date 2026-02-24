@@ -49,11 +49,6 @@ const MEDIATION_ENV = cleanText(
   import.meta.env.MEDIATION_ENV ||
   'staging'
 ) || 'staging'
-const DEFAULT_APP_ID = cleanText(
-  import.meta.env.VITE_SIMULATOR_APP_ID ||
-  import.meta.env.APP_ID ||
-  'simulator-chatbot'
-) || 'simulator-chatbot'
 const DEFAULT_PLACEMENT_ID = cleanText(
   import.meta.env.VITE_SIMULATOR_PLACEMENT_ID ||
   import.meta.env.PLACEMENT_ID ||
@@ -150,14 +145,11 @@ const adsPlatformClient = createAdsSdkClient({
 })
 
 export async function fetchAdsConfig(appId, options = {}) {
-  const normalizedAppId = String(appId || '').trim() || DEFAULT_APP_ID
-  if (!normalizedAppId) {
-    throw new Error('appId is required')
-  }
+  const normalizedAppId = String(appId || '').trim()
 
   const placementId = String(options.placementId || DEFAULT_PLACEMENT_ID).trim() || DEFAULT_PLACEMENT_ID
   const response = await adsPlatformClient.fetchConfig({
-    appId: normalizedAppId,
+    ...(normalizedAppId ? { appId: normalizedAppId } : {}),
     placementId,
     environment: MEDIATION_ENV,
     schemaVersion: DEFAULT_SCHEMA_VERSION,
@@ -263,7 +255,7 @@ export async function reportAdsEvent(payload) {
 export async function runAttachPlacementFlow(payload = {}) {
   const body = normalizeAttachPayload(payload)
   return adsPlatformClient.runAttachFlow({
-    appId: body.appId || DEFAULT_APP_ID,
+    appId: body.appId,
     placementId: DEFAULT_PLACEMENT_ID,
     placementKey: 'attach.post_answer_render',
     environment: MEDIATION_ENV,
@@ -281,7 +273,7 @@ export async function runAttachPlacementFlow(payload = {}) {
 export async function runNextStepIntentCardPlacementFlow(payload = {}) {
   const body = normalizeNextStepIntentCardPayload(payload)
   return adsPlatformClient.runNextStepFlow({
-    appId: body.appId || DEFAULT_APP_ID,
+    appId: body.appId,
     placementId: body.placementId || 'chat_followup_v1',
     placementKey: body.placementKey || 'next_step.intent_card',
     environment: MEDIATION_ENV,

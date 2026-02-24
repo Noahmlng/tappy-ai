@@ -245,15 +245,16 @@ export function createAdsSdkClient(options = {}) {
 
   async function fetchConfig(input = {}) {
     const appId = cleanText(input.appId)
-    if (!appId) throw new Error('fetchConfig requires appId')
 
     const query = {
-      appId,
       placementId: cleanText(input.placementId),
       environment: cleanText(input.environment),
       schemaVersion: cleanText(input.schemaVersion),
       sdkVersion: cleanText(input.sdkVersion),
       requestAt: cleanText(input.requestAt) || new Date().toISOString(),
+    }
+    if (appId) {
+      query.appId = appId
     }
 
     const response = await requestJson('/v1/mediation/config', {
@@ -514,13 +515,15 @@ export function createAdsSdkClient(options = {}) {
     const placementId = cleanText(input.placementId || ATTACH_DEFAULTS.placementId) || ATTACH_DEFAULTS.placementId
     const placementKey = cleanText(input.placementKey || ATTACH_DEFAULTS.placementKey) || ATTACH_DEFAULTS.placementKey
     const evaluatePayload = {
-      appId,
       sessionId: cleanText(input.sessionId),
       turnId: cleanText(input.turnId),
       query: cleanText(input.query),
       answerText: cleanText(input.answerText),
       intentScore: toFiniteNumber(input.intentScore, 0),
       locale: cleanText(input.locale) || 'en-US',
+    }
+    if (appId) {
+      evaluatePayload.appId = appId
     }
 
     return runManagedFlow({
@@ -578,7 +581,6 @@ export function createAdsSdkClient(options = {}) {
     }
 
     const evaluatePayload = {
-      appId,
       sessionId: cleanText(input.sessionId),
       turnId: cleanText(input.turnId),
       userId: cleanText(input.userId),
@@ -586,6 +588,9 @@ export function createAdsSdkClient(options = {}) {
       placementId,
       placementKey,
       context,
+    }
+    if (appId) {
+      evaluatePayload.appId = appId
     }
 
     return runManagedFlow({

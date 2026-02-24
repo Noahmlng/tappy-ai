@@ -504,7 +504,6 @@ const MAX_SESSIONS = 50
 const MAX_TURN_LOGS = 400
 const TOOL_STATES = ['planning', 'running', 'done', 'error']
 const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant. Be accurate, concise, and explicit about uncertainty.'
-const ADS_PLATFORM_APP_ID = import.meta.env.VITE_SIMULATOR_APP_ID || import.meta.env.APP_ID || 'simulator-chatbot'
 const ATTACH_LINK_PLACEMENT_KEY = 'attach.post_answer_render'
 const ENABLE_NEXT_STEP_FLOW = String(
   import.meta.env.VITE_ENABLE_NEXT_STEP_FLOW ??
@@ -1641,7 +1640,6 @@ async function runAttachAdsFlow({ session, userContent, assistantMessageId, turn
   if (!currentMessage) return
 
   const reportPayload = {
-    appId: ADS_PLATFORM_APP_ID,
     sessionId: session.id,
     turnId: turnTrace.turnId,
     query: userContent,
@@ -1650,9 +1648,7 @@ async function runAttachAdsFlow({ session, userContent, assistantMessageId, turn
     locale: getClientLocale(),
   }
 
-  appendTurnTraceEvent(turnTrace, 'ads_config_fetch_started', {
-    appId: reportPayload.appId,
-  })
+  appendTurnTraceEvent(turnTrace, 'ads_config_fetch_started', {})
   appendTurnTraceEvent(turnTrace, 'ads_evaluate_started', {
     placementKey: 'attach.post_answer_render',
     event: 'answer_completed',
@@ -1810,7 +1806,6 @@ async function runNextStepIntentCardFlow({ session, userContent, assistantMessag
   const intentScore = estimateIntentScore(userContent)
   const preferenceFacets = extractPreferenceFacets(userContent)
   const reportPayload = {
-    appId: ADS_PLATFORM_APP_ID,
     sessionId: session.id,
     turnId: turnTrace.turnId,
     event: 'followup_generation',

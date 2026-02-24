@@ -10,16 +10,16 @@
 
 1. `MEDIATION_API_BASE_URL`（按环境发放，例如 `https://api.<env>.example.com`）
 2. `MEDIATION_API_KEY`（服务端调用凭证）
-3. `APP_ID`（你的应用标识）
-4. `PLACEMENT_ID`（例如 `chat_inline_v1`）
-5. 允许的回调域名或调用来源（如果平台要求）
+3. `PLACEMENT_ID`（例如 `chat_inline_v1`）
+4. 允许的回调域名或调用来源（如果平台要求）
+
+说明：runtime 采用 key-only 模式，`app/account/environment` 由 `MEDIATION_API_KEY` 的 scope 自动解析。
 
 ## 2. Minimal Client Init
 
 ```bash
 export MEDIATION_API_BASE_URL="https://api.<env>.example.com"
 export MEDIATION_API_KEY="<issued_api_key>"
-export APP_ID="<your_app_id>"
 ```
 
 Node.js client baseline:
@@ -28,7 +28,6 @@ Node.js client baseline:
 const mediationClient = {
   baseUrl: process.env.MEDIATION_API_BASE_URL,
   apiKey: process.env.MEDIATION_API_KEY,
-  appId: process.env.APP_ID,
   timeoutMs: 2500,
 }
 ```
@@ -36,7 +35,7 @@ const mediationClient = {
 ## 3. Pull Runtime Config
 
 ```bash
-curl -sS "$MEDIATION_API_BASE_URL/api/v1/mediation/config?appId=$APP_ID&placementId=chat_inline_v1&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z" \
+curl -sS "$MEDIATION_API_BASE_URL/api/v1/mediation/config?placementId=chat_inline_v1&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z" \
   -H "Authorization: Bearer $MEDIATION_API_KEY"
 ```
 
@@ -52,7 +51,6 @@ EVAL_RESP=$(curl -sS -X POST "$MEDIATION_API_BASE_URL/api/v1/sdk/evaluate" \
   -H "Authorization: Bearer $MEDIATION_API_KEY" \
   -H 'Content-Type: application/json' \
   -d "{
-    \"appId\":\"$APP_ID\",
     \"sessionId\":\"ext_session_001\",
     \"turnId\":\"ext_turn_001\",
     \"query\":\"Recommend running shoes for rainy days\",
@@ -79,7 +77,6 @@ curl -sS -X POST "$MEDIATION_API_BASE_URL/api/v1/sdk/events" \
   -H 'Content-Type: application/json' \
   -d "{
     \"requestId\":\"$REQUEST_ID\",
-    \"appId\":\"$APP_ID\",
     \"sessionId\":\"ext_session_001\",
     \"turnId\":\"ext_turn_001\",
     \"query\":\"Recommend running shoes for rainy days\",

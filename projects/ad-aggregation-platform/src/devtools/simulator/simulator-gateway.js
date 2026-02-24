@@ -169,6 +169,7 @@ const NEXT_STEP_SENSITIVE_TOPICS = [
 const ATTACH_MVP_ALLOWED_FIELDS = new Set([
   'requestId',
   'appId',
+  'app_id',
   'accountId',
   'account_id',
   'sessionId',
@@ -184,6 +185,7 @@ const ATTACH_MVP_ALLOWED_FIELDS = new Set([
 const NEXT_STEP_INTENT_CARD_ALLOWED_FIELDS = new Set([
   'requestId',
   'appId',
+  'app_id',
   'accountId',
   'account_id',
   'sessionId',
@@ -1837,8 +1839,11 @@ function normalizePostbackConversionPayload(payload, routeName) {
   validateNoExtraFields(input, POSTBACK_CONVERSION_ALLOWED_FIELDS, routeName)
 
   const requestId = requiredNonEmptyString(input.requestId, 'requestId')
-  const appId = requiredNonEmptyString(input.appId, 'appId')
-  const accountId = normalizeControlPlaneAccountId(input.accountId || input.account_id || resolveAccountIdForApp(appId))
+  const appId = String(input.appId || input.app_id || '').trim()
+  const accountId = normalizeControlPlaneAccountId(
+    input.accountId || input.account_id || (appId ? resolveAccountIdForApp(appId) : ''),
+    '',
+  )
   const eventType = String(input.eventType || input.event || 'postback').trim().toLowerCase()
   if (!POSTBACK_EVENT_TYPES.has(eventType)) {
     throw new Error('eventType must be postback.')
@@ -1916,8 +1921,11 @@ function normalizeAttachMvpPayload(payload, routeName) {
   validateNoExtraFields(input, ATTACH_MVP_ALLOWED_FIELDS, routeName)
 
   const requestId = String(input.requestId || '').trim()
-  const appId = requiredNonEmptyString(input.appId, 'appId')
-  const accountId = normalizeControlPlaneAccountId(input.accountId || input.account_id || resolveAccountIdForApp(appId))
+  const appId = String(input.appId || input.app_id || '').trim()
+  const accountId = normalizeControlPlaneAccountId(
+    input.accountId || input.account_id || (appId ? resolveAccountIdForApp(appId) : ''),
+    '',
+  )
   const sessionId = requiredNonEmptyString(input.sessionId, 'sessionId')
   const turnId = requiredNonEmptyString(input.turnId, 'turnId')
   const query = requiredNonEmptyString(input.query, 'query')
@@ -2025,8 +2033,11 @@ function normalizeNextStepIntentCardPayload(payload, routeName) {
   validateNoExtraFields(input, NEXT_STEP_INTENT_CARD_ALLOWED_FIELDS, routeName)
 
   const requestId = String(input.requestId || '').trim()
-  const appId = requiredNonEmptyString(input.appId, 'appId')
-  const accountId = normalizeControlPlaneAccountId(input.accountId || input.account_id || resolveAccountIdForApp(appId))
+  const appId = String(input.appId || input.app_id || '').trim()
+  const accountId = normalizeControlPlaneAccountId(
+    input.accountId || input.account_id || (appId ? resolveAccountIdForApp(appId) : ''),
+    '',
+  )
   const sessionId = requiredNonEmptyString(input.sessionId, 'sessionId')
   const turnId = requiredNonEmptyString(input.turnId, 'turnId')
   const placementId = requiredNonEmptyString(input.placementId, 'placementId')
@@ -5667,6 +5678,47 @@ function authorizeRuntimeCredential(req, options = {}) {
   return { ok: true, mode: 'agent_access_token', credential: access }
 }
 
+function applyRuntimeCredentialScope(request, auth, options = {}) {
+  const target = request && typeof request === 'object' ? request : {}
+  const credential = auth?.credential && typeof auth.credential === 'object' ? auth.credential : {}
+  const scopedAppId = String(credential.appId || '').trim()
+  const scopedAccountId = normalizeControlPlaneAccountId(
+    credential.accountId || credential.organizationId || (scopedAppId ? resolveAccountIdForApp(scopedAppId) : ''),
+    '',
+  )
+  const scopedEnvironment = normalizeControlPlaneEnvironment(credential.environment, '')
+  const scopedPlacementId = String(credential.placementId || '').trim()
+  const applyEnvironment = options && options.applyEnvironment === true
+
+  if (scopedAppId) {
+    target.appId = scopedAppId
+  }
+  if (!String(target.appId || '').trim()) {
+    throw new Error('runtime credential missing app scope.')
+  }
+
+  if (scopedAccountId) {
+    target.accountId = scopedAccountId
+  }
+  if (!String(target.accountId || '').trim()) {
+    target.accountId = normalizeControlPlaneAccountId(resolveAccountIdForApp(target.appId), '')
+  }
+
+  if (applyEnvironment && scopedEnvironment) {
+    target.environment = scopedEnvironment
+  }
+
+  if (scopedPlacementId) {
+    const requestedPlacementId = String(target.placementId || '').trim()
+    if (requestedPlacementId && requestedPlacementId !== scopedPlacementId) {
+      throw new Error('placementId is outside runtime credential scope.')
+    }
+    target.placementId = scopedPlacementId
+  }
+
+  return target
+}
+
 async function recordAttachSdkEvent(request) {
   await recordEvent({
     eventType: 'sdk_event',
@@ -5734,8 +5786,6 @@ async function requestHandler(req, res) {
       const auth = authorizeRuntimeCredential(req, {
         operation: 'mediation_config_read',
         requiredScope: 'mediationConfigRead',
-        appId: String(requestUrl.searchParams.get('appId') || '').trim(),
-        environment: String(requestUrl.searchParams.get('environment') || '').trim(),
         placementId: String(requestUrl.searchParams.get('placementId') || '').trim(),
       })
       if (!auth.ok) {
@@ -5745,10 +5795,15 @@ async function requestHandler(req, res) {
         return
       }
 
+      const runtimeScope = applyRuntimeCredentialScope({
+        appId: String(requestUrl.searchParams.get('appId') || '').trim(),
+        environment: String(requestUrl.searchParams.get('environment') || '').trim(),
+      }, auth, { applyEnvironment: true })
+
       const resolved = resolveMediationConfigSnapshot({
-        appId: requestUrl.searchParams.get('appId'),
+        appId: runtimeScope.appId,
         placementId: requestUrl.searchParams.get('placementId'),
-        environment: requestUrl.searchParams.get('environment'),
+        environment: runtimeScope.environment || requestUrl.searchParams.get('environment'),
         schemaVersion: requestUrl.searchParams.get('schemaVersion'),
         sdkVersion: requestUrl.searchParams.get('sdkVersion'),
         requestAt: requestUrl.searchParams.get('requestAt'),
@@ -7289,7 +7344,6 @@ async function requestHandler(req, res) {
         const auth = authorizeRuntimeCredential(req, {
           operation: 'sdk_evaluate',
           requiredScope: 'sdkEvaluate',
-          appId: request.appId,
           placementId: request.placementId,
         })
         if (!auth.ok) {
@@ -7298,6 +7352,7 @@ async function requestHandler(req, res) {
           })
           return
         }
+        applyRuntimeCredentialScope(request, auth)
 
         const inferenceStartedAt = Date.now()
         const { inference, resolvedContext } = await resolveIntentInferenceForNextStep(request)
@@ -7346,8 +7401,7 @@ async function requestHandler(req, res) {
       const auth = authorizeRuntimeCredential(req, {
         operation: 'sdk_evaluate',
         requiredScope: 'sdkEvaluate',
-        appId: request.appId,
-        placementId: 'chat_inline_v1',
+        placementId: request.placementId || 'chat_inline_v1',
       })
       if (!auth.ok) {
         sendJson(res, auth.status, {
@@ -7355,6 +7409,7 @@ async function requestHandler(req, res) {
         })
         return
       }
+      applyRuntimeCredentialScope(request, auth)
 
       const result = await evaluateRequest({
         appId: request.appId,
@@ -7392,7 +7447,6 @@ async function requestHandler(req, res) {
         const auth = authorizeRuntimeCredential(req, {
           operation: 'sdk_events',
           requiredScope: 'sdkEvents',
-          appId: request.appId,
           placementId: request.placementId || findPlacementIdByRequestId(request.requestId) || 'chat_inline_v1',
         })
         if (!auth.ok) {
@@ -7401,6 +7455,7 @@ async function requestHandler(req, res) {
           })
           return
         }
+        applyRuntimeCredentialScope(request, auth)
 
         const { duplicate, fact } = await recordConversionFact(request)
         await recordEvent({
@@ -7440,7 +7495,6 @@ async function requestHandler(req, res) {
         const auth = authorizeRuntimeCredential(req, {
           operation: 'sdk_events',
           requiredScope: 'sdkEvents',
-          appId: request.appId,
           placementId: request.placementId,
         })
         if (!auth.ok) {
@@ -7449,6 +7503,7 @@ async function requestHandler(req, res) {
           })
           return
         }
+        applyRuntimeCredentialScope(request, auth)
 
         const inferredIntentClass = String(request.context.intentHints?.intent_class || '').trim().toLowerCase()
         const inferredIntentScore = clampNumber(request.context.intentHints?.intent_score, 0, 1, NaN)
@@ -7485,7 +7540,6 @@ async function requestHandler(req, res) {
         const auth = authorizeRuntimeCredential(req, {
           operation: 'sdk_events',
           requiredScope: 'sdkEvents',
-          appId: request.appId,
           placementId: request.placementId || 'chat_inline_v1',
         })
         if (!auth.ok) {
@@ -7494,6 +7548,7 @@ async function requestHandler(req, res) {
           })
           return
         }
+        applyRuntimeCredentialScope(request, auth)
 
         if (request.kind === 'click') {
           recordClickCounters(request.placementId || 'chat_inline_v1')

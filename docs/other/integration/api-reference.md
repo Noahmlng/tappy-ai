@@ -1,7 +1,7 @@
 # Mediation Public API Reference (External Developer)
 
 - Version: v1.0
-- Last Updated: 2026-02-22
+- Last Updated: 2026-02-24
 - Scope: 面向外部开发者的生产 API 契约
 
 ## 1. Base URL and Auth
@@ -9,6 +9,7 @@
 - Base URL: `https://api.<env>.example.com`（由平台发放）
 - Auth header: `Authorization: Bearer <MEDIATION_API_KEY>`
 - Content-Type: `application/json`
+- Runtime is key-only: `app/account/environment` scope is resolved from `MEDIATION_API_KEY`.
 
 ## 2. Public Endpoints
 
@@ -22,12 +23,11 @@
 
 必填参数：
 
-1. `appId`
-2. `placementId`
-3. `environment`（`prod|staging`）
-4. `schemaVersion`
-5. `sdkVersion`
-6. `requestAt`（ISO8601）
+1. `placementId`
+2. `environment`（`prod|staging`）
+3. `schemaVersion`
+4. `sdkVersion`
+5. `requestAt`（ISO8601）
 
 可选参数：
 
@@ -53,7 +53,6 @@
 
 ```json
 {
-  "appId": "app_chat_main",
   "sessionId": "sess_001",
   "turnId": "turn_001",
   "query": "Recommend running shoes",
@@ -63,13 +62,12 @@
 }
 ```
 
-必填字段：`appId, sessionId, turnId, query, answerText, intentScore, locale`
+必填字段：`sessionId, turnId, query, answerText, intentScore, locale`
 
 ### 4.2 Next-Step Intent Card 请求体
 
 ```json
 {
-  "appId": "app_chat_main",
   "sessionId": "sess_002",
   "turnId": "turn_002",
   "userId": "user_001",
@@ -131,7 +129,6 @@
 ```json
 {
   "requestId": "adreq_xxx",
-  "appId": "app_chat_main",
   "sessionId": "sess_001",
   "turnId": "turn_001",
   "query": "Recommend running shoes",
