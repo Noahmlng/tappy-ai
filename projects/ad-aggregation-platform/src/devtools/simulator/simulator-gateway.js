@@ -6132,7 +6132,7 @@ async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/dashboard/placement-audits' && req.method === 'GET') {
-    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    const auth = authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
     if (!auth.ok) {
       sendJson(res, auth.status, { error: auth.error })
       return

@@ -228,6 +228,9 @@ test('dashboard auth: login session enforces account scope for settlement aggreg
     const openUsage = await requestJson(baseUrl, '/api/v1/dashboard/usage-revenue')
     assert.equal(openUsage.status, 401)
     assert.equal(openUsage.payload?.error?.code, 'DASHBOARD_AUTH_REQUIRED')
+    const openPlacementAudits = await requestJson(baseUrl, '/api/v1/dashboard/placement-audits')
+    assert.equal(openPlacementAudits.status, 401)
+    assert.equal(openPlacementAudits.payload?.error?.code, 'DASHBOARD_AUTH_REQUIRED')
 
     const loginOrg = await requestJson(baseUrl, '/api/v1/public/dashboard/login', {
       method: 'POST',
