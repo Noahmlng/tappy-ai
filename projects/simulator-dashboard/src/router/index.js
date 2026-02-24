@@ -2,12 +2,13 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 import { isFeatureEnabled } from '../config/feature-flags'
 import { authState, hydrateAuthSession } from '../state/auth-state'
-import ApiKeysView from '../views/ApiKeysView.vue'
 import AgentOnboardingView from '../views/AgentOnboardingView.vue'
-import HomeView from '../views/HomeView.vue'
+import ApiKeysView from '../views/ApiKeysView.vue'
+import DecisionLogsView from '../views/DecisionLogsView.vue'
 import IntegrationsView from '../views/IntegrationsView.vue'
 import InternalResetView from '../views/InternalResetView.vue'
 import LoginView from '../views/LoginView.vue'
+import OverviewView from '../views/OverviewView.vue'
 import QuickStartView from '../views/QuickStartView.vue'
 import RegisterView from '../views/RegisterView.vue'
 import UsageView from '../views/UsageView.vue'
@@ -15,7 +16,7 @@ import UsageView from '../views/UsageView.vue'
 const routes = [
   {
     path: '/',
-    redirect: '/usage',
+    redirect: '/overview',
   },
   {
     path: '/login',
@@ -30,10 +31,14 @@ const routes = [
     meta: { publicRoute: true },
   },
   {
+    path: '/overview',
+    name: 'overview',
+    component: OverviewView,
+    meta: { navLabel: 'Overview', requiresAuth: true },
+  },
+  {
     path: '/home',
-    name: 'home',
-    component: HomeView,
-    meta: { navLabel: 'Home', requiresAuth: true },
+    redirect: '/overview',
   },
   {
     path: '/quick-start',
@@ -65,6 +70,12 @@ const routes = [
     component: AgentOnboardingView,
     meta: { navLabel: 'Agent Onboarding', requiresAuth: true },
   },
+  {
+    path: '/decision-logs',
+    name: 'decisionLogs',
+    component: DecisionLogsView,
+    meta: { navLabel: 'Decision Logs', requiresAuth: true },
+  },
 ]
 
 if (isFeatureEnabled('enableInternalReset')) {
@@ -78,7 +89,7 @@ if (isFeatureEnabled('enableInternalReset')) {
 
 routes.push({
   path: '/:pathMatch(.*)*',
-  redirect: '/home',
+  redirect: '/overview',
 })
 
 const router = createRouter({
@@ -95,10 +106,10 @@ router.beforeEach(async (to) => {
   const requiresAuth = Boolean(to.meta?.requiresAuth)
 
   if (isPublic && authState.authenticated) {
-    return '/usage'
+    return '/overview'
   }
   if (requiresAuth && !authState.authenticated) {
-    const redirectTarget = String(to.fullPath || '/usage')
+    const redirectTarget = String(to.fullPath || '/overview')
     return {
       path: '/login',
       query: { redirect: redirectTarget },

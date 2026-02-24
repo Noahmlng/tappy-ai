@@ -111,11 +111,11 @@ onMounted(() => {
       </p>
     </article>
 
-    <div class="grid">
-      <article v-for="card in usageCards" :key="card.label" class="panel metric">
-        <h3>{{ card.label }}</h3>
-        <p class="metric-value">{{ card.value }}</p>
-        <p class="metric-sub">{{ card.sub }}</p>
+    <div class="kpi-grid">
+      <article v-for="card in usageCards" :key="card.label" class="kpi-card">
+        <p class="kpi-label">{{ card.label }}</p>
+        <p class="kpi-value">{{ card.value }}</p>
+        <p class="text-detail">{{ card.sub }}</p>
       </article>
     </div>
 

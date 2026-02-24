@@ -8,9 +8,9 @@ import {
 </script>
 
 <template>
-  <section>
+  <section class="page">
     <header class="section-head">
-      <div>
+      <div class="page-header">
         <p class="eyebrow">Configuration</p>
         <h2>Placement Controls</h2>
       </div>
@@ -20,7 +20,7 @@ import {
       </p>
     </header>
 
-    <article class="card">
+    <article class="panel">
       <table class="table">
         <thead>
           <tr>

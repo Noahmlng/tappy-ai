@@ -3,16 +3,16 @@ import { dashboardState, updateTriggerNumber } from '../state/dashboard-state'
 </script>
 
 <template>
-  <section>
+  <section class="page">
     <header class="section-head">
-      <div>
+      <div class="page-header">
         <p class="eyebrow">Configuration</p>
         <h2>Trigger Parameters</h2>
       </div>
       <p class="muted">All thresholds are tenant-defined. Platform should enforce min/max guardrails in API.</p>
     </header>
 
-    <article class="card">
+    <article class="panel">
       <table class="table">
         <thead>
           <tr>

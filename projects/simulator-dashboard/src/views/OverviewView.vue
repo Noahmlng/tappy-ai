@@ -112,9 +112,9 @@ const effectByPlacementRows = computed(() => {
 </script>
 
 <template>
-  <section>
+  <section class="page">
     <header class="section-head">
-      <div>
+      <div class="page-header">
         <p class="eyebrow">Dashboard</p>
         <h2>Revenue & Delivery Overview</h2>
       </div>
@@ -124,14 +124,14 @@ const effectByPlacementRows = computed(() => {
     </header>
 
     <div class="kpi-grid">
-      <article v-for="item in kpis" :key="item.label" class="card kpi-card">
+      <article v-for="item in kpis" :key="item.label" class="kpi-card">
         <p class="kpi-label">{{ item.label }}</p>
         <p class="kpi-value">{{ item.value }}</p>
       </article>
     </div>
 
     <div class="split-grid">
-      <article class="card">
+      <article class="panel">
         <h3>7-Day Revenue Trend</h3>
         <div class="trend-list">
           <div v-for="row in dashboardState.metricsByDay" :key="row.day" class="trend-row">
@@ -144,7 +144,7 @@ const effectByPlacementRows = computed(() => {
         </div>
       </article>
 
-      <article class="card">
+      <article class="panel">
         <h3>Placement Contribution</h3>
         <table class="table">
           <thead>
@@ -169,20 +169,20 @@ const effectByPlacementRows = computed(() => {
       </article>
     </div>
 
-    <article class="card">
+    <article class="panel">
       <h3>Delivery Effect Boards</h3>
       <p class="muted">
         Final effect confirmation focuses on Trigger Rate, CTR, and No-fill Rate.
       </p>
 
-      <div class="kpi-grid" style="margin-top: 0.75rem;">
+      <div class="kpi-grid">
         <article v-for="item in effectSummaryCards" :key="item.label" class="kpi-card">
           <p class="kpi-label">{{ item.label }}</p>
           <p class="kpi-value">{{ item.value }}</p>
         </article>
       </div>
 
-      <table class="table" style="margin-top: 0.75rem;">
+      <table class="table">
         <thead>
           <tr>
             <th>Placement</th>
@@ -203,16 +203,16 @@ const effectByPlacementRows = computed(() => {
     </article>
 
     <div class="split-grid">
-      <article class="card">
+      <article class="panel">
         <h3>Network Health & Circuit Breaker</h3>
-        <div class="kpi-grid" style="margin-top: 0.75rem;">
+        <div class="kpi-grid">
           <article v-for="item in resilienceKpis" :key="item.label" class="kpi-card">
             <p class="kpi-label">{{ item.label }}</p>
             <p class="kpi-value">{{ item.value }}</p>
           </article>
         </div>
 
-        <table class="table" style="margin-top: 0.75rem;">
+        <table class="table">
           <thead>
             <tr>
               <th>Network</th>
@@ -234,14 +234,14 @@ const effectByPlacementRows = computed(() => {
         </table>
       </article>
 
-      <article class="card">
+      <article class="panel">
         <h3>Degradation Signals</h3>
         <p class="muted">
           This panel tracks whether single-network failures were absorbed by the runtime
           (fallback/snapshot/circuit behavior) without dragging total response delivery.
         </p>
 
-        <table class="table" style="margin-top: 0.75rem;">
+        <table class="table">
           <thead>
             <tr>
               <th>Metric</th>

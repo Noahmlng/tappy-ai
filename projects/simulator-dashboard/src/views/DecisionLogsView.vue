@@ -18,6 +18,13 @@ const filteredLogs = computed(() => {
   })
 })
 
+function resultPillClass(result) {
+  if (result === 'served') return 'status-pill good'
+  if (result === 'error') return 'status-pill bad'
+  if (result === 'blocked') return 'status-pill warn'
+  return 'status-pill warn'
+}
+
 function getReasonDetail(row) {
   return typeof row?.reasonDetail === 'string' ? row.reasonDetail.trim() : ''
 }
@@ -89,16 +96,16 @@ function getIntentInferenceMeta(row) {
 </script>
 
 <template>
-  <section>
+  <section class="page">
     <header class="section-head">
-      <div>
+      <div class="page-header">
         <p class="eyebrow">Observability</p>
         <h2>Decision Logs</h2>
       </div>
       <p class="muted">Use reasons to explain why an ad was served, blocked, or no-filled.</p>
     </header>
 
-    <article class="card">
+    <article class="panel">
       <div class="filters">
         <label>
           Result
@@ -136,48 +143,45 @@ function getIntentInferenceMeta(row) {
             <td>{{ row.requestId }}</td>
             <td>{{ row.placementId }}</td>
             <td>
-              <span class="pill" :data-result="row.result">{{ row.result }}</span>
-              <div class="mt-1 text-xs" :class="row.result === 'error' ? 'text-[#b42318]' : 'text-[#667085]'">
-                {{ getDisplayReason(row) }}
-              </div>
-              <div class="text-xs text-[#98a2b3]">intent {{ formatIntentScore(row.intentScore) }}</div>
+              <span :class="resultPillClass(row.result)">{{ row.result }}</span>
+              <p class="text-detail">{{ getDisplayReason(row) }}</p>
+              <p class="text-detail">intent {{ formatIntentScore(row.intentScore) }}</p>
               <template v-if="getIntentInferenceMeta(row)">
-                <div class="text-xs text-[#98a2b3]">
+                <p class="text-detail">
                   infer {{ getIntentInferenceMeta(row).inferenceModel || '-' }} ·
                   {{ getIntentInferenceMeta(row).inferenceLatencyMs }}ms
-                </div>
-                <div class="text-xs text-[#667085]">
+                </p>
+                <p class="text-detail">
                   fallback {{ getIntentInferenceMeta(row).inferenceFallbackReason || 'none' }}
-                </div>
+                </p>
               </template>
             </td>
             <td>
-              <div class="text-xs font-medium text-[#1f2937]">Q: {{ getInputQuery(row) }}</div>
-              <div class="mt-1 text-xs text-[#6b7280]">A: {{ getInputAnswer(row) }}</div>
+              <p class="text-detail"><strong>Q:</strong> {{ getInputQuery(row) }}</p>
+              <p class="text-detail">A: {{ getInputAnswer(row) }}</p>
             </td>
             <td>
-              <div v-if="getEntityItems(row).length === 0" class="text-xs text-[#98a2b3]">none</div>
-              <div v-else class="space-y-1">
-                <div
+              <p v-if="getEntityItems(row).length === 0" class="text-detail">none</p>
+              <div v-else>
+                <p
                   v-for="(entity, idx) in getEntityItems(row)"
                   :key="`${row.requestId}_entity_${idx}`"
-                  class="text-xs text-[#374151]"
+                  class="text-detail"
                 >
-                  <span class="font-medium">{{ entity.entityText || entity.normalizedText || '-' }}</span>
-                  <span class="text-[#6b7280]"> ({{ entity.entityType || 'unknown' }}, {{ formatConfidence(entity.confidence) }})</span>
-                </div>
+                  <strong>{{ entity.entityText || entity.normalizedText || '-' }}</strong>
+                  <span class="muted"> ({{ entity.entityType || 'unknown' }}, {{ formatConfidence(entity.confidence) }})</span>
+                </p>
               </div>
             </td>
             <td>
-              <div v-if="getAds(row).length === 0" class="text-xs text-[#98a2b3]">none</div>
-              <div v-else class="space-y-1">
+              <p v-if="getAds(row).length === 0" class="text-detail">none</p>
+              <div v-else>
                 <div
                   v-for="(ad, idx) in getAds(row)"
                   :key="`${row.requestId}_ad_${idx}`"
-                  class="text-xs text-[#1f2937]"
                 >
-                  <div class="font-medium">{{ clipText(ad.title || ad.entityText || '-', 64) }}</div>
-                  <div class="text-[#6b7280]">{{ clipText(ad.targetUrl || '-', 72) }}</div>
+                  <p class="text-detail"><strong>{{ clipText(ad.title || ad.entityText || '-', 64) }}</strong></p>
+                  <p class="text-detail muted">{{ clipText(ad.targetUrl || '-', 72) }}</p>
                 </div>
               </div>
             </td>
