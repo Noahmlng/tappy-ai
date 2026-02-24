@@ -76,10 +76,18 @@ const PREFER_CONFIGURED_KEY_ON_LOOPBACK = cleanText(
   import.meta.env.MEDIATION_PREFER_ENV_KEY ||
   '',
 ).toLowerCase() === 'true'
+const STRICT_MANUAL_MODE = cleanText(
+  import.meta.env.VITE_MEDIATION_STRICT_MANUAL_MODE ||
+  import.meta.env.MEDIATION_STRICT_MANUAL_MODE ||
+  '',
+).toLowerCase() === 'true'
 const DEFAULT_EVALUATE_TIMEOUT_MS = 20000
 const API_BASE_HOSTNAME = resolveApiBaseHostname(API_BASE)
 
-function resolveLoopbackAuthMode(mode, preferConfiguredKeyOnLoopback, hasConfiguredKey) {
+function resolveLoopbackAuthMode(mode, preferConfiguredKeyOnLoopback, hasConfiguredKey, strictManualMode) {
+  if (strictManualMode) {
+    return 'env_key'
+  }
   if (mode === 'env_key' || mode === 'bootstrap' || mode === 'anonymous') {
     return mode
   }
@@ -94,13 +102,16 @@ function resolveEffectiveApiKey(options = {}) {
   const mediationApiKey = cleanText(options.mediationApiKey)
   const bootstrapApiKey = cleanText(options.bootstrapApiKey)
   const hasConfiguredKey = Boolean(mediationApiKey)
+  const strictManualMode = options.strictManualMode === true
   const loopbackAuthMode = resolveLoopbackAuthMode(
     cleanText(options.loopbackAuthMode).toLowerCase(),
     options.preferConfiguredKeyOnLoopback === true,
     hasConfiguredKey,
+    strictManualMode,
   )
 
   if (!isLoopback) return mediationApiKey
+  if (strictManualMode) return mediationApiKey
   if (loopbackAuthMode === 'env_key') return mediationApiKey || bootstrapApiKey
   if (loopbackAuthMode === 'bootstrap') return bootstrapApiKey || mediationApiKey
   return ''
@@ -112,6 +123,7 @@ const EFFECTIVE_MEDIATION_API_KEY = resolveEffectiveApiKey({
   bootstrapApiKey: LOCAL_BOOTSTRAP_API_KEY,
   loopbackAuthMode: LOOPBACK_AUTH_MODE,
   preferConfiguredKeyOnLoopback: PREFER_CONFIGURED_KEY_ON_LOOPBACK,
+  strictManualMode: STRICT_MANUAL_MODE,
 })
 
 const adsPlatformClient = createAdsSdkClient({

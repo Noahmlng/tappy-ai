@@ -27,6 +27,8 @@ const SETTLEMENT_DB_URL = String(
   || '',
 ).trim()
 const SETTLEMENT_FACT_TABLE = 'simulator_settlement_conversion_facts'
+const RUNTIME_DECISION_LOG_TABLE = 'simulator_runtime_decision_logs'
+const RUNTIME_EVENT_LOG_TABLE = 'simulator_runtime_event_logs'
 
 const PORT = Number(process.env.SIMULATOR_GATEWAY_PORT || 3100)
 const HOST = process.env.SIMULATOR_GATEWAY_HOST || '127.0.0.1'
@@ -41,6 +43,13 @@ const PRODUCTION_RUNTIME = (
 )
 const REQUIRE_DURABLE_SETTLEMENT = String(
   process.env.SIMULATOR_REQUIRE_DURABLE_SETTLEMENT || (PRODUCTION_RUNTIME ? 'true' : 'false'),
+).trim().toLowerCase() !== 'false'
+const STRICT_MANUAL_INTEGRATION = String(
+  process.env.SIMULATOR_STRICT_MANUAL_INTEGRATION || 'false',
+).trim().toLowerCase() === 'true'
+const REQUIRE_RUNTIME_LOG_DB_PERSISTENCE = String(
+  process.env.SIMULATOR_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE
+    || (REQUIRE_DURABLE_SETTLEMENT ? 'true' : 'false'),
 ).trim().toLowerCase() !== 'false'
 const DEV_RESET_ENABLED = String(process.env.SIMULATOR_DEV_RESET_ENABLED || 'true').trim().toLowerCase() !== 'false'
 const DEV_RESET_TOKEN = String(process.env.SIMULATOR_DEV_RESET_TOKEN || '').trim()
@@ -285,6 +294,7 @@ function applyCollectionLimit(rows = [], limit = 0) {
 
 function resolvePreferredSettlementStoreMode() {
   if (REQUIRE_DURABLE_SETTLEMENT) return 'postgres'
+  if (REQUIRE_RUNTIME_LOG_DB_PERSISTENCE) return 'postgres'
   if (SETTLEMENT_STORAGE_MODE === 'postgres') return 'postgres'
   if (SETTLEMENT_STORAGE_MODE === 'state_file' || SETTLEMENT_STORAGE_MODE === 'json') return 'state_file'
   return SETTLEMENT_DB_URL ? 'postgres' : 'state_file'
@@ -1472,18 +1482,22 @@ function createInitialControlPlaneState() {
     accountId: app.accountId,
     environment,
   }))
-  const { keyRecord } = createControlPlaneKeyRecord({
-    appId: app.appId,
-    accountId: app.accountId,
-    environment: 'staging',
-    keyName: 'primary-staging',
-    secret: resolveBootstrapApiKey('staging'),
-  })
+  const apiKeys = []
+  if (!STRICT_MANUAL_INTEGRATION) {
+    const { keyRecord } = createControlPlaneKeyRecord({
+      appId: app.appId,
+      accountId: app.accountId,
+      environment: 'staging',
+      keyName: 'primary-staging',
+      secret: resolveBootstrapApiKey('staging'),
+    })
+    apiKeys.push(keyRecord)
+  }
 
   return {
     apps: [app],
     appEnvironments,
-    apiKeys: [keyRecord],
+    apiKeys,
     integrationTokens: [],
     agentAccessTokens: [],
     dashboardUsers: [],
@@ -1559,25 +1573,37 @@ function ensureControlPlaneState(raw) {
     apiKeys = fallback.apiKeys
   }
 
-  const bootstrapSecret = resolveBootstrapApiKey('staging')
-  const bootstrapHash = hashToken(bootstrapSecret)
-  const hasBootstrapKey = apiKeys.some((item) => (
-    item
-    && item.appId === DEFAULT_CONTROL_PLANE_APP_ID
-    && item.environment === 'staging'
-    && item.secretHash === bootstrapHash
-    && item.status === 'active'
-  ))
-  if (!hasBootstrapKey) {
-    const { keyRecord } = createControlPlaneKeyRecord({
-      appId: DEFAULT_CONTROL_PLANE_APP_ID,
-      accountId: accountByAppId.get(DEFAULT_CONTROL_PLANE_APP_ID) || DEFAULT_CONTROL_PLANE_ORG_ID,
-      environment: 'staging',
-      keyName: 'primary-staging',
-      secret: bootstrapSecret,
-      status: 'active',
-    })
-    apiKeys.unshift(keyRecord)
+  if (STRICT_MANUAL_INTEGRATION) {
+    const bootstrapHash = hashToken(resolveBootstrapApiKey('staging'))
+    apiKeys = apiKeys.filter((item) => !(
+      item
+      && item.appId === DEFAULT_CONTROL_PLANE_APP_ID
+      && item.environment === 'staging'
+      && item.secretHash === bootstrapHash
+    ))
+  }
+
+  if (!STRICT_MANUAL_INTEGRATION) {
+    const bootstrapSecret = resolveBootstrapApiKey('staging')
+    const bootstrapHash = hashToken(bootstrapSecret)
+    const hasBootstrapKey = apiKeys.some((item) => (
+      item
+      && item.appId === DEFAULT_CONTROL_PLANE_APP_ID
+      && item.environment === 'staging'
+      && item.secretHash === bootstrapHash
+      && item.status === 'active'
+    ))
+    if (!hasBootstrapKey) {
+      const { keyRecord } = createControlPlaneKeyRecord({
+        appId: DEFAULT_CONTROL_PLANE_APP_ID,
+        accountId: accountByAppId.get(DEFAULT_CONTROL_PLANE_APP_ID) || DEFAULT_CONTROL_PLANE_ORG_ID,
+        environment: 'staging',
+        keyName: 'primary-staging',
+        secret: bootstrapSecret,
+        status: 'active',
+      })
+      apiKeys.unshift(keyRecord)
+    }
   }
 
   const tokenRows = Array.isArray(raw.integrationTokens || raw.tokens)
@@ -2553,6 +2579,69 @@ async function ensureSettlementFactTable(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_${SETTLEMENT_FACT_TABLE}_placement ON ${SETTLEMENT_FACT_TABLE} (placement_id, occurred_at DESC)`)
 }
 
+async function ensureRuntimeLogTables(pool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ${RUNTIME_DECISION_LOG_TABLE} (
+      id TEXT PRIMARY KEY,
+      created_at TIMESTAMPTZ NOT NULL,
+      request_id TEXT NOT NULL DEFAULT '',
+      app_id TEXT NOT NULL DEFAULT '',
+      account_id TEXT NOT NULL DEFAULT '',
+      session_id TEXT NOT NULL DEFAULT '',
+      turn_id TEXT NOT NULL DEFAULT '',
+      event TEXT NOT NULL DEFAULT '',
+      placement_id TEXT NOT NULL DEFAULT '',
+      placement_key TEXT NOT NULL DEFAULT '',
+      result TEXT NOT NULL DEFAULT '',
+      reason TEXT NOT NULL DEFAULT '',
+      payload_json JSONB NOT NULL DEFAULT '{}'::jsonb
+    )
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_${RUNTIME_DECISION_LOG_TABLE}_account_app
+      ON ${RUNTIME_DECISION_LOG_TABLE} (account_id, app_id, created_at DESC)
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_${RUNTIME_DECISION_LOG_TABLE}_request
+      ON ${RUNTIME_DECISION_LOG_TABLE} (request_id)
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_${RUNTIME_DECISION_LOG_TABLE}_placement
+      ON ${RUNTIME_DECISION_LOG_TABLE} (placement_id, created_at DESC)
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ${RUNTIME_EVENT_LOG_TABLE} (
+      id TEXT PRIMARY KEY,
+      created_at TIMESTAMPTZ NOT NULL,
+      event_type TEXT NOT NULL DEFAULT '',
+      event TEXT NOT NULL DEFAULT '',
+      kind TEXT NOT NULL DEFAULT '',
+      request_id TEXT NOT NULL DEFAULT '',
+      app_id TEXT NOT NULL DEFAULT '',
+      account_id TEXT NOT NULL DEFAULT '',
+      session_id TEXT NOT NULL DEFAULT '',
+      turn_id TEXT NOT NULL DEFAULT '',
+      placement_id TEXT NOT NULL DEFAULT '',
+      placement_key TEXT NOT NULL DEFAULT '',
+      result TEXT NOT NULL DEFAULT '',
+      payload_json JSONB NOT NULL DEFAULT '{}'::jsonb
+    )
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_${RUNTIME_EVENT_LOG_TABLE}_account_app
+      ON ${RUNTIME_EVENT_LOG_TABLE} (account_id, app_id, created_at DESC)
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_${RUNTIME_EVENT_LOG_TABLE}_request
+      ON ${RUNTIME_EVENT_LOG_TABLE} (request_id)
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_${RUNTIME_EVENT_LOG_TABLE}_placement
+      ON ${RUNTIME_EVENT_LOG_TABLE} (placement_id, created_at DESC)
+  `)
+}
+
 async function upsertConversionFactToPostgres(fact, pool = null) {
   const db = pool || settlementStore.pool
   if (!db) return null
@@ -2642,6 +2731,34 @@ async function migrateLegacyConversionFactsToPostgres(rows = []) {
   return { inserted, duplicates }
 }
 
+async function migrateLegacyDecisionLogsToPostgres(rows = []) {
+  const db = settlementStore.pool
+  if (!db) return { inserted: 0, duplicates: 0 }
+  let inserted = 0
+  let duplicates = 0
+  for (const row of rows) {
+    const normalized = normalizeRuntimeDecisionLogRecord(row)
+    const created = await upsertDecisionLogToPostgres(normalized, db)
+    if (created) inserted += 1
+    else duplicates += 1
+  }
+  return { inserted, duplicates }
+}
+
+async function migrateLegacyEventLogsToPostgres(rows = []) {
+  const db = settlementStore.pool
+  if (!db) return { inserted: 0, duplicates: 0 }
+  let inserted = 0
+  let duplicates = 0
+  for (const row of rows) {
+    const normalized = normalizeRuntimeEventLogRecord(row)
+    const created = await upsertEventLogToPostgres(normalized, db)
+    if (created) inserted += 1
+    else duplicates += 1
+  }
+  return { inserted, duplicates }
+}
+
 async function ensureSettlementStoreReady() {
   if (settlementStore.initPromise) {
     await settlementStore.initPromise
@@ -2677,9 +2794,16 @@ async function ensureSettlementStoreReady() {
       })
       await pool.query('SELECT 1')
       await ensureSettlementFactTable(pool)
+      await ensureRuntimeLogTables(pool)
       settlementStore.pool = pool
       const legacyFacts = Array.isArray(state?.conversionFacts)
         ? state.conversionFacts.map((item) => normalizeConversionFact(item))
+        : []
+      const legacyDecisionLogs = Array.isArray(state?.decisionLogs)
+        ? state.decisionLogs.map((item) => normalizeRuntimeDecisionLogRecord(item))
+        : []
+      const legacyEventLogs = Array.isArray(state?.eventLogs)
+        ? state.eventLogs.map((item) => normalizeRuntimeEventLogRecord(item))
         : []
       if (legacyFacts.length > 0) {
         const migrated = await migrateLegacyConversionFactsToPostgres(legacyFacts)
@@ -2687,6 +2811,20 @@ async function ensureSettlementStoreReady() {
           `[simulator-gateway] settlement legacy facts migrated to postgres inserted=${migrated.inserted} duplicates=${migrated.duplicates}`,
         )
         state.conversionFacts = []
+      }
+      if (legacyDecisionLogs.length > 0) {
+        const migrated = await migrateLegacyDecisionLogsToPostgres(legacyDecisionLogs)
+        console.log(
+          `[simulator-gateway] decision logs migrated to postgres inserted=${migrated.inserted} duplicates=${migrated.duplicates}`,
+        )
+      }
+      if (legacyEventLogs.length > 0) {
+        const migrated = await migrateLegacyEventLogsToPostgres(legacyEventLogs)
+        console.log(
+          `[simulator-gateway] event logs migrated to postgres inserted=${migrated.inserted} duplicates=${migrated.duplicates}`,
+        )
+      }
+      if (legacyFacts.length > 0) {
         persistState(state)
       }
     } catch (error) {
@@ -3212,34 +3350,305 @@ function ensurePlacementStats(placementId) {
   return state.placementStats[placementId]
 }
 
-function recordDecision(payload) {
-  const appId = String(payload?.appId || '').trim()
-  const accountId = normalizeControlPlaneAccountId(payload?.accountId || resolveAccountIdForApp(appId), '')
-  state.decisionLogs = applyCollectionLimit([
-    {
-      id: createId('decision'),
-      createdAt: nowIso(),
-      ...(payload && typeof payload === 'object' ? payload : {}),
-      appId,
-      accountId,
-    },
-    ...state.decisionLogs,
-  ], MAX_DECISION_LOGS)
+function readJsonObject(value) {
+  if (value && typeof value === 'object') return value
+  if (typeof value !== 'string') return {}
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
 }
 
-function recordEvent(payload) {
-  const appId = String(payload?.appId || '').trim()
-  const accountId = normalizeControlPlaneAccountId(payload?.accountId || resolveAccountIdForApp(appId), '')
+function normalizeRuntimeDecisionLogRecord(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {}
+  const appId = String(source.appId || '').trim()
+  const accountId = normalizeControlPlaneAccountId(source.accountId || resolveAccountIdForApp(appId), '')
+  const result = DECISION_REASON_ENUM.has(String(source.result || '')) ? String(source.result) : 'error'
+  const reason = DECISION_REASON_ENUM.has(String(source.reason || '')) ? String(source.reason) : result
+  const intentScore = clampNumber(source.intentScore, 0, 1, 0)
+
+  return {
+    ...(source && typeof source === 'object' ? source : {}),
+    id: String(source.id || '').trim() || createId('decision'),
+    createdAt: normalizeIsoTimestamp(source.createdAt || source.created_at, nowIso()),
+    appId,
+    accountId,
+    requestId: String(source.requestId || source.request_id || '').trim(),
+    sessionId: String(source.sessionId || source.session_id || '').trim(),
+    turnId: String(source.turnId || source.turn_id || '').trim(),
+    event: String(source.event || '').trim(),
+    placementId: String(source.placementId || source.placement_id || '').trim(),
+    placementKey: String(source.placementKey || source.placement_key || '').trim(),
+    result,
+    reason,
+    reasonDetail: String(source.reasonDetail || source.reason_detail || '').trim() || reason,
+    intentScore,
+  }
+}
+
+function normalizeRuntimeEventLogRecord(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {}
+  const appId = String(source.appId || '').trim()
+  const accountId = normalizeControlPlaneAccountId(source.accountId || resolveAccountIdForApp(appId), '')
+  return {
+    ...(source && typeof source === 'object' ? source : {}),
+    id: String(source.id || '').trim() || createId('event'),
+    createdAt: normalizeIsoTimestamp(source.createdAt || source.created_at, nowIso()),
+    appId,
+    accountId,
+    requestId: String(source.requestId || source.request_id || '').trim(),
+    sessionId: String(source.sessionId || source.session_id || '').trim(),
+    turnId: String(source.turnId || source.turn_id || '').trim(),
+    placementId: String(source.placementId || source.placement_id || '').trim(),
+    placementKey: String(source.placementKey || source.placement_key || '').trim(),
+    eventType: String(source.eventType || source.event_type || '').trim(),
+    event: String(source.event || '').trim(),
+    kind: String(source.kind || '').trim(),
+    result: String(source.result || '').trim(),
+    reason: String(source.reason || '').trim(),
+    reasonDetail: String(source.reasonDetail || source.reason_detail || '').trim(),
+  }
+}
+
+function mapPostgresRowToRuntimeDecisionLog(row) {
+  const payload = readJsonObject(row?.payload_json)
+  return normalizeRuntimeDecisionLogRecord({
+    ...payload,
+    id: String(row?.id || '').trim(),
+    createdAt: row?.created_at,
+    requestId: row?.request_id,
+    appId: row?.app_id,
+    accountId: row?.account_id,
+    sessionId: row?.session_id,
+    turnId: row?.turn_id,
+    event: row?.event,
+    placementId: row?.placement_id,
+    placementKey: row?.placement_key,
+    result: row?.result,
+    reason: row?.reason,
+  })
+}
+
+function mapPostgresRowToRuntimeEventLog(row) {
+  const payload = readJsonObject(row?.payload_json)
+  return normalizeRuntimeEventLogRecord({
+    ...payload,
+    id: String(row?.id || '').trim(),
+    createdAt: row?.created_at,
+    eventType: row?.event_type,
+    event: row?.event,
+    kind: row?.kind,
+    requestId: row?.request_id,
+    appId: row?.app_id,
+    accountId: row?.account_id,
+    sessionId: row?.session_id,
+    turnId: row?.turn_id,
+    placementId: row?.placement_id,
+    placementKey: row?.placement_key,
+    result: row?.result,
+  })
+}
+
+async function upsertDecisionLogToPostgres(log, pool = null) {
+  const db = pool || settlementStore.pool
+  if (!db) return false
+  const result = await db.query(
+    `
+      INSERT INTO ${RUNTIME_DECISION_LOG_TABLE} (
+        id,
+        created_at,
+        request_id,
+        app_id,
+        account_id,
+        session_id,
+        turn_id,
+        event,
+        placement_id,
+        placement_key,
+        result,
+        reason,
+        payload_json
+      )
+      VALUES ($1, $2::timestamptz, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
+      ON CONFLICT (id) DO NOTHING
+      RETURNING id
+    `,
+    [
+      String(log?.id || '').trim(),
+      String(log?.createdAt || nowIso()),
+      String(log?.requestId || '').trim(),
+      String(log?.appId || '').trim(),
+      normalizeControlPlaneAccountId(log?.accountId || resolveAccountIdForApp(log?.appId), ''),
+      String(log?.sessionId || '').trim(),
+      String(log?.turnId || '').trim(),
+      String(log?.event || '').trim(),
+      String(log?.placementId || '').trim(),
+      String(log?.placementKey || '').trim(),
+      String(log?.result || '').trim(),
+      String(log?.reason || '').trim(),
+      JSON.stringify(log || {}),
+    ],
+  )
+  return Array.isArray(result.rows) && result.rows.length > 0
+}
+
+async function upsertEventLogToPostgres(log, pool = null) {
+  const db = pool || settlementStore.pool
+  if (!db) return false
+  const result = await db.query(
+    `
+      INSERT INTO ${RUNTIME_EVENT_LOG_TABLE} (
+        id,
+        created_at,
+        event_type,
+        event,
+        kind,
+        request_id,
+        app_id,
+        account_id,
+        session_id,
+        turn_id,
+        placement_id,
+        placement_key,
+        result,
+        payload_json
+      )
+      VALUES ($1, $2::timestamptz, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)
+      ON CONFLICT (id) DO NOTHING
+      RETURNING id
+    `,
+    [
+      String(log?.id || '').trim(),
+      String(log?.createdAt || nowIso()),
+      String(log?.eventType || '').trim(),
+      String(log?.event || '').trim(),
+      String(log?.kind || '').trim(),
+      String(log?.requestId || '').trim(),
+      String(log?.appId || '').trim(),
+      normalizeControlPlaneAccountId(log?.accountId || resolveAccountIdForApp(log?.appId), ''),
+      String(log?.sessionId || '').trim(),
+      String(log?.turnId || '').trim(),
+      String(log?.placementId || '').trim(),
+      String(log?.placementKey || '').trim(),
+      String(log?.result || '').trim(),
+      JSON.stringify(log || {}),
+    ],
+  )
+  return Array.isArray(result.rows) && result.rows.length > 0
+}
+
+async function listDecisionLogs(scopeInput = {}) {
+  const scope = normalizeScopeFilters(scopeInput)
+  await ensureSettlementStoreReady()
+
+  if (!isPostgresSettlementStore()) {
+    const rows = Array.isArray(state?.decisionLogs) ? state.decisionLogs : []
+    return scopeHasFilters(scope) ? filterRowsByScope(rows, scope) : rows
+  }
+
+  const clauses = []
+  const values = []
+  let cursor = 1
+  if (scope.accountId) {
+    clauses.push(`account_id = $${cursor}`)
+    values.push(scope.accountId)
+    cursor += 1
+  }
+  if (scope.appId) {
+    clauses.push(`app_id = $${cursor}`)
+    values.push(scope.appId)
+    cursor += 1
+  }
+  const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : ''
+  const result = await settlementStore.pool.query(
+    `SELECT * FROM ${RUNTIME_DECISION_LOG_TABLE} ${whereClause} ORDER BY created_at DESC`,
+    values,
+  )
+  return Array.isArray(result.rows)
+    ? result.rows.map((row) => mapPostgresRowToRuntimeDecisionLog(row)).filter(Boolean)
+    : []
+}
+
+async function listEventLogs(scopeInput = {}) {
+  const scope = normalizeScopeFilters(scopeInput)
+  await ensureSettlementStoreReady()
+
+  if (!isPostgresSettlementStore()) {
+    const rows = Array.isArray(state?.eventLogs) ? state.eventLogs : []
+    return scopeHasFilters(scope) ? filterRowsByScope(rows, scope) : rows
+  }
+
+  const clauses = []
+  const values = []
+  let cursor = 1
+  if (scope.accountId) {
+    clauses.push(`account_id = $${cursor}`)
+    values.push(scope.accountId)
+    cursor += 1
+  }
+  if (scope.appId) {
+    clauses.push(`app_id = $${cursor}`)
+    values.push(scope.appId)
+    cursor += 1
+  }
+  const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : ''
+  const result = await settlementStore.pool.query(
+    `SELECT * FROM ${RUNTIME_EVENT_LOG_TABLE} ${whereClause} ORDER BY created_at DESC`,
+    values,
+  )
+  return Array.isArray(result.rows)
+    ? result.rows.map((row) => mapPostgresRowToRuntimeEventLog(row)).filter(Boolean)
+    : []
+}
+
+async function recordDecision(payload) {
+  const record = normalizeRuntimeDecisionLogRecord(payload)
+  state.decisionLogs = applyCollectionLimit([
+    record,
+    ...state.decisionLogs,
+  ], MAX_DECISION_LOGS)
+
+  if (!isPostgresSettlementStore()) return record
+  try {
+    await upsertDecisionLogToPostgres(record)
+  } catch (error) {
+    if (REQUIRE_RUNTIME_LOG_DB_PERSISTENCE) {
+      throw new Error(
+        `decision log persistence failed: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+    console.error(
+      '[simulator-gateway] decision log persistence failed (fallback state only):',
+      error instanceof Error ? error.message : String(error),
+    )
+  }
+  return record
+}
+
+async function recordEvent(payload) {
+  const record = normalizeRuntimeEventLogRecord(payload)
   state.eventLogs = applyCollectionLimit([
-    {
-      id: createId('event'),
-      createdAt: nowIso(),
-      ...(payload && typeof payload === 'object' ? payload : {}),
-      appId,
-      accountId,
-    },
+    record,
     ...state.eventLogs,
   ], MAX_EVENT_LOGS)
+
+  if (!isPostgresSettlementStore()) return record
+  try {
+    await upsertEventLogToPostgres(record)
+  } catch (error) {
+    if (REQUIRE_RUNTIME_LOG_DB_PERSISTENCE) {
+      throw new Error(
+        `event log persistence failed: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+    console.error(
+      '[simulator-gateway] event log persistence failed (fallback state only):',
+      error instanceof Error ? error.message : String(error),
+    )
+  }
+  return record
 }
 
 function findPlacementIdByRequestId(requestId) {
@@ -3928,7 +4337,7 @@ function summarizeAdsForDecisionLog(ads) {
     .filter(Boolean)
 }
 
-function recordDecisionForRequest({ request, placement, requestId, decision, runtime, ads }) {
+async function recordDecisionForRequest({ request, placement, requestId, decision, runtime, ads }) {
   const result = DECISION_REASON_ENUM.has(decision?.result) ? decision.result : 'error'
   const reason = DECISION_REASON_ENUM.has(decision?.reason) ? decision.reason : 'error'
   const context = request?.context && typeof request.context === 'object' ? request.context : {}
@@ -3960,8 +4369,8 @@ function recordDecisionForRequest({ request, placement, requestId, decision, run
     payload.runtime = runtime
   }
 
-  recordDecision(payload)
-  recordEvent({
+  await recordDecision(payload)
+  await recordEvent({
     eventType: 'decision',
     requestId: payload.requestId || '',
     appId: payload.appId || '',
@@ -3990,7 +4399,7 @@ async function evaluateRequest(payload) {
 
   if (!placement) {
     const decision = createDecision('blocked', 'placement_not_configured', intentScore)
-    recordDecisionForRequest({
+    await recordDecisionForRequest({
       request,
       placement: null,
       requestId,
@@ -4009,7 +4418,7 @@ async function evaluateRequest(payload) {
   if (!placement.enabled) {
     const decision = createDecision('blocked', 'placement_disabled', intentScore)
     recordBlockedOrNoFill(placement)
-    recordDecisionForRequest({
+    await recordDecisionForRequest({
       request,
       placement,
       requestId,
@@ -4031,7 +4440,7 @@ async function evaluateRequest(payload) {
   if (blockedTopic) {
     const decision = createDecision('blocked', `blocked_topic:${blockedTopic}`, intentScore)
     recordBlockedOrNoFill(placement)
-    recordDecisionForRequest({
+    await recordDecisionForRequest({
       request,
       placement,
       requestId,
@@ -4050,7 +4459,7 @@ async function evaluateRequest(payload) {
   if (placement.placementKey === NEXT_STEP_INTENT_CARD_PLACEMENT_KEY && intentClass === 'non_commercial') {
     const decision = createDecision('blocked', 'intent_non_commercial', intentScore)
     recordBlockedOrNoFill(placement)
-    recordDecisionForRequest({
+    await recordDecisionForRequest({
       request,
       placement,
       requestId,
@@ -4069,7 +4478,7 @@ async function evaluateRequest(payload) {
   if (intentScore < postRulePolicy.intentThreshold) {
     const decision = createDecision('blocked', 'intent_below_threshold', intentScore)
     recordBlockedOrNoFill(placement)
-    recordDecisionForRequest({
+    await recordDecisionForRequest({
       request,
       placement,
       requestId,
@@ -4095,7 +4504,7 @@ async function evaluateRequest(payload) {
     if (withinCooldown) {
       const decision = createDecision('blocked', 'cooldown', intentScore)
       recordBlockedOrNoFill(placement)
-      recordDecisionForRequest({
+      await recordDecisionForRequest({
         request,
         placement,
         requestId,
@@ -4118,7 +4527,7 @@ async function evaluateRequest(payload) {
     if (count >= postRulePolicy.maxPerSession) {
       const decision = createDecision('blocked', 'frequency_cap_session', intentScore)
       recordBlockedOrNoFill(placement)
-      recordDecisionForRequest({
+      await recordDecisionForRequest({
         request,
         placement,
         requestId,
@@ -4141,7 +4550,7 @@ async function evaluateRequest(payload) {
     if (count >= postRulePolicy.maxPerUserPerDay) {
       const decision = createDecision('blocked', 'frequency_cap_user_day', intentScore)
       recordBlockedOrNoFill(placement)
-      recordDecisionForRequest({
+      await recordDecisionForRequest({
         request,
         placement,
         requestId,
@@ -4168,7 +4577,7 @@ async function evaluateRequest(payload) {
   if (expectedRevenue < placement.trigger.minExpectedRevenue) {
     const decision = createDecision('no_fill', 'revenue_below_min', intentScore)
     recordBlockedOrNoFill(placement)
-    recordDecisionForRequest({
+    await recordDecisionForRequest({
       request,
       placement,
       requestId,
@@ -4201,7 +4610,7 @@ async function evaluateRequest(payload) {
       failOpenApplied: true,
     })
     recordBlockedOrNoFill(placement)
-    recordDecisionForRequest({
+    await recordDecisionForRequest({
       request,
       placement,
       requestId,
@@ -4235,7 +4644,7 @@ async function evaluateRequest(payload) {
       placementId: placement.placementId,
     })
     recordBlockedOrNoFill(placement)
-    recordDecisionForRequest({
+    await recordDecisionForRequest({
       request,
       placement,
       requestId: runtimeRequestId,
@@ -4269,7 +4678,7 @@ async function evaluateRequest(payload) {
     accountId: request.accountId,
     placementId: placement.placementId,
   })
-  recordDecisionForRequest({
+  await recordDecisionForRequest({
     request,
     placement,
     requestId: runtimeRequestId,
@@ -4664,9 +5073,13 @@ function rankSettlementRows(rows = []) {
   })
 }
 
-function computeSettlementAggregates(scope = {}, factRowsInput = null) {
-  const decisionRows = filterRowsByScope(state.decisionLogs, scope)
-  const eventRows = filterRowsByScope(state.eventLogs, scope)
+function computeSettlementAggregates(scope = {}, factRowsInput = null, options = {}) {
+  const decisionRows = Array.isArray(options?.decisionRows)
+    ? options.decisionRows
+    : filterRowsByScope(state.decisionLogs, scope)
+  const eventRows = Array.isArray(options?.eventRows)
+    ? options.eventRows
+    : filterRowsByScope(state.eventLogs, scope)
   const factRows = Array.isArray(factRowsInput)
     ? factRowsInput
     : filterRowsByScope(state.conversionFacts, scope)
@@ -4717,16 +5130,17 @@ async function getDashboardStatePayload(scopeInput = {}) {
   const hasScopedApps = scopedApps.length > 0
   const shouldApplyScope = hasScope && hasScopedApps
   const emptyScoped = hasScope && !hasScopedApps
+  const dataScope = shouldApplyScope ? scope : {}
 
   const decisionLogs = emptyScoped
     ? []
-    : (shouldApplyScope ? filterRowsByScope(state.decisionLogs, scope) : state.decisionLogs)
+    : await listDecisionLogs(dataScope)
   const eventLogs = emptyScoped
     ? []
-    : (shouldApplyScope ? filterRowsByScope(state.eventLogs, scope) : state.eventLogs)
+    : await listEventLogs(dataScope)
   const conversionFacts = emptyScoped
     ? []
-    : await listConversionFacts(shouldApplyScope ? scope : {})
+    : await listConversionFacts(dataScope)
   const controlPlaneAuditLogs = emptyScoped
     ? []
     : (shouldApplyScope ? filterRowsByScope(state.controlPlaneAuditLogs, scope) : state.controlPlaneAuditLogs)
@@ -4734,21 +5148,11 @@ async function getDashboardStatePayload(scopeInput = {}) {
     ? []
     : (shouldApplyScope ? filterRowsByScope(state.networkFlowLogs, scope) : state.networkFlowLogs)
 
-  const metricsSummary = emptyScoped
-    ? computeScopedMetricsSummary([], [], [])
-    : shouldApplyScope
-    ? computeScopedMetricsSummary(decisionLogs, eventLogs, conversionFacts)
-    : computeMetricsSummary(conversionFacts)
-  const metricsByDay = emptyScoped
-    ? computeScopedMetricsByDay([], [], [])
-    : shouldApplyScope
-    ? computeScopedMetricsByDay(decisionLogs, eventLogs, conversionFacts)
-    : computeMetricsByDay(conversionFacts)
+  const metricsSummary = computeScopedMetricsSummary(decisionLogs, eventLogs, conversionFacts)
+  const metricsByDay = computeScopedMetricsByDay(decisionLogs, eventLogs, conversionFacts)
   const metricsByPlacement = emptyScoped
     ? []
-    : shouldApplyScope
-    ? computeScopedMetricsByPlacement(decisionLogs, eventLogs, conversionFacts, scope)
-    : computeMetricsByPlacement(scope, conversionFacts)
+    : computeScopedMetricsByPlacement(decisionLogs, eventLogs, conversionFacts, scope)
   const networkFlowStats = emptyScoped
     ? createInitialNetworkFlowStats()
     : shouldApplyScope
@@ -4756,7 +5160,10 @@ async function getDashboardStatePayload(scopeInput = {}) {
     : state.networkFlowStats
   const settlementAggregates = emptyScoped
     ? computeSettlementAggregates({ appId: '__none__', accountId: '__none__' }, [])
-    : computeSettlementAggregates(shouldApplyScope ? scope : {}, conversionFacts)
+    : computeSettlementAggregates(shouldApplyScope ? scope : {}, conversionFacts, {
+      decisionRows: decisionLogs,
+      eventRows: eventLogs,
+    })
   const placementScope = emptyScoped
     ? { appId: '', placements: [] }
     : getPlacementsForScope(scope, { createIfMissing: false, clone: true })
@@ -5260,8 +5667,8 @@ function authorizeRuntimeCredential(req, options = {}) {
   return { ok: true, mode: 'agent_access_token', credential: access }
 }
 
-function recordAttachSdkEvent(request) {
-  recordEvent({
+async function recordAttachSdkEvent(request) {
+  await recordEvent({
     eventType: 'sdk_event',
     requestId: request.requestId || '',
     appId: request.appId,
@@ -5423,7 +5830,7 @@ async function requestHandler(req, res) {
       const evaluateLatencyMs = Math.max(0, Date.now() - evaluateStartedAt)
 
       const eventStartedAt = Date.now()
-      recordAttachSdkEvent({
+      await recordAttachSdkEvent({
         requestId: evaluate.requestId || '',
         appId: request.appId,
         accountId: request.accountId,
@@ -6718,7 +7125,7 @@ async function requestHandler(req, res) {
     }
     const scope = auth.scope
 
-    let rows = filterRowsByScope(state.decisionLogs, scope)
+    let rows = await listDecisionLogs(scope)
 
     if (result) {
       rows = rows.filter((row) => row.result === result)
@@ -6747,7 +7154,7 @@ async function requestHandler(req, res) {
     }
     const scope = auth.scope
 
-    let rows = filterRowsByScope(state.eventLogs, scope)
+    let rows = await listEventLogs(scope)
 
     if (result) {
       rows = rows.filter((row) => String(row?.result || '') === result)
@@ -6996,7 +7403,7 @@ async function requestHandler(req, res) {
         }
 
         const { duplicate, fact } = await recordConversionFact(request)
-        recordEvent({
+        await recordEvent({
           eventType: request.eventType,
           event: 'postback',
           kind: request.postbackType,
@@ -7053,7 +7460,7 @@ async function requestHandler(req, res) {
           recordClickCounters(normalizedPlacementId)
         }
 
-        recordEvent({
+        await recordEvent({
           eventType: 'sdk_event',
           requestId: request.requestId || '',
           appId: request.appId,
@@ -7092,7 +7499,7 @@ async function requestHandler(req, res) {
           recordClickCounters(request.placementId || 'chat_inline_v1')
         }
 
-        recordEvent({
+        await recordEvent({
           eventType: 'sdk_event',
           requestId: request.requestId || '',
           appId: request.appId,
@@ -7157,8 +7564,14 @@ async function startServer() {
     console.log(`[simulator-gateway] listening on http://${HOST}:${PORT}`)
     console.log(`[simulator-gateway] state file: ${STATE_FILE}`)
     console.log(`[simulator-gateway] settlement store mode: ${settlementStore.mode}`)
+    console.log(`[simulator-gateway] strict manual integration: ${STRICT_MANUAL_INTEGRATION}`)
+    console.log(`[simulator-gateway] runtime log db persistence required: ${REQUIRE_RUNTIME_LOG_DB_PERSISTENCE}`)
     if (REQUIRE_DURABLE_SETTLEMENT && !isPostgresSettlementStore()) {
       console.error('[simulator-gateway] durable settlement is required but postgres store is unavailable.')
+      process.exit(1)
+    }
+    if (REQUIRE_RUNTIME_LOG_DB_PERSISTENCE && !isPostgresSettlementStore()) {
+      console.error('[simulator-gateway] runtime log DB persistence is required but postgres store is unavailable.')
       process.exit(1)
     }
   })
