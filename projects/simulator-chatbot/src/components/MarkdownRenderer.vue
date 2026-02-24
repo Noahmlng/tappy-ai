@@ -640,24 +640,24 @@ onBeforeUnmount(() => {
   border-bottom: none;
   text-decoration-line: underline;
   text-decoration-style: dotted;
-  text-decoration-color: #9ca3af;
+  text-decoration-color: var(--pencil);
   text-decoration-thickness: 2px;
   text-underline-offset: 2px;
-  background: linear-gradient(180deg, transparent 72%, rgba(156, 163, 175, 0.2) 72%);
+  background: linear-gradient(180deg, transparent 72%, rgba(79, 70, 229, 0.08) 72%);
   cursor: pointer;
   transition: text-decoration-color 0.12s ease, background-color 0.12s ease;
 }
 
 .markdown-content :deep(.inline-offer-marker:hover) {
-  text-decoration-color: #4b5563;
-  background: linear-gradient(180deg, transparent 68%, rgba(107, 114, 128, 0.24) 68%);
+  text-decoration-color: var(--indigo);
+  background: linear-gradient(180deg, transparent 68%, rgba(79, 70, 229, 0.14) 68%);
 }
 
 .markdown-content :deep(a.inline-offer-marker) {
-  color: #1d4ed8;
+  color: var(--indigo);
   text-decoration-line: underline;
   text-decoration-style: solid;
-  text-decoration-color: #1d4ed8;
+  text-decoration-color: var(--indigo);
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
   background: none;
@@ -665,27 +665,27 @@ onBeforeUnmount(() => {
 
 .markdown-content :deep(h1) {
   font-size: 1.5em;
-  font-weight: 700;
+  font-weight: 600;
   margin: 0.75em 0 0.5em;
   display: block;
 }
 
 .markdown-content :deep(h2) {
   font-size: 1.3em;
-  font-weight: 700;
+  font-weight: 600;
   margin: 0.75em 0 0.5em;
   display: block;
 }
 
 .markdown-content :deep(h3) {
   font-size: 1.15em;
-  font-weight: 600;
+  font-weight: 500;
   margin: 0.75em 0 0.5em;
   display: block;
 }
 
 .markdown-content :deep(p) {
-  margin: 0 0 0.75em;
+  margin: 0 0 1.1em;
 }
 
 .markdown-content :deep(p:last-child) {
@@ -693,20 +693,20 @@ onBeforeUnmount(() => {
 }
 
 .markdown-content :deep(code) {
-  background-color: #f0f0f0;
+  background-color: var(--surface);
   padding: 0.15em 0.4em;
   border-radius: 4px;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 0.9em;
 }
 
 .markdown-content :deep(pre) {
-  background-color: #f6f8fa;
-  border-radius: 8px;
+  background-color: var(--surface);
+  border-radius: 12px;
   padding: 1em;
   overflow-x: auto;
   margin: 0.75em 0;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
   display: block;
 }
 
@@ -715,11 +715,12 @@ onBeforeUnmount(() => {
   padding: 0;
   font-size: 0.875em;
   line-height: 1.5;
+  font-family: var(--font-mono);
   display: block;
 }
 
 .markdown-content :deep(a) {
-  color: #0066cc;
+  color: var(--indigo);
   text-decoration: underline;
 }
 
@@ -732,14 +733,14 @@ onBeforeUnmount(() => {
 
 .markdown-content :deep(blockquote) {
   margin: 0.75em 0;
-  border-left: 3px solid #d1d5db;
+  border-left: 2px solid var(--indigo);
   padding-left: 0.75em;
-  color: #4b5563;
+  color: var(--graphite);
 }
 
 .markdown-content :deep(hr) {
   border: 0;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--border);
   margin: 0.9em 0;
 }
 
@@ -751,13 +752,13 @@ onBeforeUnmount(() => {
 
 .markdown-content :deep(th),
 .markdown-content :deep(td) {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
   padding: 6px 8px;
   text-align: left;
 }
 
 .markdown-content :deep(th) {
-  background: #f8fafc;
+  background: var(--surface);
   font-weight: 600;
 }
 
@@ -767,22 +768,22 @@ onBeforeUnmount(() => {
   min-width: 220px;
   max-width: 320px;
   border-radius: 10px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--border);
   background: #ffffff;
   padding: 8px 10px;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.1);
   transform: translate(-50%, -100%);
 }
 
 .inline-offer-popover-title {
   display: block;
   font-size: 12px;
-  color: #374151;
+  color: var(--ink);
   margin-bottom: 4px;
 }
 
 .inline-offer-popover-link {
-  color: #1d4ed8;
+  color: var(--indigo);
   font-size: 12px;
   text-decoration: underline;
 }

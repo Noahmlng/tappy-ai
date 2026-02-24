@@ -1,23 +1,31 @@
 @import "tailwindcss";
 
 :root {
-  --chat-sidebar-bg: #171717;
-  --chat-sidebar-surface: #212121;
-  --chat-sidebar-border: #2f2f2f;
-  --chat-sidebar-text: #e8e8e8;
-  --chat-sidebar-muted: #a6a6a6;
-  --chat-main-bg: #ffffff;
-  --chat-main-text: #1f1f1f;
+  --paper: #F8F7F4;
+  --ink: #1C1B1A;
+  --graphite: #6B6966;
+  --pencil: #A8A5A0;
+  --border: #E6E4E0;
+  --surface: #EFEEE9;
+  --indigo: #4F46E5;
+  --indigo-soft: #EEF2FF;
+  --font-mono: "Berkeley Mono", "JetBrains Mono", "SF Mono", Menlo, monospace;
+
+  --sidebar-bg: #18181A;
+  --sidebar-surface: #222224;
+  --sidebar-border: #2E2E30;
+  --sidebar-text: #E4E3E0;
+  --sidebar-muted: #8A8985;
 }
 
 body {
   margin: 0;
-  background: var(--chat-main-bg);
-  color: var(--chat-main-text);
-  font-family: "Soehne", "Helvetica Neue", Helvetica, "Segoe UI", sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Soehne", "Helvetica Neue", Helvetica, sans-serif;
+  line-height: 1.7;
 }
 
-/* 消息出现动效 */
 .animate-in {
   animation: fade-in 0.28s both, slide-in-from-bottom 0.28s both;
 }
@@ -32,7 +40,6 @@ body {
   to { transform: translateY(0); }
 }
 
-/* 全局滚动条样式 */
 *::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -43,39 +50,35 @@ body {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #cfd3d8;
+  background: var(--border);
   border-radius: 10px;
   transition: background 0.2s ease;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: var(--pencil);
 }
 
-/* Firefox 滚动条样式 */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #cfd3d8 transparent;
+  scrollbar-color: var(--border) transparent;
 }
 
-/* 滚动条美化（保留原有类） */
 .scrollbar-thin::-webkit-scrollbar {
   width: 4px;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #d4d7dc;
+  background: var(--border);
   border-radius: 10px;
 }
 .scrollbar-thin:hover::-webkit-scrollbar-thumb {
-  background: #bfc5cc;
+  background: var(--pencil);
 }
 
-/* 自定义缓动曲线 */
 .cubic-bezier-transition {
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* 增强的光标闪烁效果 */
 .cursor-blink {
   animation: cursor-blink-animation 1s ease-in-out infinite;
 }
@@ -85,7 +88,14 @@ body {
   50% { opacity: 0; }
 }
 
-/* 隐藏 textarea 的滚动条 */
 textarea::-webkit-scrollbar {
   display: none;
+}
+
+.msg-toolbar {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.group:hover .msg-toolbar {
+  opacity: 1;
 }

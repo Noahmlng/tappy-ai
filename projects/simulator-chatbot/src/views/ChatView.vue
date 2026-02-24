@@ -1,44 +1,42 @@
 <template>
-  <div class="flex h-screen w-full overflow-hidden bg-[#f7f7f8] font-sans text-[#1f1f1f]">
+  <div class="flex h-screen w-full overflow-hidden bg-[var(--paper)] font-sans text-[var(--ink)]">
     <aside
       :class="[
-        'fixed z-40 flex h-full w-[260px] -translate-x-full flex-col border-r border-[#2a2a2a] bg-[var(--chat-sidebar-bg)] text-[var(--chat-sidebar-text)] transition-transform duration-300 ease-in-out lg:relative lg:z-0 lg:translate-x-0',
+        'fixed z-40 flex h-full w-[260px] -translate-x-full flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] text-[var(--sidebar-text)] transition-transform duration-300 ease-in-out lg:relative lg:z-0 lg:translate-x-0',
         isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
       ]"
     >
-      <div class="border-b border-[var(--chat-sidebar-border)] p-3">
+      <div class="border-b border-[var(--sidebar-border)] p-3">
         <div class="mb-2 flex items-center justify-between lg:hidden">
-          <button @click="isSidebarOpen = false" class="rounded-lg p-2 text-[var(--chat-sidebar-muted)] hover:bg-[#262626]">
+          <button @click="isSidebarOpen = false" class="rounded-lg p-2 text-[var(--sidebar-muted)] hover:bg-[var(--sidebar-surface)]">
             <X :size="18" />
           </button>
         </div>
 
         <button
           @click="startNewChat"
-          class="group flex w-full items-center justify-between rounded-xl border border-[var(--chat-sidebar-border)] bg-[var(--chat-sidebar-surface)] p-2 text-sm font-medium transition-colors hover:bg-[#2b2b2b]"
+          class="group flex w-full items-center justify-between rounded-xl border border-[var(--sidebar-border)] bg-[var(--sidebar-surface)] p-2 text-sm font-medium transition-colors hover:bg-[#2b2b2b]"
         >
           <div class="flex items-center gap-2">
-            <div class="rounded-full border border-[#3a3a3a] bg-[#151515] p-1">
-              <Plus :size="14" />
-            </div>
+            <Plus :size="14" class="text-[var(--sidebar-muted)]" />
             <span>New Chat</span>
           </div>
-          <MessageSquare :size="14" class="text-[var(--chat-sidebar-muted)] opacity-0 group-hover:opacity-100" />
+          <MessageSquare :size="14" class="text-[var(--sidebar-muted)] opacity-0 group-hover:opacity-100" />
         </button>
 
-        <label class="mt-2 flex items-center gap-2 rounded-xl border border-[var(--chat-sidebar-border)] bg-[var(--chat-sidebar-surface)] px-2 py-2 text-sm">
-          <Search :size="16" class="text-[var(--chat-sidebar-muted)]" />
+        <label class="mt-2 flex items-center gap-2 rounded-xl border border-[var(--sidebar-border)] bg-[var(--sidebar-surface)] px-2 py-2 text-sm">
+          <Search :size="16" class="text-[var(--sidebar-muted)]" />
           <input
             v-model="historyQuery"
             type="text"
             placeholder="Search history"
-            class="w-full bg-transparent text-[var(--chat-sidebar-text)] outline-none placeholder:text-[var(--chat-sidebar-muted)]"
+            class="w-full bg-transparent text-[var(--sidebar-text)] outline-none placeholder:text-[var(--sidebar-muted)]"
           />
         </label>
       </div>
 
       <div class="scrollbar-thin flex-1 space-y-1 overflow-y-auto px-3 py-2">
-        <div class="px-2 py-2 text-[11px] font-semibold uppercase tracking-tight text-[var(--chat-sidebar-muted)]">Recent</div>
+        <div class="px-2 py-2 text-[10px] font-medium uppercase tracking-widest text-[var(--sidebar-muted)]">Recent</div>
 
         <div
           v-for="session in filteredSessions"
@@ -46,17 +44,17 @@
           :class="[
             'group relative w-full rounded-lg p-2 text-sm outline-none transition-colors',
             session.id === activeSessionId
-              ? 'bg-[#2f2f2f] text-white'
-              : 'text-[var(--chat-sidebar-text)] hover:bg-[#262626]'
+              ? 'bg-[var(--sidebar-surface)] text-white'
+              : 'text-[var(--sidebar-text)] hover:bg-[var(--sidebar-surface)]'
           ]"
         >
           <button @click="openSession(session.id)" class="w-full pr-9 text-left">
             <div class="truncate">{{ session.title }}</div>
-            <div class="mt-1 text-[11px] text-[var(--chat-sidebar-muted)]">{{ formatSessionTime(session.updatedAt) }}</div>
+            <div class="mt-1 text-[11px] text-[var(--sidebar-muted)]">{{ formatSessionTime(session.updatedAt) }}</div>
           </button>
           <button
             @click.stop="deleteSession(session.id)"
-            class="absolute right-2 top-1/2 hidden -translate-y-1/2 rounded p-1 text-[var(--chat-sidebar-muted)] hover:bg-[#3a3a3a] group-hover:flex"
+            class="absolute right-2 top-1/2 hidden -translate-y-1/2 rounded p-1 text-[var(--sidebar-muted)] hover:bg-[#3a3a3a] group-hover:flex"
             aria-label="Delete chat"
             title="Delete chat"
           >
@@ -64,19 +62,19 @@
           </button>
         </div>
 
-        <div v-if="filteredSessions.length === 0" class="px-2 py-5 text-xs text-[var(--chat-sidebar-muted)]">
+        <div v-if="filteredSessions.length === 0" class="px-2 py-5 text-xs text-[var(--sidebar-muted)]">
           No chat history.
         </div>
       </div>
 
-      <div class="space-y-2 border-t border-[var(--chat-sidebar-border)] p-3">
-        <details class="rounded-xl border border-[var(--chat-sidebar-border)] bg-[var(--chat-sidebar-surface)] p-2">
-          <summary class="cursor-pointer list-none text-[11px] font-semibold uppercase tracking-wide text-[var(--chat-sidebar-muted)]">
+      <div class="space-y-2 border-t border-[var(--sidebar-border)] p-3">
+        <details class="rounded-xl border border-[var(--sidebar-border)] bg-[var(--sidebar-surface)] p-2">
+          <summary class="cursor-pointer list-none text-[11px] font-medium uppercase tracking-wide text-[var(--sidebar-muted)]">
             System Prompt
           </summary>
           <div class="mt-2 flex items-center justify-end">
             <button
-              class="rounded border border-[#3a3a3a] px-1.5 py-0.5 text-[10px] text-[var(--chat-sidebar-muted)] hover:bg-[#2d2d2d] disabled:opacity-60"
+              class="rounded border border-[var(--sidebar-border)] px-1.5 py-0.5 text-[10px] text-[var(--sidebar-muted)] hover:bg-[#2d2d2d] disabled:opacity-60"
               :disabled="!activeSession"
               @click="resetActiveSystemPrompt"
             >
@@ -87,47 +85,47 @@
             v-model="activeSystemPrompt"
             :disabled="!activeSession"
             rows="5"
-            class="mt-2 w-full resize-y rounded-lg border border-[#3a3a3a] bg-[#1b1b1b] px-2 py-1.5 text-[12px] text-[var(--chat-sidebar-text)] outline-none focus:border-[#5a5a5a] disabled:opacity-60"
+            class="mt-2 w-full resize-y rounded-lg border border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] px-2 py-1.5 text-[12px] text-[var(--sidebar-text)] outline-none focus:border-[#5a5a5a] disabled:opacity-60"
             placeholder="Set a per-chat system prompt..."
           ></textarea>
-          <div class="mt-1 text-[10px] text-[var(--chat-sidebar-muted)]">
+          <div class="mt-1 text-[10px] text-[var(--sidebar-muted)]">
             Applied to every request in the current chat. New Chat resets to default.
           </div>
         </details>
 
-        <details class="rounded-xl border border-[var(--chat-sidebar-border)] bg-[var(--chat-sidebar-surface)] p-2">
-          <summary class="cursor-pointer list-none text-[11px] font-semibold uppercase tracking-wide text-[var(--chat-sidebar-muted)]">
+        <details class="rounded-xl border border-[var(--sidebar-border)] bg-[var(--sidebar-surface)] p-2">
+          <summary class="cursor-pointer list-none text-[11px] font-medium uppercase tracking-wide text-[var(--sidebar-muted)]">
             Turn Trace
           </summary>
-          <div v-if="activeSessionTurnLogs.length === 0" class="mt-2 text-[11px] text-[var(--chat-sidebar-muted)]">
+          <div v-if="activeSessionTurnLogs.length === 0" class="mt-2 text-[11px] text-[var(--sidebar-muted)]">
             No turn logs yet.
           </div>
           <div v-else class="mt-2 max-h-56 space-y-1 overflow-y-auto pr-1">
             <details
               v-for="log in activeSessionTurnLogs"
               :key="log.turnId"
-              class="rounded border border-[#333333] bg-[#1a1a1a] px-2 py-1"
+              class="rounded border border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] px-2 py-1"
             >
               <summary class="list-none cursor-pointer">
                 <div class="flex items-center gap-1 text-[11px]">
-                  <span class="truncate font-medium text-[var(--chat-sidebar-text)]">{{ log.userQuery }}</span>
+                  <span class="truncate font-medium text-[var(--sidebar-text)]">{{ log.userQuery }}</span>
                   <span
                     :class="[
                       'ml-auto rounded px-1.5 py-0.5 text-[10px] font-semibold',
-                      log.toolUsed ? 'bg-emerald-500/20 text-emerald-300' : 'bg-[#303030] text-[var(--chat-sidebar-muted)]'
+                      log.toolUsed ? 'bg-emerald-500/20 text-emerald-300' : 'bg-[#303030] text-[var(--sidebar-muted)]'
                     ]"
                   >
                     {{ log.toolUsed ? 'Tool: YES' : 'Tool: NO' }}
                   </span>
                 </div>
-                <div class="mt-1 text-[10px] text-[var(--chat-sidebar-muted)]">{{ formatTraceTime(log.startedAt) }}</div>
+                <div class="mt-1 text-[10px] text-[var(--sidebar-muted)]">{{ formatTraceTime(log.startedAt) }}</div>
               </summary>
 
-              <div class="mt-2 border-t border-[#333333] pt-2 text-[11px] text-[var(--chat-sidebar-text)]">
-                <div class="mb-1 text-[10px] text-[var(--chat-sidebar-muted)]">Retry count: {{ log.retryCount || 0 }}</div>
+              <div class="mt-2 border-t border-[var(--sidebar-border)] pt-2 text-[11px] text-[var(--sidebar-text)]">
+                <div class="mb-1 text-[10px] text-[var(--sidebar-muted)]">Retry count: {{ log.retryCount || 0 }}</div>
                 <ul class="space-y-1">
                   <li v-for="event in log.events" :key="event.id" class="leading-tight">
-                    <span class="text-[var(--chat-sidebar-muted)]">{{ formatTraceTime(event.at) }}</span>
+                    <span class="text-[var(--sidebar-muted)]">{{ formatTraceTime(event.at) }}</span>
                     <span class="mx-1">·</span>
                     <span>{{ formatTraceEventType(event.type) }}</span>
                   </li>
@@ -139,29 +137,29 @@
 
         <button
           @click="clearHistory"
-          class="w-full rounded-xl border border-[var(--chat-sidebar-border)] bg-[var(--chat-sidebar-surface)] px-3 py-2 text-xs font-medium text-[var(--chat-sidebar-text)] hover:bg-[#2b2b2b]"
+          class="w-full rounded-xl border border-[var(--sidebar-border)] bg-[var(--sidebar-surface)] px-3 py-2 text-xs font-medium text-[var(--sidebar-text)] hover:bg-[#2b2b2b]"
         >
           Clear History
         </button>
       </div>
     </aside>
 
-    <main class="relative flex h-full flex-1 flex-col overflow-hidden bg-[var(--chat-main-bg)]">
-      <header class="z-30 flex h-14 shrink-0 items-center justify-between border-b border-[#ececec] bg-white/90 px-4 backdrop-blur-md">
+    <main class="relative flex h-full flex-1 flex-col overflow-hidden bg-[var(--paper)]">
+      <header class="z-30 flex h-14 shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--paper)]/90 px-4 backdrop-blur-md">
         <div class="flex items-center gap-2">
           <button
             v-if="!isSidebarOpen"
             @click="isSidebarOpen = true"
-            class="hidden rounded-lg p-2 text-[#6b6b6b] hover:bg-[#f2f2f2] lg:block"
+            class="hidden rounded-lg p-2 text-[var(--graphite)] hover:bg-[var(--surface)] lg:block"
           >
             <Menu :size="20" />
           </button>
-          <div class="rounded-full border border-[#e5e7eb] px-2.5 py-1 text-xs font-medium text-[#5f6368]">Chat Bot</div>
+          <span class="text-sm font-medium text-[var(--graphite)]">Search</span>
         </div>
 
         <button
           @click="startNewChat"
-          class="inline-flex items-center gap-1 rounded-full border border-[#dddddd] px-2.5 py-1 text-xs font-medium text-[#3f3f46] transition-colors hover:bg-[#f5f5f5]"
+          class="inline-flex items-center gap-1 rounded-full border border-[var(--border)] px-2.5 py-1 text-xs font-medium text-[var(--graphite)] transition-colors hover:bg-[var(--surface)]"
         >
           <Plus :size="13" />
           <span>New</span>
@@ -178,7 +176,7 @@
           class="cubic-bezier-transition shrink-0 flex flex-col items-center transition-all duration-[700ms]"
           :class="hasStarted ? 'mb-0 max-h-0 scale-95 overflow-hidden opacity-0' : 'mb-8 max-h-20 scale-100 opacity-100'"
         >
-          <h1 class="text-center text-[34px] font-semibold tracking-tight text-[#202123]">How can I help you today?</h1>
+          <h1 class="text-center text-2xl font-normal tracking-tight text-[var(--pencil)]">What would you like to know?</h1>
         </div>
 
         <div
@@ -188,37 +186,16 @@
           <template v-for="msg in currentMessages" :key="msg.id">
             <div
               :class="[
-                'animate-in flex gap-3',
+                'group animate-in flex',
                 msg.role === 'user' ? 'flex-row-reverse items-start' : 'flex-row items-start'
               ]"
             >
-              <div class="mt-1 flex-shrink-0">
-                <div
-                  v-if="msg.role === 'assistant' && msg.kind !== 'tool'"
-                  class="flex h-8 w-8 items-center justify-center rounded-full border border-[#0f8f70] bg-[#10a37f] shadow-sm"
-                >
-                  <Bot :size="18" class="text-white" />
-                </div>
-                <div
-                  v-else-if="msg.role === 'assistant' && msg.kind === 'tool'"
-                  class="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7d7d7] bg-[#f4f4f4] shadow-sm"
-                >
-                  <Search :size="16" class="text-[#5f6368]" />
-                </div>
-                <div
-                  v-else
-                  class="flex h-8 w-8 items-center justify-center rounded-full bg-[#ececec] shadow-sm"
-                >
-                  <UserCircle :size="18" class="text-[#737373]" />
-                </div>
-              </div>
-
               <div
                 :class="[
-                  'min-h-[44px] max-w-[78%] px-4 py-2.5 text-[15px] leading-7',
+                  'min-h-[44px] max-w-[78%] px-4 py-2.5 text-[15px] leading-[1.75]',
                   msg.role === 'user'
-                    ? 'rounded-3xl rounded-tr-md border border-[#ececec] bg-[#f4f4f4] text-[#202123]'
-                    : 'rounded-2xl rounded-tl-sm bg-transparent text-[#202123]'
+                    ? 'rounded-xl bg-[var(--surface)] text-[var(--ink)]'
+                    : 'bg-transparent text-[var(--ink)]'
                 ]"
               >
                 <div v-if="msg.role === 'user'" class="leading-normal">
@@ -226,18 +203,18 @@
                     <textarea
                       v-model="queryRewriteDraft"
                       rows="2"
-                      class="w-full resize-y rounded-xl border border-[#d8d8d8] bg-white px-3 py-2 text-[14px] leading-normal text-[#202123] outline-none focus:border-[#b8b8b8]"
+                      class="w-full resize-y rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-[14px] leading-normal text-[var(--ink)] outline-none focus:border-[var(--indigo)]/40"
                       @keydown.esc.prevent="cancelQueryRewriteEdit"
                     ></textarea>
                     <div class="mt-2 flex items-center justify-end gap-2">
                       <button
-                        class="rounded-lg border border-[#d1d1d1] px-2 py-1 text-[11px] text-[#52525b] hover:bg-[#f3f4f6]"
+                        class="rounded-lg border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--graphite)] hover:bg-[var(--surface)]"
                         @click="cancelQueryRewriteEdit"
                       >
                         Cancel
                       </button>
                       <button
-                        class="rounded-lg border border-[#111111] bg-[#111111] px-2 py-1 text-[11px] text-white hover:bg-[#2a2a2a] disabled:cursor-not-allowed disabled:opacity-60"
+                        class="rounded-lg border border-[var(--ink)] bg-[var(--ink)] px-2 py-1 text-[11px] text-white hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-60"
                         :disabled="!queryRewriteDraft.trim() || isLoading"
                         @click="submitQueryRewrite(msg)"
                       >
@@ -248,9 +225,9 @@
 
                   <template v-else>
                     <div class="whitespace-pre-wrap">{{ msg.content }}</div>
-                    <div class="mt-2 flex justify-end">
+                    <div class="msg-toolbar mt-2 flex justify-end">
                       <button
-                        class="inline-flex items-center gap-1 rounded-lg border border-[#d7d7d7] bg-white px-2 py-1 text-[11px] text-[#5f6368] hover:bg-[#f6f7f8] disabled:cursor-not-allowed disabled:opacity-60"
+                        class="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] bg-white px-2 py-1 text-[11px] text-[var(--graphite)] hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-60"
                         :disabled="isLoading"
                         @click="startQueryRewriteEdit(msg)"
                       >
@@ -263,16 +240,16 @@
 
                 <div v-else class="leading-normal">
                   <template v-if="msg.kind === 'tool'">
-                    <div class="rounded-2xl border border-[#e6e6e6] bg-[#fafafa] px-3 py-2 text-sm">
-                      <div class="flex items-center gap-2 text-xs uppercase tracking-wide text-[#6b7280]">
-                        <span class="font-semibold">Tool</span>
-                        <span class="rounded-md bg-[#ececec] px-1.5 py-0.5 text-[10px] text-[#4b5563]">web_search</span>
-                        <span class="ml-auto text-[11px] font-medium normal-case text-[#5f6368]">{{ formatToolState(msg.toolState) }}</span>
+                    <div class="rounded-xl border border-[var(--border)] bg-[var(--paper)] px-3 py-2 text-sm">
+                      <div class="flex items-center gap-2 text-xs uppercase tracking-widest text-[var(--graphite)]">
+                        <span class="font-medium">Tool</span>
+                        <span class="rounded-md bg-[var(--surface)] px-1.5 py-0.5 text-[10px] text-[var(--graphite)]">web_search</span>
+                        <span class="ml-auto text-[11px] font-medium normal-case text-[var(--graphite)]">{{ formatToolState(msg.toolState) }}</span>
                       </div>
 
-                      <div v-if="msg.toolQuery" class="mt-2 text-[13px] text-[#4b5563]">Query: "{{ msg.toolQuery }}"</div>
+                      <div v-if="msg.toolQuery" class="mt-2 text-[13px] text-[var(--graphite)]">Query: "{{ msg.toolQuery }}"</div>
 
-                      <div v-if="msg.toolState === 'running'" class="mt-2 inline-flex items-center gap-2 text-xs text-[#6b7280]">
+                      <div v-if="msg.toolState === 'running'" class="mt-2 inline-flex items-center gap-2 text-xs text-[var(--pencil)]">
                         <LoaderCircle :size="12" class="animate-spin" />
                         <span>Searching web...</span>
                       </div>
@@ -281,29 +258,29 @@
                         {{ msg.toolError || 'Tool execution failed.' }}
                       </div>
 
-                      <div v-if="msg.toolState === 'done' && msg.toolLatencyMs !== null" class="mt-2 text-[11px] text-[#6b7280]">
+                      <div v-if="msg.toolState === 'done' && msg.toolLatencyMs !== null" class="mt-2 text-[11px] text-[var(--pencil)]">
                         Finished in {{ msg.toolLatencyMs }} ms
                       </div>
 
                       <ul v-if="msg.toolResults?.length" class="mt-2 space-y-2">
-                        <li v-for="(result, idx) in msg.toolResults" :key="result.id || idx" class="rounded-xl border border-[#e7e7e7] bg-white p-2">
+                        <li v-for="(result, idx) in msg.toolResults" :key="result.id || idx" class="rounded-lg border border-[var(--border)] bg-white p-2">
                           <a
                             :href="result.url"
                             target="_blank"
                             rel="noopener noreferrer"
-                            class="text-sm font-medium text-[#2f5bd3] hover:underline"
+                            class="text-sm font-medium text-[var(--indigo)] hover:underline"
                           >
                             {{ idx + 1 }}. {{ result.title }}
                           </a>
-                          <p class="mt-1 text-xs text-[#4b5563]">{{ result.snippet }}</p>
-                          <p class="mt-1 text-[11px] text-[#9ca3af]">{{ getHostLabel(result.url) }}</p>
+                          <p class="mt-1 text-xs text-[var(--graphite)]">{{ result.snippet }}</p>
+                          <p class="mt-1 text-[11px] text-[var(--pencil)]">{{ getHostLabel(result.url) }}</p>
                         </li>
                       </ul>
                     </div>
                   </template>
 
                   <template v-else-if="msg.status === 'reasoning' && !msg.content">
-                    <div class="inline-flex items-center gap-2 text-sm text-[#6b7280]">
+                    <div class="inline-flex items-center gap-2 text-sm text-[var(--pencil)]">
                       <LoaderCircle :size="14" class="animate-spin" />
                       <span>Reasoning...</span>
                     </div>
@@ -319,22 +296,22 @@
                     />
                     <span
                       v-if="msg.status === 'streaming'"
-                      class="cursor-blink ml-0.5 inline-block h-5 w-0.5 bg-gray-800 align-middle"
+                      class="cursor-blink ml-0.5 inline-block h-5 w-0.5 bg-[var(--ink)] align-middle"
                     ></span>
                   </template>
 
                   <div
                     v-if="msg.kind !== 'tool' && msg.role === 'assistant' && msg.status === 'done' && msg.sourceUserContent"
-                    class="mt-2 flex items-center gap-2"
+                    class="msg-toolbar mt-2 flex items-center gap-2"
                   >
                     <button
-                      class="rounded-lg border border-[#d8d8d8] bg-white px-2 py-1 text-[11px] text-[#5f6368] hover:bg-[#f4f4f5] disabled:cursor-not-allowed disabled:opacity-60"
+                      class="rounded-lg border border-[var(--border)] bg-white px-2 py-1 text-[11px] text-[var(--graphite)] hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-60"
                       :disabled="isLoading"
                       @click="handleRegenerate(msg)"
                     >
                       Regenerate
                     </button>
-                    <span class="text-[10px] text-[#9ca3af]">Retry #{{ msg.retryCount }}</span>
+                    <span class="text-[10px] text-[var(--pencil)]">Retry #{{ msg.retryCount }}</span>
                   </div>
 
                   <CitationSources
@@ -345,29 +322,29 @@
 
                   <div
                     v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.attachAdSlot?.ads?.length"
-                    class="mt-3 rounded-2xl border border-[#dfe3f2] bg-[#f8f9ff] p-3"
+                    class="mt-3 rounded-xl border border-[var(--border)] bg-[var(--paper)] p-3"
                   >
                     <div class="mb-2 flex items-center justify-between">
-                      <span class="rounded-full bg-[#eef2ff] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#4758c7]">
+                      <span class="text-[10px] font-medium uppercase tracking-widest text-[var(--pencil)]">
                         Sponsored
                       </span>
-                      <span class="text-[10px] text-[#7b839f]">{{ msg.attachAdSlot.placementId || 'chat_inline_v1' }}</span>
+                      <span class="text-[10px] text-[var(--pencil)]">{{ msg.attachAdSlot.placementId || 'chat_inline_v1' }}</span>
                     </div>
-                    <ul class="space-y-2">
+                    <ul>
                       <li
-                        v-for="ad in msg.attachAdSlot.ads"
+                        v-for="(ad, adIdx) in msg.attachAdSlot.ads"
                         :key="ad.adId"
-                        class="rounded-xl border border-[#e5e9f7] bg-white p-2.5"
+                        :class="['py-2', adIdx < msg.attachAdSlot.ads.length - 1 ? 'border-b border-[var(--border)]' : '']"
                       >
                         <div class="flex items-start justify-between gap-3">
                           <div class="min-w-0">
-                            <p class="truncate text-sm font-semibold text-[#1f2937]">
+                            <p class="truncate text-sm font-medium text-[var(--ink)]">
                               {{ ad.entityText || ad.title || 'Sponsored result' }}
                             </p>
-                            <p v-if="ad.description" class="mt-1 text-xs text-[#566176]">
+                            <p v-if="ad.description" class="mt-1 text-xs text-[var(--graphite)]">
                               {{ ad.description }}
                             </p>
-                            <p v-if="ad.sourceNetwork" class="mt-1 text-[10px] uppercase tracking-wide text-[#8b93ab]">
+                            <p v-if="ad.sourceNetwork" class="mt-1 text-[10px] uppercase tracking-widest text-[var(--pencil)]">
                               {{ ad.sourceNetwork }}
                             </p>
                           </div>
@@ -375,7 +352,7 @@
                             :href="resolveAdHref(ad)"
                             target="_blank"
                             rel="noopener noreferrer"
-                            class="shrink-0 rounded-lg border border-[#cad3f3] bg-[#f3f6ff] px-2 py-1 text-[11px] font-medium text-[#2d4fd8] hover:bg-[#e9efff]"
+                            class="shrink-0 text-[11px] font-medium text-[var(--indigo)] hover:underline"
                             @click="handleSponsoredAdClick(msg, ad)"
                           >
                             Open
@@ -449,19 +426,19 @@
         </div>
 
         <div
-          class="cubic-bezier-transition sticky bottom-0 z-20 w-full bg-gradient-to-t from-white via-white to-white/90 transition-all duration-[700ms]"
+          class="cubic-bezier-transition sticky bottom-0 z-20 w-full bg-gradient-to-t from-[var(--paper)] via-[var(--paper)] to-[var(--paper)]/90 transition-all duration-[700ms]"
           :class="hasStarted ? 'mt-auto pb-5 pt-2' : 'pb-8'"
         >
           <div class="mx-auto max-w-[760px] px-4">
-            <div class="relative flex flex-col rounded-[28px] border border-[#d9d9e3] bg-white p-2 shadow-[0_10px_30px_rgba(0,0,0,0.06)] transition-all duration-300 focus-within:border-[#c9c9d7]">
+            <div class="relative flex flex-col rounded-2xl border border-[var(--border)] bg-white p-2 transition-all duration-300 focus-within:border-[var(--indigo)]/40">
               <textarea
                 v-model="input"
                 rows="1"
                 @compositionstart="isComposing = true"
                 @compositionend="isComposing = false"
                 @keydown.enter.prevent="handleSend"
-                placeholder="Message Chat Bot"
-                class="max-h-52 w-full resize-none border-none bg-transparent py-3 pl-4 pr-24 text-[16px] text-[#202123] outline-none focus:outline-none focus:ring-0 placeholder:text-[#9ca3af]"
+                placeholder="Ask anything..."
+                class="max-h-52 w-full resize-none border-none bg-transparent py-3 pl-4 pr-20 text-[16px] text-[var(--ink)] outline-none focus:outline-none focus:ring-0 placeholder:text-[var(--pencil)]"
                 style="min-height: 44px"
               ></textarea>
 
@@ -470,17 +447,17 @@
                   @click="handleSend"
                   :disabled="!input.trim() || isLoading"
                   :class="[
-                    'rounded-full p-2.5 outline-none transition-all',
-                    input.trim() && !isLoading ? 'bg-[#111111] text-white hover:bg-[#2a2a2a]' : 'cursor-not-allowed bg-[#ebebeb] text-[#b8b8b8]'
+                    'rounded-full p-2 outline-none transition-all',
+                    input.trim() && !isLoading ? 'bg-[var(--indigo)] text-white hover:opacity-85' : 'cursor-not-allowed bg-[var(--surface)] text-[var(--pencil)]'
                   ]"
                 >
-                  <ArrowUp :size="18" :stroke-width="3" />
+                  <ArrowUp :size="15" :stroke-width="2.5" />
                 </button>
               </div>
             </div>
 
             <div class="mt-3 text-center">
-              <p class="select-none text-[11px] text-[#8f8f95]">Chat Bot can make mistakes. Check important info.</p>
+              <p class="select-none text-[11px] text-[var(--pencil)]">AI can make mistakes. Verify important information.</p>
             </div>
           </div>
         </div>
@@ -505,8 +482,6 @@ import {
   Trash2,
   Menu,
   ArrowUp,
-  Bot,
-  UserCircle,
   LoaderCircle,
 } from 'lucide-vue-next'
 import { sendMessageStream } from '../api/deepseek'
