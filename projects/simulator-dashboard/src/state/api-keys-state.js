@@ -22,8 +22,8 @@ function normalizeItem(item) {
 
   return {
     keyId,
-    appId: String(item.appId || item.app_id || 'simulator-chatbot'),
-    accountId: String(item.accountId || item.account_id || item.organizationId || 'org_simulator'),
+    appId: String(item.appId || item.app_id || ''),
+    accountId: String(item.accountId || item.account_id || item.organizationId || ''),
     name: String(item.name || `key_${keyId.slice(0, 6)}`),
     environment: String(item.environment || item.env || 'staging'),
     status: status === 'revoked' ? 'revoked' : 'active',
@@ -94,8 +94,8 @@ export async function createApiKey(input) {
   const scope = getScopeQuery()
   const scopedInput = {
     ...(input || {}),
-    appId: String(input?.appId || scope.appId || 'simulator-chatbot'),
-    accountId: String(input?.accountId || scope.accountId || 'org_simulator'),
+    appId: String(input?.appId ?? scope.appId ?? '').trim(),
+    accountId: String(input?.accountId ?? scope.accountId ?? '').trim(),
   }
 
   try {
@@ -109,12 +109,17 @@ export async function createApiKey(input) {
     apiKeysState.meta.lastSyncedAt = nowIso()
     apiKeysState.meta.error = ''
     apiKeysState.meta.lastRevealedSecret = String(payload?.secret || payload?.apiKey || '')
+    return { ok: true, key: normalized }
   } catch (error) {
     apiKeysState.meta.lastRevealedSecret = ''
     apiKeysState.meta.syncMode = 'offline'
     apiKeysState.meta.error = error instanceof Error
       ? error.message
       : 'Create API key failed on remote service.'
+    return {
+      ok: false,
+      error: apiKeysState.meta.error,
+    }
   } finally {
     apiKeysState.meta.syncing = false
   }

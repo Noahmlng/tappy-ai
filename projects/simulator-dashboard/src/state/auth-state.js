@@ -31,7 +31,7 @@ function clearPersistedAuth() {
 
 function applyScopeFromUser(user = {}, scope = {}) {
   const accountId = String(scope.accountId || user.accountId || '').trim()
-  const appId = String(scope.appId || '').trim()
+  const appId = String(scope.appId || user.appId || '').trim()
   if (!accountId) return
   setScope({
     accountId,

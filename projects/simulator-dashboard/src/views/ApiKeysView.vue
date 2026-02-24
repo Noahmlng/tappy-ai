@@ -40,11 +40,23 @@ function statusClass(status) {
 }
 
 async function handleCreate() {
-  await createApiKey({
+  const nextScope = {
+    appId: String(scopeDraft.appId || '').trim(),
+    accountId: String(scopeDraft.accountId || '').trim(),
+  }
+  setScope(nextScope)
+
+  const created = await createApiKey({
     name: draft.name.trim() || 'primary',
     environment: draft.environment,
+    appId: nextScope.appId,
+    accountId: nextScope.accountId,
   })
-  createFormOpen.value = false
+
+  if (created?.ok) {
+    createFormOpen.value = false
+    await hydrateApiKeys()
+  }
 }
 
 async function applyScope() {
