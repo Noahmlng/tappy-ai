@@ -28,6 +28,10 @@ npm run dev
 - `VITE_DEEPSEEK_MODEL`（默认：`deepseek-reasoner`）
 - `SIMULATOR_API_PROXY_TARGET`（开发代理目标，默认：`http://127.0.0.1:3100`）
 - `VITE_SIMULATOR_API_BASE_URL`（可选，浏览器 API base，默认：`/api`）
+- `VITE_ADS_API_KEY`（可选，不填时使用内置 staging key）
+- `VITE_ADS_BASE_URL`（可选，默认继承 `VITE_SIMULATOR_API_BASE_URL`）
+- `VITE_ADS_PLACEMENT_ID`（可选，默认：`chat_inline_v1`）
+- `VITE_ADS_BID_TIMEOUT_MS`（可选，默认：`1200`）
 
 ## Tool Call 说明
 
@@ -36,5 +40,6 @@ npm run dev
 - 搜索执行状态会在对话区以 Tool 卡片展示（Planned / Running / Completed / Failed）。
 - Assistant 回复下方会显示 Sources 区块（自然来源）。
 - Assistant 回复完成后会展示可点击追问项。
+- Assistant 回复完成后会异步拉取广告，若有 bid 则在回答下方展示广告卡片，并上报曝光/点击事件（fail-open）。
 - Sidebar 内置 Turn Trace 面板，可按轮查看链路事件。
 - Sidebar 内置 System Prompt 面板，可实时编辑当前会话提示词。

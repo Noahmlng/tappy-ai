@@ -323,6 +323,12 @@
                     :disabled="isLoading"
                     @select="handleFollowUpSelect"
                   />
+
+                  <AdCard
+                    v-if="msg.kind !== 'tool' && msg.role === 'assistant' && msg.status === 'done' && msg.adCard"
+                    :ad="msg.adCard"
+                    @ad-click="handleAdClick(msg)"
+                  />
                 </div>
               </div>
             </div>
@@ -392,14 +398,17 @@ import {
 } from 'lucide-vue-next'
 import { sendMessageStream } from '../api/deepseek'
 import { shouldUseWebSearchTool, runWebSearchTool, buildWebSearchContext } from '../api/webSearchTool'
+import { getAdsPlacementId, getAdsIntentScore, requestAdBid, reportInlineAdEvent } from '../api/adsSdk'
 import CitationSources from '../components/CitationSources.vue'
 import FollowUpSuggestions from '../components/FollowUpSuggestions.vue'
 import MarkdownRenderer from '../components/MarkdownRenderer.vue'
+import AdCard from '../components/AdCard.vue'
 
 const STORAGE_KEY = 'chat_bot_history_v3'
 const LEGACY_STORAGE_KEYS = ['chat_bot_history_v2', 'chat_bot_sessions_v1']
 const TURN_LOG_STORAGE_KEY = 'chat_bot_turn_logs_v2'
 const LEGACY_TURN_LOG_STORAGE_KEYS = ['chat_bot_turn_logs_v1']
+const ADS_USER_ID_STORAGE_KEY = 'chat_ads_user_id_v1'
 const MAX_SESSIONS = 50
 const MAX_TURN_LOGS = 400
 const TOOL_STATES = ['planning', 'running', 'done', 'error']
@@ -499,6 +508,32 @@ function normalizeTurnEvent(raw, index) {
   }
 }
 
+function normalizeAdCard(raw) {
+  if (!raw || typeof raw !== 'object') return null
+
+  const requestId = typeof raw.requestId === 'string' ? raw.requestId.trim() : ''
+  const adId = typeof raw.adId === 'string' ? raw.adId.trim() : ''
+  const url = typeof raw.url === 'string' ? raw.url.trim() : ''
+  if (!requestId || !adId || !url) return null
+
+  return {
+    requestId,
+    placementId: typeof raw.placementId === 'string' && raw.placementId.trim() ? raw.placementId.trim() : 'chat_inline_v1',
+    adId,
+    advertiser: typeof raw.advertiser === 'string' && raw.advertiser.trim() ? raw.advertiser.trim() : 'Sponsored',
+    headline: typeof raw.headline === 'string' && raw.headline.trim() ? raw.headline.trim() : 'Sponsored',
+    description: typeof raw.description === 'string' ? raw.description : '',
+    ctaText: typeof raw.ctaText === 'string' && raw.ctaText.trim() ? raw.ctaText.trim() : 'Learn More',
+    url,
+    imageUrl: typeof raw.imageUrl === 'string' ? raw.imageUrl : '',
+    dsp: typeof raw.dsp === 'string' ? raw.dsp : '',
+    variant: typeof raw.variant === 'string' ? raw.variant : 'base',
+    price: Number.isFinite(Number(raw.price)) ? Number(raw.price) : null,
+    impressionReported: Boolean(raw.impressionReported),
+    clickReported: Boolean(raw.clickReported),
+  }
+}
+
 function normalizeMessage(raw) {
   if (!raw || (raw.role !== 'user' && raw.role !== 'assistant')) return null
 
@@ -528,6 +563,7 @@ function normalizeMessage(raw) {
     followUps: Array.isArray(raw.followUps)
       ? raw.followUps.map((item, index) => normalizeFollowUpItem(item, index)).filter(Boolean)
       : [],
+    adCard: normalizeAdCard(raw.adCard),
   }
 }
 
@@ -1001,6 +1037,98 @@ function clearHistory() {
   persistTurnLogsNow()
 }
 
+function getOrCreateAdsUserId() {
+  try {
+    const existing = localStorage.getItem(ADS_USER_ID_STORAGE_KEY)
+    if (existing) return existing
+
+    const nextId = createId('ads_user')
+    localStorage.setItem(ADS_USER_ID_STORAGE_KEY, nextId)
+    return nextId
+  } catch {
+    return createId('ads_user')
+  }
+}
+
+function getBrowserLocale() {
+  return typeof navigator !== 'undefined' && typeof navigator.language === 'string' && navigator.language
+    ? navigator.language
+    : 'en-US'
+}
+
+function buildInlineAdEventPayload(message, kind, sessionId = activeSessionId.value) {
+  if (!message?.adCard) return null
+
+  const query = typeof message.sourceUserContent === 'string' ? message.sourceUserContent.trim() : ''
+  const answerText = typeof message.content === 'string' ? message.content.trim() : ''
+  if (!query || !answerText) return null
+
+  return {
+    requestId: message.adCard.requestId,
+    sessionId,
+    turnId: message.sourceTurnId,
+    query,
+    answerText,
+    intentScore: getAdsIntentScore(query),
+    locale: getBrowserLocale(),
+    kind,
+    placementId: message.adCard.placementId,
+    adId: message.adCard.adId,
+  }
+}
+
+function resolveSessionIdForMessage(message) {
+  if (!message?.sourceTurnId) return activeSessionId.value
+  const trace = turnLogs.value.find((item) => item.turnId === message.sourceTurnId)
+  return trace?.sessionId || activeSessionId.value
+}
+
+async function fetchAndAttachAdForMessage({ session, turnTrace, assistantMessage }) {
+  if (!session || !assistantMessage || assistantMessage.kind === 'tool') return
+
+  const placementId = getAdsPlacementId()
+  appendTurnTraceEvent(turnTrace, 'ads_bid_requested', { placementId })
+  upsertTurnTrace(turnTrace)
+
+  const adBid = await requestAdBid({
+    userId: getOrCreateAdsUserId(),
+    chatId: session.id,
+    placementId,
+    messages: session.messages,
+  })
+
+  const stillExists = session.messages.some((message) => message.id === assistantMessage.id)
+  if (!stillExists) return
+
+  if (!adBid?.adCard) {
+    appendTurnTraceEvent(turnTrace, 'ads_bid_empty', { placementId })
+    upsertTurnTrace(turnTrace)
+    return
+  }
+
+  assistantMessage.adCard = adBid.adCard
+  appendTurnTraceEvent(turnTrace, 'ads_bid_received', {
+    requestId: adBid.requestId,
+    placementId: adBid.placementId,
+    adId: adBid.adCard.adId,
+  })
+  upsertTurnTrace(turnTrace)
+  touchActiveSession()
+  scheduleSaveSessions()
+
+  const impressionPayload = buildInlineAdEventPayload(assistantMessage, 'impression', session.id)
+  const impressionReported = impressionPayload ? await reportInlineAdEvent(impressionPayload) : false
+  assistantMessage.adCard.impressionReported = impressionReported
+  appendTurnTraceEvent(turnTrace, impressionReported ? 'ads_impression_reported' : 'ads_impression_skipped', {
+    requestId: adBid.requestId,
+    placementId: adBid.placementId,
+    adId: adBid.adCard.adId,
+  })
+  upsertTurnTrace(turnTrace)
+  touchActiveSession()
+  scheduleSaveSessions()
+}
+
 function handleSourceClick(message, source) {
   if (!message?.sourceTurnId) return
   updateTurnTrace(message.sourceTurnId, (trace) => {
@@ -1019,6 +1147,59 @@ function handleSourceClick(message, source) {
     ]
     return nextTrace
   })
+}
+
+async function handleAdClick(message) {
+  if (!message?.adCard) return
+
+  if (message.sourceTurnId) {
+    updateTurnTrace(message.sourceTurnId, (trace) => {
+      const nextTrace = { ...trace }
+      nextTrace.events = [
+        ...trace.events,
+        {
+          id: createId('event'),
+          type: 'ads_clicked',
+          at: Date.now(),
+          payload: {
+            requestId: message.adCard.requestId,
+            adId: message.adCard.adId,
+            placementId: message.adCard.placementId,
+          },
+        },
+      ]
+      return nextTrace
+    })
+  }
+
+  const clickPayload = buildInlineAdEventPayload(message, 'click', resolveSessionIdForMessage(message))
+  const clickReported = clickPayload ? await reportInlineAdEvent(clickPayload) : false
+
+  if (clickReported) {
+    message.adCard.clickReported = true
+    touchActiveSession()
+    scheduleSaveSessions()
+  }
+
+  if (message.sourceTurnId) {
+    updateTurnTrace(message.sourceTurnId, (trace) => {
+      const nextTrace = { ...trace }
+      nextTrace.events = [
+        ...trace.events,
+        {
+          id: createId('event'),
+          type: clickReported ? 'ads_click_reported' : 'ads_click_report_skipped',
+          at: Date.now(),
+          payload: {
+            requestId: message.adCard.requestId,
+            adId: message.adCard.adId,
+            placementId: message.adCard.placementId,
+          },
+        },
+      ]
+      return nextTrace
+    })
+  }
 }
 
 async function handleRegenerate(message) {
@@ -1211,6 +1392,7 @@ async function handleSend(options = {}) {
     sourceUserContent: userContent,
     retryCount,
     followUps: [],
+    adCard: null,
   }
 
   session.messages.push(userMessage)
@@ -1245,6 +1427,7 @@ async function handleSend(options = {}) {
       sourceUserContent: userContent,
       retryCount,
       followUps: [],
+      adCard: null,
     }
 
     session.messages.push(toolMessage)
@@ -1319,6 +1502,7 @@ async function handleSend(options = {}) {
     sourceUserContent: userContent,
     retryCount,
     followUps: [],
+    adCard: null,
   }
 
   session.messages.push(assistantMessage)
@@ -1368,6 +1552,11 @@ async function handleSend(options = {}) {
       touchActiveSession()
       scheduleSaveSessions()
       isLoading.value = false
+      void fetchAndAttachAdForMessage({
+        session,
+        turnTrace,
+        assistantMessage,
+      })
     },
     (error) => {
       assistantMessage.status = 'done'
