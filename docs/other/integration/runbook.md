@@ -1,7 +1,7 @@
 # External Integration Workflow Runbook
 
 - Version: v1.0
-- Last Updated: 2026-02-22
+- Last Updated: 2026-02-24
 - Scope: 外部开发者从开通到生产上线的标准对接流程
 
 ## 1. Workflow Overview
@@ -21,12 +21,12 @@
 动作：
 
 1. 双方确认 API 版本与字段契约。
-2. 发放 `APP_ID`、`MEDIATION_API_KEY`、环境 base URL。
+2. 发放 `MEDIATION_API_KEY`、环境 base URL（runtime key-only，scope 由 key 解析）。
 3. 定义故障 SLA、升级通道、值班联系人。
 
 产出物：
 
-1. 集成参数表（appId/placementId/env）。
+1. 集成参数表（placementId/env）。
 2. 对接群与升级通讯录。
 3. 里程碑日期（联调开始、UAT、上线窗口）。
 

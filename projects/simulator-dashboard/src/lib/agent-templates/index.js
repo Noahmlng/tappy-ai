@@ -24,7 +24,6 @@ function text(value, fallback) {
 function normalizeInput(input = {}) {
   const environment = text(input.environment, 'staging').toLowerCase()
   return {
-    appId: text(input.appId, 'simulator-chatbot'),
     environment: ['sandbox', 'staging', 'prod'].includes(environment) ? environment : 'staging',
     placementId: text(input.placementId, 'chat_inline_v1'),
     repoPath: text(input.repoPath, '/path/to/your/repo'),
@@ -38,7 +37,6 @@ function normalizeInput(input = {}) {
 function buildEnvBlock(input) {
   return [
     `MEDIATION_API_BASE_URL=https://api.${input.environment}.example.com`,
-    `APP_ID=${input.appId}`,
     `PLACEMENT_ID=${input.placementId}`,
     `INTEGRATION_TOKEN=${input.integrationToken}`,
   ].join('\n')
@@ -58,14 +56,14 @@ function buildSmokeRunbook(input) {
     "ACCESS_TOKEN=$(echo \"$EXCHANGE_JSON\" | node -e 'let d=\"\";process.stdin.on(\"data\",c=>d+=c);process.stdin.on(\"end\",()=>{const j=JSON.parse(d||\"{}\");process.stdout.write(j.accessToken||\"\")})')",
     'test -n "$ACCESS_TOKEN" || (echo "token exchange failed"; exit 1)',
     '',
-    "curl -sS \"$MEDIATION_API_BASE_URL/api/v1/mediation/config?appId=$APP_ID&placementId=$PLACEMENT_ID&environment="
+    "curl -sS \"$MEDIATION_API_BASE_URL/api/v1/mediation/config?placementId=$PLACEMENT_ID&environment="
       + `${input.environment}&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z\" \\`,
     '  -H "Authorization: Bearer $ACCESS_TOKEN" >/tmp/agent-config.json',
     '',
     "EVAL_JSON=$(curl -sS -X POST \"$MEDIATION_API_BASE_URL/api/v1/sdk/evaluate\" \\",
     '  -H "Authorization: Bearer $ACCESS_TOKEN" \\',
     '  -H "Content-Type: application/json" \\',
-    "  -d \"{\\\"appId\\\":\\\"$APP_ID\\\",\\\"sessionId\\\":\\\"agent_smoke_session_001\\\",\\\"turnId\\\":\\\"agent_smoke_turn_001\\\",\\\"query\\\":\\\"Recommend waterproof running shoes\\\",\\\"answerText\\\":\\\"Prioritize grip and breathable waterproof upper.\\\",\\\"intentScore\\\":0.91,\\\"locale\\\":\\\"en-US\\\"}\")",
+    "  -d \"{\\\"sessionId\\\":\\\"agent_smoke_session_001\\\",\\\"turnId\\\":\\\"agent_smoke_turn_001\\\",\\\"query\\\":\\\"Recommend waterproof running shoes\\\",\\\"answerText\\\":\\\"Prioritize grip and breathable waterproof upper.\\\",\\\"intentScore\\\":0.91,\\\"locale\\\":\\\"en-US\\\"}\")",
     '',
     "REQUEST_ID=$(echo \"$EVAL_JSON\" | node -e 'let d=\"\";process.stdin.on(\"data\",c=>d+=c);process.stdin.on(\"end\",()=>{const j=JSON.parse(d||\"{}\");process.stdout.write(j.requestId||\"\")})')",
     'test -n "$REQUEST_ID" || (echo "evaluate failed"; exit 1)',
@@ -73,7 +71,7 @@ function buildSmokeRunbook(input) {
     "EVENTS_JSON=$(curl -sS -X POST \"$MEDIATION_API_BASE_URL/api/v1/sdk/events\" \\",
     '  -H "Authorization: Bearer $ACCESS_TOKEN" \\',
     '  -H "Content-Type: application/json" \\',
-    "  -d \"{\\\"requestId\\\":\\\"$REQUEST_ID\\\",\\\"appId\\\":\\\"$APP_ID\\\",\\\"sessionId\\\":\\\"agent_smoke_session_001\\\",\\\"turnId\\\":\\\"agent_smoke_turn_001\\\",\\\"query\\\":\\\"Recommend waterproof running shoes\\\",\\\"answerText\\\":\\\"Prioritize grip and breathable waterproof upper.\\\",\\\"intentScore\\\":0.91,\\\"locale\\\":\\\"en-US\\\"}\")",
+    "  -d \"{\\\"requestId\\\":\\\"$REQUEST_ID\\\",\\\"sessionId\\\":\\\"agent_smoke_session_001\\\",\\\"turnId\\\":\\\"agent_smoke_turn_001\\\",\\\"query\\\":\\\"Recommend waterproof running shoes\\\",\\\"answerText\\\":\\\"Prioritize grip and breathable waterproof upper.\\\",\\\"intentScore\\\":0.91,\\\"locale\\\":\\\"en-US\\\"}\")",
     '',
     "node -e 'const evalJson=JSON.parse(process.argv[1]||\"{}\"); const eventsJson=JSON.parse(process.argv[2]||\"{}\"); console.log(JSON.stringify({requestId: evalJson.requestId||\"\", decisionResult: evalJson?.decision?.result||\"\", eventsOk: Boolean(eventsJson?.ok)}, null, 2));' \"$EVAL_JSON\" \"$EVENTS_JSON\"",
   ].join('\n')
@@ -81,7 +79,6 @@ function buildSmokeRunbook(input) {
 
 function buildSharedInstruction(input) {
   return [
-    `App ID: ${input.appId}`,
     `Environment: ${input.environment}`,
     `Placement ID: ${input.placementId}`,
     `Repo: ${input.repoPath}`,
