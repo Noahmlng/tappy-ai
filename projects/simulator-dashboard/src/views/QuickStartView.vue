@@ -194,6 +194,12 @@ async function runQuickStartVerifier() {
 
   try {
     const scope = getScopeQuery()
+    if (!String(scope.accountId || '').trim()) {
+      throw new Error('Account scope is empty. Please sign in or set scope first.')
+    }
+    if (!String(scope.appId || '').trim()) {
+      throw new Error('App scope is empty. Please set App ID in API Keys scope first.')
+    }
     const payload = await controlPlaneClient.quickStart.verify({
       appId: scope.appId,
       accountId: scope.accountId,

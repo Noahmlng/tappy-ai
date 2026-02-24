@@ -68,11 +68,11 @@ async function handleRegister() {
         </label>
         <label>
           Account ID
-          <input v-model="draft.accountId" class="input" type="text" maxlength="64" placeholder="org_simulator">
+          <input v-model="draft.accountId" class="input" type="text" maxlength="64" placeholder="org_your_company">
         </label>
         <label>
           App ID (optional)
-          <input v-model="draft.appId" class="input" type="text" maxlength="64" placeholder="simulator-chatbot">
+          <input v-model="draft.appId" class="input" type="text" maxlength="64" placeholder="your_chat_app">
         </label>
       </div>
 

@@ -13,7 +13,7 @@ const contractOutput = ref('')
 const contractValidation = ref(null)
 
 const draft = reactive({
-  appId: 'simulator-chatbot',
+  appId: '',
   environment: 'staging',
   placementId: 'chat_inline_v1',
   repoPath: '/path/to/your/repo',
@@ -63,8 +63,12 @@ async function issueIntegrationToken() {
   tokenMeta.value = null
 
   try {
+    const appId = draft.appId.trim()
+    if (!appId) {
+      throw new Error('App ID is required.')
+    }
     const payload = await controlPlaneClient.agent.issueIntegrationToken({
-      appId: draft.appId.trim() || 'simulator-chatbot',
+      appId,
       environment: draft.environment,
       placementId: draft.placementId.trim() || 'chat_inline_v1',
       ttlMinutes: Number(draft.tokenTtlMinutes) || 10,

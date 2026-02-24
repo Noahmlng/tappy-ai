@@ -123,7 +123,7 @@ onMounted(() => {
               class="input"
               type="text"
               maxlength="64"
-              placeholder="org_simulator"
+              placeholder="org_your_company"
             >
           </label>
           <label>
@@ -133,7 +133,7 @@ onMounted(() => {
               class="input"
               type="text"
               maxlength="64"
-              placeholder="simulator-chatbot"
+              placeholder="your_chat_app"
             >
           </label>
         </div>

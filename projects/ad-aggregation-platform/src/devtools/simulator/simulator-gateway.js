@@ -53,10 +53,6 @@ const REQUIRE_RUNTIME_LOG_DB_PERSISTENCE = String(
 ).trim().toLowerCase() !== 'false'
 const DEV_RESET_ENABLED = String(process.env.SIMULATOR_DEV_RESET_ENABLED || 'true').trim().toLowerCase() !== 'false'
 const DEV_RESET_TOKEN = String(process.env.SIMULATOR_DEV_RESET_TOKEN || '').trim()
-const DEFAULT_SIMULATOR_BOOTSTRAP_API_KEY = 'sk_staging_simulator_local_bootstrap_v1'
-const SIMULATOR_BOOTSTRAP_API_KEY = String(
-  process.env.SIMULATOR_BOOTSTRAP_API_KEY || DEFAULT_SIMULATOR_BOOTSTRAP_API_KEY,
-).trim()
 const MAX_DECISION_LOGS = parseCollectionLimit(
   process.env.SIMULATOR_MAX_DECISION_LOGS,
   PRODUCTION_RUNTIME ? 0 : 500,
@@ -84,8 +80,8 @@ const MAX_DASHBOARD_SESSIONS = 1500
 const DECISION_REASON_ENUM = new Set(['served', 'no_fill', 'blocked', 'error'])
 const CONTROL_PLANE_ENVIRONMENTS = new Set(['sandbox', 'staging', 'prod'])
 const CONTROL_PLANE_KEY_STATUS = new Set(['active', 'revoked'])
-const DEFAULT_CONTROL_PLANE_APP_ID = 'simulator-chatbot'
-const DEFAULT_CONTROL_PLANE_ORG_ID = 'org_simulator'
+const DEFAULT_CONTROL_PLANE_APP_ID = ''
+const DEFAULT_CONTROL_PLANE_ORG_ID = ''
 const TRACKING_ACCOUNT_QUERY_PARAM = 'aid'
 const DASHBOARD_SESSION_PREFIX = 'dsh_'
 const DASHBOARD_SESSION_TTL_SECONDS = toPositiveInteger(process.env.SIMULATOR_DASHBOARD_SESSION_TTL_SECONDS, 86400 * 7)
@@ -360,11 +356,11 @@ function normalizeControlPlaneKeyStatus(value, fallback = 'active') {
   return fallback
 }
 
-function normalizeControlPlaneAccountId(value, fallback = DEFAULT_CONTROL_PLANE_ORG_ID) {
+function normalizeControlPlaneAccountId(value, fallback = '') {
   const normalized = String(value || '').trim()
   if (normalized) return normalized
   if (fallback === '') return ''
-  return String(fallback || '').trim() || DEFAULT_CONTROL_PLANE_ORG_ID
+  return String(fallback || '').trim()
 }
 
 function normalizeEmail(value) {
@@ -415,15 +411,6 @@ function createMinimalAgentScope() {
   }
 }
 
-function resolveBootstrapApiKey(environment = 'staging') {
-  const env = normalizeControlPlaneEnvironment(environment)
-  if (SIMULATOR_BOOTSTRAP_API_KEY && SIMULATOR_BOOTSTRAP_API_KEY.startsWith(`sk_${env}_`)) {
-    return SIMULATOR_BOOTSTRAP_API_KEY
-  }
-  if (env === 'staging') return DEFAULT_SIMULATOR_BOOTSTRAP_API_KEY
-  return `sk_${env}_simulator_local_bootstrap_v1`
-}
-
 function buildApiKeySecret(environment = 'staging', preferredSecret = '') {
   const env = normalizeControlPlaneEnvironment(environment)
   const preferred = String(preferredSecret || '').trim()
@@ -441,15 +428,17 @@ function maskApiKeySecret(secret) {
 
 function buildControlPlaneAppRecord(raw = {}) {
   const timestamp = typeof raw.createdAt === 'string' ? raw.createdAt : nowIso()
-  const appId = String(raw.appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const appId = String(raw.appId || '').trim()
+  if (!appId) return null
   const accountId = normalizeControlPlaneAccountId(
     raw.accountId || raw.account_id || raw.organizationId || raw.organization_id,
+    '',
   )
   return {
     appId,
     accountId,
     organizationId: accountId,
-    displayName: String(raw.displayName || '').trim() || 'Simulator Chatbot',
+    displayName: String(raw.displayName || '').trim() || appId,
     status: String(raw.status || '').trim() || 'active',
     metadata: raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : {},
     createdAt: timestamp,
@@ -459,10 +448,12 @@ function buildControlPlaneAppRecord(raw = {}) {
 
 function buildControlPlaneEnvironmentRecord(raw = {}) {
   const timestamp = typeof raw.createdAt === 'string' ? raw.createdAt : nowIso()
-  const appId = String(raw.appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const appId = String(raw.appId || '').trim()
+  if (!appId) return null
   const environment = normalizeControlPlaneEnvironment(raw.environment)
   const accountId = normalizeControlPlaneAccountId(
     raw.accountId || raw.account_id || raw.organizationId || raw.organization_id,
+    '',
   )
   return {
     environmentId: String(raw.environmentId || '').trim() || `env_${appId}_${environment}`,
@@ -479,8 +470,14 @@ function buildControlPlaneEnvironmentRecord(raw = {}) {
 }
 
 function createControlPlaneKeyRecord(input = {}) {
-  const appId = String(input.appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
-  const accountId = normalizeControlPlaneAccountId(input.accountId || input.account_id)
+  const appId = String(input.appId || '').trim()
+  if (!appId) {
+    throw new Error('appId is required.')
+  }
+  const accountId = normalizeControlPlaneAccountId(input.accountId || input.account_id, '')
+  if (!accountId) {
+    throw new Error('accountId is required.')
+  }
   const environment = normalizeControlPlaneEnvironment(input.environment)
   const keyName = String(input.keyName || '').trim() || `primary-${environment}`
   const keyId = String(input.keyId || '').trim() || `key_${randomToken(18)}`
@@ -520,9 +517,11 @@ function normalizeControlPlaneKeyRecord(raw) {
   const keyId = String(raw.keyId || raw.key_id || raw.id || '').trim()
   if (!keyId) return null
 
-  const appId = String(raw.appId || raw.app_id || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const appId = String(raw.appId || raw.app_id || '').trim()
+  if (!appId) return null
   const accountId = normalizeControlPlaneAccountId(
     raw.accountId || raw.account_id || raw.organizationId || raw.organization_id,
+    '',
   )
   const environment = normalizeControlPlaneEnvironment(raw.environment)
   const keyName = String(raw.keyName || raw.key_name || raw.name || '').trim() || `primary-${environment}`
@@ -576,8 +575,14 @@ function toPublicApiKeyRecord(record) {
 }
 
 function createIntegrationTokenRecord(input = {}) {
-  const appId = String(input.appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
-  const accountId = normalizeControlPlaneAccountId(input.accountId || input.account_id)
+  const appId = String(input.appId || '').trim()
+  if (!appId) {
+    throw new Error('appId is required.')
+  }
+  const accountId = normalizeControlPlaneAccountId(input.accountId || input.account_id, '')
+  if (!accountId) {
+    throw new Error('accountId is required.')
+  }
   const environment = normalizeControlPlaneEnvironment(input.environment)
   const placementId = String(input.placementId || '').trim() || 'chat_inline_v1'
   const ttlMinutes = toPositiveInteger(input.ttlMinutes, 10)
@@ -618,9 +623,11 @@ function normalizeIntegrationTokenRecord(raw) {
   const tokenId = String(raw.tokenId || raw.token_id || raw.id || '').trim()
   if (!tokenId) return null
 
-  const appId = String(raw.appId || raw.app_id || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const appId = String(raw.appId || raw.app_id || '').trim()
+  if (!appId) return null
   const accountId = normalizeControlPlaneAccountId(
     raw.accountId || raw.account_id || raw.organizationId || raw.organization_id,
+    '',
   )
   const environment = normalizeControlPlaneEnvironment(raw.environment)
   const placementId = String(raw.placementId || raw.placement_id || '').trim() || 'chat_inline_v1'
@@ -677,8 +684,14 @@ function toPublicIntegrationTokenRecord(record, plainToken = '') {
 }
 
 function createAgentAccessTokenRecord(input = {}) {
-  const appId = String(input.appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
-  const accountId = normalizeControlPlaneAccountId(input.accountId || input.account_id)
+  const appId = String(input.appId || '').trim()
+  if (!appId) {
+    throw new Error('appId is required.')
+  }
+  const accountId = normalizeControlPlaneAccountId(input.accountId || input.account_id, '')
+  if (!accountId) {
+    throw new Error('accountId is required.')
+  }
   const environment = normalizeControlPlaneEnvironment(input.environment)
   const placementId = String(input.placementId || '').trim() || 'chat_inline_v1'
   const ttlSeconds = toPositiveInteger(input.ttlSeconds, 300)
@@ -718,9 +731,11 @@ function normalizeAgentAccessTokenRecord(raw) {
   const tokenId = String(raw.tokenId || raw.token_id || raw.id || '').trim()
   if (!tokenId) return null
 
-  const appId = String(raw.appId || raw.app_id || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const appId = String(raw.appId || raw.app_id || '').trim()
+  if (!appId) return null
   const accountId = normalizeControlPlaneAccountId(
     raw.accountId || raw.account_id || raw.organizationId || raw.organization_id,
+    '',
   )
   const environment = normalizeControlPlaneEnvironment(raw.environment)
   const placementId = String(raw.placementId || raw.placement_id || '').trim() || 'chat_inline_v1'
@@ -1000,10 +1015,6 @@ function listDashboardUsersByAccount(accountId) {
   return rows.filter((item) => normalizeControlPlaneAccountId(item?.accountId, '') === normalizedAccountId)
 }
 
-function isBootstrapDefaultAccount(accountId) {
-  return normalizeControlPlaneAccountId(accountId, '') === DEFAULT_CONTROL_PLANE_ORG_ID
-}
-
 function hasNonBootstrapAccountResources(accountId) {
   const normalizedAccountId = normalizeControlPlaneAccountId(accountId, '')
   if (!normalizedAccountId) return false
@@ -1017,36 +1028,21 @@ function hasNonBootstrapAccountResources(accountId) {
   const integrationTokens = Array.isArray(controlPlane.integrationTokens) ? controlPlane.integrationTokens : []
   const agentAccessTokens = Array.isArray(controlPlane.agentAccessTokens) ? controlPlane.agentAccessTokens : []
 
-  const isDefault = isBootstrapDefaultAccount(normalizedAccountId)
-  const bootstrapDigest = hashToken(resolveBootstrapApiKey('staging'))
-
   const hasAppResource = apps.some((item) => {
     const rowAccountId = normalizeControlPlaneAccountId(item?.accountId || item?.organizationId, '')
-    if (rowAccountId !== normalizedAccountId) return false
-    if (!isDefault) return true
-    return String(item?.appId || '').trim() !== DEFAULT_CONTROL_PLANE_APP_ID
+    return rowAccountId === normalizedAccountId
   })
   if (hasAppResource) return true
 
   const hasEnvironmentResource = appEnvironments.some((item) => {
     const rowAccountId = normalizeControlPlaneAccountId(item?.accountId, '')
-    if (rowAccountId !== normalizedAccountId) return false
-    if (!isDefault) return true
-    return String(item?.appId || '').trim() !== DEFAULT_CONTROL_PLANE_APP_ID
+    return rowAccountId === normalizedAccountId
   })
   if (hasEnvironmentResource) return true
 
   const hasApiKeyResource = apiKeys.some((item) => {
     const rowAccountId = normalizeControlPlaneAccountId(item?.accountId || resolveAccountIdForApp(item?.appId), '')
-    if (rowAccountId !== normalizedAccountId) return false
-    if (!isDefault) return true
-    const isBootstrapKey = (
-      String(item?.appId || '').trim() === DEFAULT_CONTROL_PLANE_APP_ID
-      && String(item?.environment || '').trim() === 'staging'
-      && String(item?.secretHash || '') === bootstrapDigest
-      && String(item?.status || '').toLowerCase() === 'active'
-    )
-    return !isBootstrapKey
+    return rowAccountId === normalizedAccountId
   })
   if (hasApiKeyResource) return true
 
@@ -1379,7 +1375,7 @@ function resolveControlPlaneAppRecord(appId = '') {
 
 function resolveAccountIdForApp(appId = '') {
   const app = resolveControlPlaneAppRecord(appId)
-  if (!app) return DEFAULT_CONTROL_PLANE_ORG_ID
+  if (!app) return ''
   return normalizeControlPlaneAccountId(app.accountId || app.organizationId)
 }
 
@@ -1473,33 +1469,10 @@ function injectTrackingScopeIntoAds(ads, scope = {}) {
 }
 
 function createInitialControlPlaneState() {
-  const app = buildControlPlaneAppRecord({
-    appId: DEFAULT_CONTROL_PLANE_APP_ID,
-    accountId: DEFAULT_CONTROL_PLANE_ORG_ID,
-    displayName: 'Simulator Chatbot',
-    organizationId: DEFAULT_CONTROL_PLANE_ORG_ID,
-  })
-  const appEnvironments = ['sandbox', 'staging', 'prod'].map((environment) => buildControlPlaneEnvironmentRecord({
-    appId: app.appId,
-    accountId: app.accountId,
-    environment,
-  }))
-  const apiKeys = []
-  if (!STRICT_MANUAL_INTEGRATION) {
-    const { keyRecord } = createControlPlaneKeyRecord({
-      appId: app.appId,
-      accountId: app.accountId,
-      environment: 'staging',
-      keyName: 'primary-staging',
-      secret: resolveBootstrapApiKey('staging'),
-    })
-    apiKeys.push(keyRecord)
-  }
-
   return {
-    apps: [app],
-    appEnvironments,
-    apiKeys,
+    apps: [],
+    appEnvironments: [],
+    apiKeys: [],
     integrationTokens: [],
     agentAccessTokens: [],
     dashboardUsers: [],
@@ -1514,22 +1487,9 @@ function ensureControlPlaneState(raw) {
   const appRows = Array.isArray(raw.apps) ? raw.apps : []
   const apps = appRows
     .map((item) => buildControlPlaneAppRecord(item))
-    .filter((item) => Boolean(item.appId))
-  if (apps.length === 0) {
-    apps.push(...fallback.apps)
-  }
+    .filter(Boolean)
 
   const appIdSet = new Set(apps.map((item) => item.appId))
-  if (!appIdSet.has(DEFAULT_CONTROL_PLANE_APP_ID)) {
-    const app = buildControlPlaneAppRecord({
-      appId: DEFAULT_CONTROL_PLANE_APP_ID,
-      accountId: DEFAULT_CONTROL_PLANE_ORG_ID,
-      displayName: 'Simulator Chatbot',
-      organizationId: DEFAULT_CONTROL_PLANE_ORG_ID,
-    })
-    apps.push(app)
-    appIdSet.add(app.appId)
-  }
 
   const environmentRows = Array.isArray(raw.appEnvironments || raw.environments)
     ? (raw.appEnvironments || raw.environments)
@@ -1540,6 +1500,7 @@ function ensureControlPlaneState(raw) {
 
   for (const row of environmentRows) {
     const normalized = buildControlPlaneEnvironmentRecord(row)
+    if (!normalized) continue
     if (!appIdSet.has(normalized.appId)) continue
     normalized.accountId = normalizeControlPlaneAccountId(
       normalized.accountId || accountByAppId.get(normalized.appId),
@@ -1555,11 +1516,14 @@ function ensureControlPlaneState(raw) {
       const dedupKey = `${app.appId}::${environment}`
       if (envDedup.has(dedupKey)) continue
       envDedup.add(dedupKey)
-      appEnvironments.push(buildControlPlaneEnvironmentRecord({
+      const environmentRecord = buildControlPlaneEnvironmentRecord({
         appId: app.appId,
         accountId: accountByAppId.get(app.appId),
         environment,
-      }))
+      })
+      if (environmentRecord) {
+        appEnvironments.push(environmentRecord)
+      }
     }
   }
 
@@ -1571,43 +1535,6 @@ function ensureControlPlaneState(raw) {
       ...item,
       accountId: normalizeControlPlaneAccountId(item.accountId || accountByAppId.get(item.appId)),
     }))
-  if (apiKeys.length === 0) {
-    apiKeys = fallback.apiKeys
-  }
-
-  if (STRICT_MANUAL_INTEGRATION) {
-    const bootstrapHash = hashToken(resolveBootstrapApiKey('staging'))
-    apiKeys = apiKeys.filter((item) => !(
-      item
-      && item.appId === DEFAULT_CONTROL_PLANE_APP_ID
-      && item.environment === 'staging'
-      && item.secretHash === bootstrapHash
-    ))
-  }
-
-  if (!STRICT_MANUAL_INTEGRATION) {
-    const bootstrapSecret = resolveBootstrapApiKey('staging')
-    const bootstrapHash = hashToken(bootstrapSecret)
-    const hasBootstrapKey = apiKeys.some((item) => (
-      item
-      && item.appId === DEFAULT_CONTROL_PLANE_APP_ID
-      && item.environment === 'staging'
-      && item.secretHash === bootstrapHash
-      && item.status === 'active'
-    ))
-    if (!hasBootstrapKey) {
-      const { keyRecord } = createControlPlaneKeyRecord({
-        appId: DEFAULT_CONTROL_PLANE_APP_ID,
-        accountId: accountByAppId.get(DEFAULT_CONTROL_PLANE_APP_ID) || DEFAULT_CONTROL_PLANE_ORG_ID,
-        environment: 'staging',
-        keyName: 'primary-staging',
-        secret: bootstrapSecret,
-        status: 'active',
-      })
-      apiKeys.unshift(keyRecord)
-    }
-  }
-
   const tokenRows = Array.isArray(raw.integrationTokens || raw.tokens)
     ? (raw.integrationTokens || raw.tokens)
     : []
@@ -1661,19 +1588,28 @@ function ensureControlPlaneState(raw) {
 }
 
 function ensureControlPlaneAppAndEnvironment(appId, environment, accountId = '') {
-  const normalizedAppId = String(appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const normalizedAppId = String(appId || '').trim()
+  if (!normalizedAppId) {
+    throw new Error('appId is required.')
+  }
   const normalizedEnvironment = normalizeControlPlaneEnvironment(environment)
   const requestedAccountId = normalizeControlPlaneAccountId(accountId, '')
+  if (!requestedAccountId) {
+    throw new Error('accountId is required.')
+  }
   const controlPlane = state.controlPlane
 
   let app = controlPlane.apps.find((item) => item.appId === normalizedAppId)
   if (!app) {
     app = buildControlPlaneAppRecord({
       appId: normalizedAppId,
-      accountId: requestedAccountId || DEFAULT_CONTROL_PLANE_ORG_ID,
+      accountId: requestedAccountId,
       displayName: normalizedAppId,
-      organizationId: DEFAULT_CONTROL_PLANE_ORG_ID,
+      organizationId: requestedAccountId,
     })
+    if (!app) {
+      throw new Error('failed to create control plane app.')
+    }
     controlPlane.apps.push(app)
   } else {
     const existingAccountId = normalizeControlPlaneAccountId(app.accountId || app.organizationId)
@@ -1690,11 +1626,14 @@ function ensureControlPlaneAppAndEnvironment(appId, environment, accountId = '')
     `${item.appId}::${item.environment}` === dedupKey
   ))
   if (!hasEnvironment) {
-    controlPlane.appEnvironments.push(buildControlPlaneEnvironmentRecord({
+    const environmentRecord = buildControlPlaneEnvironmentRecord({
       appId: normalizedAppId,
       accountId: effectiveAccountId,
       environment: normalizedEnvironment,
-    }))
+    })
+    if (environmentRecord) {
+      controlPlane.appEnvironments.push(environmentRecord)
+    }
   }
 
   getPlacementConfigForApp(normalizedAppId, effectiveAccountId, { createIfMissing: true })
@@ -2934,14 +2873,7 @@ async function resetConversionFactStore() {
 function createInitialState() {
   const placements = buildDefaultPlacementList()
   const placementConfigVersion = Math.max(1, ...placements.map((placement) => placement.configVersion || 1))
-  const placementConfigs = [
-    normalizePlacementConfigRecord({
-      appId: DEFAULT_CONTROL_PLANE_APP_ID,
-      accountId: DEFAULT_CONTROL_PLANE_ORG_ID,
-      placementConfigVersion,
-      placements,
-    }),
-  ]
+  const placementConfigs = []
 
   return {
     version: 6,
@@ -3008,7 +2940,7 @@ function loadState() {
       placementConfigMap.set(normalized.appId, normalized)
     }
 
-    if (!placementConfigMap.has(DEFAULT_CONTROL_PLANE_APP_ID)) {
+    if (DEFAULT_CONTROL_PLANE_APP_ID && !placementConfigMap.has(DEFAULT_CONTROL_PLANE_APP_ID)) {
       placementConfigMap.set(
         DEFAULT_CONTROL_PLANE_APP_ID,
         normalizePlacementConfigRecord(
@@ -3041,16 +2973,14 @@ function loadState() {
       legacyPlacementConfigVersion,
       ...placementConfigs.map((item) => toPositiveInteger(item?.placementConfigVersion, 1)),
     )
-    const defaultPlacementConfig = placementConfigMap.get(DEFAULT_CONTROL_PLANE_APP_ID)
+    const defaultPlacementConfig = (
+      (DEFAULT_CONTROL_PLANE_APP_ID ? placementConfigMap.get(DEFAULT_CONTROL_PLANE_APP_ID) : null)
       || placementConfigs[0]
-      || normalizePlacementConfigRecord({
-        appId: DEFAULT_CONTROL_PLANE_APP_ID,
-        accountId: DEFAULT_CONTROL_PLANE_ORG_ID,
-        placements: buildDefaultPlacementList(),
-      })
+      || null
+    )
     const placements = Array.isArray(defaultPlacementConfig?.placements)
       ? defaultPlacementConfig.placements.map((item) => normalizePlacement(item))
-      : buildDefaultPlacementList()
+      : legacyPlacements
 
     const placementStats = parsed.placementStats && typeof parsed.placementStats === 'object'
       ? parsed.placementStats
@@ -3134,12 +3064,16 @@ let state = loadState()
 
 function syncLegacyPlacementSnapshot() {
   const configs = Array.isArray(state?.placementConfigs) ? state.placementConfigs : []
-  const defaultConfig = configs.find((item) => String(item?.appId || '').trim() === DEFAULT_CONTROL_PLANE_APP_ID)
+  const defaultConfig = (
+    (DEFAULT_CONTROL_PLANE_APP_ID
+      ? configs.find((item) => String(item?.appId || '').trim() === DEFAULT_CONTROL_PLANE_APP_ID)
+      : null)
     || configs[0]
+  )
   if (defaultConfig && Array.isArray(defaultConfig.placements)) {
     state.placements = defaultConfig.placements.map((item) => normalizePlacement(item))
   } else {
-    state.placements = buildDefaultPlacementList()
+    state.placements = []
   }
   const maxConfigVersion = Math.max(
     1,
@@ -3150,19 +3084,21 @@ function syncLegacyPlacementSnapshot() {
 }
 
 function findPlacementConfigByAppId(appId = '') {
-  const normalizedAppId = String(appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const normalizedAppId = String(appId || '').trim()
+  if (!normalizedAppId) return null
   const rows = Array.isArray(state?.placementConfigs) ? state.placementConfigs : []
   return rows.find((item) => String(item?.appId || '').trim() === normalizedAppId) || null
 }
 
 function getPlacementConfigForApp(appId = '', accountId = '', options = {}) {
   const opts = options && typeof options === 'object' ? options : {}
-  const createIfMissing = opts.createIfMissing !== false
-  const normalizedAppId = String(appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const createIfMissing = opts.createIfMissing === true
+  const normalizedAppId = String(appId || '').trim()
+  if (!normalizedAppId) return null
   const providedAccountId = normalizeControlPlaneAccountId(accountId, '')
   const app = resolveControlPlaneAppRecord(normalizedAppId)
   const resolvedAccountId = normalizeControlPlaneAccountId(
-    providedAccountId || app?.accountId || app?.organizationId || DEFAULT_CONTROL_PLANE_ORG_ID,
+    providedAccountId || app?.accountId || app?.organizationId,
     '',
   )
 
@@ -3171,7 +3107,7 @@ function getPlacementConfigForApp(appId = '', accountId = '', options = {}) {
   }
 
   let config = findPlacementConfigByAppId(normalizedAppId)
-  if (!config && createIfMissing) {
+  if (!config && createIfMissing && resolvedAccountId) {
     config = normalizePlacementConfigRecord({
       appId: normalizedAppId,
       accountId: resolvedAccountId,
@@ -3199,7 +3135,7 @@ function getPlacementsForApp(appId = '', accountId = '', options = {}) {
   const opts = options && typeof options === 'object' ? options : {}
   const clone = opts.clone === true
   const config = getPlacementConfigForApp(appId, accountId, {
-    createIfMissing: opts.createIfMissing !== false,
+    createIfMissing: opts.createIfMissing === true,
   })
   const rows = config && Array.isArray(config.placements) ? config.placements : []
   return clone ? rows.map((item) => normalizePlacement(item)) : rows
@@ -3222,7 +3158,7 @@ function resolvePlacementScopeAppId(scope = {}, fallbackAppId = '') {
     const latest = findLatestAppForAccount(normalizedAccountId)
     if (latest?.appId) return String(latest.appId).trim()
   }
-  return DEFAULT_CONTROL_PLANE_APP_ID
+  return ''
 }
 
 function resolvePlacementConfigVersionForScope(scope = {}, fallbackAppId = '') {
@@ -3255,7 +3191,7 @@ function getPlacementsForScope(scope = {}, options = {}) {
   const rows = getPlacementsForApp(
     resolvedAppId,
     normalizedScope.accountId,
-    { createIfMissing: opts.createIfMissing !== false, clone: opts.clone === true },
+    { createIfMissing: opts.createIfMissing === true, clone: opts.clone === true },
   )
   return {
     appId: resolvedAppId,
@@ -5225,7 +5161,7 @@ function resolveMediationConfigSnapshot(query = {}) {
   const ifNoneMatch = String(query.ifNoneMatch || query.if_none_match || '').trim()
 
   const placements = getPlacementsForApp(appId, resolveAccountIdForApp(appId), {
-    createIfMissing: true,
+    createIfMissing: false,
     clone: false,
   })
   const placement = placements.find((item) => item.placementId === placementId)
@@ -5264,9 +5200,10 @@ function resolveMediationConfigSnapshot(query = {}) {
 }
 
 function buildQuickStartVerifyRequest(input = {}) {
-  const appId = String(input.appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const appId = requiredNonEmptyString(input.appId, 'appId')
   const accountId = normalizeControlPlaneAccountId(
-    input.accountId || input.account_id || resolveAccountIdForApp(appId),
+    requiredNonEmptyString(input.accountId || input.account_id, 'accountId'),
+    '',
   )
   const environment = normalizeControlPlaneEnvironment(input.environment || 'staging')
   const placementId = String(input.placementId || '').trim() || 'chat_inline_v1'
@@ -7281,17 +7218,36 @@ async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/sdk/config' && req.method === 'GET') {
-    const appId = requestUrl.searchParams.get('appId') || 'simulator-chatbot'
-    const placements = getPlacementsForApp(appId, resolveAccountIdForApp(appId), {
-      createIfMissing: true,
-      clone: true,
-    })
-    sendJson(res, 200, {
-      appId,
-      accountId: resolveAccountIdForApp(appId),
-      placements,
-    })
-    return
+    try {
+      const appId = requiredNonEmptyString(requestUrl.searchParams.get('appId'), 'appId')
+      const placements = getPlacementsForApp(appId, resolveAccountIdForApp(appId), {
+        createIfMissing: false,
+        clone: true,
+      })
+      if (!Array.isArray(placements) || placements.length === 0) {
+        sendJson(res, 404, {
+          error: {
+            code: 'PLACEMENT_CONFIG_NOT_FOUND',
+            message: `placement config not found for appId ${appId}.`,
+          },
+        })
+        return
+      }
+      sendJson(res, 200, {
+        appId,
+        accountId: resolveAccountIdForApp(appId),
+        placements,
+      })
+      return
+    } catch (error) {
+      sendJson(res, 400, {
+        error: {
+          code: 'INVALID_REQUEST',
+          message: error instanceof Error ? error.message : 'Invalid request',
+        },
+      })
+      return
+    }
   }
 
   if (pathname === '/api/v1/intent-card/retrieve' && req.method === 'POST') {

@@ -13,27 +13,6 @@ function toPositiveInteger(value, fallback) {
   return fallback
 }
 
-function isLoopbackHostname(hostname) {
-  const host = String(hostname || '').trim().toLowerCase()
-  if (!host) return false
-  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true
-  return host.startsWith('127.')
-}
-
-function resolveApiBaseHostname(apiBaseUrl) {
-  const value = cleanText(apiBaseUrl)
-  if (!value) return ''
-  try {
-    const base = typeof window !== 'undefined' && window?.location?.origin
-      ? window.location.origin
-      : 'http://localhost'
-    const url = new URL(value, base)
-    return cleanText(url.hostname)
-  } catch {
-    return ''
-  }
-}
-
 const API_BASE = (
   import.meta.env.VITE_SIMULATOR_API_BASE_URL ||
   import.meta.env.MEDIATION_API_BASE_URL ||
@@ -64,79 +43,16 @@ const DEFAULT_CLIENT_VERSION = cleanText(
   import.meta.env.MEDIATION_SDK_VERSION ||
   '1.0.0'
 ) || '1.0.0'
-const LOCAL_BOOTSTRAP_API_KEY = cleanText(
-  import.meta.env.VITE_MEDIATION_LOCAL_BOOTSTRAP_API_KEY ||
-  import.meta.env.MEDIATION_LOCAL_BOOTSTRAP_API_KEY ||
-  'sk_staging_simulator_local_bootstrap_v1',
-)
-const LOOPBACK_AUTH_MODE = cleanText(
-  import.meta.env.VITE_MEDIATION_LOOPBACK_AUTH_MODE ||
-  import.meta.env.MEDIATION_LOOPBACK_AUTH_MODE ||
-  '',
-).toLowerCase()
-const PREFER_CONFIGURED_KEY_ON_LOOPBACK = cleanText(
-  import.meta.env.VITE_MEDIATION_PREFER_ENV_KEY ||
-  import.meta.env.MEDIATION_PREFER_ENV_KEY ||
-  '',
-).toLowerCase() === 'true'
-const STRICT_MANUAL_MODE = cleanText(
-  import.meta.env.VITE_MEDIATION_STRICT_MANUAL_MODE ||
-  import.meta.env.MEDIATION_STRICT_MANUAL_MODE ||
-  '',
-).toLowerCase() === 'true'
 const DEFAULT_EVALUATE_TIMEOUT_MS = toPositiveInteger(
   import.meta.env.VITE_MEDIATION_EVALUATE_TIMEOUT_MS ||
     import.meta.env.MEDIATION_EVALUATE_TIMEOUT_MS ||
     30000,
   30000,
 )
-const API_BASE_HOSTNAME = resolveApiBaseHostname(API_BASE)
-
-function resolveLoopbackAuthMode(mode, preferConfiguredKeyOnLoopback, hasConfiguredKey, strictManualMode) {
-  if (strictManualMode) {
-    return 'env_key'
-  }
-  if (mode === 'env_key' || mode === 'bootstrap' || mode === 'anonymous') {
-    return mode
-  }
-  if (preferConfiguredKeyOnLoopback && hasConfiguredKey) {
-    return 'env_key'
-  }
-  return 'bootstrap'
-}
-
-function resolveEffectiveApiKey(options = {}) {
-  const isLoopback = options.isLoopback === true
-  const mediationApiKey = cleanText(options.mediationApiKey)
-  const bootstrapApiKey = cleanText(options.bootstrapApiKey)
-  const hasConfiguredKey = Boolean(mediationApiKey)
-  const strictManualMode = options.strictManualMode === true
-  const loopbackAuthMode = resolveLoopbackAuthMode(
-    cleanText(options.loopbackAuthMode).toLowerCase(),
-    options.preferConfiguredKeyOnLoopback === true,
-    hasConfiguredKey,
-    strictManualMode,
-  )
-
-  if (!isLoopback) return mediationApiKey
-  if (strictManualMode) return mediationApiKey
-  if (loopbackAuthMode === 'env_key') return mediationApiKey || bootstrapApiKey
-  if (loopbackAuthMode === 'bootstrap') return bootstrapApiKey || mediationApiKey
-  return ''
-}
-
-const EFFECTIVE_MEDIATION_API_KEY = resolveEffectiveApiKey({
-  isLoopback: isLoopbackHostname(API_BASE_HOSTNAME),
-  mediationApiKey: MEDIATION_API_KEY,
-  bootstrapApiKey: LOCAL_BOOTSTRAP_API_KEY,
-  loopbackAuthMode: LOOPBACK_AUTH_MODE,
-  preferConfiguredKeyOnLoopback: PREFER_CONFIGURED_KEY_ON_LOOPBACK,
-  strictManualMode: STRICT_MANUAL_MODE,
-})
 
 const adsPlatformClient = createAdsSdkClient({
   apiBaseUrl: API_BASE,
-  apiKey: EFFECTIVE_MEDIATION_API_KEY,
+  apiKey: MEDIATION_API_KEY,
   timeouts: {
     config: 3000,
     evaluate: DEFAULT_EVALUATE_TIMEOUT_MS,

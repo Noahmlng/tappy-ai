@@ -2,8 +2,8 @@ import { reactive } from 'vue'
 
 const STORAGE_KEY = 'ai-network-simulator-dashboard-scope-v1'
 const DEFAULT_SCOPE = Object.freeze({
-  appId: 'simulator-chatbot',
-  accountId: 'org_simulator',
+  appId: '',
+  accountId: '',
 })
 
 function cleanText(value) {
@@ -12,14 +12,11 @@ function cleanText(value) {
 
 function normalizeScope(input = {}) {
   const source = input && typeof input === 'object' ? input : {}
-  const hasAppId = Object.prototype.hasOwnProperty.call(source, 'appId')
-    || Object.prototype.hasOwnProperty.call(source, 'app_id')
-  const rawAppId = hasAppId ? source.appId : DEFAULT_SCOPE.appId
-  const appId = cleanText(rawAppId)
-  const accountId = cleanText(source.accountId || DEFAULT_SCOPE.accountId)
+  const appId = cleanText(source.appId || source.app_id || DEFAULT_SCOPE.appId)
+  const accountId = cleanText(source.accountId || source.account_id || DEFAULT_SCOPE.accountId)
   return {
-    appId: hasAppId ? appId : (appId || DEFAULT_SCOPE.appId),
-    accountId: accountId || DEFAULT_SCOPE.accountId,
+    appId,
+    accountId,
   }
 }
 

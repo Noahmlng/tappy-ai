@@ -153,21 +153,6 @@ function buildEventsEvidence() {
   }
 }
 
-function extractErrorCode(payload) {
-  if (!payload || typeof payload !== 'object') return ''
-  const error = payload.error
-  if (!error || typeof error !== 'object') return ''
-  return cleanText(error.code || '').toUpperCase()
-}
-
-function shouldFallbackToAnonymous(payload) {
-  const code = extractErrorCode(payload)
-  if (!code) return true
-  return code === 'INVALID_API_KEY'
-    || code === 'UNSUPPORTED_BEARER_TOKEN'
-    || code === 'UNSUPPORTED_TOKEN_TYPE'
-}
-
 async function parseResponsePayload(response) {
   const contentType = String(response.headers.get('content-type') || '').toLowerCase()
   if (response.status === 204) return {}
@@ -180,7 +165,6 @@ async function parseResponsePayload(response) {
 export function createAdsSdkClient(options = {}) {
   const apiBaseUrl = normalizeApiBaseUrl(options.apiBaseUrl || '/api')
   const apiKey = cleanText(options.apiKey || '')
-  let useApiKeyAuth = Boolean(apiKey)
   const fetchImpl = options.fetchImpl || globalThis.fetch
   const timeouts = {
     config: toFiniteNumber(options.timeouts?.config, DEFAULT_TIMEOUT_MS.config) || DEFAULT_TIMEOUT_MS.config,
@@ -225,17 +209,7 @@ export function createAdsSdkClient(options = {}) {
       }
     }
 
-    const attemptWithApiKey = Boolean(apiKey) && useApiKeyAuth
-    let result = await executeRequest(attemptWithApiKey)
-
-    if (
-      attemptWithApiKey
-      && result.status === 401
-      && shouldFallbackToAnonymous(result.payload)
-    ) {
-      useApiKeyAuth = false
-      result = await executeRequest(false)
-    }
+    const result = await executeRequest(Boolean(apiKey))
 
     return {
       ...result,

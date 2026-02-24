@@ -30,7 +30,6 @@ npm run dev
 - `VITE_SIMULATOR_API_BASE_URL`（浏览器 API base，默认：`/api`）
 - `MEDIATION_API_BASE_URL`（外部接入 API base，例如：`http://127.0.0.1:3100/api`）
 - `MEDIATION_API_KEY`（从 Dashboard API Keys 获取；runtime 以 key scope 推断 app/account/env）
-- `VITE_MEDIATION_LOOPBACK_AUTH_MODE`（本地 loopback 默认 `anonymous`，可选：`anonymous|bootstrap|env_key`）
 - `VITE_ENABLE_NEXT_STEP_FLOW`（默认 `true`，设为 `false` 可临时关闭 `next_step.intent_card`）
 - `MEDIATION_ENV`（可选：`sandbox|staging|prod`，默认 `staging`）
 - `PLACEMENT_ID`（例如：`chat_inline_v1`）
