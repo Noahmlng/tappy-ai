@@ -324,11 +324,14 @@
                     @select="handleFollowUpSelect"
                   />
 
-                  <AdCard
-                    v-if="msg.kind !== 'tool' && msg.role === 'assistant' && msg.status === 'done' && msg.adCard"
-                    :ad="msg.adCard"
-                    @ad-click="handleAdClick(msg)"
-                  />
+                  <template v-if="msg.kind !== 'tool' && msg.role === 'assistant' && msg.status === 'done' && msg.adCards?.length">
+                    <AdCard
+                      v-for="ad in msg.adCards"
+                      :key="`${ad.placementId}:${ad.adId}`"
+                      :ad="ad"
+                      @ad-click="handleAdClick(msg, ad)"
+                    />
+                  </template>
                 </div>
               </div>
             </div>
@@ -398,7 +401,7 @@ import {
 } from 'lucide-vue-next'
 import { sendMessageStream } from '../api/deepseek'
 import { shouldUseWebSearchTool, runWebSearchTool, buildWebSearchContext } from '../api/webSearchTool'
-import { getAdsPlacementId, getAdsIntentScore, requestAdBid, reportInlineAdEvent } from '../api/adsSdk'
+import { getAdsPlacementIds, getAdsIntentScore, requestAdBid, reportInlineAdEvent } from '../api/adsSdk'
 import CitationSources from '../components/CitationSources.vue'
 import FollowUpSuggestions from '../components/FollowUpSuggestions.vue'
 import MarkdownRenderer from '../components/MarkdownRenderer.vue'
@@ -534,6 +537,14 @@ function normalizeAdCard(raw) {
   }
 }
 
+function normalizeAdCards(raw) {
+  if (Array.isArray(raw)) {
+    return raw.map((item) => normalizeAdCard(item)).filter(Boolean)
+  }
+  const legacy = normalizeAdCard(raw)
+  return legacy ? [legacy] : []
+}
+
 function normalizeMessage(raw) {
   if (!raw || (raw.role !== 'user' && raw.role !== 'assistant')) return null
 
@@ -541,6 +552,7 @@ function normalizeMessage(raw) {
   const toolResults = Array.isArray(raw.toolResults)
     ? raw.toolResults.map((item, index) => normalizeToolResultItem(item, index)).filter(Boolean)
     : []
+  const normalizedAdCards = normalizeAdCards(raw.adCards?.length ? raw.adCards : raw.adCard)
 
   return {
     id: typeof raw.id === 'string' && raw.id ? raw.id : createId('msg'),
@@ -563,7 +575,8 @@ function normalizeMessage(raw) {
     followUps: Array.isArray(raw.followUps)
       ? raw.followUps.map((item, index) => normalizeFollowUpItem(item, index)).filter(Boolean)
       : [],
-    adCard: normalizeAdCard(raw.adCard),
+    adCards: normalizedAdCards,
+    adCard: normalizeAdCard(raw.adCard) || normalizedAdCards[0] || null,
   }
 }
 
@@ -1056,15 +1069,15 @@ function getBrowserLocale() {
     : 'en-US'
 }
 
-function buildInlineAdEventPayload(message, kind, sessionId = activeSessionId.value) {
-  if (!message?.adCard) return null
+function buildInlineAdEventPayload(message, adCard, kind, sessionId = activeSessionId.value) {
+  if (!adCard) return null
 
   const query = typeof message.sourceUserContent === 'string' ? message.sourceUserContent.trim() : ''
   const answerText = typeof message.content === 'string' ? message.content.trim() : ''
   if (!query || !answerText) return null
 
   return {
-    requestId: message.adCard.requestId,
+    requestId: adCard.requestId,
     sessionId,
     turnId: message.sourceTurnId,
     query,
@@ -1072,8 +1085,8 @@ function buildInlineAdEventPayload(message, kind, sessionId = activeSessionId.va
     intentScore: getAdsIntentScore(query),
     locale: getBrowserLocale(),
     kind,
-    placementId: message.adCard.placementId,
-    adId: message.adCard.adId,
+    placementId: adCard.placementId,
+    adId: adCard.adId,
   }
 }
 
@@ -1086,45 +1099,51 @@ function resolveSessionIdForMessage(message) {
 async function fetchAndAttachAdForMessage({ session, turnTrace, assistantMessage }) {
   if (!session || !assistantMessage || assistantMessage.kind === 'tool') return
 
-  const placementId = getAdsPlacementId()
-  appendTurnTraceEvent(turnTrace, 'ads_bid_requested', { placementId })
-  upsertTurnTrace(turnTrace)
+  const placementIds = getAdsPlacementIds()
+  const attachedCards = []
 
-  const adBid = await requestAdBid({
-    userId: getOrCreateAdsUserId(),
-    chatId: session.id,
-    placementId,
-    messages: session.messages,
-  })
-
-  const stillExists = session.messages.some((message) => message.id === assistantMessage.id)
-  if (!stillExists) return
-
-  if (!adBid?.adCard) {
-    appendTurnTraceEvent(turnTrace, 'ads_bid_empty', { placementId })
+  for (const placementId of placementIds) {
+    appendTurnTraceEvent(turnTrace, 'ads_bid_requested', { placementId })
     upsertTurnTrace(turnTrace)
-    return
+
+    const adBid = await requestAdBid({
+      userId: getOrCreateAdsUserId(),
+      chatId: session.id,
+      placementId,
+      messages: session.messages,
+    })
+
+    const stillExists = session.messages.some((message) => message.id === assistantMessage.id)
+    if (!stillExists) return
+
+    if (!adBid?.adCard) {
+      appendTurnTraceEvent(turnTrace, 'ads_bid_empty', { placementId })
+      upsertTurnTrace(turnTrace)
+      continue
+    }
+
+    const adCard = { ...adBid.adCard }
+    attachedCards.push(adCard)
+    appendTurnTraceEvent(turnTrace, 'ads_bid_received', {
+      requestId: adBid.requestId,
+      placementId: adBid.placementId,
+      adId: adCard.adId,
+    })
+    upsertTurnTrace(turnTrace)
+
+    const impressionPayload = buildInlineAdEventPayload(assistantMessage, adCard, 'impression', session.id)
+    const impressionReported = impressionPayload ? await reportInlineAdEvent(impressionPayload) : false
+    adCard.impressionReported = impressionReported
+    appendTurnTraceEvent(turnTrace, impressionReported ? 'ads_impression_reported' : 'ads_impression_skipped', {
+      requestId: adBid.requestId,
+      placementId: adBid.placementId,
+      adId: adCard.adId,
+    })
+    upsertTurnTrace(turnTrace)
   }
 
-  assistantMessage.adCard = adBid.adCard
-  appendTurnTraceEvent(turnTrace, 'ads_bid_received', {
-    requestId: adBid.requestId,
-    placementId: adBid.placementId,
-    adId: adBid.adCard.adId,
-  })
-  upsertTurnTrace(turnTrace)
-  touchActiveSession()
-  scheduleSaveSessions()
-
-  const impressionPayload = buildInlineAdEventPayload(assistantMessage, 'impression', session.id)
-  const impressionReported = impressionPayload ? await reportInlineAdEvent(impressionPayload) : false
-  assistantMessage.adCard.impressionReported = impressionReported
-  appendTurnTraceEvent(turnTrace, impressionReported ? 'ads_impression_reported' : 'ads_impression_skipped', {
-    requestId: adBid.requestId,
-    placementId: adBid.placementId,
-    adId: adBid.adCard.adId,
-  })
-  upsertTurnTrace(turnTrace)
+  assistantMessage.adCards = attachedCards
+  assistantMessage.adCard = attachedCards[0] || null
   touchActiveSession()
   scheduleSaveSessions()
 }
@@ -1149,8 +1168,8 @@ function handleSourceClick(message, source) {
   })
 }
 
-async function handleAdClick(message) {
-  if (!message?.adCard) return
+async function handleAdClick(message, adCard) {
+  if (!message || !adCard) return
 
   if (message.sourceTurnId) {
     updateTurnTrace(message.sourceTurnId, (trace) => {
@@ -1162,9 +1181,9 @@ async function handleAdClick(message) {
           type: 'ads_clicked',
           at: Date.now(),
           payload: {
-            requestId: message.adCard.requestId,
-            adId: message.adCard.adId,
-            placementId: message.adCard.placementId,
+            requestId: adCard.requestId,
+            adId: adCard.adId,
+            placementId: adCard.placementId,
           },
         },
       ]
@@ -1172,11 +1191,11 @@ async function handleAdClick(message) {
     })
   }
 
-  const clickPayload = buildInlineAdEventPayload(message, 'click', resolveSessionIdForMessage(message))
+  const clickPayload = buildInlineAdEventPayload(message, adCard, 'click', resolveSessionIdForMessage(message))
   const clickReported = clickPayload ? await reportInlineAdEvent(clickPayload) : false
 
   if (clickReported) {
-    message.adCard.clickReported = true
+    adCard.clickReported = true
     touchActiveSession()
     scheduleSaveSessions()
   }
@@ -1191,9 +1210,9 @@ async function handleAdClick(message) {
           type: clickReported ? 'ads_click_reported' : 'ads_click_report_skipped',
           at: Date.now(),
           payload: {
-            requestId: message.adCard.requestId,
-            adId: message.adCard.adId,
-            placementId: message.adCard.placementId,
+            requestId: adCard.requestId,
+            adId: adCard.adId,
+            placementId: adCard.placementId,
           },
         },
       ]
@@ -1392,6 +1411,7 @@ async function handleSend(options = {}) {
     sourceUserContent: userContent,
     retryCount,
     followUps: [],
+    adCards: [],
     adCard: null,
   }
 
@@ -1427,6 +1447,7 @@ async function handleSend(options = {}) {
       sourceUserContent: userContent,
       retryCount,
       followUps: [],
+      adCards: [],
       adCard: null,
     }
 
@@ -1502,6 +1523,7 @@ async function handleSend(options = {}) {
     sourceUserContent: userContent,
     retryCount,
     followUps: [],
+    adCards: [],
     adCard: null,
   }
 

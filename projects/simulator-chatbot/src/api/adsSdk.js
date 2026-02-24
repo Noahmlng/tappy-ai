@@ -2,7 +2,19 @@ const DEFAULT_ADS_BASE_URL = import.meta.env.VITE_SIMULATOR_API_BASE_URL || '/ap
 const ADS_BASE_URL = String(import.meta.env.VITE_ADS_BASE_URL || DEFAULT_ADS_BASE_URL).replace(/\/+$/, '')
 const ADS_API_KEY = import.meta.env.VITE_ADS_API_KEY || 'sk_staging_q42gfvn9wfojh5aq28n77g2t'
 const INLINE_PLACEMENT_ID = 'chat_inline_v1'
-const DEFAULT_PLACEMENT_ID = import.meta.env.VITE_ADS_PLACEMENT_ID || INLINE_PLACEMENT_ID
+const FOLLOWUP_PLACEMENT_ID = 'chat_followup_v1'
+const DEFAULT_PLACEMENT_IDS = (() => {
+  const raw = String(
+    import.meta.env.VITE_ADS_PLACEMENT_IDS
+      || import.meta.env.VITE_ADS_PLACEMENT_ID
+      || `${INLINE_PLACEMENT_ID},${FOLLOWUP_PLACEMENT_ID}`,
+  )
+  return raw
+    .split(',')
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+})()
+const DEFAULT_PLACEMENT_ID = DEFAULT_PLACEMENT_IDS[0] || INLINE_PLACEMENT_ID
 const ADS_BID_TIMEOUT_MS = Number.isFinite(Number(import.meta.env.VITE_ADS_BID_TIMEOUT_MS))
   ? Math.max(200, Number(import.meta.env.VITE_ADS_BID_TIMEOUT_MS))
   : 10000
@@ -91,6 +103,10 @@ export function getAdsPlacementId() {
   return DEFAULT_PLACEMENT_ID
 }
 
+export function getAdsPlacementIds() {
+  return [...DEFAULT_PLACEMENT_IDS]
+}
+
 export function getAdsIntentScore(query) {
   return toIntentScore(query)
 }
@@ -150,11 +166,6 @@ export async function reportInlineAdEvent({
   adId,
 }) {
   if (!ADS_API_KEY || !ADS_BASE_URL) return false
-
-  if (placementId !== INLINE_PLACEMENT_ID) {
-    // Follow-up placement uses a different event schema. Skip here to keep fail-open behavior.
-    return false
-  }
 
   const eventKind = kind === 'click' ? 'click' : 'impression'
 
