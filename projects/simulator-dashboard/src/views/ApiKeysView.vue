@@ -1,6 +1,8 @@
 <script setup>
 import { computed, onMounted, reactive } from 'vue'
 
+import { controlPlaneClient } from '../api/control-plane-client'
+import { authState } from '../state/auth-state'
 import {
   apiKeysState,
   clearRevealedSecret,
@@ -16,15 +18,17 @@ const draft = reactive({
   environment: 'staging',
 })
 
-const scopeDraft = reactive({
-  appId: scopeState.appId,
-  accountId: scopeState.accountId,
+const appSelection = reactive({
+  loading: false,
+  error: '',
+  options: [],
 })
 
 const environmentOptions = ['sandbox', 'staging', 'prod']
 
 const isBusy = computed(() => Boolean(apiKeysState.meta.loading || apiKeysState.meta.syncing))
 const rows = computed(() => Array.isArray(apiKeysState.items) ? apiKeysState.items : [])
+const hasMultipleApps = computed(() => appSelection.options.length > 1)
 
 function formatDate(value) {
   if (!value) return '-'
@@ -37,27 +41,85 @@ function statusClass(status) {
   return status === 'revoked' ? 'status-pill bad' : 'status-pill good'
 }
 
-async function applyScope() {
-  setScope({
-    appId: scopeDraft.appId,
-    accountId: scopeDraft.accountId,
+function normalizeAppOptions(controlPlaneApps = []) {
+  const rows = Array.isArray(controlPlaneApps) ? controlPlaneApps : []
+  const filtered = rows.filter((row) => {
+    const accountId = String(row?.accountId || row?.organizationId || '').trim()
+    return accountId && accountId === String(scopeState.accountId || '').trim()
   })
+  const mapped = filtered
+    .map((row) => {
+      const appId = String(row?.appId || '').trim()
+      if (!appId) return null
+      return {
+        appId,
+        label: String(row?.displayName || '').trim() || appId,
+      }
+    })
+    .filter(Boolean)
+
+  const deduped = []
+  const seen = new Set()
+  for (const item of mapped) {
+    if (seen.has(item.appId)) continue
+    seen.add(item.appId)
+    deduped.push(item)
+  }
+  deduped.sort((a, b) => a.label.localeCompare(b.label))
+  return deduped
+}
+
+async function hydrateAppOptions() {
+  appSelection.loading = true
+  appSelection.error = ''
+  try {
+    if (!scopeState.accountId) {
+      appSelection.options = []
+      return
+    }
+    const snapshot = await controlPlaneClient.dashboard.getState({
+      accountId: scopeState.accountId,
+    })
+    appSelection.options = normalizeAppOptions(snapshot?.controlPlaneApps)
+
+    const hasCurrent = appSelection.options.some((item) => item.appId === scopeState.appId)
+    if (!hasCurrent) {
+      const fallbackAppId = String(authState.user?.appId || '').trim() || String(appSelection.options[0]?.appId || '').trim()
+      if (fallbackAppId) {
+        setScope({ accountId: scopeState.accountId, appId: fallbackAppId })
+      }
+    }
+  } catch (error) {
+    appSelection.options = []
+    appSelection.error = error instanceof Error ? error.message : 'Failed to load app list.'
+  } finally {
+    appSelection.loading = false
+  }
+}
+
+async function onChangeApp(appId) {
+  const nextAppId = String(appId || '').trim()
+  if (!nextAppId || nextAppId === scopeState.appId) return
+  setScope({
+    accountId: scopeState.accountId,
+    appId: nextAppId,
+  })
+  clearRevealedSecret()
   await hydrateApiKeys()
 }
 
 async function handleCreate() {
   clearRevealedSecret()
-  const nextScope = {
-    appId: String(scopeDraft.appId || '').trim(),
-    accountId: String(scopeDraft.accountId || '').trim(),
+  const scopedInput = {
+    accountId: String(scopeState.accountId || '').trim(),
+    appId: String(scopeState.appId || '').trim(),
   }
-  setScope(nextScope)
 
   await createApiKey({
     name: String(draft.name || '').trim() || 'runtime',
     environment: draft.environment,
-    appId: nextScope.appId,
-    accountId: nextScope.accountId,
+    appId: scopedInput.appId,
+    accountId: scopedInput.accountId,
   })
 
   await hydrateApiKeys()
@@ -71,8 +133,13 @@ async function handleRevoke(keyId) {
   await revokeApiKey(keyId)
 }
 
+async function refreshKeys() {
+  await hydrateAppOptions()
+  await hydrateApiKeys()
+}
+
 onMounted(() => {
-  hydrateApiKeys()
+  refreshKeys()
 })
 </script>
 
@@ -85,40 +152,22 @@ onMounted(() => {
     </header>
 
     <article class="panel">
-      <div class="panel-toolbar">
-        <h3>Scope</h3>
-        <button class="button" type="button" :disabled="isBusy" @click="applyScope">
-          Apply
-        </button>
-      </div>
-      <div class="form-grid">
-        <label>
-          Account ID
-          <input
-            v-model="scopeDraft.accountId"
-            class="input"
-            type="text"
-            maxlength="64"
-            placeholder="org_your_company"
-          >
-        </label>
-        <label>
-          App ID
-          <input
-            v-model="scopeDraft.appId"
-            class="input"
-            type="text"
-            maxlength="64"
-            placeholder="your_chat_app"
-          >
-        </label>
-      </div>
+      <h3>Scope</h3>
+      <p class="muted">Account: <strong>{{ scopeState.accountId || '-' }}</strong></p>
+      <label v-if="hasMultipleApps">
+        App
+        <select class="input" :value="scopeState.appId" @change="onChangeApp($event.target.value)">
+          <option v-for="item in appSelection.options" :key="item.appId" :value="item.appId">{{ item.label }}</option>
+        </select>
+      </label>
+      <p v-else class="muted">App: <strong>{{ scopeState.appId || '-' }}</strong></p>
+      <p class="muted" v-if="appSelection.error">{{ appSelection.error }}</p>
     </article>
 
     <article class="panel">
       <div class="panel-toolbar">
         <h3>Create Key</h3>
-        <button class="button" type="button" :disabled="isBusy" @click="handleCreate">
+        <button class="button" type="button" :disabled="isBusy || !scopeState.appId" @click="handleCreate">
           {{ isBusy ? 'Creating...' : 'Create Key' }}
         </button>
       </div>
@@ -151,8 +200,8 @@ onMounted(() => {
     <article class="panel">
       <div class="panel-toolbar">
         <h3>Keys</h3>
-        <button class="button button-secondary" type="button" :disabled="isBusy" @click="hydrateApiKeys()">
-          {{ apiKeysState.meta.loading ? 'Refreshing...' : 'Refresh' }}
+        <button class="button button-secondary" type="button" :disabled="isBusy || appSelection.loading" @click="refreshKeys()">
+          {{ apiKeysState.meta.loading || appSelection.loading ? 'Refreshing...' : 'Refresh' }}
         </button>
       </div>
       <p class="muted" v-if="apiKeysState.meta.error">{{ apiKeysState.meta.error }}</p>

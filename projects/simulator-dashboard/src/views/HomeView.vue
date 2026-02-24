@@ -3,8 +3,9 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { controlPlaneClient } from '../api/control-plane-client'
+import { authState } from '../state/auth-state'
 import { dashboardState, hydrateDashboardState } from '../state/dashboard-state'
-import { scopeState } from '../state/scope-state'
+import { scopeState, setScope } from '../state/scope-state'
 
 const isLoading = computed(() => Boolean(dashboardState.meta?.loading))
 const scopeLabel = computed(() => `${scopeState.accountId || '-'} / ${scopeState.appId || '-'}`)
@@ -13,6 +14,12 @@ const scopeReady = computed(() => Boolean(scopeState.accountId && scopeState.app
 const integrationForm = reactive({
   environment: 'staging',
   placementId: 'chat_inline_v1',
+})
+
+const appSelection = reactive({
+  loading: false,
+  error: '',
+  options: [],
 })
 
 const readiness = reactive({
@@ -82,6 +89,7 @@ const selectedPlacement = computed(() => {
 
 const placementEnabled = computed(() => Boolean(selectedPlacement.value?.enabled))
 const hasActiveKey = computed(() => readiness.activeKeyCount > 0)
+const hasMultipleApps = computed(() => appSelection.options.length > 1)
 const verifyPassed = computed(() => {
   const payload = verifyResult.value
   return Boolean(payload?.ok && String(payload?.requestId || '').trim())
@@ -91,7 +99,7 @@ const checklistRows = computed(() => ([
   {
     label: 'Scope ready',
     done: scopeReady.value,
-    detail: scopeReady.value ? scopeLabel.value : 'Set accountId + appId in API Keys page.',
+    detail: scopeReady.value ? scopeLabel.value : 'No app selected.',
     actionTo: '/api-keys',
     actionLabel: 'Open API Keys',
   },
@@ -148,8 +156,80 @@ function statusClass(done) {
   return done ? 'status-pill good' : 'status-pill warn'
 }
 
+function normalizeAppOptions(controlPlaneApps = []) {
+  const rows = Array.isArray(controlPlaneApps) ? controlPlaneApps : []
+  const filtered = rows.filter((row) => {
+    const accountId = String(row?.accountId || row?.organizationId || '').trim()
+    return accountId && accountId === String(scopeState.accountId || '').trim()
+  })
+  const mapped = filtered
+    .map((row) => {
+      const appId = String(row?.appId || '').trim()
+      if (!appId) return null
+      return {
+        appId,
+        label: String(row?.displayName || '').trim() || appId,
+      }
+    })
+    .filter(Boolean)
+
+  const deduped = []
+  const seen = new Set()
+  for (const item of mapped) {
+    if (seen.has(item.appId)) continue
+    seen.add(item.appId)
+    deduped.push(item)
+  }
+  deduped.sort((a, b) => a.label.localeCompare(b.label))
+  return deduped
+}
+
+async function hydrateAppOptions() {
+  appSelection.loading = true
+  appSelection.error = ''
+  try {
+    if (!scopeState.accountId) {
+      appSelection.options = []
+      return
+    }
+    const snapshot = await controlPlaneClient.dashboard.getState({
+      accountId: scopeState.accountId,
+    })
+    appSelection.options = normalizeAppOptions(snapshot?.controlPlaneApps)
+
+    const hasCurrent = appSelection.options.some((item) => item.appId === scopeState.appId)
+    if (!hasCurrent) {
+      const fallbackAppId = String(authState.user?.appId || '').trim() || String(appSelection.options[0]?.appId || '').trim()
+      if (fallbackAppId) {
+        setScope({ accountId: scopeState.accountId, appId: fallbackAppId })
+      }
+    }
+  } catch (error) {
+    appSelection.options = []
+    appSelection.error = error instanceof Error ? error.message : 'Failed to load app list.'
+  } finally {
+    appSelection.loading = false
+  }
+}
+
+async function onChangeApp(appId) {
+  const nextAppId = String(appId || '').trim()
+  if (!nextAppId || nextAppId === scopeState.appId) return
+  setScope({
+    accountId: scopeState.accountId,
+    appId: nextAppId,
+  })
+  verifyResult.value = null
+  verifyError.value = ''
+  await refreshReadiness({ reloadDashboard: true, reloadApps: false })
+}
+
 async function refreshReadiness(options = {}) {
   const reloadDashboard = options?.reloadDashboard !== false
+  const reloadApps = options?.reloadApps !== false
+  if (reloadApps) {
+    await hydrateAppOptions()
+  }
   if (reloadDashboard) {
     await hydrateDashboardState()
   }
@@ -185,7 +265,7 @@ async function runIntegrationVerify() {
 
   try {
     if (!scopeReady.value) {
-      throw new Error('Scope is empty. Please set accountId and appId first.')
+      throw new Error('Scope is empty. Please select an app first.')
     }
 
     const payload = await controlPlaneClient.quickStart.verify({
@@ -196,7 +276,7 @@ async function runIntegrationVerify() {
     })
 
     verifyResult.value = payload
-    await refreshReadiness({ reloadDashboard: true })
+    await refreshReadiness({ reloadDashboard: true, reloadApps: false })
   } catch (error) {
     verifyError.value = error instanceof Error ? error.message : 'Integration verify failed.'
   } finally {
@@ -205,13 +285,13 @@ async function runIntegrationVerify() {
 }
 
 function refreshHome() {
-  refreshReadiness({ reloadDashboard: true })
+  refreshReadiness({ reloadDashboard: true, reloadApps: true })
 }
 
 watch(
   () => integrationForm.environment,
   () => {
-    refreshReadiness({ reloadDashboard: false })
+    refreshReadiness({ reloadDashboard: false, reloadApps: false })
   },
 )
 
@@ -238,8 +318,8 @@ onMounted(() => {
         </p>
         <p class="muted" v-if="dashboardState.meta.error">{{ dashboardState.meta.error }}</p>
       </div>
-      <button class="button" type="button" :disabled="isLoading || readiness.loading" @click="refreshHome">
-        {{ isLoading || readiness.loading ? 'Refreshing...' : 'Refresh' }}
+      <button class="button" type="button" :disabled="isLoading || readiness.loading || appSelection.loading" @click="refreshHome">
+        {{ isLoading || readiness.loading || appSelection.loading ? 'Refreshing...' : 'Refresh' }}
       </button>
     </article>
 
@@ -259,6 +339,12 @@ onMounted(() => {
       </div>
 
       <div class="form-grid">
+        <label v-if="hasMultipleApps">
+          App
+          <select class="input" :value="scopeState.appId" @change="onChangeApp($event.target.value)">
+            <option v-for="item in appSelection.options" :key="item.appId" :value="item.appId">{{ item.label }}</option>
+          </select>
+        </label>
         <label>
           Environment
           <select v-model="integrationForm.environment" class="input">
@@ -288,6 +374,7 @@ onMounted(() => {
         </div>
       </div>
 
+      <p class="muted" v-if="appSelection.error">{{ appSelection.error }}</p>
       <p class="muted" v-if="readiness.error">{{ readiness.error }}</p>
       <p class="muted" v-if="verifyError">{{ verifyError }}</p>
 
