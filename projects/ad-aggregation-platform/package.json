@@ -35,7 +35,13 @@
     "house-ads:offers:merge": "node ./scripts/house-ads/merge-offers.js",
     "house-ads:offers:qa": "node ./scripts/house-ads/qa-offers.js",
     "house-ads:offers:publish": "node ./scripts/house-ads/publish-offer-creatives.js",
-    "house-ads:offers:bootstrap": "npm run house-ads:offers:build-jobs && npm run house-ads:offers:crawl && npm run house-ads:offers:normalize && npm run house-ads:offers:synthesize && npm run house-ads:offers:merge && npm run house-ads:offers:qa && npm run house-ads:offers:publish"
+    "house-ads:offers:bootstrap": "npm run house-ads:offers:build-jobs && npm run house-ads:offers:crawl && npm run house-ads:offers:normalize && npm run house-ads:offers:synthesize && npm run house-ads:offers:merge && npm run house-ads:offers:qa && npm run house-ads:offers:publish",
+    "inventory:sync:partnerstack": "node --env-file-if-exists=.env ./scripts/inventory/sync-partnerstack.js",
+    "inventory:sync:cj": "node --env-file-if-exists=.env ./scripts/inventory/sync-cj.js",
+    "inventory:sync:house": "node --env-file-if-exists=.env ./scripts/inventory/sync-house.js",
+    "inventory:embeddings": "node --env-file-if-exists=.env ./scripts/inventory/build-embeddings.js",
+    "inventory:snapshot": "node --env-file-if-exists=.env ./scripts/inventory/materialize-serving-snapshot.js",
+    "inventory:sync:all": "npm run inventory:sync:partnerstack && npm run inventory:sync:cj && npm run inventory:sync:house && npm run inventory:embeddings && npm run inventory:snapshot"
   },
   "dependencies": {
     "pg": "^8.16.3"

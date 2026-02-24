@@ -79,6 +79,7 @@ function startGateway(port) {
       OPENROUTER_MODEL: 'glm-5',
       CJ_TOKEN: 'mock-cj-token',
       PARTNERSTACK_API_KEY: 'mock-partnerstack-key',
+      SUPABASE_DB_URL: '',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -111,73 +112,31 @@ async function stopGateway(handle) {
   }
 }
 
-test('v2 bid API returns unified response and legacy evaluate endpoint is removed', async () => {
-  const port = 3950 + Math.floor(Math.random() * 120)
+test('internal inventory endpoints expose status and fail-safe sync behavior without db', async () => {
+  const port = 4160 + Math.floor(Math.random() * 120)
   const baseUrl = `http://${HOST}:${port}`
   const gateway = startGateway(port)
 
   try {
     await waitForGateway(baseUrl)
 
-    const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
-    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    const status = await requestJson(baseUrl, '/api/v1/internal/inventory/status')
+    assert.equal(status.ok, true)
+    assert.equal(typeof status.payload?.ok, 'boolean')
 
-    const bid = await requestJson(baseUrl, '/api/v2/bid', {
+    const sync = await requestJson(baseUrl, '/api/v1/internal/inventory/sync', {
       method: 'POST',
       body: {
-        userId: 'user_v2_001',
-        chatId: 'chat_v2_001',
-        placementId: 'chat_inline_v1',
-        messages: [
-          { role: 'user', content: 'i want to buy a gift to my girlfriend' },
-          { role: 'assistant', content: 'what kind of gift do you prefer?' },
-          { role: 'user', content: 'camera for vlogging' },
-        ],
-      },
-      timeoutMs: 12000,
-    })
-
-    assert.equal(bid.ok, true, `v2 bid failed: ${JSON.stringify(bid.payload)}`)
-    assert.equal(bid.payload?.status, 'success')
-    assert.equal(typeof bid.payload?.requestId, 'string')
-    assert.equal(typeof bid.payload?.timestamp, 'string')
-    assert.equal(typeof bid.payload?.opportunityId, 'string')
-    assert.equal(typeof bid.payload?.intent?.score, 'number')
-    assert.equal(typeof bid.payload?.intent?.class, 'string')
-    assert.equal(typeof bid.payload?.intent?.source, 'string')
-    assert.equal(typeof bid.payload?.decisionTrace?.reasonCode, 'string')
-    assert.equal(Boolean(bid.payload?.decisionTrace?.stageStatus), true)
-    assert.equal(Boolean(bid.payload?.data), true)
-
-    const winner = bid.payload?.data?.bid
-    if (winner) {
-      assert.equal(typeof winner.price, 'number')
-      assert.equal(typeof winner.headline, 'string')
-      assert.equal(typeof winner.url, 'string')
-      assert.equal(typeof winner.bidId, 'string')
-    } else {
-      assert.equal(bid.payload?.message, 'No bid')
-    }
-
-    const legacyEvaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
-      method: 'POST',
-      body: {
-        sessionId: 'legacy_sess_001',
-        turnId: 'legacy_turn_001',
-        query: 'legacy evaluate request',
-        answerText: 'legacy answer',
-        intentScore: 0.8,
-        locale: 'en-US',
-        placementId: 'chat_inline_v1',
+        networks: ['house'],
       },
     })
 
-    assert.equal(legacyEvaluate.status, 404)
-    assert.equal(legacyEvaluate.payload?.error?.code, 'NOT_FOUND')
+    assert.equal(sync.status, 503)
+    assert.equal(sync.payload?.error?.code, 'INVENTORY_SYNC_UNAVAILABLE')
   } catch (error) {
     const logs = gateway.getLogs()
     const message = error instanceof Error ? error.message : String(error)
-    throw new Error(`[v2-bid-api] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`)
+    throw new Error(`[inventory-internal-api] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`)
   } finally {
     await stopGateway(gateway)
   }
