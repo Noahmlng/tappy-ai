@@ -84,31 +84,33 @@ function displayReason(row) {
         </label>
       </div>
 
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th>Request ID</th>
-            <th>Placement</th>
-            <th>Result</th>
-            <th>Reason</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in filteredLogs" :key="row.id || row.requestId">
-            <td>{{ row.createdAt || '-' }}</td>
-            <td>{{ row.requestId || '-' }}</td>
-            <td>{{ row.placementId || '-' }}</td>
-            <td>
-              <span :class="resultPillClass(row.result)">{{ row.result || '-' }}</span>
-            </td>
-            <td>{{ displayReason(row) }}</td>
-          </tr>
-          <tr v-if="filteredLogs.length === 0">
-            <td colspan="5" class="muted">No logs found.</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="table-wrapper">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Request ID</th>
+              <th>Placement</th>
+              <th>Result</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in filteredLogs" :key="row.id || row.requestId">
+              <td>{{ row.createdAt || '-' }}</td>
+              <td>{{ row.requestId || '-' }}</td>
+              <td>{{ row.placementId || '-' }}</td>
+              <td>
+                <span :class="resultPillClass(row.result)">{{ row.result || '-' }}</span>
+              </td>
+              <td>{{ displayReason(row) }}</td>
+            </tr>
+            <tr v-if="filteredLogs.length === 0">
+              <td colspan="5" class="muted">No logs found.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </article>
   </section>
 </template>

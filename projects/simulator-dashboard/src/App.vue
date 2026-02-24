@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 
 import { authState, logoutDashboardUser } from './state/auth-state'
@@ -8,19 +8,24 @@ const route = useRoute()
 const router = useRouter()
 const isPublicRoute = computed(() => Boolean(route.meta?.publicRoute))
 const sidebarOpen = ref(false)
+const sidebarCollapsed = ref(false)
 
 const navItems = computed(() => {
   if (!authState.authenticated) return []
   return [
-    { to: '/home', label: 'Home' },
-    { to: '/api-keys', label: 'API Keys' },
-    { to: '/config', label: 'Config' },
-    { to: '/logs', label: 'Logs' },
+    { to: '/home', label: 'Home', icon: 'HM' },
+    { to: '/api-keys', label: 'API Keys', icon: 'KY' },
+    { to: '/config', label: 'Config', icon: 'CF' },
+    { to: '/logs', label: 'Logs', icon: 'LG' },
   ]
 })
 
 function toggleSidebar() {
   sidebarOpen.value = !sidebarOpen.value
+}
+
+function toggleSidebarCollapse() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
 }
 
 function closeSidebar() {
@@ -36,12 +41,42 @@ async function handleLogout() {
   await logoutDashboardUser()
   await router.replace('/login')
 }
+
+function isNavActive(path) {
+  return route.path === path || route.path.startsWith(`${path}/`)
+}
+
+onMounted(() => {
+  const cached = typeof window !== 'undefined' ? window.localStorage.getItem('dashboard.sidebarCollapsed') : null
+  sidebarCollapsed.value = cached === '1'
+})
+
+watch(sidebarCollapsed, (value) => {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem('dashboard.sidebarCollapsed', value ? '1' : '0')
+})
+
+watch(
+  () => route.fullPath,
+  () => {
+    closeSidebar()
+  },
+)
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'auth-shell': isPublicRoute }">
+  <div
+    class="app-shell"
+    :class="{
+      'auth-shell': isPublicRoute,
+      'sidebar-collapsed': !isPublicRoute && sidebarCollapsed,
+    }"
+  >
     <div v-if="!isPublicRoute" class="mobile-header">
-      <button class="hamburger-btn" type="button" @click="toggleSidebar">&#9776;</button>
+      <p class="mobile-title">Control Plane</p>
+      <button class="icon-button hamburger-btn" type="button" @click="toggleSidebar">
+        Menu
+      </button>
     </div>
 
     <div
@@ -56,9 +91,15 @@ async function handleLogout() {
       class="side-nav"
       :class="{ open: sidebarOpen }"
     >
-      <div>
-        <p class="eyebrow">AI Native Ads</p>
-        <h1 class="title">Simple Dashboard</h1>
+      <div class="side-nav-head">
+        <div class="brand-block">
+          <p class="eyebrow">AI Native Ads</p>
+          <h1 class="title">Control Plane</h1>
+          <p class="subtitle nav-subtitle">Runtime Dashboard</p>
+        </div>
+        <button class="icon-button collapse-btn" type="button" @click="toggleSidebarCollapse">
+          {{ sidebarCollapsed ? '>' : '<' }}
+        </button>
       </div>
 
       <nav class="nav-list">
@@ -67,26 +108,28 @@ async function handleLogout() {
           :key="item.to"
           :to="item.to"
           class="nav-link"
-          :class="{ active: route.path === item.to || route.path.startsWith(`${item.to}/`) }"
+          :class="{ active: isNavActive(item.to) }"
           @click="handleNavClick"
         >
-          {{ item.label }}
+          <span class="nav-icon" aria-hidden="true">{{ item.icon }}</span>
+          <span class="nav-label">{{ item.label }}</span>
+          <span class="nav-tooltip">{{ item.label }}</span>
         </RouterLink>
       </nav>
 
-      <p class="muted nav-meta">
-        {{ authState.user?.email || '-' }}
-      </p>
-      <p class="muted nav-meta">
-        {{ authState.user?.accountId || '-' }}
-      </p>
+      <div class="side-nav-footer">
+        <div class="nav-meta">
+          <p class="muted mono">{{ authState.user?.email || '-' }}</p>
+          <p class="muted mono">{{ authState.user?.accountId || '-' }}</p>
+        </div>
 
-      <button class="button button-secondary" type="button" @click="handleLogout">
-        Sign out
-      </button>
+        <button class="button button-secondary nav-signout" type="button" @click="handleLogout">
+          Sign out
+        </button>
+      </div>
     </aside>
 
-    <main class="content-pane card" :class="{ 'auth-content': isPublicRoute }">
+    <main class="content-pane" :class="{ 'auth-content': isPublicRoute }">
       <RouterView />
     </main>
   </div>

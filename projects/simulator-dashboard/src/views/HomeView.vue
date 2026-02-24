@@ -413,27 +413,29 @@ onMounted(() => {
 
     <article class="panel">
       <h3>Recent Logs</h3>
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th>Request ID</th>
-            <th>Placement</th>
-            <th>Result</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in recentLogs" :key="row.id || row.requestId">
-            <td>{{ row.createdAt || '-' }}</td>
-            <td>{{ row.requestId || '-' }}</td>
-            <td>{{ row.placementId || '-' }}</td>
-            <td>{{ row.result || '-' }}</td>
-          </tr>
-          <tr v-if="recentLogs.length === 0">
-            <td colspan="4" class="muted">No logs yet.</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="table-wrapper">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Request ID</th>
+              <th>Placement</th>
+              <th>Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in recentLogs" :key="row.id || row.requestId">
+              <td>{{ row.createdAt || '-' }}</td>
+              <td>{{ row.requestId || '-' }}</td>
+              <td>{{ row.placementId || '-' }}</td>
+              <td>{{ row.result || '-' }}</td>
+            </tr>
+            <tr v-if="recentLogs.length === 0">
+              <td colspan="4" class="muted">No logs yet.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </article>
   </section>
 </template>

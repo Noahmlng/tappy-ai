@@ -151,7 +151,7 @@ onMounted(() => {
       <p class="subtitle">Create and manage runtime keys.</p>
     </header>
 
-    <article class="panel">
+    <article class="panel create-key-form">
       <h3>Scope</h3>
       <p class="muted">Account: <strong>{{ scopeState.accountId || '-' }}</strong></p>
       <label v-if="hasMultipleApps">
@@ -206,54 +206,56 @@ onMounted(() => {
       </div>
       <p class="muted" v-if="apiKeysState.meta.error">{{ apiKeysState.meta.error }}</p>
 
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Env</th>
-            <th>Status</th>
-            <th>Masked Key</th>
-            <th>Created</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in rows" :key="row.keyId">
-            <td>{{ row.name }}</td>
-            <td>{{ row.environment }}</td>
-            <td>
-              <span :class="statusClass(row.status)">
-                {{ row.status }}
-              </span>
-            </td>
-            <td><code>{{ row.maskedKey }}</code></td>
-            <td>{{ formatDate(row.createdAt) }}</td>
-            <td>
-              <div class="toolbar-actions">
-                <button
-                  class="button button-secondary"
-                  type="button"
-                  :disabled="isBusy || row.status === 'revoked'"
-                  @click="handleRotate(row.keyId)"
-                >
-                  Rotate
-                </button>
-                <button
-                  class="button button-danger"
-                  type="button"
-                  :disabled="isBusy || row.status === 'revoked'"
-                  @click="handleRevoke(row.keyId)"
-                >
-                  Revoke
-                </button>
-              </div>
-            </td>
-          </tr>
-          <tr v-if="rows.length === 0">
-            <td colspan="6" class="muted">No keys found.</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="table-wrapper">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Env</th>
+              <th>Status</th>
+              <th>Masked Key</th>
+              <th>Created</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in rows" :key="row.keyId">
+              <td>{{ row.name }}</td>
+              <td>{{ row.environment }}</td>
+              <td>
+                <span :class="statusClass(row.status)">
+                  {{ row.status }}
+                </span>
+              </td>
+              <td><code>{{ row.maskedKey }}</code></td>
+              <td>{{ formatDate(row.createdAt) }}</td>
+              <td>
+                <div class="toolbar-actions">
+                  <button
+                    class="button button-secondary"
+                    type="button"
+                    :disabled="isBusy || row.status === 'revoked'"
+                    @click="handleRotate(row.keyId)"
+                  >
+                    Rotate
+                  </button>
+                  <button
+                    class="button button-danger"
+                    type="button"
+                    :disabled="isBusy || row.status === 'revoked'"
+                    @click="handleRevoke(row.keyId)"
+                  >
+                    Revoke
+                  </button>
+                </div>
+              </td>
+            </tr>
+            <tr v-if="rows.length === 0">
+              <td colspan="6" class="muted">No keys found.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </article>
   </section>
 </template>
