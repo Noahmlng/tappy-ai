@@ -439,3 +439,63 @@ test('dashboard placement config is isolated per account app', async () => {
     await stopGateway(gateway)
   }
 })
+
+test('dashboard register enforces account ownership proof for claimed accounts', async () => {
+  const port = 4380 + Math.floor(Math.random() * 200)
+  const baseUrl = `http://${HOST}:${port}`
+  const gateway = startGateway(port)
+
+  try {
+    await waitForGateway(baseUrl)
+    const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
+    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+
+    const registerOwner = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+      method: 'POST',
+      body: {
+        email: 'owner-claimed@example.com',
+        password: 'pass12345',
+        accountId: 'acct_claimed',
+        appId: 'simulator-chatbot-claimed',
+      },
+    })
+    assert.equal(registerOwner.status, 201, `register owner failed: ${JSON.stringify(registerOwner.payload)}`)
+    const ownerToken = String(registerOwner.payload?.session?.accessToken || '').trim()
+    assert.equal(Boolean(ownerToken), true, 'owner register should return dashboard session token')
+
+    const registerNoProof = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+      method: 'POST',
+      body: {
+        email: 'intruder-claimed@example.com',
+        password: 'pass12345',
+        accountId: 'acct_claimed',
+        appId: 'simulator-chatbot-claimed',
+      },
+    })
+    assert.equal(registerNoProof.status, 403)
+    assert.equal(registerNoProof.payload?.error?.code, 'DASHBOARD_ACCOUNT_OWNERSHIP_REQUIRED')
+
+    const registerWithProof = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${ownerToken}`,
+      },
+      body: {
+        email: 'member-claimed@example.com',
+        password: 'pass12345',
+        accountId: 'acct_claimed',
+        appId: 'simulator-chatbot-claimed',
+      },
+    })
+    assert.equal(registerWithProof.status, 201, `register with proof failed: ${JSON.stringify(registerWithProof.payload)}`)
+    assert.equal(String(registerWithProof.payload?.user?.accountId || ''), 'acct_claimed')
+  } catch (error) {
+    const logs = gateway.getLogs()
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `[dashboard-register-ownership] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`,
+    )
+  } finally {
+    await stopGateway(gateway)
+  }
+})

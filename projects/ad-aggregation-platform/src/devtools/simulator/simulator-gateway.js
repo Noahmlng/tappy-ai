@@ -938,6 +938,174 @@ function appBelongsToAccount(appId, accountId) {
   return normalizeControlPlaneAccountId(app.accountId || app.organizationId, '') === normalizedAccountId
 }
 
+function listDashboardUsersByAccount(accountId) {
+  const normalizedAccountId = normalizeControlPlaneAccountId(accountId, '')
+  if (!normalizedAccountId) return []
+  const rows = Array.isArray(state?.controlPlane?.dashboardUsers) ? state.controlPlane.dashboardUsers : []
+  return rows.filter((item) => normalizeControlPlaneAccountId(item?.accountId, '') === normalizedAccountId)
+}
+
+function isBootstrapDefaultAccount(accountId) {
+  return normalizeControlPlaneAccountId(accountId, '') === DEFAULT_CONTROL_PLANE_ORG_ID
+}
+
+function hasNonBootstrapAccountResources(accountId) {
+  const normalizedAccountId = normalizeControlPlaneAccountId(accountId, '')
+  if (!normalizedAccountId) return false
+
+  const controlPlane = state?.controlPlane && typeof state.controlPlane === 'object'
+    ? state.controlPlane
+    : createInitialControlPlaneState()
+  const apps = Array.isArray(controlPlane.apps) ? controlPlane.apps : []
+  const appEnvironments = Array.isArray(controlPlane.appEnvironments) ? controlPlane.appEnvironments : []
+  const apiKeys = Array.isArray(controlPlane.apiKeys) ? controlPlane.apiKeys : []
+  const integrationTokens = Array.isArray(controlPlane.integrationTokens) ? controlPlane.integrationTokens : []
+  const agentAccessTokens = Array.isArray(controlPlane.agentAccessTokens) ? controlPlane.agentAccessTokens : []
+
+  const isDefault = isBootstrapDefaultAccount(normalizedAccountId)
+  const bootstrapDigest = hashToken(resolveBootstrapApiKey('staging'))
+
+  const hasAppResource = apps.some((item) => {
+    const rowAccountId = normalizeControlPlaneAccountId(item?.accountId || item?.organizationId, '')
+    if (rowAccountId !== normalizedAccountId) return false
+    if (!isDefault) return true
+    return String(item?.appId || '').trim() !== DEFAULT_CONTROL_PLANE_APP_ID
+  })
+  if (hasAppResource) return true
+
+  const hasEnvironmentResource = appEnvironments.some((item) => {
+    const rowAccountId = normalizeControlPlaneAccountId(item?.accountId, '')
+    if (rowAccountId !== normalizedAccountId) return false
+    if (!isDefault) return true
+    return String(item?.appId || '').trim() !== DEFAULT_CONTROL_PLANE_APP_ID
+  })
+  if (hasEnvironmentResource) return true
+
+  const hasApiKeyResource = apiKeys.some((item) => {
+    const rowAccountId = normalizeControlPlaneAccountId(item?.accountId || resolveAccountIdForApp(item?.appId), '')
+    if (rowAccountId !== normalizedAccountId) return false
+    if (!isDefault) return true
+    const isBootstrapKey = (
+      String(item?.appId || '').trim() === DEFAULT_CONTROL_PLANE_APP_ID
+      && String(item?.environment || '').trim() === 'staging'
+      && String(item?.secretHash || '') === bootstrapDigest
+      && String(item?.status || '').toLowerCase() === 'active'
+    )
+    return !isBootstrapKey
+  })
+  if (hasApiKeyResource) return true
+
+  const hasIntegrationTokenResource = integrationTokens.some((item) => (
+    normalizeControlPlaneAccountId(item?.accountId || resolveAccountIdForApp(item?.appId), '') === normalizedAccountId
+  ))
+  if (hasIntegrationTokenResource) return true
+
+  const hasAgentTokenResource = agentAccessTokens.some((item) => (
+    normalizeControlPlaneAccountId(item?.accountId || resolveAccountIdForApp(item?.appId), '') === normalizedAccountId
+  ))
+  if (hasAgentTokenResource) return true
+
+  const hasRuntimeOrAuditRows = (
+    Array.isArray(state?.decisionLogs) ? state.decisionLogs : []
+  ).some((item) => normalizeControlPlaneAccountId(item?.accountId || resolveAccountIdForApp(item?.appId), '') === normalizedAccountId)
+    || (
+      Array.isArray(state?.eventLogs) ? state.eventLogs : []
+    ).some((item) => normalizeControlPlaneAccountId(item?.accountId || resolveAccountIdForApp(item?.appId), '') === normalizedAccountId)
+    || (
+      Array.isArray(state?.controlPlaneAuditLogs) ? state.controlPlaneAuditLogs : []
+    ).some((item) => normalizeControlPlaneAccountId(item?.accountId || resolveAccountIdForApp(item?.appId), '') === normalizedAccountId)
+    || (
+      Array.isArray(state?.placementAuditLogs) ? state.placementAuditLogs : []
+    ).some((item) => normalizeControlPlaneAccountId(item?.accountId || resolveAccountIdForApp(item?.appId), '') === normalizedAccountId)
+    || (
+      Array.isArray(state?.networkFlowLogs) ? state.networkFlowLogs : []
+    ).some((item) => normalizeControlPlaneAccountId(item?.accountId || resolveAccountIdForApp(item?.appId), '') === normalizedAccountId)
+
+  return hasRuntimeOrAuditRows
+}
+
+function resolveDashboardRegisterOwnershipProof(req, accountId = '') {
+  const normalizedAccountId = normalizeControlPlaneAccountId(accountId, '')
+  if (!normalizedAccountId) return { ok: false, mode: 'none' }
+
+  const token = parseBearerToken(req)
+  if (!token) return { ok: false, mode: 'none' }
+
+  if (token.startsWith(DASHBOARD_SESSION_PREFIX)) {
+    const sessionAuth = resolveDashboardSession(req)
+    if (sessionAuth.kind === 'dashboard_session') {
+      const scopedAccountId = normalizeControlPlaneAccountId(
+        sessionAuth.user?.accountId || sessionAuth.session?.accountId,
+        '',
+      )
+      if (scopedAccountId === normalizedAccountId) {
+        return {
+          ok: true,
+          mode: 'dashboard_session',
+          user: sessionAuth.user,
+          session: sessionAuth.session,
+        }
+      }
+    }
+    return { ok: false, mode: 'dashboard_session_invalid' }
+  }
+
+  const apiKey = findActiveApiKeyBySecret(token)
+  if (!apiKey) return { ok: false, mode: 'none' }
+  const apiKeyAccountId = normalizeControlPlaneAccountId(apiKey.accountId || resolveAccountIdForApp(apiKey.appId), '')
+  if (apiKeyAccountId !== normalizedAccountId) {
+    return { ok: false, mode: 'api_key_account_mismatch' }
+  }
+  return {
+    ok: true,
+    mode: 'api_key',
+    apiKey,
+  }
+}
+
+function validateDashboardRegisterOwnership(req, accountId = '') {
+  const normalizedAccountId = normalizeControlPlaneAccountId(accountId, '')
+  if (!normalizedAccountId) {
+    return {
+      ok: false,
+      status: 400,
+      error: {
+        code: 'INVALID_REQUEST',
+        message: 'accountId is required.',
+      },
+    }
+  }
+
+  const existingUsers = listDashboardUsersByAccount(normalizedAccountId)
+  const hasExistingUsers = existingUsers.length > 0
+  const hasProtectedResources = hasExistingUsers || hasNonBootstrapAccountResources(normalizedAccountId)
+  if (!hasProtectedResources) {
+    return {
+      ok: true,
+      proofMode: 'none',
+    }
+  }
+
+  const proof = resolveDashboardRegisterOwnershipProof(req, normalizedAccountId)
+  if (proof.ok) {
+    return {
+      ok: true,
+      proofMode: proof.mode,
+    }
+  }
+
+  return {
+    ok: false,
+    status: 403,
+    error: {
+      code: 'DASHBOARD_ACCOUNT_OWNERSHIP_REQUIRED',
+      message: hasExistingUsers
+        ? `accountId ${normalizedAccountId} is already claimed. Sign in with an existing account user to add members.`
+        : `accountId ${normalizedAccountId} already has provisioned resources. Provide an active account credential (dashboard session or API key).`,
+    },
+  }
+}
+
 function resolveDashboardSession(req) {
   cleanupExpiredDashboardSessions()
   const token = parseBearerToken(req)
@@ -5266,6 +5434,11 @@ async function requestHandler(req, res) {
             message: `dashboard user already exists for email ${request.email}.`,
           },
         })
+        return
+      }
+      const ownership = validateDashboardRegisterOwnership(req, request.accountId)
+      if (!ownership.ok) {
+        sendJson(res, ownership.status, { error: ownership.error })
         return
       }
 
