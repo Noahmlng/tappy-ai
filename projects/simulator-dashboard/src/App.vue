@@ -13,10 +13,10 @@ const sidebarCollapsed = ref(false)
 const navItems = computed(() => {
   if (!authState.authenticated) return []
   return [
-    { to: '/home', label: 'Home', icon: 'HM' },
-    { to: '/api-keys', label: 'API Keys', icon: 'KY' },
-    { to: '/config', label: 'Config', icon: 'CF' },
-    { to: '/logs', label: 'Logs', icon: 'LG' },
+    { to: '/home', label: 'Home', icon: 'home' },
+    { to: '/api-keys', label: 'API Keys', icon: 'key' },
+    { to: '/config', label: 'Config', icon: 'sliders' },
+    { to: '/logs', label: 'Logs', icon: 'list' },
   ]
 })
 
@@ -111,7 +111,34 @@ watch(
           :class="{ active: isNavActive(item.to) }"
           @click="handleNavClick"
         >
-          <span class="nav-icon" aria-hidden="true">{{ item.icon }}</span>
+          <span class="nav-icon" aria-hidden="true">
+            <svg v-if="item.icon === 'home'" viewBox="0 0 24 24">
+              <path d="M3 10.5L12 3l9 7.5" />
+              <path d="M5.5 9.5V20h13V9.5" />
+            </svg>
+            <svg v-else-if="item.icon === 'key'" viewBox="0 0 24 24">
+              <circle cx="8" cy="12" r="3.5" />
+              <path d="M11.5 12H21" />
+              <path d="M17 12v3" />
+              <path d="M20 12v2" />
+            </svg>
+            <svg v-else-if="item.icon === 'sliders'" viewBox="0 0 24 24">
+              <path d="M4 6h16" />
+              <path d="M4 12h16" />
+              <path d="M4 18h16" />
+              <circle cx="9" cy="6" r="2" />
+              <circle cx="15" cy="12" r="2" />
+              <circle cx="7" cy="18" r="2" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24">
+              <path d="M7 7h10" />
+              <path d="M7 12h10" />
+              <path d="M7 17h10" />
+              <circle cx="4.5" cy="7" r="1.2" />
+              <circle cx="4.5" cy="12" r="1.2" />
+              <circle cx="4.5" cy="17" r="1.2" />
+            </svg>
+          </span>
           <span class="nav-label">{{ item.label }}</span>
           <span class="nav-tooltip">{{ item.label }}</span>
         </RouterLink>
