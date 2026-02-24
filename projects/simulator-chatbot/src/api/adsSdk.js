@@ -7,6 +7,27 @@ const ADS_BID_TIMEOUT_MS = Number.isFinite(Number(import.meta.env.VITE_ADS_BID_T
   ? Math.max(200, Number(import.meta.env.VITE_ADS_BID_TIMEOUT_MS))
   : 1200
 
+function normalizeBaseUrl(value) {
+  return String(value || '').trim().replace(/\/+$/, '')
+}
+
+function buildBaseUrlCandidates(baseUrl) {
+  const normalized = normalizeBaseUrl(baseUrl)
+  const candidates = []
+
+  if (normalized) {
+    candidates.push(normalized)
+    if (normalized.endsWith('/api')) {
+      candidates.push(normalized.replace(/\/api$/, ''))
+    } else {
+      candidates.push(`${normalized}/api`)
+    }
+  }
+
+  candidates.push('/api')
+  return Array.from(new Set(candidates.filter(Boolean)))
+}
+
 function toAdsMessages(messages = []) {
   return messages
     .filter((message) => {
@@ -108,33 +129,40 @@ export async function requestAdBid({ userId, chatId, messages, placementId = DEF
   if (!payload.userId || !payload.chatId || payload.messages.length === 0) return null
 
   try {
-    const response = await fetchWithTimeout(`${ADS_BASE_URL}/v2/bid`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${ADS_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    })
+    const candidates = buildBaseUrlCandidates(ADS_BASE_URL)
 
-    const result = await response.json().catch(() => null)
+    for (const baseUrl of candidates) {
+      const response = await fetchWithTimeout(`${baseUrl}/v2/bid`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${ADS_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
 
-    if (!response.ok) {
-      throw new Error(result?.message || `Ads bid request failed (${response.status})`)
-    }
+      const result = await response.json().catch(() => null)
 
-    const adCard = mapBidToAdCard(result, payload.placementId)
-    if (!adCard) return null
+      if (!response.ok) {
+        if (response.status === 404) continue
+        throw new Error(result?.message || `Ads bid request failed (${response.status})`)
+      }
 
-    return {
-      requestId: adCard.requestId,
-      placementId: payload.placementId,
-      adCard,
+      const adCard = mapBidToAdCard(result, payload.placementId)
+      if (!adCard) return null
+
+      return {
+        requestId: adCard.requestId,
+        placementId: payload.placementId,
+        adCard,
+      }
     }
   } catch (error) {
     console.warn('[ads] fail-open bid request:', error)
     return null
   }
+
+  return null
 }
 
 export async function reportInlineAdEvent({
@@ -176,19 +204,26 @@ export async function reportInlineAdEvent({
   }
 
   try {
-    const response = await fetch(`${ADS_BASE_URL}/v1/sdk/events`, {
-      method: 'POST',
-      keepalive: true,
-      headers: {
-        Authorization: `Bearer ${ADS_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    })
+    const candidates = buildBaseUrlCandidates(ADS_BASE_URL)
 
-    return response.ok
+    for (const baseUrl of candidates) {
+      const response = await fetch(`${baseUrl}/v1/sdk/events`, {
+        method: 'POST',
+        keepalive: true,
+        headers: {
+          Authorization: `Bearer ${ADS_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (response.ok) return true
+      if (response.status !== 404) return false
+    }
   } catch (error) {
     console.warn(`[ads] fail-open ${eventKind} event:`, error)
     return false
   }
+
+  return false
 }
