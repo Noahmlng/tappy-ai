@@ -29,6 +29,19 @@ const environmentOptions = ['sandbox', 'staging', 'prod']
 const isBusy = computed(() => Boolean(apiKeysState.meta.loading || apiKeysState.meta.syncing))
 const refreshBusy = computed(() => Boolean(isBusy.value || appSelection.loading))
 const rows = computed(() => Array.isArray(apiKeysState.items) ? apiKeysState.items : [])
+const keySummaryCards = computed(() => {
+  const list = rows.value
+  const active = list.filter((item) => String(item?.status || '').toLowerCase() === 'active').length
+  const revoked = list.filter((item) => String(item?.status || '').toLowerCase() === 'revoked').length
+  const staging = list.filter((item) => String(item?.environment || '').toLowerCase() === 'staging').length
+  const prod = list.filter((item) => String(item?.environment || '').toLowerCase() === 'prod').length
+  return [
+    { label: 'active', value: active.toLocaleString(), sub: 'available now' },
+    { label: 'revoked', value: revoked.toLocaleString(), sub: 'retired keys' },
+    { label: 'staging', value: staging.toLocaleString(), sub: 'staging env' },
+    { label: 'prod', value: prod.toLocaleString(), sub: 'production env' },
+  ]
+})
 const hasMultipleApps = computed(() => appSelection.options.length > 1)
 
 function formatDate(value) {
@@ -171,6 +184,14 @@ onMounted(() => {
       <p v-else class="muted">App: <strong>{{ scopeState.appId || '-' }}</strong></p>
       <p class="muted" v-if="appSelection.error">{{ appSelection.error }}</p>
     </article>
+
+    <div class="kpi-grid compact-kpi-grid">
+      <article v-for="item in keySummaryCards" :key="item.label" class="kpi-card compact-kpi-card">
+        <p class="kpi-label">{{ item.label }}</p>
+        <p class="kpi-value">{{ item.value }}</p>
+        <p class="text-detail">{{ item.sub }}</p>
+      </article>
+    </div>
 
     <article class="panel">
       <div class="panel-toolbar">

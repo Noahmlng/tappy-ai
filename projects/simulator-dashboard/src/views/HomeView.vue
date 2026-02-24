@@ -91,6 +91,7 @@ const recentLogs = computed(() => {
   const rows = Array.isArray(dashboardState.decisionLogs) ? dashboardState.decisionLogs : []
   return rows.slice(0, 5)
 })
+const railLogs = computed(() => recentLogs.value.slice(0, 4))
 const recentResultSummary = computed(() => {
   const rows = Array.isArray(dashboardState.decisionLogs) ? dashboardState.decisionLogs : []
   const counts = {
@@ -369,108 +370,154 @@ onMounted(() => {
       </div>
     </header>
 
-    <article class="panel panel-soft">
-      <div class="panel-toolbar">
-        <div>
-          <p class="eyebrow">Snapshot</p>
-          <h3>Today at a glance</h3>
-        </div>
-        <p class="muted panel-note">{{ lastSyncedLabel }}</p>
-      </div>
-      <p class="muted" v-if="dashboardState.meta.error">{{ dashboardState.meta.error }}</p>
-    </article>
-
-    <div class="kpi-grid">
-      <article v-for="item in kpis" :key="item.label" class="kpi-card">
-        <p class="kpi-label">{{ item.label }}</p>
-        <p class="kpi-value">{{ item.value }}</p>
-      </article>
-    </div>
-
-    <article class="panel panel-soft">
-      <div class="panel-toolbar">
-        <h3>Self-Serve Integration</h3>
-        <button
-          class="button"
-          type="button"
-          :disabled="verifyLoading || !scopeReady || readiness.loading || !hasActiveKey"
-          @click="runIntegrationVerify"
-        >
-          {{ verifyLoading ? 'Running...' : 'Run Verify' }}
-        </button>
-      </div>
-
-      <div class="form-grid">
-        <label v-if="hasMultipleApps">
-          App
-          <select class="input" :value="scopeState.appId" @change="onChangeApp($event.target.value)">
-            <option v-for="item in appSelection.options" :key="item.appId" :value="item.appId">{{ item.label }}</option>
-          </select>
-        </label>
-        <label>
-          Environment
-          <select v-model="integrationForm.environment" class="input">
-            <option value="sandbox">sandbox</option>
-            <option value="staging">staging</option>
-            <option value="prod">prod</option>
-          </select>
-        </label>
-        <label>
-          Placement
-          <select v-model="integrationForm.placementId" class="input">
-            <option v-for="item in placementOptions" :key="item" :value="item">{{ item }}</option>
-          </select>
-        </label>
-      </div>
-
-      <div class="step-list">
-        <div
-          v-for="item in checklistRows"
-          :key="item.label"
-          class="step-row"
-          :class="item.done ? 'step-row-done' : 'step-row-pending'"
-        >
-          <div>
-            <div class="step-title">
-              <strong>{{ item.label }}</strong>
-              <span :class="statusClass(item.done)">{{ item.done ? 'done' : 'pending' }}</span>
+    <div class="home-console">
+      <div class="home-main">
+        <article class="panel panel-soft">
+          <div class="panel-toolbar">
+            <div>
+              <p class="eyebrow">Snapshot</p>
+              <h3>Today at a glance</h3>
             </div>
-            <p class="muted">{{ item.detail }}</p>
+            <p class="muted panel-note">{{ lastSyncedLabel }}</p>
           </div>
-          <RouterLink :to="item.actionTo" class="button button-secondary">{{ item.actionLabel }}</RouterLink>
+          <p class="muted" v-if="dashboardState.meta.error">{{ dashboardState.meta.error }}</p>
+        </article>
+
+        <div class="kpi-grid">
+          <article v-for="item in kpis" :key="item.label" class="kpi-card">
+            <p class="kpi-label">{{ item.label }}</p>
+            <p class="kpi-value">{{ item.value }}</p>
+          </article>
         </div>
+
+        <article class="panel panel-soft">
+          <div class="panel-toolbar">
+            <h3>Self-Serve Integration</h3>
+            <button
+              class="button"
+              type="button"
+              :disabled="verifyLoading || !scopeReady || readiness.loading || !hasActiveKey"
+              @click="runIntegrationVerify"
+            >
+              {{ verifyLoading ? 'Running...' : 'Run Verify' }}
+            </button>
+          </div>
+
+          <div class="form-grid">
+            <label v-if="hasMultipleApps">
+              App
+              <select class="input" :value="scopeState.appId" @change="onChangeApp($event.target.value)">
+                <option v-for="item in appSelection.options" :key="item.appId" :value="item.appId">{{ item.label }}</option>
+              </select>
+            </label>
+            <label>
+              Environment
+              <select v-model="integrationForm.environment" class="input">
+                <option value="sandbox">sandbox</option>
+                <option value="staging">staging</option>
+                <option value="prod">prod</option>
+              </select>
+            </label>
+            <label>
+              Placement
+              <select v-model="integrationForm.placementId" class="input">
+                <option v-for="item in placementOptions" :key="item" :value="item">{{ item }}</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="step-list">
+            <div
+              v-for="item in checklistRows"
+              :key="item.label"
+              class="step-row"
+              :class="item.done ? 'step-row-done' : 'step-row-pending'"
+            >
+              <div>
+                <div class="step-title">
+                  <strong>{{ item.label }}</strong>
+                  <span :class="statusClass(item.done)">{{ item.done ? 'done' : 'pending' }}</span>
+                </div>
+                <p class="muted">{{ item.detail }}</p>
+              </div>
+              <RouterLink :to="item.actionTo" class="button button-secondary">{{ item.actionLabel }}</RouterLink>
+            </div>
+          </div>
+
+          <p class="muted" v-if="appSelection.error">{{ appSelection.error }}</p>
+          <p class="muted" v-if="readiness.error">{{ readiness.error }}</p>
+          <p class="muted" v-if="verifyError">{{ verifyError }}</p>
+
+          <div v-if="verifyEvidence" class="verify-evidence">
+            <h4>Last Verify Evidence</h4>
+            <div class="kv-grid">
+              <p><strong>requestId</strong><span><code>{{ verifyEvidence.requestId }}</code></span></p>
+              <p><strong>status</strong><span>{{ verifyEvidence.status }}</span></p>
+              <p><strong>config status</strong><span>{{ verifyEvidence.configStatus }}</span></p>
+              <p><strong>bid result</strong><span>{{ verifyEvidence.bidResult }}</span></p>
+              <p><strong>bid latency</strong><span>{{ verifyEvidence.bidLatencyMs }}ms</span></p>
+              <p><strong>events status</strong><span>{{ verifyEvidence.eventsStatus }}</span></p>
+            </div>
+          </div>
+        </article>
       </div>
 
-      <p class="muted" v-if="appSelection.error">{{ appSelection.error }}</p>
-      <p class="muted" v-if="readiness.error">{{ readiness.error }}</p>
-      <p class="muted" v-if="verifyError">{{ verifyError }}</p>
+      <aside class="home-rail">
+        <article class="panel panel-soft rail-card">
+          <div class="panel-toolbar">
+            <h3>Readiness</h3>
+            <span :class="metaPillClass(readinessStatus.tone)">{{ readinessStatus.label }}</span>
+          </div>
+          <div class="rail-check-list">
+            <div v-for="item in checklistRows" :key="`${item.label}-rail`" class="rail-check-item">
+              <div class="step-title">
+                <strong>{{ item.label }}</strong>
+                <span :class="statusClass(item.done)">{{ item.done ? 'done' : 'pending' }}</span>
+              </div>
+              <p class="muted">{{ item.detail }}</p>
+              <RouterLink :to="item.actionTo" class="text-link">{{ item.actionLabel }}</RouterLink>
+            </div>
+          </div>
+        </article>
 
-      <div v-if="verifyEvidence" class="verify-evidence">
-        <h4>Last Verify Evidence</h4>
-        <div class="kv-grid">
-          <p><strong>requestId</strong><span><code>{{ verifyEvidence.requestId }}</code></span></p>
-          <p><strong>status</strong><span>{{ verifyEvidence.status }}</span></p>
-          <p><strong>config status</strong><span>{{ verifyEvidence.configStatus }}</span></p>
-          <p><strong>bid result</strong><span>{{ verifyEvidence.bidResult }}</span></p>
-          <p><strong>bid latency</strong><span>{{ verifyEvidence.bidLatencyMs }}ms</span></p>
-          <p><strong>events status</strong><span>{{ verifyEvidence.eventsStatus }}</span></p>
-        </div>
-      </div>
-    </article>
+        <article class="panel panel-soft rail-card">
+          <div class="panel-toolbar">
+            <h3>Quick Actions</h3>
+          </div>
+          <div class="rail-actions">
+            <RouterLink
+              v-for="item in quickLinks"
+              :key="`${item.to}-rail`"
+              :to="item.to"
+              class="rail-action-link"
+            >
+              <div>
+                <strong>{{ item.title }}</strong>
+                <p class="muted">{{ item.description }}</p>
+              </div>
+              <span class="quick-link-arrow">-></span>
+            </RouterLink>
+          </div>
+        </article>
 
-    <div class="quick-link-grid">
-      <RouterLink
-        v-for="item in quickLinks"
-        :key="item.to"
-        :to="item.to"
-        class="panel quick-link"
-      >
-        <div class="quick-link-head">
-          <h3>{{ item.title }}</h3>
-          <span class="quick-link-arrow">-></span>
-        </div>
-        <p class="muted">{{ item.description }}</p>
-      </RouterLink>
+        <article class="panel panel-soft rail-card">
+          <div class="panel-toolbar">
+            <h3>Recent Activity</h3>
+            <RouterLink to="/logs" class="text-link">Open logs</RouterLink>
+          </div>
+          <div v-if="railLogs.length > 0" class="rail-log-list">
+            <div v-for="row in railLogs" :key="`rail-${row.id || row.requestId}`" class="rail-log-item">
+              <div class="rail-log-top">
+                <code>{{ row.requestId || '-' }}</code>
+                <span :class="resultPillClass(row.result)">{{ row.result || '-' }}</span>
+              </div>
+              <p class="muted">{{ row.placementId || '-' }}</p>
+              <p class="muted">{{ row.createdAt || '-' }}</p>
+            </div>
+          </div>
+          <p v-else class="muted">No logs yet.</p>
+        </article>
+      </aside>
     </div>
 
     <article class="panel panel-soft">

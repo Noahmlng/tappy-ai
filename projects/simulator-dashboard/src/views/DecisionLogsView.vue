@@ -30,6 +30,19 @@ const filteredLogs = computed(() => {
     return matchResult && matchPlacement
   })
 })
+const resultSummaryCards = computed(() => {
+  const list = filteredLogs.value
+  const served = list.filter((row) => row?.result === 'served').length
+  const blocked = list.filter((row) => row?.result === 'blocked').length
+  const noFill = list.filter((row) => row?.result === 'no_fill').length
+  const error = list.filter((row) => row?.result === 'error').length
+  return [
+    { label: 'rows', value: list.length.toLocaleString(), sub: 'after filters' },
+    { label: 'served', value: served.toLocaleString(), sub: 'successful responses' },
+    { label: 'blocked/no_fill', value: (blocked + noFill).toLocaleString(), sub: 'non-served outcomes' },
+    { label: 'error', value: error.toLocaleString(), sub: 'runtime errors' },
+  ]
+})
 
 function resultPillClass(result) {
   if (result === 'served') return 'status-pill good'
@@ -62,6 +75,14 @@ function displayReason(row) {
         </button>
       </div>
     </header>
+
+    <div class="kpi-grid compact-kpi-grid">
+      <article v-for="item in resultSummaryCards" :key="item.label" class="kpi-card compact-kpi-card">
+        <p class="kpi-label">{{ item.label }}</p>
+        <p class="kpi-value">{{ item.value }}</p>
+        <p class="text-detail">{{ item.sub }}</p>
+      </article>
+    </div>
 
     <article class="panel panel-soft">
       <div class="panel-toolbar">
