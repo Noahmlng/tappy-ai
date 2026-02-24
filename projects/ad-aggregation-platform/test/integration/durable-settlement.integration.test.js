@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import fs from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import test from 'node:test'
@@ -57,9 +56,7 @@ async function waitForGateway(baseUrl) {
   while (Date.now() - startedAt < HEALTH_TIMEOUT_MS) {
     try {
       const health = await requestJson(baseUrl, '/api/health', { timeoutMs: 1200 })
-      if (health.ok && health.payload?.ok === true) {
-        return
-      }
+      if (health.ok && health.payload?.ok === true) return
     } catch {
       // retry
     }
@@ -68,7 +65,7 @@ async function waitForGateway(baseUrl) {
   throw new Error(`gateway health check timeout after ${HEALTH_TIMEOUT_MS}ms`)
 }
 
-function startGateway(port) {
+function startGateway(port, envOverrides = {}) {
   const child = spawn(process.execPath, [GATEWAY_ENTRY], {
     cwd: PROJECT_ROOT,
     env: {
@@ -79,13 +76,13 @@ function startGateway(port) {
       OPENROUTER_MODEL: 'glm-5',
       CJ_TOKEN: 'mock-cj-token',
       PARTNERSTACK_API_KEY: 'mock-partnerstack-key',
+      ...envOverrides,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 
   let stdout = ''
   let stderr = ''
-
   child.stdout.on('data', (chunk) => {
     stdout += String(chunk)
   })
@@ -105,18 +102,7 @@ async function stopGateway(handle) {
   if (!handle?.child) return
   handle.child.kill('SIGTERM')
   await sleep(200)
-  if (!handle.child.killed) {
-    handle.child.kill('SIGKILL')
-  }
-}
-
-async function readGatewayState(baseUrl) {
-  const health = await requestJson(baseUrl, '/api/health')
-  assert.equal(health.ok, true, `health failed: ${JSON.stringify(health.payload)}`)
-  const stateFile = String(health.payload?.stateFile || '').trim()
-  assert.equal(Boolean(stateFile), true, 'health response should include stateFile')
-  const raw = await fs.readFile(stateFile, 'utf-8')
-  return JSON.parse(raw)
+  if (!handle.child.killed) handle.child.kill('SIGKILL')
 }
 
 async function registerDashboardHeaders(baseUrl, input = {}) {
@@ -142,96 +128,117 @@ async function registerDashboardHeaders(baseUrl, input = {}) {
   }
 }
 
-test('managed default: placement routing mode is fixed to managed_mediation', async () => {
-  const port = 6250 + Math.floor(Math.random() * 200)
-  const baseUrl = `http://${HOST}:${port}`
-  const gateway = startGateway(port)
+async function issueRuntimeApiKeyHeaders(baseUrl, input = {}, headers = {}) {
+  const accountId = String(input.accountId || 'org_simulator')
+  const appId = String(input.appId || 'simulator-chatbot')
+  const environment = String(input.environment || 'staging')
+  const created = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
+    method: 'POST',
+    headers,
+    body: {
+      accountId,
+      appId,
+      environment,
+      name: `runtime-${environment}`,
+    },
+  })
+  assert.equal(created.status, 201, `issue runtime key failed: ${JSON.stringify(created.payload)}`)
+  const secret = String(created.payload?.secret || '').trim()
+  assert.equal(Boolean(secret), true, 'runtime key create should return secret')
+  return {
+    Authorization: `Bearer ${secret}`,
+  }
+}
+
+test('settlement durability: production mode fails fast without postgres database', async () => {
+  const port = 7250 + Math.floor(Math.random() * 100)
+  const gateway = startGateway(port, {
+    SIMULATOR_PRODUCTION_MODE: 'true',
+    SIMULATOR_REQUIRE_DURABLE_SETTLEMENT: 'true',
+    SIMULATOR_SETTLEMENT_STORAGE: 'postgres',
+    SIMULATOR_SETTLEMENT_DB_URL: '',
+    DATABASE_URL: '',
+    SUPABASE_DB_URL: '',
+  })
 
   try {
-    await waitForGateway(baseUrl)
-    const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
-    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
-    const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
-      email: 'managed-default-placement@example.com',
-      accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+    const exitCode = await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(null), 5000)
+      gateway.child.once('exit', (code) => {
+        clearTimeout(timer)
+        resolve(code)
+      })
     })
-
-    const placements = await requestJson(baseUrl, '/api/v1/dashboard/placements', {
-      headers: dashboardHeaders,
-    })
-    assert.equal(placements.ok, true, `placements failed: ${JSON.stringify(placements.payload)}`)
-    const items = Array.isArray(placements.payload?.placements) ? placements.payload.placements : []
-    assert.equal(items.length > 0, true, 'default placements should exist')
-    assert.equal(
-      items.every((item) => String(item?.routingMode || '') === 'managed_mediation'),
-      true,
-      'all placements should default to managed_mediation',
-    )
-
-    const patch = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_inline_v1', {
-      method: 'PUT',
-      headers: dashboardHeaders,
-      body: {
-        routingMode: 'provider_direct',
-      },
-    })
-    assert.equal(patch.ok, true, `patch failed: ${JSON.stringify(patch.payload)}`)
-    assert.equal(patch.payload?.changed, false, 'routing mode override should be ignored')
-    assert.equal(String(patch.payload?.placement?.routingMode || ''), 'managed_mediation')
-  } catch (error) {
+    assert.notEqual(exitCode, null, 'gateway should exit quickly when durable settlement precondition fails')
+    assert.notEqual(Number(exitCode), 0, 'gateway should exit with non-zero status')
     const logs = gateway.getLogs()
-    const message = error instanceof Error ? error.message : String(error)
-    throw new Error(
-      `[managed-default-placement] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`,
+    const combined = `${logs.stdout}\n${logs.stderr}`
+    assert.equal(
+      /durable settlement storage is required|settlement store init error/i.test(combined),
+      true,
+      `expected fail-fast message, got logs: ${combined}`,
     )
   } finally {
     await stopGateway(gateway)
   }
 })
 
-test('managed default: new app environment is initialized with managed_mediation', async () => {
-  const port = 6450 + Math.floor(Math.random() * 200)
+test('history retention: event logs are not hard-truncated when max limit is disabled', async () => {
+  const port = 7350 + Math.floor(Math.random() * 100)
   const baseUrl = `http://${HOST}:${port}`
-  const gateway = startGateway(port)
+  const gateway = startGateway(port, {
+    SIMULATOR_MAX_EVENT_LOGS: '0',
+  })
 
   try {
     await waitForGateway(baseUrl)
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+
+    const accountId = `acct_history_${Date.now()}`
+    const appId = `app_history_${Date.now()}`
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
-      email: 'managed-default-env@example.com',
-      accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      email: 'history-retention@example.com',
+      accountId,
+      appId,
     })
+    const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, {
+      accountId,
+      appId,
+    }, dashboardHeaders)
 
-    const createKey = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
-      method: 'POST',
-      headers: {
-        ...dashboardHeaders,
-        'x-dashboard-actor': 'routing-admin',
-      },
-      body: {
-        appId: 'new_mvp_app',
-        environment: 'sandbox',
-        keyName: 'primary-sandbox',
-      },
+    const totalEvents = 520
+    for (let i = 0; i < totalEvents; i += 1) {
+      const emitted = await requestJson(baseUrl, '/api/v1/sdk/events', {
+        method: 'POST',
+        headers: runtimeHeaders,
+        body: {
+          appId,
+          accountId,
+          sessionId: `sess_history_${i}`,
+          turnId: `turn_history_${i}`,
+          query: `history query ${i}`,
+          answerText: `history answer ${i}`,
+          intentScore: 0.8,
+          locale: 'en-US',
+          placementId: 'chat_inline_v1',
+          kind: 'click',
+        },
+      })
+      assert.equal(emitted.ok, true, `sdk event failed at index=${i}: ${JSON.stringify(emitted.payload)}`)
+    }
+
+    const events = await requestJson(baseUrl, '/api/v1/dashboard/events?eventType=sdk_event', {
+      headers: dashboardHeaders,
     })
-    assert.equal(createKey.status, 201, `create key failed: ${JSON.stringify(createKey.payload)}`)
-
-    const state = await readGatewayState(baseUrl)
-    const envRows = Array.isArray(state?.controlPlane?.appEnvironments) ? state.controlPlane.appEnvironments : []
-    const target = envRows.find((item) => (
-      String(item?.appId || '') === 'new_mvp_app'
-      && String(item?.environment || '') === 'sandbox'
-    ))
-    assert.equal(Boolean(target), true, 'new app sandbox environment should be created')
-    assert.equal(String(target?.routingMode || ''), 'managed_mediation')
+    assert.equal(events.ok, true, `events query failed: ${JSON.stringify(events.payload)}`)
+    const rows = Array.isArray(events.payload?.items) ? events.payload.items : []
+    assert.equal(rows.length >= totalEvents, true, `expected >= ${totalEvents} rows, got ${rows.length}`)
   } catch (error) {
     const logs = gateway.getLogs()
     const message = error instanceof Error ? error.message : String(error)
     throw new Error(
-      `[managed-default-environment] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`,
+      `[durable-settlement-history] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`,
     )
   } finally {
     await stopGateway(gateway)

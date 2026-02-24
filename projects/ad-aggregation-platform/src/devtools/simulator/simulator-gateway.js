@@ -18,7 +18,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const PROJECT_ROOT = path.resolve(__dirname, '../../..')
 const STATE_DIR = path.join(PROJECT_ROOT, '.local')
-const STATE_FILE = path.join(STATE_DIR, 'simulator-gateway-state.json')
+const DEFAULT_STATE_FILE_NAME = 'simulator-gateway-state.json'
 const SETTLEMENT_STORAGE_MODE = String(process.env.SIMULATOR_SETTLEMENT_STORAGE || 'auto').trim().toLowerCase()
 const SETTLEMENT_DB_URL = String(
   process.env.SIMULATOR_SETTLEMENT_DB_URL
@@ -30,17 +30,44 @@ const SETTLEMENT_FACT_TABLE = 'simulator_settlement_conversion_facts'
 
 const PORT = Number(process.env.SIMULATOR_GATEWAY_PORT || 3100)
 const HOST = process.env.SIMULATOR_GATEWAY_HOST || '127.0.0.1'
+const STATE_FILE = String(process.env.SIMULATOR_STATE_FILE || '').trim()
+  || path.join(
+    STATE_DIR,
+    PORT === 3100 ? DEFAULT_STATE_FILE_NAME : `simulator-gateway-state-${PORT}.json`,
+  )
+const PRODUCTION_RUNTIME = (
+  String(process.env.SIMULATOR_PRODUCTION_MODE || '').trim().toLowerCase() === 'true'
+  || String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production'
+)
+const REQUIRE_DURABLE_SETTLEMENT = String(
+  process.env.SIMULATOR_REQUIRE_DURABLE_SETTLEMENT || (PRODUCTION_RUNTIME ? 'true' : 'false'),
+).trim().toLowerCase() !== 'false'
 const DEV_RESET_ENABLED = String(process.env.SIMULATOR_DEV_RESET_ENABLED || 'true').trim().toLowerCase() !== 'false'
 const DEV_RESET_TOKEN = String(process.env.SIMULATOR_DEV_RESET_TOKEN || '').trim()
 const DEFAULT_SIMULATOR_BOOTSTRAP_API_KEY = 'sk_staging_simulator_local_bootstrap_v1'
 const SIMULATOR_BOOTSTRAP_API_KEY = String(
   process.env.SIMULATOR_BOOTSTRAP_API_KEY || DEFAULT_SIMULATOR_BOOTSTRAP_API_KEY,
 ).trim()
-const MAX_DECISION_LOGS = 500
-const MAX_EVENT_LOGS = 500
-const MAX_PLACEMENT_AUDIT_LOGS = 500
-const MAX_NETWORK_FLOW_LOGS = 300
-const MAX_CONTROL_PLANE_AUDIT_LOGS = 800
+const MAX_DECISION_LOGS = parseCollectionLimit(
+  process.env.SIMULATOR_MAX_DECISION_LOGS,
+  PRODUCTION_RUNTIME ? 0 : 500,
+)
+const MAX_EVENT_LOGS = parseCollectionLimit(
+  process.env.SIMULATOR_MAX_EVENT_LOGS,
+  PRODUCTION_RUNTIME ? 0 : 500,
+)
+const MAX_PLACEMENT_AUDIT_LOGS = parseCollectionLimit(
+  process.env.SIMULATOR_MAX_PLACEMENT_AUDIT_LOGS,
+  PRODUCTION_RUNTIME ? 0 : 500,
+)
+const MAX_NETWORK_FLOW_LOGS = parseCollectionLimit(
+  process.env.SIMULATOR_MAX_NETWORK_FLOW_LOGS,
+  PRODUCTION_RUNTIME ? 0 : 300,
+)
+const MAX_CONTROL_PLANE_AUDIT_LOGS = parseCollectionLimit(
+  process.env.SIMULATOR_MAX_CONTROL_PLANE_AUDIT_LOGS,
+  PRODUCTION_RUNTIME ? 0 : 800,
+)
 const MAX_INTEGRATION_TOKENS = 500
 const MAX_AGENT_ACCESS_TOKENS = 1200
 const MAX_DASHBOARD_USERS = 500
@@ -236,12 +263,28 @@ function createId(prefix) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
+function parseCollectionLimit(value, fallback) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return Math.max(0, Math.floor(Number(fallback) || 0))
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return Math.max(0, Math.floor(Number(fallback) || 0))
+  if (n <= 0) return 0
+  return Math.floor(n)
+}
+
 function round(value, digits = 4) {
   const factor = 10 ** digits
   return Math.round(value * factor) / factor
 }
 
+function applyCollectionLimit(rows = [], limit = 0) {
+  const list = Array.isArray(rows) ? rows : []
+  if (!Number.isFinite(limit) || limit <= 0) return list
+  return list.slice(0, Math.floor(limit))
+}
+
 function resolvePreferredSettlementStoreMode() {
+  if (REQUIRE_DURABLE_SETTLEMENT) return 'postgres'
   if (SETTLEMENT_STORAGE_MODE === 'postgres') return 'postgres'
   if (SETTLEMENT_STORAGE_MODE === 'state_file' || SETTLEMENT_STORAGE_MODE === 'json') return 'state_file'
   return SETTLEMENT_DB_URL ? 'postgres' : 'state_file'
@@ -2606,8 +2649,20 @@ async function ensureSettlementStoreReady() {
   }
 
   settlementStore.initPromise = (async () => {
-    if (settlementStore.mode !== 'postgres') return
+    if (settlementStore.mode !== 'postgres') {
+      if (REQUIRE_DURABLE_SETTLEMENT) {
+        throw new Error(
+          'durable settlement storage is required, but simulator settlement mode resolved to state_file.',
+        )
+      }
+      return
+    }
     if (!SETTLEMENT_DB_URL) {
+      if (REQUIRE_DURABLE_SETTLEMENT) {
+        throw new Error(
+          'durable settlement storage is required, but SIMULATOR_SETTLEMENT_DB_URL/DATABASE_URL is missing.',
+        )
+      }
       settlementStore.mode = 'state_file'
       return
     }
@@ -2635,6 +2690,11 @@ async function ensureSettlementStoreReady() {
         persistState(state)
       }
     } catch (error) {
+      if (REQUIRE_DURABLE_SETTLEMENT) {
+        throw new Error(
+          `durable settlement storage init failed: ${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
       settlementStore.mode = 'state_file'
       settlementStore.pool = null
       console.error(
@@ -2866,17 +2926,17 @@ function loadState() {
       placements,
       placementConfigs,
       placementAuditLogs: Array.isArray(parsed.placementAuditLogs)
-        ? parsed.placementAuditLogs.slice(0, MAX_PLACEMENT_AUDIT_LOGS)
+        ? applyCollectionLimit(parsed.placementAuditLogs, MAX_PLACEMENT_AUDIT_LOGS)
         : [],
       controlPlaneAuditLogs: Array.isArray(parsed.controlPlaneAuditLogs)
-        ? parsed.controlPlaneAuditLogs.slice(0, MAX_CONTROL_PLANE_AUDIT_LOGS)
+        ? applyCollectionLimit(parsed.controlPlaneAuditLogs, MAX_CONTROL_PLANE_AUDIT_LOGS)
         : [],
       networkFlowStats: normalizeNetworkFlowStats(parsed?.networkFlowStats),
       networkFlowLogs: Array.isArray(parsed.networkFlowLogs)
-        ? parsed.networkFlowLogs.slice(0, MAX_NETWORK_FLOW_LOGS)
+        ? applyCollectionLimit(parsed.networkFlowLogs, MAX_NETWORK_FLOW_LOGS)
         : [],
-      decisionLogs: Array.isArray(parsed.decisionLogs) ? parsed.decisionLogs.slice(0, MAX_DECISION_LOGS) : [],
-      eventLogs: Array.isArray(parsed.eventLogs) ? parsed.eventLogs.slice(0, MAX_EVENT_LOGS) : [],
+      decisionLogs: Array.isArray(parsed.decisionLogs) ? applyCollectionLimit(parsed.decisionLogs, MAX_DECISION_LOGS) : [],
+      eventLogs: Array.isArray(parsed.eventLogs) ? applyCollectionLimit(parsed.eventLogs, MAX_EVENT_LOGS) : [],
       conversionFacts: Array.isArray(parsed.conversionFacts)
         ? parsed.conversionFacts.map((item) => normalizeConversionFact(item))
         : [],
@@ -2907,11 +2967,9 @@ function persistState(state) {
         : [],
       updatedAt: nowIso(),
     }
-    fs.writeFileSync(
-      STATE_FILE,
-      JSON.stringify(persistedState, null, 2),
-      'utf-8',
-    )
+    const tempFile = `${STATE_FILE}.${process.pid}.tmp`
+    fs.writeFileSync(tempFile, JSON.stringify(persistedState, null, 2), 'utf-8')
+    fs.renameSync(tempFile, STATE_FILE)
   } catch (error) {
     console.error('[simulator-gateway] Failed to persist state:', error)
   }
@@ -3157,7 +3215,7 @@ function ensurePlacementStats(placementId) {
 function recordDecision(payload) {
   const appId = String(payload?.appId || '').trim()
   const accountId = normalizeControlPlaneAccountId(payload?.accountId || resolveAccountIdForApp(appId), '')
-  state.decisionLogs = [
+  state.decisionLogs = applyCollectionLimit([
     {
       id: createId('decision'),
       createdAt: nowIso(),
@@ -3166,13 +3224,13 @@ function recordDecision(payload) {
       accountId,
     },
     ...state.decisionLogs,
-  ].slice(0, MAX_DECISION_LOGS)
+  ], MAX_DECISION_LOGS)
 }
 
 function recordEvent(payload) {
   const appId = String(payload?.appId || '').trim()
   const accountId = normalizeControlPlaneAccountId(payload?.accountId || resolveAccountIdForApp(appId), '')
-  state.eventLogs = [
+  state.eventLogs = applyCollectionLimit([
     {
       id: createId('event'),
       createdAt: nowIso(),
@@ -3181,7 +3239,7 @@ function recordEvent(payload) {
       accountId,
     },
     ...state.eventLogs,
-  ].slice(0, MAX_EVENT_LOGS)
+  ], MAX_EVENT_LOGS)
 }
 
 function findPlacementIdByRequestId(requestId) {
@@ -3245,14 +3303,14 @@ async function recordConversionFact(payload) {
 }
 
 function recordPlacementAudit(payload) {
-  state.placementAuditLogs = [
+  state.placementAuditLogs = applyCollectionLimit([
     {
       id: createId('placement_audit'),
       createdAt: nowIso(),
       ...payload,
     },
     ...state.placementAuditLogs,
-  ].slice(0, MAX_PLACEMENT_AUDIT_LOGS)
+  ], MAX_PLACEMENT_AUDIT_LOGS)
 }
 
 function resolveAuditActor(req, fallback = 'dashboard') {
@@ -3316,7 +3374,7 @@ function authorizeDevReset(req) {
 function recordControlPlaneAudit(payload) {
   const appId = String(payload?.appId || '').trim()
   const accountId = normalizeControlPlaneAccountId(payload?.accountId || resolveAccountIdForApp(appId), '')
-  state.controlPlaneAuditLogs = [
+  state.controlPlaneAuditLogs = applyCollectionLimit([
     {
       id: createId('cp_audit'),
       createdAt: nowIso(),
@@ -3325,7 +3383,7 @@ function recordControlPlaneAudit(payload) {
       accountId,
     },
     ...state.controlPlaneAuditLogs,
-  ].slice(0, MAX_CONTROL_PLANE_AUDIT_LOGS)
+  ], MAX_CONTROL_PLANE_AUDIT_LOGS)
 }
 
 function queryControlPlaneAudits(searchParams) {
@@ -3370,7 +3428,7 @@ function queryControlPlaneAudits(searchParams) {
 function recordNetworkFlowObservation(payload) {
   const appId = String(payload?.appId || '').trim()
   const accountId = normalizeControlPlaneAccountId(payload?.accountId || resolveAccountIdForApp(appId), '')
-  state.networkFlowLogs = [
+  state.networkFlowLogs = applyCollectionLimit([
     {
       id: createId('network_flow'),
       createdAt: nowIso(),
@@ -3379,7 +3437,7 @@ function recordNetworkFlowObservation(payload) {
       accountId,
     },
     ...state.networkFlowLogs,
-  ].slice(0, MAX_NETWORK_FLOW_LOGS)
+  ], MAX_NETWORK_FLOW_LOGS)
 }
 
 function recordRuntimeNetworkStats(decisionResult, runtimeDebug, meta = {}) {
@@ -5257,6 +5315,7 @@ async function requestHandler(req, res) {
     sendJson(res, 200, {
       ok: true,
       service: 'simulator-gateway',
+      stateFile: STATE_FILE,
       updatedAt: state.updatedAt,
       now: nowIso(),
     })
@@ -7082,11 +7141,30 @@ const server = http.createServer((req, res) => {
   })
 })
 
-server.listen(PORT, HOST, () => {
-  console.log(`[simulator-gateway] listening on http://${HOST}:${PORT}`)
-  console.log(`[simulator-gateway] state file: ${STATE_FILE}`)
-  console.log(`[simulator-gateway] settlement store mode: ${settlementStore.mode}`)
-  ensureSettlementStoreReady().catch((error) => {
-    console.error('[simulator-gateway] settlement store init error:', error)
+async function startServer() {
+  try {
+    await ensureSettlementStoreReady()
+  } catch (error) {
+    console.error(
+      '[simulator-gateway] settlement store init error (fail-fast):',
+      error instanceof Error ? error.message : String(error),
+    )
+    process.exit(1)
+    return
+  }
+
+  server.listen(PORT, HOST, () => {
+    console.log(`[simulator-gateway] listening on http://${HOST}:${PORT}`)
+    console.log(`[simulator-gateway] state file: ${STATE_FILE}`)
+    console.log(`[simulator-gateway] settlement store mode: ${settlementStore.mode}`)
+    if (REQUIRE_DURABLE_SETTLEMENT && !isPostgresSettlementStore()) {
+      console.error('[simulator-gateway] durable settlement is required but postgres store is unavailable.')
+      process.exit(1)
+    }
   })
+}
+
+startServer().catch((error) => {
+  console.error('[simulator-gateway] startup failure:', error)
+  process.exit(1)
 })
