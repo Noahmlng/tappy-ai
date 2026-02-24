@@ -1431,6 +1431,11 @@ function ensureControlPlaneAppAndEnvironment(appId, environment, accountId = '')
     }))
   }
 
+  getPlacementConfigForApp(normalizedAppId, effectiveAccountId, { createIfMissing: true })
+  if (normalizedAppId === DEFAULT_CONTROL_PLANE_APP_ID) {
+    syncLegacyPlacementSnapshot()
+  }
+
   return {
     appId: normalizedAppId,
     accountId: effectiveAccountId,
@@ -2122,6 +2127,45 @@ function normalizePlacement(raw) {
   }
 }
 
+function buildDefaultPlacementList() {
+  return defaultPlacements.map((item) => normalizePlacement(item))
+}
+
+function normalizePlacementConfigRecord(raw = {}, fallback = {}) {
+  const source = raw && typeof raw === 'object' ? raw : {}
+  const seed = fallback && typeof fallback === 'object' ? fallback : {}
+  const appId = String(source.appId || source.app_id || seed.appId || DEFAULT_CONTROL_PLANE_APP_ID).trim()
+    || DEFAULT_CONTROL_PLANE_APP_ID
+  const accountId = normalizeControlPlaneAccountId(
+    source.accountId || source.account_id || source.organizationId || source.organization_id
+      || seed.accountId || seed.organizationId || DEFAULT_CONTROL_PLANE_ORG_ID,
+    '',
+  )
+  const placementSource = (
+    Array.isArray(source.placements) && source.placements.length > 0
+      ? source.placements
+      : (
+        Array.isArray(seed.placements) && seed.placements.length > 0
+          ? seed.placements
+          : buildDefaultPlacementList()
+      )
+  )
+  const placements = placementSource.map((item) => normalizePlacement(item))
+  const derivedVersion = Math.max(1, ...placements.map((placement) => placement.configVersion || 1))
+  const placementConfigVersion = Math.max(
+    toPositiveInteger(source.placementConfigVersion ?? source.configVersion ?? seed.placementConfigVersion, 1),
+    derivedVersion,
+  )
+
+  return {
+    appId,
+    accountId,
+    placementConfigVersion,
+    placements,
+    updatedAt: String(source.updatedAt || seed.updatedAt || nowIso()),
+  }
+}
+
 function getTodayKey(timestamp = Date.now()) {
   const d = new Date(timestamp)
   const yyyy = d.getFullYear()
@@ -2214,14 +2258,23 @@ function normalizeConversionFact(raw) {
 }
 
 function createInitialState() {
-  const placements = defaultPlacements.map((item) => normalizePlacement(item))
+  const placements = buildDefaultPlacementList()
   const placementConfigVersion = Math.max(1, ...placements.map((placement) => placement.configVersion || 1))
+  const placementConfigs = [
+    normalizePlacementConfigRecord({
+      appId: DEFAULT_CONTROL_PLANE_APP_ID,
+      accountId: DEFAULT_CONTROL_PLANE_ORG_ID,
+      placementConfigVersion,
+      placements,
+    }),
+  ]
 
   return {
-    version: 5,
+    version: 6,
     updatedAt: nowIso(),
     placementConfigVersion,
     placements,
+    placementConfigs,
     placementAuditLogs: [],
     controlPlaneAuditLogs: [],
     networkFlowStats: createInitialNetworkFlowStats(),
@@ -2249,14 +2302,81 @@ function loadState() {
     const parsed = JSON.parse(raw)
     if (!parsed || typeof parsed !== 'object') return createInitialState()
 
-    const placements = Array.isArray(parsed.placements)
-      ? parsed.placements.map((item) => normalizePlacement(item))
-      : defaultPlacements.map((item) => normalizePlacement(item))
-    const derivedPlacementConfigVersion = Math.max(1, ...placements.map((placement) => placement.configVersion || 1))
-    const placementConfigVersion = Math.max(
-      toPositiveInteger(parsed?.placementConfigVersion, 1),
-      derivedPlacementConfigVersion,
+    const controlPlane = ensureControlPlaneState(parsed.controlPlane)
+    const apps = Array.isArray(controlPlane.apps) ? controlPlane.apps : []
+    const accountByAppId = new Map(
+      apps.map((item) => [String(item.appId || '').trim(), normalizeControlPlaneAccountId(item.accountId || item.organizationId, '')]),
     )
+
+    const legacyPlacements = Array.isArray(parsed.placements)
+      ? parsed.placements.map((item) => normalizePlacement(item))
+      : buildDefaultPlacementList()
+    const legacyDerivedPlacementConfigVersion = Math.max(
+      1,
+      ...legacyPlacements.map((placement) => placement.configVersion || 1),
+    )
+    const legacyPlacementConfigVersion = Math.max(
+      toPositiveInteger(parsed?.placementConfigVersion, 1),
+      legacyDerivedPlacementConfigVersion,
+    )
+
+    const placementConfigMap = new Map()
+    const rawPlacementConfigs = Array.isArray(parsed.placementConfigs) ? parsed.placementConfigs : []
+    for (const row of rawPlacementConfigs) {
+      const appId = String(row?.appId || row?.app_id || '').trim()
+      if (!appId) continue
+      const normalized = normalizePlacementConfigRecord(row, {
+        appId,
+        accountId: accountByAppId.get(appId) || DEFAULT_CONTROL_PLANE_ORG_ID,
+        placements: legacyPlacements,
+        placementConfigVersion: legacyPlacementConfigVersion,
+      })
+      placementConfigMap.set(normalized.appId, normalized)
+    }
+
+    if (!placementConfigMap.has(DEFAULT_CONTROL_PLANE_APP_ID)) {
+      placementConfigMap.set(
+        DEFAULT_CONTROL_PLANE_APP_ID,
+        normalizePlacementConfigRecord(
+          {
+            appId: DEFAULT_CONTROL_PLANE_APP_ID,
+            accountId: accountByAppId.get(DEFAULT_CONTROL_PLANE_APP_ID) || DEFAULT_CONTROL_PLANE_ORG_ID,
+            placementConfigVersion: legacyPlacementConfigVersion,
+            placements: legacyPlacements,
+          },
+        ),
+      )
+    }
+
+    for (const app of apps) {
+      const appId = String(app?.appId || '').trim()
+      if (!appId || placementConfigMap.has(appId)) continue
+      placementConfigMap.set(
+        appId,
+        normalizePlacementConfigRecord({
+          appId,
+          accountId: normalizeControlPlaneAccountId(app?.accountId || app?.organizationId, ''),
+          placementConfigVersion: 1,
+          placements: buildDefaultPlacementList(),
+        }),
+      )
+    }
+
+    const placementConfigs = Array.from(placementConfigMap.values())
+    const placementConfigVersion = Math.max(
+      legacyPlacementConfigVersion,
+      ...placementConfigs.map((item) => toPositiveInteger(item?.placementConfigVersion, 1)),
+    )
+    const defaultPlacementConfig = placementConfigMap.get(DEFAULT_CONTROL_PLANE_APP_ID)
+      || placementConfigs[0]
+      || normalizePlacementConfigRecord({
+        appId: DEFAULT_CONTROL_PLANE_APP_ID,
+        accountId: DEFAULT_CONTROL_PLANE_ORG_ID,
+        placements: buildDefaultPlacementList(),
+      })
+    const placements = Array.isArray(defaultPlacementConfig?.placements)
+      ? defaultPlacementConfig.placements.map((item) => normalizePlacement(item))
+      : buildDefaultPlacementList()
 
     const placementStats = parsed.placementStats && typeof parsed.placementStats === 'object'
       ? parsed.placementStats
@@ -2275,10 +2395,11 @@ function loadState() {
     }
 
     return {
-      version: toPositiveInteger(parsed?.version, 5),
+      version: toPositiveInteger(parsed?.version, 6),
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : nowIso(),
       placementConfigVersion,
       placements,
+      placementConfigs,
       placementAuditLogs: Array.isArray(parsed.placementAuditLogs)
         ? parsed.placementAuditLogs.slice(0, MAX_PLACEMENT_AUDIT_LOGS)
         : [],
@@ -2303,7 +2424,7 @@ function loadState() {
       },
       placementStats,
       dailyMetrics: ensureDailyMetricsWindow(parsed.dailyMetrics),
-      controlPlane: ensureControlPlaneState(parsed.controlPlane),
+      controlPlane,
     }
   } catch (error) {
     console.error('[simulator-gateway] Failed to load state, fallback to initial state:', error)
@@ -2332,8 +2453,160 @@ function clearRuntimeMemory() {
 
 let state = loadState()
 
+function syncLegacyPlacementSnapshot() {
+  const configs = Array.isArray(state?.placementConfigs) ? state.placementConfigs : []
+  const defaultConfig = configs.find((item) => String(item?.appId || '').trim() === DEFAULT_CONTROL_PLANE_APP_ID)
+    || configs[0]
+  if (defaultConfig && Array.isArray(defaultConfig.placements)) {
+    state.placements = defaultConfig.placements.map((item) => normalizePlacement(item))
+  } else {
+    state.placements = buildDefaultPlacementList()
+  }
+  const maxConfigVersion = Math.max(
+    1,
+    toPositiveInteger(state.placementConfigVersion, 1),
+    ...configs.map((item) => toPositiveInteger(item?.placementConfigVersion, 1)),
+  )
+  state.placementConfigVersion = maxConfigVersion
+}
+
+function findPlacementConfigByAppId(appId = '') {
+  const normalizedAppId = String(appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const rows = Array.isArray(state?.placementConfigs) ? state.placementConfigs : []
+  return rows.find((item) => String(item?.appId || '').trim() === normalizedAppId) || null
+}
+
+function getPlacementConfigForApp(appId = '', accountId = '', options = {}) {
+  const opts = options && typeof options === 'object' ? options : {}
+  const createIfMissing = opts.createIfMissing !== false
+  const normalizedAppId = String(appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const providedAccountId = normalizeControlPlaneAccountId(accountId, '')
+  const app = resolveControlPlaneAppRecord(normalizedAppId)
+  const resolvedAccountId = normalizeControlPlaneAccountId(
+    providedAccountId || app?.accountId || app?.organizationId || DEFAULT_CONTROL_PLANE_ORG_ID,
+    '',
+  )
+
+  if (!Array.isArray(state.placementConfigs)) {
+    state.placementConfigs = []
+  }
+
+  let config = findPlacementConfigByAppId(normalizedAppId)
+  if (!config && createIfMissing) {
+    config = normalizePlacementConfigRecord({
+      appId: normalizedAppId,
+      accountId: resolvedAccountId,
+      placementConfigVersion: 1,
+      placements: buildDefaultPlacementList(),
+      updatedAt: nowIso(),
+    })
+    state.placementConfigs.push(config)
+    state.placementConfigVersion = Math.max(
+      toPositiveInteger(state.placementConfigVersion, 1),
+      toPositiveInteger(config.placementConfigVersion, 1),
+    )
+    if (normalizedAppId === DEFAULT_CONTROL_PLANE_APP_ID) {
+      syncLegacyPlacementSnapshot()
+    }
+  }
+  if (!config) return null
+  if (resolvedAccountId) {
+    config.accountId = normalizeControlPlaneAccountId(config.accountId || resolvedAccountId, '')
+  }
+  return config
+}
+
+function getPlacementsForApp(appId = '', accountId = '', options = {}) {
+  const opts = options && typeof options === 'object' ? options : {}
+  const clone = opts.clone === true
+  const config = getPlacementConfigForApp(appId, accountId, {
+    createIfMissing: opts.createIfMissing !== false,
+  })
+  const rows = config && Array.isArray(config.placements) ? config.placements : []
+  return clone ? rows.map((item) => normalizePlacement(item)) : rows
+}
+
+function resolvePlacementScopeAppId(scope = {}, fallbackAppId = '') {
+  const normalizedScope = normalizeScopeFilters(scope)
+  const normalizedAccountId = normalizeControlPlaneAccountId(normalizedScope.accountId, '')
+  const requestedAppId = String(normalizedScope.appId || '').trim()
+  if (requestedAppId) return requestedAppId
+
+  const fallback = String(fallbackAppId || '').trim()
+  if (fallback) {
+    if (!normalizedAccountId || appBelongsToAccount(fallback, normalizedAccountId)) {
+      return fallback
+    }
+  }
+
+  if (normalizedAccountId) {
+    const latest = findLatestAppForAccount(normalizedAccountId)
+    if (latest?.appId) return String(latest.appId).trim()
+  }
+  return DEFAULT_CONTROL_PLANE_APP_ID
+}
+
+function resolvePlacementConfigVersionForScope(scope = {}, fallbackAppId = '') {
+  const normalizedScope = normalizeScopeFilters(scope)
+  const resolvedAppId = resolvePlacementScopeAppId(normalizedScope, fallbackAppId)
+  if (resolvedAppId) {
+    const config = getPlacementConfigForApp(resolvedAppId, normalizedScope.accountId, {
+      createIfMissing: false,
+    })
+    if (config) return toPositiveInteger(config.placementConfigVersion, 1)
+  }
+
+  if (normalizedScope.accountId) {
+    const configs = Array.isArray(state?.placementConfigs) ? state.placementConfigs : []
+    const scoped = configs.filter((item) => (
+      normalizeControlPlaneAccountId(item?.accountId || resolveAccountIdForApp(item?.appId), '') === normalizedScope.accountId
+    ))
+    if (scoped.length > 0) {
+      return Math.max(1, ...scoped.map((item) => toPositiveInteger(item?.placementConfigVersion, 1)))
+    }
+  }
+
+  return Math.max(1, toPositiveInteger(state.placementConfigVersion, 1))
+}
+
+function getPlacementsForScope(scope = {}, options = {}) {
+  const opts = options && typeof options === 'object' ? options : {}
+  const normalizedScope = normalizeScopeFilters(scope)
+  const resolvedAppId = resolvePlacementScopeAppId(normalizedScope, opts.fallbackAppId || '')
+  const rows = getPlacementsForApp(
+    resolvedAppId,
+    normalizedScope.accountId,
+    { createIfMissing: opts.createIfMissing !== false, clone: opts.clone === true },
+  )
+  return {
+    appId: resolvedAppId,
+    placements: rows,
+  }
+}
+
+function mergePlacementRowsWithObserved(baseRows = [], observedPlacementIds = [], appId = '') {
+  const map = new Map()
+  for (const row of Array.isArray(baseRows) ? baseRows : []) {
+    const placementId = String(row?.placementId || '').trim()
+    if (!placementId || map.has(placementId)) continue
+    map.set(placementId, normalizePlacement(row))
+  }
+  for (const placementId of observedPlacementIds) {
+    const normalizedPlacementId = String(placementId || '').trim()
+    if (!normalizedPlacementId || map.has(normalizedPlacementId)) continue
+    map.set(normalizedPlacementId, normalizePlacement({
+      placementId: normalizedPlacementId,
+      placementKey: resolvePlacementKeyById(normalizedPlacementId, appId),
+    }))
+  }
+  return Array.from(map.values())
+}
+
+syncLegacyPlacementSnapshot()
+
 function resetGatewayState() {
   state = createInitialState()
+  syncLegacyPlacementSnapshot()
   clearRuntimeMemory()
   persistState(state)
   return state
@@ -2449,10 +2722,12 @@ function findPlacementIdByRequestId(requestId) {
   return ''
 }
 
-function resolvePlacementKeyById(placementId) {
+function resolvePlacementKeyById(placementId, appId = '') {
   const normalizedPlacementId = String(placementId || '').trim()
   if (!normalizedPlacementId) return ''
-  const placement = state.placements.find((item) => item.placementId === normalizedPlacementId)
+  const placements = getPlacementsForApp(appId, '', { createIfMissing: false })
+  const placement = placements.find((item) => item.placementId === normalizedPlacementId)
+    || state.placements.find((item) => item.placementId === normalizedPlacementId)
   if (placement) {
     return String(placement.placementKey || '').trim()
   }
@@ -2480,7 +2755,7 @@ function recordConversionFact(payload) {
   }
 
   const placementId = String(request.placementId || '').trim() || findPlacementIdByRequestId(request.requestId)
-  const placementKey = String(request.placementKey || '').trim() || resolvePlacementKeyById(placementId)
+  const placementKey = String(request.placementKey || '').trim() || resolvePlacementKeyById(placementId, request.appId)
   const idempotencyKey = buildConversionFactIdempotencyKey({
     ...request,
     placementId,
@@ -2813,14 +3088,26 @@ function computeMetricsByDay() {
   }))
 }
 
-function computeMetricsByPlacement() {
+function computeMetricsByPlacement(scope = {}) {
   const placementIdByRequest = buildPlacementIdByRequestMap(state.decisionLogs)
   const revenueByPlacement = buildRevenueByPlacementMap(
     Array.isArray(state.conversionFacts) ? state.conversionFacts : [],
     placementIdByRequest,
   )
+  const placementScope = getPlacementsForScope(scope, { createIfMissing: false, clone: true })
+  const basePlacements = Array.isArray(placementScope.placements) ? placementScope.placements : []
+  const observedPlacementIds = new Set([
+    ...basePlacements.map((item) => String(item?.placementId || '').trim()).filter(Boolean),
+    ...Object.keys(state.placementStats || {}),
+    ...Array.from(revenueByPlacement.keys()),
+  ])
+  const placements = mergePlacementRowsWithObserved(
+    basePlacements,
+    Array.from(observedPlacementIds),
+    placementScope.appId,
+  )
 
-  return state.placements.map((placement) => {
+  return placements.map((placement) => {
     const stats = ensurePlacementStats(placement.placementId)
     const ctr = stats.impressions > 0 ? stats.clicks / stats.impressions : 0
     const fillRate = stats.requests > 0 ? stats.served / stats.requests : 0
@@ -2849,7 +3136,12 @@ function placementMatchesSelector(placement, request) {
 }
 
 function pickPlacementForRequest(request) {
-  return state.placements
+  const placements = getPlacementsForApp(
+    request?.appId,
+    request?.accountId,
+    { createIfMissing: true, clone: false },
+  )
+  return placements
     .filter((placement) => placementMatchesSelector(placement, request))
     .sort((a, b) => a.priority - b.priority)[0] || null
 }
@@ -3580,7 +3872,7 @@ function computeScopedMetricsByDay(decisionRows, eventRows, factRows) {
   }))
 }
 
-function computeScopedMetricsByPlacement(decisionRows, eventRows, factRows) {
+function computeScopedMetricsByPlacement(decisionRows, eventRows, factRows, scope = {}) {
   const decisionStatsByPlacement = new Map()
   for (const row of decisionRows) {
     const placementId = String(row?.placementId || '').trim()
@@ -3612,8 +3904,19 @@ function computeScopedMetricsByPlacement(decisionRows, eventRows, factRows) {
     if (!placementId) continue
     clicksByPlacement.set(placementId, (clicksByPlacement.get(placementId) || 0) + 1)
   }
+  const placementScope = getPlacementsForScope(scope, { createIfMissing: false, clone: true })
+  const observedPlacementIds = new Set([
+    ...Array.from(decisionStatsByPlacement.keys()),
+    ...Array.from(clicksByPlacement.keys()),
+    ...Array.from(revenueByPlacement.keys()),
+  ])
+  const placements = mergePlacementRowsWithObserved(
+    placementScope.placements,
+    Array.from(observedPlacementIds),
+    placementScope.appId,
+  )
 
-  return state.placements.map((placement) => {
+  return placements.map((placement) => {
     const stats = decisionStatsByPlacement.get(placement.placementId) || {
       requests: 0,
       served: 0,
@@ -3750,7 +4053,7 @@ function upsertSettlementForDecision(row, maps) {
   const appId = String(row?.appId || '').trim()
   const accountId = normalizeControlPlaneAccountId(row?.accountId || resolveAccountIdForApp(appId), '')
   const placementId = String(row?.placementId || '').trim()
-  const layer = layerFromPlacementKey(String(row?.placementKey || resolvePlacementKeyById(placementId)))
+  const layer = layerFromPlacementKey(String(row?.placementKey || resolvePlacementKeyById(placementId, appId)))
 
   if (!accountId || !appId) return
 
@@ -3783,7 +4086,7 @@ function upsertSettlementForClick(row, maps) {
   const appId = String(row?.appId || '').trim()
   const accountId = normalizeControlPlaneAccountId(row?.accountId || resolveAccountIdForApp(appId), '')
   const placementId = String(row?.placementId || '').trim()
-  const layer = layerFromPlacementKey(String(row?.placementKey || resolvePlacementKeyById(placementId)))
+  const layer = layerFromPlacementKey(String(row?.placementKey || resolvePlacementKeyById(placementId, appId)))
 
   if (!accountId || !appId) return
 
@@ -3813,7 +4116,7 @@ function upsertSettlementForFact(row, maps, decisionDimensionMap) {
   const appId = dimension.appId
   const placementId = dimension.placementId
   if (!accountId || !appId) return
-  const layer = layerFromPlacementKey(String(row?.placementKey || resolvePlacementKeyById(placementId)))
+  const layer = layerFromPlacementKey(String(row?.placementKey || resolvePlacementKeyById(placementId, appId)))
 
   const totals = maps.totals
   const account = ensureSettlementMapRow(maps.byAccount, accountId, { accountId })
@@ -3929,8 +4232,8 @@ function getDashboardStatePayload(scopeInput = {}) {
   const metricsByPlacement = emptyScoped
     ? []
     : shouldApplyScope
-    ? computeScopedMetricsByPlacement(decisionLogs, eventLogs, conversionFacts)
-    : computeMetricsByPlacement()
+    ? computeScopedMetricsByPlacement(decisionLogs, eventLogs, conversionFacts, scope)
+    : computeMetricsByPlacement(scope)
   const networkFlowStats = emptyScoped
     ? createInitialNetworkFlowStats()
     : shouldApplyScope
@@ -3939,16 +4242,31 @@ function getDashboardStatePayload(scopeInput = {}) {
   const settlementAggregates = emptyScoped
     ? computeSettlementAggregates({ appId: '__none__', accountId: '__none__' })
     : computeSettlementAggregates(shouldApplyScope ? scope : {})
+  const placementScope = emptyScoped
+    ? { appId: '', placements: [] }
+    : getPlacementsForScope(scope, { createIfMissing: false, clone: true })
+  const placementConfigVersion = emptyScoped
+    ? 1
+    : resolvePlacementConfigVersionForScope(scope, placementScope.appId)
+  const placementAuditLogs = emptyScoped
+    ? []
+    : (shouldApplyScope ? filterRowsByScope(state.placementAuditLogs, scope) : [...state.placementAuditLogs])
+  const filteredPlacementAudits = placementAuditLogs.filter((row) => {
+    const rowAppId = String(row?.appId || '').trim()
+    if (!placementScope.appId) return true
+    if (!rowAppId) return placementScope.appId === DEFAULT_CONTROL_PLANE_APP_ID
+    return rowAppId === placementScope.appId
+  })
 
   return {
     scope,
-    placementConfigVersion: state.placementConfigVersion,
+    placementConfigVersion,
     metricsSummary,
     metricsByDay,
     metricsByPlacement,
     settlementAggregates,
-    placements: emptyScoped ? [] : state.placements,
-    placementAuditLogs: emptyScoped ? [] : state.placementAuditLogs,
+    placements: placementScope.placements,
+    placementAuditLogs: filteredPlacementAudits,
     controlPlaneAuditLogs,
     controlPlaneApps: shouldApplyScope ? scopedApps : state.controlPlane.apps,
     networkHealth,
@@ -3973,14 +4291,18 @@ function resolveMediationConfigSnapshot(query = {}) {
   const requestAt = requiredNonEmptyString(query.requestAt, 'requestAt')
   const ifNoneMatch = String(query.ifNoneMatch || query.if_none_match || '').trim()
 
-  const placement = state.placements.find((item) => item.placementId === placementId)
+  const placements = getPlacementsForApp(appId, resolveAccountIdForApp(appId), {
+    createIfMissing: true,
+    clone: false,
+  })
+  const placement = placements.find((item) => item.placementId === placementId)
   if (!placement) {
     const error = new Error(`placementId not found: ${placementId}`)
     error.code = 'PLACEMENT_NOT_FOUND'
     throw error
   }
 
-  const etag = `W/"placement:${placement.placementId}:v${placement.configVersion}"`
+  const etag = `W/"placement:${appId}:${placement.placementId}:v${placement.configVersion}"`
   if (ifNoneMatch && ifNoneMatch === etag) {
     return {
       statusCode: 304,
@@ -5566,8 +5888,25 @@ async function requestHandler(req, res) {
     }
     const scope = auth.scope
     const hasScope = scopeHasFilters(scope)
-    const placements = hasScope && getScopedApps(scope).length === 0 ? [] : state.placements
-    sendJson(res, 200, { placements })
+    if (hasScope && getScopedApps(scope).length === 0) {
+      sendJson(res, 200, { appId: '', placementConfigVersion: 1, placements: [] })
+      return
+    }
+
+    const scopedAppId = resolvePlacementScopeAppId(scope, auth.user?.appId || auth.session?.appId || '')
+    if (!scopedAppId) {
+      sendJson(res, 200, { appId: '', placementConfigVersion: 1, placements: [] })
+      return
+    }
+    const config = getPlacementConfigForApp(scopedAppId, scope.accountId, { createIfMissing: true })
+    const placements = config?.placements && Array.isArray(config.placements)
+      ? config.placements.map((item) => normalizePlacement(item))
+      : []
+    sendJson(res, 200, {
+      appId: scopedAppId,
+      placementConfigVersion: toPositiveInteger(config?.placementConfigVersion, 1),
+      placements,
+    })
     return
   }
 
@@ -5578,8 +5917,20 @@ async function requestHandler(req, res) {
         sendJson(res, auth.status, { error: auth.error })
         return
       }
+      const scope = auth.scope
+      const scopedAppId = resolvePlacementScopeAppId(scope, auth.user?.appId || auth.session?.appId || '')
+      if (!scopedAppId) {
+        sendJson(res, 403, {
+          error: {
+            code: 'DASHBOARD_SCOPE_VIOLATION',
+            message: 'appId is required for placement mutation under current dashboard scope.',
+          },
+        })
+        return
+      }
+      const placementConfig = getPlacementConfigForApp(scopedAppId, scope.accountId, { createIfMissing: true })
       const placementId = decodeURIComponent(pathname.replace('/api/v1/dashboard/placements/', ''))
-      const target = state.placements.find((item) => item.placementId === placementId)
+      const target = placementConfig?.placements?.find((item) => item.placementId === placementId)
 
       if (!target) {
         sendJson(res, 404, {
@@ -5597,11 +5948,25 @@ async function requestHandler(req, res) {
       const changed = JSON.stringify(before) !== JSON.stringify(preview)
 
       if (changed) {
-        const nextConfigVersion = state.placementConfigVersion + 1
+        const nextConfigVersion = toPositiveInteger(placementConfig?.placementConfigVersion, 1) + 1
         applyPlacementPatch(target, payload, nextConfigVersion)
-        state.placementConfigVersion = nextConfigVersion
+        placementConfig.placementConfigVersion = nextConfigVersion
+        placementConfig.updatedAt = nowIso()
+        state.placementConfigVersion = Math.max(
+          toPositiveInteger(state.placementConfigVersion, 1),
+          nextConfigVersion,
+        )
+        if (scopedAppId === DEFAULT_CONTROL_PLANE_APP_ID) {
+          syncLegacyPlacementSnapshot()
+        }
         const actor = resolveAuditActor(req, 'dashboard')
+        const scopedAccountId = normalizeControlPlaneAccountId(
+          placementConfig?.accountId || resolveAccountIdForApp(scopedAppId),
+          '',
+        )
         recordPlacementAudit({
+          appId: scopedAppId,
+          accountId: scopedAccountId,
           placementId: placementId,
           configVersion: nextConfigVersion,
           actor,
@@ -5612,8 +5977,8 @@ async function requestHandler(req, res) {
         recordControlPlaneAudit({
           action: 'config_publish',
           actor,
-          accountId: resolveAccountIdForApp(DEFAULT_CONTROL_PLANE_APP_ID),
-          appId: DEFAULT_CONTROL_PLANE_APP_ID,
+          accountId: scopedAccountId,
+          appId: scopedAppId,
           environment: 'staging',
           resourceType: 'placement',
           resourceId: placementId,
@@ -5627,6 +5992,8 @@ async function requestHandler(req, res) {
       persistState(state)
 
       sendJson(res, 200, {
+        appId: scopedAppId,
+        placementConfigVersion: toPositiveInteger(placementConfig?.placementConfigVersion, 1),
         placement: target,
         changed,
       })
@@ -5765,8 +6132,14 @@ async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/dashboard/placement-audits' && req.method === 'GET') {
+    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    if (!auth.ok) {
+      sendJson(res, auth.status, { error: auth.error })
+      return
+    }
+    const scope = auth.scope
     const placementId = requestUrl.searchParams.get('placementId')
-    let rows = [...state.placementAuditLogs]
+    let rows = filterRowsByScope(state.placementAuditLogs, scope)
     if (placementId) {
       rows = rows.filter((row) => row.placementId === placementId)
     }
@@ -5796,10 +6169,14 @@ async function requestHandler(req, res) {
 
   if (pathname === '/api/v1/sdk/config' && req.method === 'GET') {
     const appId = requestUrl.searchParams.get('appId') || 'simulator-chatbot'
+    const placements = getPlacementsForApp(appId, resolveAccountIdForApp(appId), {
+      createIfMissing: true,
+      clone: true,
+    })
     sendJson(res, 200, {
       appId,
       accountId: resolveAccountIdForApp(appId),
-      placements: state.placements,
+      placements,
     })
     return
   }

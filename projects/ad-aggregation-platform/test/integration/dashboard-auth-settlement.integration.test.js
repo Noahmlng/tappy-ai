@@ -273,3 +273,166 @@ test('dashboard auth: login session enforces account scope for settlement aggreg
     await stopGateway(gateway)
   }
 })
+
+test('dashboard placement config is isolated per account app', async () => {
+  const port = 4180 + Math.floor(Math.random() * 200)
+  const baseUrl = `http://${HOST}:${port}`
+  const gateway = startGateway(port)
+
+  try {
+    await waitForGateway(baseUrl)
+    const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
+    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+
+    const registerAccountA = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+      method: 'POST',
+      body: {
+        email: 'placement-account-a@example.com',
+        password: 'pass12345',
+        accountId: 'acct_a',
+        appId: 'simulator-chatbot-a',
+      },
+    })
+    assert.equal(registerAccountA.status, 201, `register account A failed: ${JSON.stringify(registerAccountA.payload)}`)
+    const dashboardAHeaders = registerAccountA.payload?.session?.accessToken
+      ? { Authorization: `Bearer ${String(registerAccountA.payload.session.accessToken)}` }
+      : {}
+
+    const registerAccountB = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+      method: 'POST',
+      body: {
+        email: 'placement-account-b@example.com',
+        password: 'pass12345',
+        accountId: 'acct_b',
+        appId: 'simulator-chatbot-b',
+      },
+    })
+    assert.equal(registerAccountB.status, 201, `register account B failed: ${JSON.stringify(registerAccountB.payload)}`)
+    const dashboardBHeaders = registerAccountB.payload?.session?.accessToken
+      ? { Authorization: `Bearer ${String(registerAccountB.payload.session.accessToken)}` }
+      : {}
+
+    const runtimeAHeaders = await issueRuntimeApiKey(baseUrl, {
+      accountId: 'acct_a',
+      appId: 'simulator-chatbot-a',
+    }, dashboardAHeaders)
+    const runtimeBHeaders = await issueRuntimeApiKey(baseUrl, {
+      accountId: 'acct_b',
+      appId: 'simulator-chatbot-b',
+    }, dashboardBHeaders)
+
+    const placementsA = await requestJson(baseUrl, '/api/v1/dashboard/placements', {
+      headers: dashboardAHeaders,
+    })
+    assert.equal(placementsA.ok, true, `placements A failed: ${JSON.stringify(placementsA.payload)}`)
+    const placementAInlineBefore = Array.isArray(placementsA.payload?.placements)
+      ? placementsA.payload.placements.find((row) => String(row?.placementId || '') === 'chat_inline_v1')
+      : null
+    assert.equal(Boolean(placementAInlineBefore), true, 'account A should have chat_inline_v1')
+    assert.equal(Boolean(placementAInlineBefore?.enabled), true, 'account A chat_inline_v1 should start enabled')
+
+    const placementsB = await requestJson(baseUrl, '/api/v1/dashboard/placements', {
+      headers: dashboardBHeaders,
+    })
+    assert.equal(placementsB.ok, true, `placements B failed: ${JSON.stringify(placementsB.payload)}`)
+    const placementBInlineBefore = Array.isArray(placementsB.payload?.placements)
+      ? placementsB.payload.placements.find((row) => String(row?.placementId || '') === 'chat_inline_v1')
+      : null
+    assert.equal(Boolean(placementBInlineBefore), true, 'account B should have chat_inline_v1')
+    assert.equal(Boolean(placementBInlineBefore?.enabled), true, 'account B chat_inline_v1 should start enabled')
+
+    const patchA = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_inline_v1', {
+      method: 'PUT',
+      headers: dashboardAHeaders,
+      body: {
+        enabled: false,
+      },
+    })
+    assert.equal(patchA.ok, true, `patch A failed: ${JSON.stringify(patchA.payload)}`)
+    assert.equal(Boolean(patchA.payload?.changed), true, 'account A patch should change placement config')
+    assert.equal(Boolean(patchA.payload?.placement?.enabled), false, 'account A placement should be disabled after patch')
+
+    const placementsAAfterPatch = await requestJson(baseUrl, '/api/v1/dashboard/placements', {
+      headers: dashboardAHeaders,
+    })
+    assert.equal(placementsAAfterPatch.ok, true)
+    const placementAInlineAfter = Array.isArray(placementsAAfterPatch.payload?.placements)
+      ? placementsAAfterPatch.payload.placements.find((row) => String(row?.placementId || '') === 'chat_inline_v1')
+      : null
+    assert.equal(Boolean(placementAInlineAfter), true)
+    assert.equal(Boolean(placementAInlineAfter?.enabled), false, 'account A placement should remain disabled')
+
+    const placementsBAfterPatch = await requestJson(baseUrl, '/api/v1/dashboard/placements', {
+      headers: dashboardBHeaders,
+    })
+    assert.equal(placementsBAfterPatch.ok, true)
+    const placementBInlineAfter = Array.isArray(placementsBAfterPatch.payload?.placements)
+      ? placementsBAfterPatch.payload.placements.find((row) => String(row?.placementId || '') === 'chat_inline_v1')
+      : null
+    assert.equal(Boolean(placementBInlineAfter), true)
+    assert.equal(Boolean(placementBInlineAfter?.enabled), true, 'account B placement should remain enabled')
+
+    const sdkConfigA = await requestJson(baseUrl, '/api/v1/sdk/config?appId=simulator-chatbot-a')
+    assert.equal(sdkConfigA.ok, true, `sdk config A failed: ${JSON.stringify(sdkConfigA.payload)}`)
+    const sdkAInline = Array.isArray(sdkConfigA.payload?.placements)
+      ? sdkConfigA.payload.placements.find((row) => String(row?.placementId || '') === 'chat_inline_v1')
+      : null
+    assert.equal(Boolean(sdkAInline), true)
+    assert.equal(Boolean(sdkAInline?.enabled), false, 'sdk config for account A app should be disabled')
+
+    const sdkConfigB = await requestJson(baseUrl, '/api/v1/sdk/config?appId=simulator-chatbot-b')
+    assert.equal(sdkConfigB.ok, true, `sdk config B failed: ${JSON.stringify(sdkConfigB.payload)}`)
+    const sdkBInline = Array.isArray(sdkConfigB.payload?.placements)
+      ? sdkConfigB.payload.placements.find((row) => String(row?.placementId || '') === 'chat_inline_v1')
+      : null
+    assert.equal(Boolean(sdkBInline), true)
+    assert.equal(Boolean(sdkBInline?.enabled), true, 'sdk config for account B app should stay enabled')
+
+    const evaluateA = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
+      method: 'POST',
+      headers: runtimeAHeaders,
+      body: {
+        appId: 'simulator-chatbot-a',
+        accountId: 'acct_a',
+        sessionId: `sess_a_${Date.now()}`,
+        turnId: `turn_a_${Date.now()}`,
+        query: 'find product for tenant A',
+        answerText: 'seed decision',
+        intentScore: 0.95,
+        locale: 'en-US',
+      },
+    })
+    assert.equal(evaluateA.ok, true, `evaluate A failed: ${JSON.stringify(evaluateA.payload)}`)
+    assert.equal(String(evaluateA.payload?.decision?.result || ''), 'blocked')
+    assert.equal(String(evaluateA.payload?.decision?.reasonDetail || ''), 'placement_disabled')
+
+    const evaluateB = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
+      method: 'POST',
+      headers: runtimeBHeaders,
+      body: {
+        appId: 'simulator-chatbot-b',
+        accountId: 'acct_b',
+        sessionId: `sess_b_${Date.now()}`,
+        turnId: `turn_b_${Date.now()}`,
+        query: 'find product for tenant B',
+        answerText: 'seed decision',
+        intentScore: 0.95,
+        locale: 'en-US',
+      },
+    })
+    assert.equal(evaluateB.ok, true, `evaluate B failed: ${JSON.stringify(evaluateB.payload)}`)
+    assert.notEqual(
+      String(evaluateB.payload?.decision?.reasonDetail || ''),
+      'placement_disabled',
+      'account B should not inherit account A placement disable',
+    )
+  } catch (error) {
+    const logs = gateway.getLogs()
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `[dashboard-placement-isolation] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`,
+    )
+  } finally {
+    await stopGateway(gateway)
+  }
+})
