@@ -19,6 +19,14 @@ const __dirname = path.dirname(__filename)
 const PROJECT_ROOT = path.resolve(__dirname, '../../..')
 const STATE_DIR = path.join(PROJECT_ROOT, '.local')
 const STATE_FILE = path.join(STATE_DIR, 'simulator-gateway-state.json')
+const SETTLEMENT_STORAGE_MODE = String(process.env.SIMULATOR_SETTLEMENT_STORAGE || 'auto').trim().toLowerCase()
+const SETTLEMENT_DB_URL = String(
+  process.env.SIMULATOR_SETTLEMENT_DB_URL
+  || process.env.SUPABASE_DB_URL
+  || process.env.DATABASE_URL
+  || '',
+).trim()
+const SETTLEMENT_FACT_TABLE = 'simulator_settlement_conversion_facts'
 
 const PORT = Number(process.env.SIMULATOR_GATEWAY_PORT || 3100)
 const HOST = process.env.SIMULATOR_GATEWAY_HOST || '127.0.0.1'
@@ -30,7 +38,6 @@ const SIMULATOR_BOOTSTRAP_API_KEY = String(
 ).trim()
 const MAX_DECISION_LOGS = 500
 const MAX_EVENT_LOGS = 500
-const MAX_CONVERSION_FACTS = 2000
 const MAX_PLACEMENT_AUDIT_LOGS = 500
 const MAX_NETWORK_FLOW_LOGS = 300
 const MAX_CONTROL_PLANE_AUDIT_LOGS = 800
@@ -232,6 +239,26 @@ function createId(prefix) {
 function round(value, digits = 4) {
   const factor = 10 ** digits
   return Math.round(value * factor) / factor
+}
+
+function resolvePreferredSettlementStoreMode() {
+  if (SETTLEMENT_STORAGE_MODE === 'postgres') return 'postgres'
+  if (SETTLEMENT_STORAGE_MODE === 'state_file' || SETTLEMENT_STORAGE_MODE === 'json') return 'state_file'
+  return SETTLEMENT_DB_URL ? 'postgres' : 'state_file'
+}
+
+const settlementStore = {
+  mode: resolvePreferredSettlementStoreMode(),
+  pool: null,
+  initPromise: null,
+}
+
+function isPostgresSettlementStore() {
+  return settlementStore.mode === 'postgres' && Boolean(settlementStore.pool)
+}
+
+function shouldPersistConversionFactsToStateFile() {
+  return !isPostgresSettlementStore()
 }
 
 function clampNumber(value, min, max, fallback) {
@@ -2257,6 +2284,276 @@ function normalizeConversionFact(raw) {
   }
 }
 
+function mapPostgresRowToConversionFact(row) {
+  if (!row || typeof row !== 'object') return null
+  return normalizeConversionFact({
+    factId: row.fact_id,
+    factType: row.fact_type,
+    appId: row.app_id,
+    accountId: row.account_id,
+    requestId: row.request_id,
+    sessionId: row.session_id,
+    turnId: row.turn_id,
+    userId: row.user_id,
+    placementId: row.placement_id,
+    placementKey: row.placement_key,
+    adId: row.ad_id,
+    postbackType: row.postback_type,
+    postbackStatus: row.postback_status,
+    conversionId: row.conversion_id,
+    eventSeq: row.event_seq,
+    occurredAt: row.occurred_at,
+    createdAt: row.created_at,
+    cpaUsd: row.cpa_usd,
+    revenueUsd: row.revenue_usd,
+    currency: row.currency,
+    idempotencyKey: row.idempotency_key,
+  })
+}
+
+async function ensureSettlementFactTable(pool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ${SETTLEMENT_FACT_TABLE} (
+      fact_id TEXT PRIMARY KEY,
+      fact_type TEXT NOT NULL,
+      app_id TEXT NOT NULL,
+      account_id TEXT NOT NULL,
+      request_id TEXT NOT NULL,
+      session_id TEXT NOT NULL DEFAULT '',
+      turn_id TEXT NOT NULL DEFAULT '',
+      user_id TEXT NOT NULL DEFAULT '',
+      placement_id TEXT NOT NULL DEFAULT '',
+      placement_key TEXT NOT NULL DEFAULT '',
+      ad_id TEXT NOT NULL DEFAULT '',
+      postback_type TEXT NOT NULL,
+      postback_status TEXT NOT NULL,
+      conversion_id TEXT NOT NULL,
+      event_seq TEXT NOT NULL DEFAULT '',
+      occurred_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL,
+      cpa_usd NUMERIC(18, 4) NOT NULL DEFAULT 0,
+      revenue_usd NUMERIC(18, 4) NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      idempotency_key TEXT NOT NULL UNIQUE
+    )
+  `)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_${SETTLEMENT_FACT_TABLE}_account_app ON ${SETTLEMENT_FACT_TABLE} (account_id, app_id, occurred_at DESC)`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_${SETTLEMENT_FACT_TABLE}_request ON ${SETTLEMENT_FACT_TABLE} (request_id)`)
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_${SETTLEMENT_FACT_TABLE}_placement ON ${SETTLEMENT_FACT_TABLE} (placement_id, occurred_at DESC)`)
+}
+
+async function upsertConversionFactToPostgres(fact, pool = null) {
+  const db = pool || settlementStore.pool
+  if (!db) return null
+  const result = await db.query(
+    `
+      INSERT INTO ${SETTLEMENT_FACT_TABLE} (
+        fact_id,
+        fact_type,
+        app_id,
+        account_id,
+        request_id,
+        session_id,
+        turn_id,
+        user_id,
+        placement_id,
+        placement_key,
+        ad_id,
+        postback_type,
+        postback_status,
+        conversion_id,
+        event_seq,
+        occurred_at,
+        created_at,
+        cpa_usd,
+        revenue_usd,
+        currency,
+        idempotency_key
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+        $12, $13, $14, $15, $16::timestamptz, $17::timestamptz,
+        $18, $19, $20, $21
+      )
+      ON CONFLICT (idempotency_key) DO NOTHING
+      RETURNING *
+    `,
+    [
+      fact.factId,
+      fact.factType,
+      fact.appId,
+      fact.accountId,
+      fact.requestId,
+      fact.sessionId,
+      fact.turnId,
+      fact.userId,
+      fact.placementId,
+      fact.placementKey,
+      fact.adId,
+      fact.postbackType,
+      fact.postbackStatus,
+      fact.conversionId,
+      fact.eventSeq,
+      fact.occurredAt,
+      fact.createdAt,
+      fact.cpaUsd,
+      fact.revenueUsd,
+      fact.currency,
+      fact.idempotencyKey,
+    ],
+  )
+  if (!Array.isArray(result.rows) || result.rows.length === 0) return null
+  return mapPostgresRowToConversionFact(result.rows[0])
+}
+
+async function findConversionFactByIdempotencyKeyFromPostgres(idempotencyKey) {
+  const db = settlementStore.pool
+  if (!db) return null
+  const result = await db.query(
+    `SELECT * FROM ${SETTLEMENT_FACT_TABLE} WHERE idempotency_key = $1 LIMIT 1`,
+    [idempotencyKey],
+  )
+  if (!Array.isArray(result.rows) || result.rows.length === 0) return null
+  return mapPostgresRowToConversionFact(result.rows[0])
+}
+
+async function migrateLegacyConversionFactsToPostgres(rows = []) {
+  const db = settlementStore.pool
+  if (!db) return { inserted: 0, duplicates: 0 }
+  let inserted = 0
+  let duplicates = 0
+  for (const row of rows) {
+    const fact = normalizeConversionFact(row)
+    const created = await upsertConversionFactToPostgres(fact, db)
+    if (created) inserted += 1
+    else duplicates += 1
+  }
+  return { inserted, duplicates }
+}
+
+async function ensureSettlementStoreReady() {
+  if (settlementStore.initPromise) {
+    await settlementStore.initPromise
+    return
+  }
+
+  settlementStore.initPromise = (async () => {
+    if (settlementStore.mode !== 'postgres') return
+    if (!SETTLEMENT_DB_URL) {
+      settlementStore.mode = 'state_file'
+      return
+    }
+
+    try {
+      const { Pool } = await import('pg')
+      const pool = new Pool({
+        connectionString: SETTLEMENT_DB_URL,
+        ssl: SETTLEMENT_DB_URL.includes('supabase.co')
+          ? { rejectUnauthorized: false }
+          : undefined,
+      })
+      await pool.query('SELECT 1')
+      await ensureSettlementFactTable(pool)
+      settlementStore.pool = pool
+      const legacyFacts = Array.isArray(state?.conversionFacts)
+        ? state.conversionFacts.map((item) => normalizeConversionFact(item))
+        : []
+      if (legacyFacts.length > 0) {
+        const migrated = await migrateLegacyConversionFactsToPostgres(legacyFacts)
+        console.log(
+          `[simulator-gateway] settlement legacy facts migrated to postgres inserted=${migrated.inserted} duplicates=${migrated.duplicates}`,
+        )
+        state.conversionFacts = []
+        persistState(state)
+      }
+    } catch (error) {
+      settlementStore.mode = 'state_file'
+      settlementStore.pool = null
+      console.error(
+        '[simulator-gateway] settlement store postgres init failed, fallback to state_file:',
+        error instanceof Error ? error.message : String(error),
+      )
+    }
+  })()
+
+  await settlementStore.initPromise
+}
+
+async function listConversionFacts(scopeInput = {}) {
+  const scope = normalizeScopeFilters(scopeInput)
+  await ensureSettlementStoreReady()
+
+  if (!isPostgresSettlementStore()) {
+    const rows = Array.isArray(state?.conversionFacts) ? state.conversionFacts : []
+    if (!scopeHasFilters(scope)) return rows
+    return filterRowsByScope(rows, scope)
+  }
+
+  const clauses = []
+  const values = []
+  let cursor = 1
+
+  if (scope.accountId) {
+    clauses.push(`account_id = $${cursor}`)
+    values.push(scope.accountId)
+    cursor += 1
+  }
+  if (scope.appId) {
+    clauses.push(`app_id = $${cursor}`)
+    values.push(scope.appId)
+    cursor += 1
+  }
+
+  const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : ''
+  const result = await settlementStore.pool.query(
+    `SELECT * FROM ${SETTLEMENT_FACT_TABLE} ${whereClause} ORDER BY created_at DESC`,
+    values,
+  )
+  return Array.isArray(result.rows)
+    ? result.rows.map((item) => mapPostgresRowToConversionFact(item)).filter(Boolean)
+    : []
+}
+
+async function writeConversionFact(fact) {
+  await ensureSettlementStoreReady()
+  if (!isPostgresSettlementStore()) {
+    const existingFact = state.conversionFacts.find((item) => String(item?.idempotencyKey || '') === fact.idempotencyKey)
+    if (existingFact) {
+      return {
+        duplicate: true,
+        fact: existingFact,
+      }
+    }
+    state.conversionFacts = [fact, ...state.conversionFacts]
+    return {
+      duplicate: false,
+      fact,
+    }
+  }
+
+  const inserted = await upsertConversionFactToPostgres(fact)
+  if (inserted) {
+    return {
+      duplicate: false,
+      fact: inserted,
+    }
+  }
+
+  const existingFact = await findConversionFactByIdempotencyKeyFromPostgres(fact.idempotencyKey)
+  return {
+    duplicate: true,
+    fact: existingFact || fact,
+  }
+}
+
+async function resetConversionFactStore() {
+  await ensureSettlementStoreReady()
+  if (isPostgresSettlementStore()) {
+    await settlementStore.pool.query(`DELETE FROM ${SETTLEMENT_FACT_TABLE}`)
+  }
+  state.conversionFacts = []
+}
+
 function createInitialState() {
   const placements = buildDefaultPlacementList()
   const placementConfigVersion = Math.max(1, ...placements.map((placement) => placement.configVersion || 1))
@@ -2413,7 +2710,7 @@ function loadState() {
       decisionLogs: Array.isArray(parsed.decisionLogs) ? parsed.decisionLogs.slice(0, MAX_DECISION_LOGS) : [],
       eventLogs: Array.isArray(parsed.eventLogs) ? parsed.eventLogs.slice(0, MAX_EVENT_LOGS) : [],
       conversionFacts: Array.isArray(parsed.conversionFacts)
-        ? parsed.conversionFacts.map((item) => normalizeConversionFact(item)).slice(0, MAX_CONVERSION_FACTS)
+        ? parsed.conversionFacts.map((item) => normalizeConversionFact(item))
         : [],
       globalStats: {
         requests: toPositiveInteger(parsed?.globalStats?.requests, 0),
@@ -2435,9 +2732,16 @@ function loadState() {
 function persistState(state) {
   try {
     fs.mkdirSync(STATE_DIR, { recursive: true })
+    const persistedState = {
+      ...state,
+      conversionFacts: shouldPersistConversionFactsToStateFile()
+        ? (Array.isArray(state?.conversionFacts) ? state.conversionFacts : [])
+        : [],
+      updatedAt: nowIso(),
+    }
     fs.writeFileSync(
       STATE_FILE,
-      JSON.stringify({ ...state, updatedAt: nowIso() }, null, 2),
+      JSON.stringify(persistedState, null, 2),
       'utf-8',
     )
   } catch (error) {
@@ -2748,7 +3052,7 @@ function buildConversionFactIdempotencyKey(payload = {}) {
   return `fact_${createHash('sha256').update(semantic).digest('hex').slice(0, 24)}`
 }
 
-function recordConversionFact(payload) {
+async function recordConversionFact(payload) {
   const request = payload && typeof payload === 'object' ? payload : {}
   if (!Array.isArray(state.conversionFacts)) {
     state.conversionFacts = []
@@ -2761,14 +3065,6 @@ function recordConversionFact(payload) {
     placementId,
   })
 
-  const existingFact = state.conversionFacts.find((item) => String(item?.idempotencyKey || '') === idempotencyKey)
-  if (existingFact) {
-    return {
-      duplicate: true,
-      fact: existingFact,
-    }
-  }
-
   const fact = normalizeConversionFact({
     ...request,
     placementId,
@@ -2777,12 +3073,7 @@ function recordConversionFact(payload) {
     factId: createId('fact'),
     createdAt: nowIso(),
   })
-  state.conversionFacts = [fact, ...state.conversionFacts].slice(0, MAX_CONVERSION_FACTS)
-
-  return {
-    duplicate: false,
-    fact,
-  }
+  return writeConversionFact(fact)
 }
 
 function recordPlacementAudit(payload) {
@@ -3040,10 +3331,10 @@ function computeRevenueFromFacts(factRows = []) {
   return round(total, 4)
 }
 
-function computeMetricsSummary() {
+function computeMetricsSummary(factRows = []) {
   const impressions = state.globalStats.impressions
   const clicks = state.globalStats.clicks
-  const revenueUsd = computeRevenueFromFacts(state.conversionFacts)
+  const revenueUsd = computeRevenueFromFacts(factRows)
   const requests = state.globalStats.requests
   const served = state.globalStats.served
 
@@ -3061,7 +3352,7 @@ function computeMetricsSummary() {
   }
 }
 
-function computeMetricsByDay() {
+function computeMetricsByDay(factRows = []) {
   state.dailyMetrics = ensureDailyMetricsWindow(state.dailyMetrics)
   const rows = createDailyMetricsSeed(7)
   const byDate = new Map(rows.map((row) => [row.date, row]))
@@ -3073,7 +3364,7 @@ function computeMetricsByDay() {
     target.clicks += toPositiveInteger(metric?.clicks, 0)
   }
 
-  for (const fact of Array.isArray(state.conversionFacts) ? state.conversionFacts : []) {
+  for (const fact of Array.isArray(factRows) ? factRows : []) {
     const dateKey = conversionFactDateKey(fact)
     const target = byDate.get(dateKey)
     if (!target) continue
@@ -3088,10 +3379,10 @@ function computeMetricsByDay() {
   }))
 }
 
-function computeMetricsByPlacement(scope = {}) {
+function computeMetricsByPlacement(scope = {}, factRows = []) {
   const placementIdByRequest = buildPlacementIdByRequestMap(state.decisionLogs)
   const revenueByPlacement = buildRevenueByPlacementMap(
-    Array.isArray(state.conversionFacts) ? state.conversionFacts : [],
+    Array.isArray(factRows) ? factRows : [],
     placementIdByRequest,
   )
   const placementScope = getPlacementsForScope(scope, { createIfMissing: false, clone: true })
@@ -4147,10 +4438,12 @@ function rankSettlementRows(rows = []) {
   })
 }
 
-function computeSettlementAggregates(scope = {}) {
+function computeSettlementAggregates(scope = {}, factRowsInput = null) {
   const decisionRows = filterRowsByScope(state.decisionLogs, scope)
   const eventRows = filterRowsByScope(state.eventLogs, scope)
-  const factRows = filterRowsByScope(state.conversionFacts, scope)
+  const factRows = Array.isArray(factRowsInput)
+    ? factRowsInput
+    : filterRowsByScope(state.conversionFacts, scope)
 
   const maps = {
     totals: createSettlementAggregateRow({}),
@@ -4190,7 +4483,7 @@ function computeSettlementAggregates(scope = {}) {
   }
 }
 
-function getDashboardStatePayload(scopeInput = {}) {
+async function getDashboardStatePayload(scopeInput = {}) {
   const scope = normalizeScopeFilters(scopeInput)
   const hasScope = scopeHasFilters(scope)
   const networkHealth = getAllNetworkHealth()
@@ -4207,11 +4500,7 @@ function getDashboardStatePayload(scopeInput = {}) {
     : (shouldApplyScope ? filterRowsByScope(state.eventLogs, scope) : state.eventLogs)
   const conversionFacts = emptyScoped
     ? []
-    : (
-      shouldApplyScope
-        ? filterRowsByScope(state.conversionFacts, scope)
-        : (Array.isArray(state.conversionFacts) ? state.conversionFacts : [])
-    )
+    : await listConversionFacts(shouldApplyScope ? scope : {})
   const controlPlaneAuditLogs = emptyScoped
     ? []
     : (shouldApplyScope ? filterRowsByScope(state.controlPlaneAuditLogs, scope) : state.controlPlaneAuditLogs)
@@ -4223,25 +4512,25 @@ function getDashboardStatePayload(scopeInput = {}) {
     ? computeScopedMetricsSummary([], [], [])
     : shouldApplyScope
     ? computeScopedMetricsSummary(decisionLogs, eventLogs, conversionFacts)
-    : computeMetricsSummary()
+    : computeMetricsSummary(conversionFacts)
   const metricsByDay = emptyScoped
     ? computeScopedMetricsByDay([], [], [])
     : shouldApplyScope
     ? computeScopedMetricsByDay(decisionLogs, eventLogs, conversionFacts)
-    : computeMetricsByDay()
+    : computeMetricsByDay(conversionFacts)
   const metricsByPlacement = emptyScoped
     ? []
     : shouldApplyScope
     ? computeScopedMetricsByPlacement(decisionLogs, eventLogs, conversionFacts, scope)
-    : computeMetricsByPlacement(scope)
+    : computeMetricsByPlacement(scope, conversionFacts)
   const networkFlowStats = emptyScoped
     ? createInitialNetworkFlowStats()
     : shouldApplyScope
     ? computeScopedNetworkFlowStats(networkFlowLogs)
     : state.networkFlowStats
   const settlementAggregates = emptyScoped
-    ? computeSettlementAggregates({ appId: '__none__', accountId: '__none__' })
-    : computeSettlementAggregates(shouldApplyScope ? scope : {})
+    ? computeSettlementAggregates({ appId: '__none__', accountId: '__none__' }, [])
+    : computeSettlementAggregates(shouldApplyScope ? scope : {}, conversionFacts)
   const placementScope = emptyScoped
     ? { appId: '', placements: [] }
     : getPlacementsForScope(scope, { createIfMissing: false, clone: true })
@@ -4784,6 +5073,7 @@ async function requestHandler(req, res) {
 
     const previousPlacementConfigVersion = state.placementConfigVersion
     resetGatewayState()
+    await resetConversionFactStore()
     sendJson(res, 200, {
       ok: true,
       previousPlacementConfigVersion,
@@ -5876,7 +6166,7 @@ async function requestHandler(req, res) {
       return
     }
     const scope = auth.scope
-    sendJson(res, 200, getDashboardStatePayload(scope))
+    sendJson(res, 200, await getDashboardStatePayload(scope))
     return
   }
 
@@ -6016,7 +6306,7 @@ async function requestHandler(req, res) {
       return
     }
     const scope = auth.scope
-    const snapshot = getDashboardStatePayload(scope)
+    const snapshot = await getDashboardStatePayload(scope)
     sendJson(res, 200, snapshot.metricsSummary)
     return
   }
@@ -6028,7 +6318,7 @@ async function requestHandler(req, res) {
       return
     }
     const scope = auth.scope
-    const snapshot = getDashboardStatePayload(scope)
+    const snapshot = await getDashboardStatePayload(scope)
     sendJson(res, 200, { items: snapshot.metricsByDay })
     return
   }
@@ -6040,7 +6330,7 @@ async function requestHandler(req, res) {
       return
     }
     const scope = auth.scope
-    const snapshot = getDashboardStatePayload(scope)
+    const snapshot = await getDashboardStatePayload(scope)
     sendJson(res, 200, { items: snapshot.metricsByPlacement })
     return
   }
@@ -6051,7 +6341,7 @@ async function requestHandler(req, res) {
       sendJson(res, auth.status, { error: auth.error })
       return
     }
-    const snapshot = getDashboardStatePayload(auth.scope)
+    const snapshot = await getDashboardStatePayload(auth.scope)
     sendJson(res, 200, snapshot.settlementAggregates)
     return
   }
@@ -6344,7 +6634,7 @@ async function requestHandler(req, res) {
           return
         }
 
-        const { duplicate, fact } = recordConversionFact(request)
+        const { duplicate, fact } = await recordConversionFact(request)
         recordEvent({
           eventType: request.eventType,
           event: 'postback',
@@ -6493,4 +6783,8 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`[simulator-gateway] listening on http://${HOST}:${PORT}`)
   console.log(`[simulator-gateway] state file: ${STATE_FILE}`)
+  console.log(`[simulator-gateway] settlement store mode: ${settlementStore.mode}`)
+  ensureSettlementStoreReady().catch((error) => {
+    console.error('[simulator-gateway] settlement store init error:', error)
+  })
 })
