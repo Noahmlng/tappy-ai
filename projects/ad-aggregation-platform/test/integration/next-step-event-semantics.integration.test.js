@@ -111,6 +111,51 @@ async function stopGateway(handle) {
   }
 }
 
+async function registerDashboardHeaders(baseUrl, input = {}) {
+  const now = Date.now()
+  const email = String(input.email || `owner_${now}@example.com`)
+  const password = String(input.password || 'pass12345')
+  const accountId = String(input.accountId || 'org_simulator')
+  const appId = String(input.appId || 'simulator-chatbot')
+  const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+    method: 'POST',
+    body: {
+      email,
+      password,
+      accountId,
+      appId,
+    },
+  })
+  assert.equal(register.status, 201, `dashboard register failed: ${JSON.stringify(register.payload)}`)
+  const accessToken = String(register.payload?.session?.accessToken || '').trim()
+  assert.equal(Boolean(accessToken), true, 'dashboard register should return access token')
+  return {
+    Authorization: `Bearer ${accessToken}`,
+  }
+}
+
+async function issueRuntimeApiKeyHeaders(baseUrl, input = {}, headers = {}) {
+  const accountId = String(input.accountId || 'org_simulator')
+  const appId = String(input.appId || 'simulator-chatbot')
+  const environment = String(input.environment || 'staging')
+  const created = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
+    method: 'POST',
+    headers,
+    body: {
+      accountId,
+      appId,
+      environment,
+      name: `runtime-${environment}`,
+    },
+  })
+  assert.equal(created.status, 201, `issue runtime key failed: ${JSON.stringify(created.payload)}`)
+  const secret = String(created.payload?.secret || '').trim()
+  assert.equal(Boolean(secret), true, 'runtime key create should return secret')
+  return {
+    Authorization: `Bearer ${secret}`,
+  }
+}
+
 function buildNextStepEventPayload(overrides = {}) {
   const base = {
     requestId: `adreq_next_step_event_${Date.now()}`,
@@ -149,14 +194,28 @@ test('next-step sdk events: click/dismiss carry kind+adId and click updates dash
 
   try {
     await waitForGateway(baseUrl)
+    const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
+    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
+      email: 'next-step-event-semantics@example.com',
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
+    const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, {
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    }, dashboardHeaders)
 
-    const beforeSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary')
-    assert.equal(beforeSummary.ok, true)
+    const beforeSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary', {
+      headers: dashboardHeaders,
+    })
+    assert.equal(beforeSummary.status, 200, `metrics summary failed: ${JSON.stringify(beforeSummary.payload)}`)
     const beforeClicks = Number(beforeSummary.payload?.clicks || 0)
 
     const clickRequestId = `adreq_next_step_click_${Date.now()}`
     const clickEvent = await requestJson(baseUrl, '/api/v1/sdk/events', {
       method: 'POST',
+      headers: runtimeHeaders,
       body: buildNextStepEventPayload({
         requestId: clickRequestId,
         kind: 'click',
@@ -165,14 +224,17 @@ test('next-step sdk events: click/dismiss carry kind+adId and click updates dash
     })
     assert.equal(clickEvent.ok, true, `click event failed: ${JSON.stringify(clickEvent.payload)}`)
 
-    const afterClickSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary')
-    assert.equal(afterClickSummary.ok, true)
+    const afterClickSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary', {
+      headers: dashboardHeaders,
+    })
+    assert.equal(afterClickSummary.status, 200, `metrics summary failed: ${JSON.stringify(afterClickSummary.payload)}`)
     const afterClickCount = Number(afterClickSummary.payload?.clicks || 0)
     assert.equal(afterClickCount, beforeClicks + 1)
 
     const clickLogs = await requestJson(
       baseUrl,
       `/api/v1/dashboard/events?requestId=${encodeURIComponent(clickRequestId)}&eventType=sdk_event`,
+      { headers: dashboardHeaders },
     )
     assert.equal(clickLogs.ok, true)
     const clickRows = Array.isArray(clickLogs.payload?.items) ? clickLogs.payload.items : []
@@ -187,6 +249,7 @@ test('next-step sdk events: click/dismiss carry kind+adId and click updates dash
     const dismissRequestId = `adreq_next_step_dismiss_${Date.now()}`
     const dismissEvent = await requestJson(baseUrl, '/api/v1/sdk/events', {
       method: 'POST',
+      headers: runtimeHeaders,
       body: buildNextStepEventPayload({
         requestId: dismissRequestId,
         kind: 'dismiss',
@@ -195,14 +258,17 @@ test('next-step sdk events: click/dismiss carry kind+adId and click updates dash
     })
     assert.equal(dismissEvent.ok, true, `dismiss event failed: ${JSON.stringify(dismissEvent.payload)}`)
 
-    const afterDismissSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary')
-    assert.equal(afterDismissSummary.ok, true)
+    const afterDismissSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary', {
+      headers: dashboardHeaders,
+    })
+    assert.equal(afterDismissSummary.status, 200, `metrics summary failed: ${JSON.stringify(afterDismissSummary.payload)}`)
     const afterDismissClicks = Number(afterDismissSummary.payload?.clicks || 0)
     assert.equal(afterDismissClicks, afterClickCount)
 
     const dismissLogs = await requestJson(
       baseUrl,
       `/api/v1/dashboard/events?requestId=${encodeURIComponent(dismissRequestId)}&eventType=sdk_event`,
+      { headers: dashboardHeaders },
     )
     assert.equal(dismissLogs.ok, true)
     const dismissRows = Array.isArray(dismissLogs.payload?.items) ? dismissLogs.payload.items : []

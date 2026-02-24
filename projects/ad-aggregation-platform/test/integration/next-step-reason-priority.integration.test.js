@@ -111,6 +111,51 @@ async function stopGateway(handle) {
   }
 }
 
+async function registerDashboardHeaders(baseUrl, input = {}) {
+  const now = Date.now()
+  const email = String(input.email || `owner_${now}@example.com`)
+  const password = String(input.password || 'pass12345')
+  const accountId = String(input.accountId || 'org_simulator')
+  const appId = String(input.appId || 'simulator-chatbot')
+  const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+    method: 'POST',
+    body: {
+      email,
+      password,
+      accountId,
+      appId,
+    },
+  })
+  assert.equal(register.status, 201, `dashboard register failed: ${JSON.stringify(register.payload)}`)
+  const accessToken = String(register.payload?.session?.accessToken || '').trim()
+  assert.equal(Boolean(accessToken), true, 'dashboard register should return access token')
+  return {
+    Authorization: `Bearer ${accessToken}`,
+  }
+}
+
+async function issueRuntimeApiKeyHeaders(baseUrl, input = {}, headers = {}) {
+  const accountId = String(input.accountId || 'org_simulator')
+  const appId = String(input.appId || 'simulator-chatbot')
+  const environment = String(input.environment || 'staging')
+  const created = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
+    method: 'POST',
+    headers,
+    body: {
+      accountId,
+      appId,
+      environment,
+      name: `runtime-${environment}`,
+    },
+  })
+  assert.equal(created.status, 201, `issue runtime key failed: ${JSON.stringify(created.payload)}`)
+  const secret = String(created.payload?.secret || '').trim()
+  assert.equal(Boolean(secret), true, 'runtime key create should return secret')
+  return {
+    Authorization: `Bearer ${secret}`,
+  }
+}
+
 test('next-step reason priority: intent_non_commercial wins over threshold when both apply', async () => {
   const port = 3450 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${HOST}:${port}`
@@ -118,9 +163,21 @@ test('next-step reason priority: intent_non_commercial wins over threshold when 
 
   try {
     await waitForGateway(baseUrl)
+    const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
+    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
+      email: 'next-step-reason-priority@example.com',
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
+    const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, {
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    }, dashboardHeaders)
 
     const enablePlacement = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_followup_v1', {
       method: 'PUT',
+      headers: dashboardHeaders,
       body: {
         enabled: true,
       },
@@ -129,6 +186,7 @@ test('next-step reason priority: intent_non_commercial wins over threshold when 
 
     const evaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
       method: 'POST',
+      headers: runtimeHeaders,
       body: {
         appId: 'simulator-chatbot',
         sessionId: `reason_priority_session_${Date.now()}`,
@@ -172,9 +230,21 @@ test('next-step decision logs: inference fallback reason/model/latency are recor
 
   try {
     await waitForGateway(baseUrl)
+    const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
+    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
+      email: 'next-step-observability@example.com',
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    })
+    const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, {
+      accountId: 'org_simulator',
+      appId: 'simulator-chatbot',
+    }, dashboardHeaders)
 
     const enablePlacement = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_followup_v1', {
       method: 'PUT',
+      headers: dashboardHeaders,
       body: {
         enabled: true,
       },
@@ -183,6 +253,7 @@ test('next-step decision logs: inference fallback reason/model/latency are recor
 
     const evaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
       method: 'POST',
+      headers: runtimeHeaders,
       body: {
         appId: 'simulator-chatbot',
         sessionId: `inference_observe_session_${Date.now()}`,
@@ -206,7 +277,9 @@ test('next-step decision logs: inference fallback reason/model/latency are recor
     const requestId = String(evaluate.payload?.requestId || '').trim()
     assert.equal(requestId.length > 0, true, 'evaluate must return requestId')
 
-    const decisions = await requestJson(baseUrl, `/api/v1/dashboard/decisions?requestId=${encodeURIComponent(requestId)}`)
+    const decisions = await requestJson(baseUrl, `/api/v1/dashboard/decisions?requestId=${encodeURIComponent(requestId)}`, {
+      headers: dashboardHeaders,
+    })
     assert.equal(decisions.ok, true, `decision query failed: ${JSON.stringify(decisions.payload)}`)
 
     const items = Array.isArray(decisions.payload?.items) ? decisions.payload.items : []
