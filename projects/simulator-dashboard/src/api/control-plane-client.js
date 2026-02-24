@@ -77,8 +77,8 @@ export const controlPlaneClient = {
     },
   },
   dashboard: {
-    getState() {
-      return request('/v1/dashboard/state')
+    getState(query) {
+      return request('/v1/dashboard/state', { query: query || {} })
     },
     updatePlacement(placementId, patch) {
       return request(`/v1/dashboard/placements/${encodeURIComponent(placementId)}`, {
@@ -88,8 +88,10 @@ export const controlPlaneClient = {
     },
   },
   credentials: {
-    listKeys() {
-      return request('/v1/public/credentials/keys')
+    listKeys(query) {
+      return request('/v1/public/credentials/keys', {
+        query: query || {},
+      })
     },
     createKey(payload) {
       return request('/v1/public/credentials/keys', {
@@ -131,8 +133,10 @@ export const controlPlaneClient = {
     },
   },
   placements: {
-    list() {
-      return request('/v1/dashboard/placements')
+    list(query) {
+      return request('/v1/dashboard/placements', {
+        query: query || {},
+      })
     },
     create(payload) {
       return request('/v1/dashboard/placements', {

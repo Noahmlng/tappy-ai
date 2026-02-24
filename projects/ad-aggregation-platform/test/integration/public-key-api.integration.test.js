@@ -129,7 +129,8 @@ test('public key api supports create/list/rotate/revoke lifecycle', async () => 
     const create = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
       method: 'POST',
       body: {
-        appId: 'simulator-chatbot',
+        accountId: 'acct_demo',
+        appId: 'simulator-chatbot-acct-demo',
         name: 'primary-prod',
         environment: 'prod',
       },
@@ -142,6 +143,8 @@ test('public key api supports create/list/rotate/revoke lifecycle', async () => 
     const keyId = String(createdKey.keyId || '')
     assert.equal(Boolean(keyId), true, 'create should return keyId')
     assert.equal(createdKey.name, 'primary-prod')
+    assert.equal(createdKey.accountId, 'acct_demo')
+    assert.equal(createdKey.appId, 'simulator-chatbot-acct-demo')
     assert.equal(createdKey.environment, 'prod')
     assert.equal(createdKey.status, 'active')
     assert.equal(typeof createdKey.maskedKey, 'string')
@@ -151,6 +154,15 @@ test('public key api supports create/list/rotate/revoke lifecycle', async () => 
     assert.equal(listAfterCreate.ok, true, `list after create failed: ${JSON.stringify(listAfterCreate.payload)}`)
     const createdListRow = (listAfterCreate.payload?.keys || []).find((row) => row.keyId === keyId)
     assert.equal(Boolean(createdListRow), true, 'created key should appear in list')
+    assert.equal(createdListRow.accountId, 'acct_demo')
+
+    const listByAccount = await requestJson(baseUrl, '/api/v1/public/credentials/keys?accountId=acct_demo')
+    assert.equal(listByAccount.ok, true, `list by account failed: ${JSON.stringify(listByAccount.payload)}`)
+    assert.equal(
+      (listByAccount.payload?.keys || []).some((row) => row.keyId === keyId),
+      true,
+      'created key should appear in scoped account list',
+    )
 
     const rotate = await requestJson(
       baseUrl,

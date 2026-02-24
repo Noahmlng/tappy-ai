@@ -2,8 +2,10 @@
 import { computed, onMounted } from 'vue'
 
 import { dashboardState, hydrateDashboardState } from '../state/dashboard-state'
+import { scopeState } from '../state/scope-state'
 
 const isLoading = computed(() => Boolean(dashboardState.meta.loading))
+const scopeLabel = computed(() => `account=${scopeState.accountId} · app=${scopeState.appId}`)
 
 const latestDay = computed(() => {
   const list = Array.isArray(dashboardState.metricsByDay) ? dashboardState.metricsByDay : []
@@ -102,6 +104,7 @@ onMounted(() => {
       <p class="muted">
         Source:
         <strong>{{ dashboardState.meta.connected ? 'public API' : 'local fallback' }}</strong>
+        <span> · {{ scopeLabel }}</span>
         <span v-if="dashboardState.meta.lastSyncedAt">
           · last synced {{ new Date(dashboardState.meta.lastSyncedAt).toLocaleString() }}
         </span>

@@ -2,6 +2,7 @@ import { reactive } from 'vue'
 
 import { controlPlaneClient } from '../api/control-plane-client'
 import { mockDashboardState } from '../data/mockDashboard'
+import { getScopeQuery } from './scope-state'
 
 const STORAGE_KEY = 'ai-network-simulator-dashboard-state-v2'
 
@@ -49,6 +50,8 @@ function shapeState(value) {
       ? value.networkFlowLogs
       : (Array.isArray(fallback.networkFlowLogs) ? fallback.networkFlowLogs : []),
     decisionLogs: Array.isArray(value.decisionLogs) ? value.decisionLogs : fallback.decisionLogs,
+    controlPlaneApps: Array.isArray(value.controlPlaneApps) ? value.controlPlaneApps : [],
+    scope: value.scope && typeof value.scope === 'object' ? value.scope : {},
   }
 }
 
@@ -93,6 +96,8 @@ function persist() {
       networkFlowStats: dashboardState.networkFlowStats,
       networkFlowLogs: dashboardState.networkFlowLogs,
       decisionLogs: dashboardState.decisionLogs,
+      controlPlaneApps: dashboardState.controlPlaneApps,
+      scope: dashboardState.scope,
     }),
   )
 }
@@ -110,6 +115,8 @@ function applySnapshot(snapshot) {
   dashboardState.networkFlowStats = next.networkFlowStats
   dashboardState.networkFlowLogs = next.networkFlowLogs
   dashboardState.decisionLogs = next.decisionLogs
+  dashboardState.controlPlaneApps = next.controlPlaneApps
+  dashboardState.scope = next.scope
   dashboardState.meta.lastSyncedAt = new Date().toISOString()
   persist()
 }
@@ -151,7 +158,7 @@ export async function hydrateDashboardState() {
   dashboardState.meta.loading = true
 
   try {
-    const snapshot = await controlPlaneClient.dashboard.getState()
+    const snapshot = await controlPlaneClient.dashboard.getState(getScopeQuery())
     applySnapshot(snapshot)
     dashboardState.meta.connected = true
     dashboardState.meta.error = ''

@@ -239,9 +239,21 @@ test('dashboard v1 external e2e happy path: config -> evaluate -> events', async
     assert.equal(events.ok, true, `events failed: ${JSON.stringify(events.payload)}`)
     assert.equal(events.payload?.ok, true, 'events should return { ok: true }')
 
-    const [decisions, sdkEvents] = await Promise.all([
+    const [decisions, sdkEvents, scopedDecisions, scopedEvents, mismatchScopeDecisions] = await Promise.all([
       requestJson(baseUrl, `/api/v1/dashboard/decisions?requestId=${encodeURIComponent(requestId)}`),
       requestJson(baseUrl, `/api/v1/dashboard/events?requestId=${encodeURIComponent(requestId)}&eventType=sdk_event`),
+      requestJson(
+        baseUrl,
+        `/api/v1/dashboard/decisions?requestId=${encodeURIComponent(requestId)}&appId=simulator-chatbot&accountId=org_simulator`,
+      ),
+      requestJson(
+        baseUrl,
+        `/api/v1/dashboard/events?requestId=${encodeURIComponent(requestId)}&eventType=sdk_event&appId=simulator-chatbot&accountId=org_simulator`,
+      ),
+      requestJson(
+        baseUrl,
+        `/api/v1/dashboard/decisions?requestId=${encodeURIComponent(requestId)}&accountId=acct_missing`,
+      ),
     ])
 
     assert.equal(decisions.ok, true, `decision query failed: ${JSON.stringify(decisions.payload)}`)
@@ -249,8 +261,16 @@ test('dashboard v1 external e2e happy path: config -> evaluate -> events', async
 
     const decisionRows = Array.isArray(decisions.payload?.items) ? decisions.payload.items : []
     const eventRows = Array.isArray(sdkEvents.payload?.items) ? sdkEvents.payload.items : []
+    const scopedDecisionRows = Array.isArray(scopedDecisions.payload?.items) ? scopedDecisions.payload.items : []
+    const scopedEventRows = Array.isArray(scopedEvents.payload?.items) ? scopedEvents.payload.items : []
+    const mismatchRows = Array.isArray(mismatchScopeDecisions.payload?.items)
+      ? mismatchScopeDecisions.payload.items
+      : []
     assert.equal(decisionRows.some((row) => String(row?.requestId || '') === requestId), true)
     assert.equal(eventRows.some((row) => String(row?.requestId || '') === requestId), true)
+    assert.equal(scopedDecisionRows.some((row) => String(row?.requestId || '') === requestId), true)
+    assert.equal(scopedEventRows.some((row) => String(row?.requestId || '') === requestId), true)
+    assert.equal(mismatchRows.length, 0, 'mismatch account scope should return empty list')
   } catch (error) {
     const logs = gateway.getLogs()
     const message = error instanceof Error ? error.message : String(error)

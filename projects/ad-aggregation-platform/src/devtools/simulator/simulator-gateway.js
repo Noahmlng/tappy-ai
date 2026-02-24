@@ -40,6 +40,7 @@ const CONTROL_PLANE_ENVIRONMENTS = new Set(['sandbox', 'staging', 'prod'])
 const CONTROL_PLANE_KEY_STATUS = new Set(['active', 'revoked'])
 const DEFAULT_CONTROL_PLANE_APP_ID = 'simulator-chatbot'
 const DEFAULT_CONTROL_PLANE_ORG_ID = 'org_simulator'
+const TRACKING_ACCOUNT_QUERY_PARAM = 'aid'
 const MIN_AGENT_ACCESS_TTL_SECONDS = 60
 const MAX_AGENT_ACCESS_TTL_SECONDS = 900
 const TOKEN_EXCHANGE_FORBIDDEN_FIELDS = new Set([
@@ -115,6 +116,8 @@ const NEXT_STEP_SENSITIVE_TOPICS = [
 const ATTACH_MVP_ALLOWED_FIELDS = new Set([
   'requestId',
   'appId',
+  'accountId',
+  'account_id',
   'sessionId',
   'turnId',
   'query',
@@ -128,6 +131,8 @@ const ATTACH_MVP_ALLOWED_FIELDS = new Set([
 const NEXT_STEP_INTENT_CARD_ALLOWED_FIELDS = new Set([
   'requestId',
   'appId',
+  'accountId',
+  'account_id',
   'sessionId',
   'turnId',
   'userId',
@@ -222,6 +227,13 @@ function normalizeControlPlaneKeyStatus(value, fallback = 'active') {
   return fallback
 }
 
+function normalizeControlPlaneAccountId(value, fallback = DEFAULT_CONTROL_PLANE_ORG_ID) {
+  const normalized = String(value || '').trim()
+  if (normalized) return normalized
+  if (fallback === '') return ''
+  return String(fallback || '').trim() || DEFAULT_CONTROL_PLANE_ORG_ID
+}
+
 function randomToken(length = 12) {
   let token = ''
   while (token.length < length) {
@@ -274,9 +286,13 @@ function maskApiKeySecret(secret) {
 function buildControlPlaneAppRecord(raw = {}) {
   const timestamp = typeof raw.createdAt === 'string' ? raw.createdAt : nowIso()
   const appId = String(raw.appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const accountId = normalizeControlPlaneAccountId(
+    raw.accountId || raw.account_id || raw.organizationId || raw.organization_id,
+  )
   return {
     appId,
-    organizationId: String(raw.organizationId || '').trim() || DEFAULT_CONTROL_PLANE_ORG_ID,
+    accountId,
+    organizationId: accountId,
     displayName: String(raw.displayName || '').trim() || 'Simulator Chatbot',
     status: String(raw.status || '').trim() || 'active',
     metadata: raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : {},
@@ -289,9 +305,13 @@ function buildControlPlaneEnvironmentRecord(raw = {}) {
   const timestamp = typeof raw.createdAt === 'string' ? raw.createdAt : nowIso()
   const appId = String(raw.appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
   const environment = normalizeControlPlaneEnvironment(raw.environment)
+  const accountId = normalizeControlPlaneAccountId(
+    raw.accountId || raw.account_id || raw.organizationId || raw.organization_id,
+  )
   return {
     environmentId: String(raw.environmentId || '').trim() || `env_${appId}_${environment}`,
     appId,
+    accountId,
     environment,
     routingMode: MANAGED_ROUTING_MODE,
     apiBaseUrl: String(raw.apiBaseUrl || '').trim() || '/api/v1/sdk',
@@ -304,6 +324,7 @@ function buildControlPlaneEnvironmentRecord(raw = {}) {
 
 function createControlPlaneKeyRecord(input = {}) {
   const appId = String(input.appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const accountId = normalizeControlPlaneAccountId(input.accountId || input.account_id)
   const environment = normalizeControlPlaneEnvironment(input.environment)
   const keyName = String(input.keyName || '').trim() || `primary-${environment}`
   const keyId = String(input.keyId || '').trim() || `key_${randomToken(18)}`
@@ -321,6 +342,7 @@ function createControlPlaneKeyRecord(input = {}) {
     keyRecord: {
       keyId,
       appId,
+      accountId,
       environment,
       keyName,
       keyPrefix,
@@ -343,6 +365,9 @@ function normalizeControlPlaneKeyRecord(raw) {
   if (!keyId) return null
 
   const appId = String(raw.appId || raw.app_id || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const accountId = normalizeControlPlaneAccountId(
+    raw.accountId || raw.account_id || raw.organizationId || raw.organization_id,
+  )
   const environment = normalizeControlPlaneEnvironment(raw.environment)
   const keyName = String(raw.keyName || raw.key_name || raw.name || '').trim() || `primary-${environment}`
   const status = normalizeControlPlaneKeyStatus(raw.status, 'active')
@@ -363,6 +388,7 @@ function normalizeControlPlaneKeyRecord(raw) {
   return {
     keyId,
     appId,
+    accountId,
     environment,
     keyName,
     keyPrefix,
@@ -382,6 +408,8 @@ function toPublicApiKeyRecord(record) {
   if (!item) return null
   return {
     keyId: item.keyId,
+    appId: item.appId,
+    accountId: item.accountId,
     name: item.keyName,
     environment: item.environment,
     status: item.status,
@@ -393,6 +421,7 @@ function toPublicApiKeyRecord(record) {
 
 function createIntegrationTokenRecord(input = {}) {
   const appId = String(input.appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const accountId = normalizeControlPlaneAccountId(input.accountId || input.account_id)
   const environment = normalizeControlPlaneEnvironment(input.environment)
   const placementId = String(input.placementId || '').trim() || 'chat_inline_v1'
   const ttlMinutes = toPositiveInteger(input.ttlMinutes, 10)
@@ -409,6 +438,7 @@ function createIntegrationTokenRecord(input = {}) {
     tokenRecord: {
       tokenId: String(input.tokenId || '').trim() || `itk_${randomToken(16)}`,
       appId,
+      accountId,
       environment,
       placementId,
       tokenHash,
@@ -433,6 +463,9 @@ function normalizeIntegrationTokenRecord(raw) {
   if (!tokenId) return null
 
   const appId = String(raw.appId || raw.app_id || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const accountId = normalizeControlPlaneAccountId(
+    raw.accountId || raw.account_id || raw.organizationId || raw.organization_id,
+  )
   const environment = normalizeControlPlaneEnvironment(raw.environment)
   const placementId = String(raw.placementId || raw.placement_id || '').trim() || 'chat_inline_v1'
   const status = String(raw.status || '').trim().toLowerCase() || 'active'
@@ -440,6 +473,7 @@ function normalizeIntegrationTokenRecord(raw) {
   return {
     tokenId,
     appId,
+    accountId,
     environment,
     placementId,
     tokenHash: String(raw.tokenHash || raw.token_hash || '').trim(),
@@ -474,6 +508,7 @@ function toPublicIntegrationTokenRecord(record, plainToken = '') {
     tokenType: item.tokenType,
     integrationToken: plainToken || undefined,
     appId: item.appId,
+    accountId: item.accountId,
     environment: item.environment,
     placementId: item.placementId,
     oneTime: item.oneTime,
@@ -487,6 +522,7 @@ function toPublicIntegrationTokenRecord(record, plainToken = '') {
 
 function createAgentAccessTokenRecord(input = {}) {
   const appId = String(input.appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const accountId = normalizeControlPlaneAccountId(input.accountId || input.account_id)
   const environment = normalizeControlPlaneEnvironment(input.environment)
   const placementId = String(input.placementId || '').trim() || 'chat_inline_v1'
   const ttlSeconds = toPositiveInteger(input.ttlSeconds, 300)
@@ -502,6 +538,7 @@ function createAgentAccessTokenRecord(input = {}) {
     tokenRecord: {
       tokenId: String(input.tokenId || '').trim() || `atk_${randomToken(16)}`,
       appId,
+      accountId,
       environment,
       placementId,
       sourceTokenId: String(input.sourceTokenId || '').trim(),
@@ -526,6 +563,9 @@ function normalizeAgentAccessTokenRecord(raw) {
   if (!tokenId) return null
 
   const appId = String(raw.appId || raw.app_id || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const accountId = normalizeControlPlaneAccountId(
+    raw.accountId || raw.account_id || raw.organizationId || raw.organization_id,
+  )
   const environment = normalizeControlPlaneEnvironment(raw.environment)
   const placementId = String(raw.placementId || raw.placement_id || '').trim() || 'chat_inline_v1'
   const status = String(raw.status || '').trim().toLowerCase() || 'active'
@@ -533,6 +573,7 @@ function normalizeAgentAccessTokenRecord(raw) {
   return {
     tokenId,
     appId,
+    accountId,
     environment,
     placementId,
     sourceTokenId: String(raw.sourceTokenId || raw.source_token_id || '').trim(),
@@ -565,6 +606,7 @@ function toPublicAgentAccessTokenRecord(record, plainToken = '') {
     accessToken: plainToken || undefined,
     sourceTokenId: item.sourceTokenId,
     appId: item.appId,
+    accountId: item.accountId,
     environment: item.environment,
     placementId: item.placementId,
     status: item.status,
@@ -628,18 +670,123 @@ function parseBearerToken(req) {
   return String(matched[1] || '').trim()
 }
 
+function resolveControlPlaneAppRecord(appId = '') {
+  const normalizedAppId = String(appId || '').trim()
+  if (!normalizedAppId) return null
+  const apps = Array.isArray(state?.controlPlane?.apps) ? state.controlPlane.apps : []
+  return apps.find((item) => String(item?.appId || '').trim() === normalizedAppId) || null
+}
+
+function resolveAccountIdForApp(appId = '') {
+  const app = resolveControlPlaneAppRecord(appId)
+  if (!app) return DEFAULT_CONTROL_PLANE_ORG_ID
+  return normalizeControlPlaneAccountId(app.accountId || app.organizationId)
+}
+
+function normalizeScopeFilters(input = {}) {
+  const source = input && typeof input === 'object' ? input : {}
+  return {
+    appId: String(source.appId || source.app_id || '').trim(),
+    accountId: normalizeControlPlaneAccountId(
+      source.accountId || source.account_id || source.organizationId || source.organization_id,
+      '',
+    ),
+  }
+}
+
+function scopeHasFilters(scope = {}) {
+  return Boolean(String(scope?.appId || '').trim() || String(scope?.accountId || '').trim())
+}
+
+function appMatchesScope(app, scope = {}) {
+  if (!app || typeof app !== 'object') return false
+  const appId = String(app.appId || '').trim()
+  const accountId = normalizeControlPlaneAccountId(app.accountId || app.organizationId, '')
+  if (scope.appId && scope.appId !== appId) return false
+  if (scope.accountId && scope.accountId !== accountId) return false
+  return Boolean(appId)
+}
+
+function getScopedApps(scope = {}) {
+  const apps = Array.isArray(state?.controlPlane?.apps) ? state.controlPlane.apps : []
+  return apps.filter((item) => appMatchesScope(item, scope))
+}
+
+function recordMatchesScope(record, scope = {}) {
+  if (!record || typeof record !== 'object') return false
+  const appId = String(record.appId || '').trim()
+  const accountId = normalizeControlPlaneAccountId(record.accountId || resolveAccountIdForApp(appId), '')
+  if (scope.appId && scope.appId !== appId) return false
+  if (scope.accountId && scope.accountId !== accountId) return false
+  return true
+}
+
+function parseScopeFiltersFromSearchParams(searchParams) {
+  return normalizeScopeFilters({
+    appId: searchParams.get('appId') || searchParams.get('app_id') || '',
+    accountId: searchParams.get('accountId') || searchParams.get('account_id') || '',
+  })
+}
+
+function appendQueryParams(rawUrl, params = {}) {
+  const text = String(rawUrl || '').trim()
+  if (!text) return ''
+  let url
+  try {
+    url = new URL(text)
+  } catch {
+    return text
+  }
+
+  for (const [key, value] of Object.entries(params || {})) {
+    const normalizedKey = String(key || '').trim()
+    const normalizedValue = String(value || '').trim()
+    if (!normalizedKey || !normalizedValue) continue
+    url.searchParams.set(normalizedKey, normalizedValue)
+  }
+  return url.toString()
+}
+
+function injectTrackingScopeIntoAd(ad, scope = {}) {
+  if (!ad || typeof ad !== 'object') return ad
+  const params = {
+    [TRACKING_ACCOUNT_QUERY_PARAM]: String(scope.accountId || '').trim(),
+  }
+
+  const tracking = ad.tracking && typeof ad.tracking === 'object' ? { ...ad.tracking } : {}
+  const clickUrl = String(tracking.clickUrl || tracking.click_url || ad.targetUrl || '').trim()
+  if (clickUrl) {
+    const scopedClickUrl = appendQueryParams(clickUrl, params)
+    tracking.clickUrl = scopedClickUrl
+    tracking.click_url = scopedClickUrl
+  }
+
+  return {
+    ...ad,
+    tracking,
+  }
+}
+
+function injectTrackingScopeIntoAds(ads, scope = {}) {
+  if (!Array.isArray(ads)) return []
+  return ads.map((item) => injectTrackingScopeIntoAd(item, scope))
+}
+
 function createInitialControlPlaneState() {
   const app = buildControlPlaneAppRecord({
     appId: DEFAULT_CONTROL_PLANE_APP_ID,
+    accountId: DEFAULT_CONTROL_PLANE_ORG_ID,
     displayName: 'Simulator Chatbot',
     organizationId: DEFAULT_CONTROL_PLANE_ORG_ID,
   })
   const appEnvironments = ['sandbox', 'staging', 'prod'].map((environment) => buildControlPlaneEnvironmentRecord({
     appId: app.appId,
+    accountId: app.accountId,
     environment,
   }))
   const { keyRecord } = createControlPlaneKeyRecord({
     appId: app.appId,
+    accountId: app.accountId,
     environment: 'staging',
     keyName: 'primary-staging',
     secret: resolveBootstrapApiKey('staging'),
@@ -670,6 +817,7 @@ function ensureControlPlaneState(raw) {
   if (!appIdSet.has(DEFAULT_CONTROL_PLANE_APP_ID)) {
     const app = buildControlPlaneAppRecord({
       appId: DEFAULT_CONTROL_PLANE_APP_ID,
+      accountId: DEFAULT_CONTROL_PLANE_ORG_ID,
       displayName: 'Simulator Chatbot',
       organizationId: DEFAULT_CONTROL_PLANE_ORG_ID,
     })
@@ -680,12 +828,16 @@ function ensureControlPlaneState(raw) {
   const environmentRows = Array.isArray(raw.appEnvironments || raw.environments)
     ? (raw.appEnvironments || raw.environments)
     : []
+  const accountByAppId = new Map(apps.map((item) => [item.appId, normalizeControlPlaneAccountId(item.accountId)]))
   const appEnvironments = []
   const envDedup = new Set()
 
   for (const row of environmentRows) {
     const normalized = buildControlPlaneEnvironmentRecord(row)
     if (!appIdSet.has(normalized.appId)) continue
+    normalized.accountId = normalizeControlPlaneAccountId(
+      normalized.accountId || accountByAppId.get(normalized.appId),
+    )
     const dedupKey = `${normalized.appId}::${normalized.environment}`
     if (envDedup.has(dedupKey)) continue
     envDedup.add(dedupKey)
@@ -699,6 +851,7 @@ function ensureControlPlaneState(raw) {
       envDedup.add(dedupKey)
       appEnvironments.push(buildControlPlaneEnvironmentRecord({
         appId: app.appId,
+        accountId: accountByAppId.get(app.appId),
         environment,
       }))
     }
@@ -708,6 +861,10 @@ function ensureControlPlaneState(raw) {
   let apiKeys = keyRows
     .map((item) => normalizeControlPlaneKeyRecord(item))
     .filter((item) => item && appIdSet.has(item.appId))
+    .map((item) => ({
+      ...item,
+      accountId: normalizeControlPlaneAccountId(item.accountId || accountByAppId.get(item.appId)),
+    }))
   if (apiKeys.length === 0) {
     apiKeys = fallback.apiKeys
   }
@@ -724,6 +881,7 @@ function ensureControlPlaneState(raw) {
   if (!hasBootstrapKey) {
     const { keyRecord } = createControlPlaneKeyRecord({
       appId: DEFAULT_CONTROL_PLANE_APP_ID,
+      accountId: accountByAppId.get(DEFAULT_CONTROL_PLANE_APP_ID) || DEFAULT_CONTROL_PLANE_ORG_ID,
       environment: 'staging',
       keyName: 'primary-staging',
       secret: bootstrapSecret,
@@ -738,6 +896,10 @@ function ensureControlPlaneState(raw) {
   const integrationTokens = tokenRows
     .map((item) => normalizeIntegrationTokenRecord(item))
     .filter((item) => item && appIdSet.has(item.appId))
+    .map((item) => ({
+      ...item,
+      accountId: normalizeControlPlaneAccountId(item.accountId || accountByAppId.get(item.appId)),
+    }))
     .slice(0, MAX_INTEGRATION_TOKENS)
 
   const agentTokenRows = Array.isArray(raw.agentAccessTokens || raw.accessTokens)
@@ -746,6 +908,10 @@ function ensureControlPlaneState(raw) {
   const agentAccessTokens = agentTokenRows
     .map((item) => normalizeAgentAccessTokenRecord(item))
     .filter((item) => item && appIdSet.has(item.appId))
+    .map((item) => ({
+      ...item,
+      accountId: normalizeControlPlaneAccountId(item.accountId || accountByAppId.get(item.appId)),
+    }))
     .slice(0, MAX_AGENT_ACCESS_TOKENS)
 
   return {
@@ -757,20 +923,30 @@ function ensureControlPlaneState(raw) {
   }
 }
 
-function ensureControlPlaneAppAndEnvironment(appId, environment) {
+function ensureControlPlaneAppAndEnvironment(appId, environment, accountId = '') {
   const normalizedAppId = String(appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
   const normalizedEnvironment = normalizeControlPlaneEnvironment(environment)
+  const requestedAccountId = normalizeControlPlaneAccountId(accountId, '')
   const controlPlane = state.controlPlane
 
   let app = controlPlane.apps.find((item) => item.appId === normalizedAppId)
   if (!app) {
     app = buildControlPlaneAppRecord({
       appId: normalizedAppId,
+      accountId: requestedAccountId || DEFAULT_CONTROL_PLANE_ORG_ID,
       displayName: normalizedAppId,
       organizationId: DEFAULT_CONTROL_PLANE_ORG_ID,
     })
     controlPlane.apps.push(app)
+  } else {
+    const existingAccountId = normalizeControlPlaneAccountId(app.accountId || app.organizationId)
+    if (requestedAccountId && requestedAccountId !== existingAccountId) {
+      throw new Error(`appId ${normalizedAppId} is already bound to accountId ${existingAccountId}.`)
+    }
+    app.accountId = existingAccountId
+    app.organizationId = existingAccountId
   }
+  const effectiveAccountId = normalizeControlPlaneAccountId(app.accountId || app.organizationId)
 
   const dedupKey = `${normalizedAppId}::${normalizedEnvironment}`
   const hasEnvironment = controlPlane.appEnvironments.some((item) => (
@@ -779,12 +955,14 @@ function ensureControlPlaneAppAndEnvironment(appId, environment) {
   if (!hasEnvironment) {
     controlPlane.appEnvironments.push(buildControlPlaneEnvironmentRecord({
       appId: normalizedAppId,
+      accountId: effectiveAccountId,
       environment: normalizedEnvironment,
     }))
   }
 
   return {
     appId: normalizedAppId,
+    accountId: effectiveAccountId,
     environment: normalizedEnvironment,
   }
 }
@@ -883,6 +1061,7 @@ function normalizeAttachMvpPayload(payload, routeName) {
 
   const requestId = String(input.requestId || '').trim()
   const appId = requiredNonEmptyString(input.appId, 'appId')
+  const accountId = normalizeControlPlaneAccountId(input.accountId || input.account_id || resolveAccountIdForApp(appId))
   const sessionId = requiredNonEmptyString(input.sessionId, 'sessionId')
   const turnId = requiredNonEmptyString(input.turnId, 'turnId')
   const query = requiredNonEmptyString(input.query, 'query')
@@ -900,6 +1079,7 @@ function normalizeAttachMvpPayload(payload, routeName) {
   return {
     requestId,
     appId,
+    accountId,
     sessionId,
     turnId,
     query,
@@ -990,6 +1170,7 @@ function normalizeNextStepIntentCardPayload(payload, routeName) {
 
   const requestId = String(input.requestId || '').trim()
   const appId = requiredNonEmptyString(input.appId, 'appId')
+  const accountId = normalizeControlPlaneAccountId(input.accountId || input.account_id || resolveAccountIdForApp(appId))
   const sessionId = requiredNonEmptyString(input.sessionId, 'sessionId')
   const turnId = requiredNonEmptyString(input.turnId, 'turnId')
   const placementId = requiredNonEmptyString(input.placementId, 'placementId')
@@ -1026,6 +1207,7 @@ function normalizeNextStepIntentCardPayload(payload, routeName) {
   return {
     requestId,
     appId,
+    accountId,
     sessionId,
     turnId,
     userId,
@@ -1598,22 +1780,30 @@ function ensurePlacementStats(placementId) {
 }
 
 function recordDecision(payload) {
+  const appId = String(payload?.appId || '').trim()
+  const accountId = normalizeControlPlaneAccountId(payload?.accountId || resolveAccountIdForApp(appId), '')
   state.decisionLogs = [
     {
       id: createId('decision'),
       createdAt: nowIso(),
-      ...payload,
+      ...(payload && typeof payload === 'object' ? payload : {}),
+      appId,
+      accountId,
     },
     ...state.decisionLogs,
   ].slice(0, MAX_DECISION_LOGS)
 }
 
 function recordEvent(payload) {
+  const appId = String(payload?.appId || '').trim()
+  const accountId = normalizeControlPlaneAccountId(payload?.accountId || resolveAccountIdForApp(appId), '')
   state.eventLogs = [
     {
       id: createId('event'),
       createdAt: nowIso(),
-      ...payload,
+      ...(payload && typeof payload === 'object' ? payload : {}),
+      appId,
+      accountId,
     },
     ...state.eventLogs,
   ].slice(0, MAX_EVENT_LOGS)
@@ -1689,11 +1879,15 @@ function authorizeDevReset(req) {
 }
 
 function recordControlPlaneAudit(payload) {
+  const appId = String(payload?.appId || '').trim()
+  const accountId = normalizeControlPlaneAccountId(payload?.accountId || resolveAccountIdForApp(appId), '')
   state.controlPlaneAuditLogs = [
     {
       id: createId('cp_audit'),
       createdAt: nowIso(),
-      ...payload,
+      ...(payload && typeof payload === 'object' ? payload : {}),
+      appId,
+      accountId,
     },
     ...state.controlPlaneAuditLogs,
   ].slice(0, MAX_CONTROL_PLANE_AUDIT_LOGS)
@@ -1702,6 +1896,10 @@ function recordControlPlaneAudit(payload) {
 function queryControlPlaneAudits(searchParams) {
   const action = String(searchParams.get('action') || '').trim().toLowerCase()
   const appId = String(searchParams.get('appId') || '').trim()
+  const accountId = normalizeControlPlaneAccountId(
+    searchParams.get('accountId') || searchParams.get('account_id') || '',
+    '',
+  )
   const resourceType = String(searchParams.get('resourceType') || '').trim().toLowerCase()
   const resourceId = String(searchParams.get('resourceId') || '').trim()
   const environment = String(searchParams.get('environment') || '').trim().toLowerCase()
@@ -1714,6 +1912,9 @@ function queryControlPlaneAudits(searchParams) {
   }
   if (appId) {
     rows = rows.filter((row) => String(row?.appId || '') === appId)
+  }
+  if (accountId) {
+    rows = rows.filter((row) => normalizeControlPlaneAccountId(row?.accountId || resolveAccountIdForApp(row?.appId), '') === accountId)
   }
   if (resourceType) {
     rows = rows.filter((row) => String(row?.resourceType || '').toLowerCase() === resourceType)
@@ -1732,11 +1933,15 @@ function queryControlPlaneAudits(searchParams) {
 }
 
 function recordNetworkFlowObservation(payload) {
+  const appId = String(payload?.appId || '').trim()
+  const accountId = normalizeControlPlaneAccountId(payload?.accountId || resolveAccountIdForApp(appId), '')
   state.networkFlowLogs = [
     {
       id: createId('network_flow'),
       createdAt: nowIso(),
-      ...payload,
+      ...(payload && typeof payload === 'object' ? payload : {}),
+      appId,
+      accountId,
     },
     ...state.networkFlowLogs,
   ].slice(0, MAX_NETWORK_FLOW_LOGS)
@@ -1788,6 +1993,8 @@ function recordRuntimeNetworkStats(decisionResult, runtimeDebug, meta = {}) {
 
   recordNetworkFlowObservation({
     requestId: meta.requestId || '',
+    appId: String(meta.appId || '').trim(),
+    accountId: normalizeControlPlaneAccountId(meta.accountId || resolveAccountIdForApp(meta.appId), ''),
     placementId: meta.placementId || '',
     decisionResult: decisionResult || '',
     runtimeError,
@@ -1960,10 +2167,12 @@ function resolveIntentPostRulePolicy(request, placement) {
   }
 }
 
-function buildRuntimeAdRequest(request, placement, intentScore) {
+function buildRuntimeAdRequest(request, placement, intentScore, requestId = '') {
   const context = request?.context && typeof request.context === 'object' ? request.context : {}
   return {
+    requestId: String(requestId || '').trim(),
     appId: String(request?.appId || '').trim(),
+    accountId: normalizeControlPlaneAccountId(request?.accountId || resolveAccountIdForApp(request?.appId)),
     sessionId: String(request?.sessionId || '').trim(),
     userId: String(request?.userId || '').trim(),
     placementId: placement?.placementKey || placement?.placementId || ATTACH_MVP_PLACEMENT_KEY,
@@ -2081,6 +2290,7 @@ function buildDecisionInputSnapshot(request, placement, intentScore) {
 
   return {
     appId: String(request?.appId || '').trim(),
+    accountId: normalizeControlPlaneAccountId(request?.accountId || resolveAccountIdForApp(request?.appId), ''),
     sessionId: String(request?.sessionId || '').trim(),
     turnId: String(request?.turnId || '').trim(),
     event: String(request?.event || '').trim(),
@@ -2141,6 +2351,7 @@ function recordDecisionForRequest({ request, placement, requestId, decision, run
   const payload = {
     requestId,
     appId: request?.appId || '',
+    accountId: normalizeControlPlaneAccountId(request?.accountId || resolveAccountIdForApp(request?.appId), ''),
     sessionId: request?.sessionId || '',
     turnId: request?.turnId || '',
     event: request?.event || '',
@@ -2164,6 +2375,7 @@ function recordDecisionForRequest({ request, placement, requestId, decision, run
     eventType: 'decision',
     requestId: payload.requestId || '',
     appId: payload.appId || '',
+    accountId: payload.accountId || '',
     sessionId: payload.sessionId || '',
     turnId: payload.turnId || '',
     placementId: payload.placementId || '',
@@ -2177,6 +2389,8 @@ function recordDecisionForRequest({ request, placement, requestId, decision, run
 
 async function evaluateRequest(payload) {
   const request = payload && typeof payload === 'object' ? payload : {}
+  request.appId = String(request.appId || '').trim()
+  request.accountId = normalizeControlPlaneAccountId(request.accountId || resolveAccountIdForApp(request.appId))
   const context = request.context && typeof request.context === 'object' ? request.context : {}
   const intentScore = clampNumber(context.intentScore, 0, 1, 0)
   const intentClass = String(context.intentClass || '').trim().toLowerCase()
@@ -2380,7 +2594,7 @@ async function evaluateRequest(payload) {
     }
   }
 
-  const runtimeAdRequest = buildRuntimeAdRequest(request, placement, intentScore)
+  const runtimeAdRequest = buildRuntimeAdRequest(request, placement, intentScore, requestId)
   let runtimeResult
 
   try {
@@ -2390,6 +2604,8 @@ async function evaluateRequest(payload) {
     const decision = createDecision('no_fill', 'runtime_pipeline_fail_open', intentScore)
     recordRuntimeNetworkStats(decision.result, null, {
       requestId,
+      appId: request.appId,
+      accountId: request.accountId,
       placementId: placement.placementId,
       runtimeError: true,
       failOpenApplied: true,
@@ -2424,6 +2640,8 @@ async function evaluateRequest(payload) {
     const decision = createDecision('no_fill', 'runtime_no_offer', intentScore)
     recordRuntimeNetworkStats(decision.result, runtimeDebug, {
       requestId: runtimeRequestId,
+      appId: request.appId,
+      accountId: request.accountId,
       placementId: placement.placementId,
     })
     recordBlockedOrNoFill(placement)
@@ -2447,7 +2665,10 @@ async function evaluateRequest(payload) {
   const serveRevenue = round(0.03 + intentScore * 0.07, 4)
   recordServeCounters(placement, request, serveRevenue)
 
-  const ads = runtimeAds.map((ad) => ({
+  const scopedRuntimeAds = injectTrackingScopeIntoAds(runtimeAds, {
+    accountId: request.accountId,
+  })
+  const ads = scopedRuntimeAds.map((ad) => ({
     ...ad,
     disclosure: placement.disclosure || ad.disclosure || 'Sponsored',
   }))
@@ -2455,6 +2676,8 @@ async function evaluateRequest(payload) {
   const decision = createDecision('served', 'runtime_eligible', intentScore)
   recordRuntimeNetworkStats(decision.result, runtimeDebug, {
     requestId: runtimeRequestId,
+    appId: request.appId,
+    accountId: request.accountId,
     placementId: placement.placementId,
   })
   recordDecisionForRequest({
@@ -2508,22 +2731,215 @@ function applyPlacementPatch(placement, patch, configVersion) {
   return placement
 }
 
-function getDashboardStatePayload() {
-  const networkHealth = getAllNetworkHealth()
+function filterRowsByScope(rows, scope = {}) {
+  const list = Array.isArray(rows) ? rows : []
+  if (!scopeHasFilters(scope)) return list
+  return list.filter((row) => recordMatchesScope(row, scope))
+}
+
+function inferServeRevenueFromDecision(decisionRow) {
+  const score = clampNumber(decisionRow?.intentScore, 0, 1, 0)
+  return round(0.03 + score * 0.07, 4)
+}
+
+function computeScopedMetricsSummary(decisionRows, eventRows) {
+  const requests = decisionRows.length
+  const servedRows = decisionRows.filter((row) => String(row?.result || '') === 'served')
+  const served = servedRows.length
+  const impressions = served
+  const clicks = eventRows.filter((row) => {
+    if (String(row?.eventType || '') !== 'sdk_event') return false
+    const kind = String(row?.kind || row?.event || '').toLowerCase()
+    return kind === 'click'
+  }).length
+  const revenueUsd = round(
+    servedRows.reduce((sum, row) => sum + inferServeRevenueFromDecision(row), 0),
+    4,
+  )
+  const ctr = impressions > 0 ? clicks / impressions : 0
+  const ecpm = impressions > 0 ? (revenueUsd / impressions) * 1000 : 0
+  const fillRate = requests > 0 ? served / requests : 0
+
   return {
+    revenueUsd: round(revenueUsd, 2),
+    impressions,
+    clicks,
+    ctr: round(ctr, 4),
+    ecpm: round(ecpm, 2),
+    fillRate: round(fillRate, 4),
+  }
+}
+
+function computeScopedMetricsByDay(decisionRows, eventRows) {
+  const rows = createDailyMetricsSeed(7)
+  const byDate = new Map(rows.map((row) => [row.date, row]))
+
+  for (const row of decisionRows) {
+    const dateKey = String(row?.createdAt || '').slice(0, 10)
+    const target = byDate.get(dateKey)
+    if (!target) continue
+    if (String(row?.result || '') === 'served') {
+      target.impressions += 1
+      target.revenueUsd = round(target.revenueUsd + inferServeRevenueFromDecision(row), 4)
+    }
+  }
+
+  for (const row of eventRows) {
+    if (String(row?.eventType || '') !== 'sdk_event') continue
+    const kind = String(row?.kind || row?.event || '').toLowerCase()
+    if (kind !== 'click') continue
+    const dateKey = String(row?.createdAt || '').slice(0, 10)
+    const target = byDate.get(dateKey)
+    if (!target) continue
+    target.clicks += 1
+  }
+
+  return rows.map((row) => ({
+    day: new Date(`${row.date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short' }),
+    revenueUsd: round(row.revenueUsd, 2),
+    impressions: row.impressions,
+    clicks: row.clicks,
+  }))
+}
+
+function computeScopedMetricsByPlacement(decisionRows, eventRows) {
+  const decisionStatsByPlacement = new Map()
+  for (const row of decisionRows) {
+    const placementId = String(row?.placementId || '').trim()
+    if (!placementId) continue
+    if (!decisionStatsByPlacement.has(placementId)) {
+      decisionStatsByPlacement.set(placementId, {
+        requests: 0,
+        served: 0,
+        impressions: 0,
+        revenueUsd: 0,
+      })
+    }
+    const stats = decisionStatsByPlacement.get(placementId)
+    stats.requests += 1
+    if (String(row?.result || '') === 'served') {
+      stats.served += 1
+      stats.impressions += 1
+      stats.revenueUsd = round(stats.revenueUsd + inferServeRevenueFromDecision(row), 4)
+    }
+  }
+
+  const clicksByPlacement = new Map()
+  for (const row of eventRows) {
+    if (String(row?.eventType || '') !== 'sdk_event') continue
+    const kind = String(row?.kind || row?.event || '').toLowerCase()
+    if (kind !== 'click') continue
+    const placementId = String(row?.placementId || '').trim()
+    if (!placementId) continue
+    clicksByPlacement.set(placementId, (clicksByPlacement.get(placementId) || 0) + 1)
+  }
+
+  return state.placements.map((placement) => {
+    const stats = decisionStatsByPlacement.get(placement.placementId) || {
+      requests: 0,
+      served: 0,
+      impressions: 0,
+      revenueUsd: 0,
+    }
+    const clicks = clicksByPlacement.get(placement.placementId) || 0
+    const ctr = stats.impressions > 0 ? clicks / stats.impressions : 0
+    const fillRate = stats.requests > 0 ? stats.served / stats.requests : 0
+
+    return {
+      placementId: placement.placementId,
+      layer: layerFromPlacementKey(placement.placementKey),
+      revenueUsd: round(stats.revenueUsd, 2),
+      ctr: round(ctr, 4),
+      fillRate: round(fillRate, 4),
+    }
+  })
+}
+
+function computeScopedNetworkFlowStats(rows) {
+  const stats = createInitialNetworkFlowStats()
+  for (const row of rows) {
+    const networkErrors = Array.isArray(row?.networkErrors) ? row.networkErrors : []
+    const snapshotUsage = row?.snapshotUsage && typeof row.snapshotUsage === 'object' ? row.snapshotUsage : {}
+    const healthSummary = row?.networkHealthSummary && typeof row.networkHealthSummary === 'object'
+      ? row.networkHealthSummary
+      : { degraded: 0, open: 0 }
+    const hasNetworkError = networkErrors.length > 0
+    const hasSnapshotFallback = Object.values(snapshotUsage).some(Boolean)
+    const runtimeError = row?.runtimeError === true
+    const isDegraded = runtimeError || hasNetworkError || hasSnapshotFallback || healthSummary.degraded > 0
+      || healthSummary.open > 0
+    const decisionResult = String(row?.decisionResult || '')
+
+    stats.totalRuntimeEvaluations += 1
+    if (isDegraded) stats.degradedRuntimeEvaluations += 1
+    if (decisionResult === 'served' && isDegraded) stats.resilientServes += 1
+    if (decisionResult === 'served' && hasNetworkError) stats.servedWithNetworkErrors += 1
+    if (decisionResult === 'no_fill' && hasNetworkError) stats.noFillWithNetworkErrors += 1
+    if (decisionResult === 'error' || runtimeError) stats.runtimeErrors += 1
+    if (healthSummary.open > 0) stats.circuitOpenEvaluations += 1
+  }
+  return stats
+}
+
+function getDashboardStatePayload(scopeInput = {}) {
+  const scope = normalizeScopeFilters(scopeInput)
+  const hasScope = scopeHasFilters(scope)
+  const networkHealth = getAllNetworkHealth()
+  const scopedApps = getScopedApps(scope)
+  const hasScopedApps = scopedApps.length > 0
+  const shouldApplyScope = hasScope && hasScopedApps
+  const emptyScoped = hasScope && !hasScopedApps
+
+  const decisionLogs = emptyScoped
+    ? []
+    : (shouldApplyScope ? filterRowsByScope(state.decisionLogs, scope) : state.decisionLogs)
+  const eventLogs = emptyScoped
+    ? []
+    : (shouldApplyScope ? filterRowsByScope(state.eventLogs, scope) : state.eventLogs)
+  const controlPlaneAuditLogs = emptyScoped
+    ? []
+    : (shouldApplyScope ? filterRowsByScope(state.controlPlaneAuditLogs, scope) : state.controlPlaneAuditLogs)
+  const networkFlowLogs = emptyScoped
+    ? []
+    : (shouldApplyScope ? filterRowsByScope(state.networkFlowLogs, scope) : state.networkFlowLogs)
+
+  const metricsSummary = emptyScoped
+    ? computeScopedMetricsSummary([], [])
+    : shouldApplyScope
+    ? computeScopedMetricsSummary(decisionLogs, eventLogs)
+    : computeMetricsSummary()
+  const metricsByDay = emptyScoped
+    ? computeScopedMetricsByDay([], [])
+    : shouldApplyScope
+    ? computeScopedMetricsByDay(decisionLogs, eventLogs)
+    : computeMetricsByDay()
+  const metricsByPlacement = emptyScoped
+    ? []
+    : shouldApplyScope
+    ? computeScopedMetricsByPlacement(decisionLogs, eventLogs)
+    : computeMetricsByPlacement()
+  const networkFlowStats = emptyScoped
+    ? createInitialNetworkFlowStats()
+    : shouldApplyScope
+    ? computeScopedNetworkFlowStats(networkFlowLogs)
+    : state.networkFlowStats
+
+  return {
+    scope,
     placementConfigVersion: state.placementConfigVersion,
-    metricsSummary: computeMetricsSummary(),
-    metricsByDay: computeMetricsByDay(),
-    metricsByPlacement: computeMetricsByPlacement(),
-    placements: state.placements,
-    placementAuditLogs: state.placementAuditLogs,
-    controlPlaneAuditLogs: state.controlPlaneAuditLogs,
+    metricsSummary,
+    metricsByDay,
+    metricsByPlacement,
+    placements: emptyScoped ? [] : state.placements,
+    placementAuditLogs: emptyScoped ? [] : state.placementAuditLogs,
+    controlPlaneAuditLogs,
+    controlPlaneApps: shouldApplyScope ? scopedApps : state.controlPlane.apps,
     networkHealth,
     networkHealthSummary: summarizeNetworkHealthMap(networkHealth),
-    networkFlowStats: state.networkFlowStats,
-    networkFlowLogs: state.networkFlowLogs,
-    decisionLogs: state.decisionLogs,
-    eventLogs: state.eventLogs,
+    networkFlowStats,
+    networkFlowLogs,
+    decisionLogs,
+    eventLogs,
   }
 }
 
@@ -2561,6 +2977,7 @@ function resolveMediationConfigSnapshot(query = {}) {
     etag,
     payload: {
       appId,
+      accountId: resolveAccountIdForApp(appId),
       environment,
       placementId: placement.placementId,
       placementKey: placement.placementKey,
@@ -2576,10 +2993,14 @@ function resolveMediationConfigSnapshot(query = {}) {
 
 function buildQuickStartVerifyRequest(input = {}) {
   const appId = String(input.appId || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+  const accountId = normalizeControlPlaneAccountId(
+    input.accountId || input.account_id || resolveAccountIdForApp(appId),
+  )
   const environment = normalizeControlPlaneEnvironment(input.environment || 'staging')
   const placementId = String(input.placementId || '').trim() || 'chat_inline_v1'
   return {
     appId,
+    accountId,
     environment,
     placementId,
     sessionId: String(input.sessionId || '').trim() || `quickstart_session_${randomToken(8)}`,
@@ -2604,8 +3025,9 @@ function findActiveApiKeyBySecret(secret) {
   return matched[0] || null
 }
 
-function findActiveApiKey({ appId, environment, keyId = '' }) {
+function findActiveApiKey({ appId, accountId = '', environment, keyId = '' }) {
   const normalizedAppId = String(appId || '').trim()
+  const normalizedAccountId = normalizeControlPlaneAccountId(accountId, '')
   const normalizedEnvironment = normalizeControlPlaneEnvironment(environment)
   const normalizedKeyId = String(keyId || '').trim()
 
@@ -2617,6 +3039,9 @@ function findActiveApiKey({ appId, environment, keyId = '' }) {
 
   if (normalizedKeyId) {
     rows = rows.filter((item) => item.keyId === normalizedKeyId)
+  }
+  if (normalizedAccountId) {
+    rows = rows.filter((item) => normalizeControlPlaneAccountId(item.accountId || resolveAccountIdForApp(item.appId), '') === normalizedAccountId)
   }
 
   rows.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
@@ -2640,6 +3065,7 @@ function recordSecurityDenyAudit({
   reason,
   code,
   httpStatus,
+  accountId = '',
   appId = '',
   environment = '',
   resourceType = '',
@@ -2649,6 +3075,7 @@ function recordSecurityDenyAudit({
   recordControlPlaneAudit({
     action,
     actor: resolveAuditActor(req, 'security'),
+    accountId: normalizeControlPlaneAccountId(accountId || resolveAccountIdForApp(appId), ''),
     appId: String(appId || '').trim(),
     environment: String(environment || '').trim(),
     resourceType: String(resourceType || '').trim(),
@@ -2940,6 +3367,7 @@ function recordAttachSdkEvent(request) {
     eventType: 'sdk_event',
     requestId: request.requestId || '',
     appId: request.appId,
+    accountId: normalizeControlPlaneAccountId(request.accountId || resolveAccountIdForApp(request.appId), ''),
     sessionId: request.sessionId,
     turnId: request.turnId,
     query: request.query,
@@ -3051,6 +3479,7 @@ async function requestHandler(req, res) {
       const request = buildQuickStartVerifyRequest(payload)
       const activeKey = findActiveApiKey({
         appId: request.appId,
+        accountId: request.accountId,
         environment: request.environment,
       })
 
@@ -3078,6 +3507,7 @@ async function requestHandler(req, res) {
       const evaluateStartedAt = Date.now()
       const evaluate = await evaluateRequest({
         appId: request.appId,
+        accountId: request.accountId,
         sessionId: request.sessionId,
         turnId: request.turnId,
         event: ATTACH_MVP_EVENT,
@@ -3096,6 +3526,7 @@ async function requestHandler(req, res) {
       recordAttachSdkEvent({
         requestId: evaluate.requestId || '',
         appId: request.appId,
+        accountId: request.accountId,
         sessionId: request.sessionId,
         turnId: request.turnId,
         query: request.query,
@@ -3154,6 +3585,7 @@ async function requestHandler(req, res) {
     try {
       const payload = await readJsonBody(req)
       const appId = String(payload?.appId || payload?.app_id || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+      const accountId = normalizeControlPlaneAccountId(payload?.accountId || payload?.account_id || '', '')
       const requestedEnvironment = String(payload?.environment || payload?.env || '').trim().toLowerCase()
       const environment = requestedEnvironment || 'staging'
       if (!CONTROL_PLANE_ENVIRONMENTS.has(environment)) {
@@ -3168,6 +3600,7 @@ async function requestHandler(req, res) {
       const placementId = String(payload?.placementId || payload?.placement_id || '').trim() || 'chat_inline_v1'
       const activeKey = findActiveApiKey({
         appId,
+        accountId,
         environment,
       })
       if (!activeKey) {
@@ -3180,12 +3613,13 @@ async function requestHandler(req, res) {
         return
       }
 
-      ensureControlPlaneAppAndEnvironment(appId, environment)
+      const ensured = ensureControlPlaneAppAndEnvironment(appId, environment, accountId)
       cleanupExpiredIntegrationTokens()
 
       const { tokenRecord, token } = createIntegrationTokenRecord({
-        appId,
-        environment,
+        appId: ensured.appId,
+        accountId: ensured.accountId,
+        environment: ensured.environment,
         placementId,
         ttlMinutes,
         metadata: {
@@ -3199,6 +3633,7 @@ async function requestHandler(req, res) {
       recordControlPlaneAudit({
         action: 'integration_token_issue',
         actor: resolveAuditActor(req, 'dashboard'),
+        accountId: tokenRecord.accountId,
         appId: tokenRecord.appId,
         environment: tokenRecord.environment,
         resourceType: 'integration_token',
@@ -3483,6 +3918,7 @@ async function requestHandler(req, res) {
 
       const { tokenRecord, accessToken } = createAgentAccessTokenRecord({
         appId: sourceToken.appId,
+        accountId: sourceToken.accountId || resolveAccountIdForApp(sourceToken.appId),
         environment: sourceToken.environment,
         placementId: sourceToken.placementId,
         sourceTokenId: sourceToken.tokenId,
@@ -3504,6 +3940,7 @@ async function requestHandler(req, res) {
       recordControlPlaneAudit({
         action: 'integration_token_exchange',
         actor: resolveAuditActor(req, 'agent_exchange'),
+        accountId: tokenRecord.accountId,
         appId: tokenRecord.appId,
         environment: tokenRecord.environment,
         resourceType: 'agent_access_token',
@@ -3532,6 +3969,10 @@ async function requestHandler(req, res) {
 
   if (pathname === '/api/v1/public/credentials/keys' && req.method === 'GET') {
     const appId = String(requestUrl.searchParams.get('appId') || '').trim()
+    const accountId = normalizeControlPlaneAccountId(
+      requestUrl.searchParams.get('accountId') || requestUrl.searchParams.get('account_id') || '',
+      '',
+    )
     const statusQuery = String(requestUrl.searchParams.get('status') || '').trim().toLowerCase()
     const environmentQuery = String(
       requestUrl.searchParams.get('environment') || requestUrl.searchParams.get('env') || '',
@@ -3558,6 +3999,9 @@ async function requestHandler(req, res) {
     }
 
     let keys = [...state.controlPlane.apiKeys]
+    if (accountId) {
+      keys = keys.filter((row) => normalizeControlPlaneAccountId(row.accountId || resolveAccountIdForApp(row.appId), '') === accountId)
+    }
     if (appId) {
       keys = keys.filter((row) => row.appId === appId)
     }
@@ -3580,6 +4024,7 @@ async function requestHandler(req, res) {
     try {
       const payload = await readJsonBody(req)
       const appId = String(payload?.appId || payload?.app_id || '').trim() || DEFAULT_CONTROL_PLANE_APP_ID
+      const accountId = normalizeControlPlaneAccountId(payload?.accountId || payload?.account_id || '', '')
       const requestedEnvironment = String(payload?.environment || payload?.env || '').trim().toLowerCase()
       const environment = requestedEnvironment || 'staging'
       if (!CONTROL_PLANE_ENVIRONMENTS.has(environment)) {
@@ -3588,9 +4033,10 @@ async function requestHandler(req, res) {
       const keyName = String(payload?.name || payload?.keyName || payload?.key_name || '').trim()
         || `primary-${environment}`
 
-      const ensured = ensureControlPlaneAppAndEnvironment(appId, environment)
+      const ensured = ensureControlPlaneAppAndEnvironment(appId, environment, accountId)
       const { keyRecord, secret } = createControlPlaneKeyRecord({
         appId: ensured.appId,
+        accountId: ensured.accountId,
         environment: ensured.environment,
         keyName,
       })
@@ -3599,6 +4045,7 @@ async function requestHandler(req, res) {
       recordControlPlaneAudit({
         action: 'key_create',
         actor: resolveAuditActor(req, 'public_api'),
+        accountId: keyRecord.accountId,
         appId: keyRecord.appId,
         environment: keyRecord.environment,
         resourceType: 'api_key',
@@ -3643,6 +4090,7 @@ async function requestHandler(req, res) {
     const { keyRecord, secret } = createControlPlaneKeyRecord({
       keyId: target.keyId,
       appId: target.appId,
+      accountId: target.accountId || resolveAccountIdForApp(target.appId),
       environment: target.environment,
       keyName: target.keyName,
       createdAt: target.createdAt,
@@ -3656,11 +4104,13 @@ async function requestHandler(req, res) {
     target.status = 'active'
     target.revokedAt = ''
     target.maskedKey = keyRecord.maskedKey
+    target.accountId = keyRecord.accountId
     target.updatedAt = keyRecord.updatedAt
 
     recordControlPlaneAudit({
       action: 'key_rotate',
       actor: resolveAuditActor(req, 'public_api'),
+      accountId: target.accountId,
       appId: target.appId,
       environment: target.environment,
       resourceType: 'api_key',
@@ -3700,6 +4150,7 @@ async function requestHandler(req, res) {
       recordControlPlaneAudit({
         action: 'key_revoke',
         actor: resolveAuditActor(req, 'public_api'),
+        accountId: target.accountId || resolveAccountIdForApp(target.appId),
         appId: target.appId,
         environment: target.environment,
         resourceType: 'api_key',
@@ -3720,12 +4171,16 @@ async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/dashboard/state' && req.method === 'GET') {
-    sendJson(res, 200, getDashboardStatePayload())
+    const scope = parseScopeFiltersFromSearchParams(requestUrl.searchParams)
+    sendJson(res, 200, getDashboardStatePayload(scope))
     return
   }
 
   if (pathname === '/api/v1/dashboard/placements' && req.method === 'GET') {
-    sendJson(res, 200, { placements: state.placements })
+    const scope = parseScopeFiltersFromSearchParams(requestUrl.searchParams)
+    const hasScope = scopeHasFilters(scope)
+    const placements = hasScope && getScopedApps(scope).length === 0 ? [] : state.placements
+    sendJson(res, 200, { placements })
     return
   }
 
@@ -3765,6 +4220,7 @@ async function requestHandler(req, res) {
         recordControlPlaneAudit({
           action: 'config_publish',
           actor,
+          accountId: resolveAccountIdForApp(DEFAULT_CONTROL_PLANE_APP_ID),
           appId: DEFAULT_CONTROL_PLANE_APP_ID,
           environment: 'staging',
           resourceType: 'placement',
@@ -3795,17 +4251,23 @@ async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/dashboard/metrics/summary' && req.method === 'GET') {
-    sendJson(res, 200, computeMetricsSummary())
+    const scope = parseScopeFiltersFromSearchParams(requestUrl.searchParams)
+    const snapshot = getDashboardStatePayload(scope)
+    sendJson(res, 200, snapshot.metricsSummary)
     return
   }
 
   if (pathname === '/api/v1/dashboard/metrics/by-day' && req.method === 'GET') {
-    sendJson(res, 200, { items: computeMetricsByDay() })
+    const scope = parseScopeFiltersFromSearchParams(requestUrl.searchParams)
+    const snapshot = getDashboardStatePayload(scope)
+    sendJson(res, 200, { items: snapshot.metricsByDay })
     return
   }
 
   if (pathname === '/api/v1/dashboard/metrics/by-placement' && req.method === 'GET') {
-    sendJson(res, 200, { items: computeMetricsByPlacement() })
+    const scope = parseScopeFiltersFromSearchParams(requestUrl.searchParams)
+    const snapshot = getDashboardStatePayload(scope)
+    sendJson(res, 200, { items: snapshot.metricsByPlacement })
     return
   }
 
@@ -3813,8 +4275,9 @@ async function requestHandler(req, res) {
     const result = requestUrl.searchParams.get('result')
     const placementId = requestUrl.searchParams.get('placementId')
     const requestId = requestUrl.searchParams.get('requestId')
+    const scope = parseScopeFiltersFromSearchParams(requestUrl.searchParams)
 
-    let rows = [...state.decisionLogs]
+    let rows = filterRowsByScope(state.decisionLogs, scope)
 
     if (result) {
       rows = rows.filter((row) => row.result === result)
@@ -3836,8 +4299,9 @@ async function requestHandler(req, res) {
     const placementId = requestUrl.searchParams.get('placementId')
     const requestId = requestUrl.searchParams.get('requestId')
     const eventType = requestUrl.searchParams.get('eventType')
+    const scope = parseScopeFiltersFromSearchParams(requestUrl.searchParams)
 
-    let rows = [...state.eventLogs]
+    let rows = filterRowsByScope(state.eventLogs, scope)
 
     if (result) {
       rows = rows.filter((row) => String(row?.result || '') === result)
@@ -3874,12 +4338,16 @@ async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/dashboard/network-health' && req.method === 'GET') {
+    const scope = parseScopeFiltersFromSearchParams(requestUrl.searchParams)
     const networkHealth = getAllNetworkHealth()
+    const scopedFlowLogs = filterRowsByScope(state.networkFlowLogs, scope)
     sendJson(res, 200, {
       networkHealth,
       networkHealthSummary: summarizeNetworkHealthMap(networkHealth),
-      networkFlowStats: state.networkFlowStats,
-      items: state.networkFlowLogs,
+      networkFlowStats: scopeHasFilters(scope)
+        ? computeScopedNetworkFlowStats(scopedFlowLogs)
+        : state.networkFlowStats,
+      items: scopedFlowLogs,
     })
     return
   }
@@ -3888,6 +4356,7 @@ async function requestHandler(req, res) {
     const appId = requestUrl.searchParams.get('appId') || 'simulator-chatbot'
     sendJson(res, 200, {
       appId,
+      accountId: resolveAccountIdForApp(appId),
       placements: state.placements,
     })
     return
@@ -3958,6 +4427,7 @@ async function requestHandler(req, res) {
         const inferenceLatencyMs = Math.max(0, Date.now() - inferenceStartedAt)
         const result = await evaluateRequest({
           appId: request.appId,
+          accountId: request.accountId,
           sessionId: request.sessionId,
           turnId: request.turnId,
           userId: request.userId,
@@ -4011,6 +4481,7 @@ async function requestHandler(req, res) {
 
       const result = await evaluateRequest({
         appId: request.appId,
+        accountId: request.accountId,
         sessionId: request.sessionId,
         turnId: request.turnId,
         event: ATTACH_MVP_EVENT,
@@ -4067,6 +4538,7 @@ async function requestHandler(req, res) {
           eventType: 'sdk_event',
           requestId: request.requestId || '',
           appId: request.appId,
+          accountId: request.accountId,
           sessionId: request.sessionId,
           turnId: request.turnId,
           userId: request.userId,
@@ -4105,6 +4577,7 @@ async function requestHandler(req, res) {
           eventType: 'sdk_event',
           requestId: request.requestId || '',
           appId: request.appId,
+          accountId: request.accountId,
           sessionId: request.sessionId,
           turnId: request.turnId,
           query: request.query,

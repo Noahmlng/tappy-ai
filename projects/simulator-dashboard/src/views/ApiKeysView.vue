@@ -9,6 +9,7 @@ import {
   revokeApiKey,
   rotateApiKey,
 } from '../state/api-keys-state'
+import { scopeState, setScope } from '../state/scope-state'
 
 const createFormOpen = ref(false)
 
@@ -18,6 +19,10 @@ const draft = reactive({
 })
 
 const environmentOptions = ['sandbox', 'staging', 'prod']
+const scopeDraft = reactive({
+  appId: scopeState.appId,
+  accountId: scopeState.accountId,
+})
 
 const isBusy = computed(() => Boolean(apiKeysState.meta.loading || apiKeysState.meta.syncing))
 const syncMode = computed(() => String(apiKeysState.meta.syncMode || 'local'))
@@ -40,6 +45,14 @@ async function handleCreate() {
     environment: draft.environment,
   })
   createFormOpen.value = false
+}
+
+async function applyScope() {
+  setScope({
+    appId: scopeDraft.appId,
+    accountId: scopeDraft.accountId,
+  })
+  await hydrateApiKeys()
 }
 
 async function handleRotate(keyId) {
@@ -88,6 +101,37 @@ onMounted(() => {
         <span v-if="apiKeysState.meta.error"> · {{ apiKeysState.meta.error }}</span>
       </p>
 
+      <div class="panel">
+        <h3>Scope</h3>
+        <div class="form-grid">
+          <label>
+            Account ID
+            <input
+              v-model="scopeDraft.accountId"
+              class="input"
+              type="text"
+              maxlength="64"
+              placeholder="org_simulator"
+            >
+          </label>
+          <label>
+            App ID
+            <input
+              v-model="scopeDraft.appId"
+              class="input"
+              type="text"
+              maxlength="64"
+              placeholder="simulator-chatbot"
+            >
+          </label>
+        </div>
+        <div class="toolbar-actions">
+          <button class="button" type="button" :disabled="isBusy" @click="applyScope">
+            Apply Scope
+          </button>
+        </div>
+      </div>
+
       <div v-if="createFormOpen" class="panel create-key-form">
         <h3>New Key</h3>
         <div class="form-grid">
@@ -125,6 +169,8 @@ onMounted(() => {
       <table class="table">
         <thead>
           <tr>
+            <th>Account</th>
+            <th>App</th>
             <th>Name</th>
             <th>Environment</th>
             <th>Status</th>
@@ -136,6 +182,8 @@ onMounted(() => {
         </thead>
         <tbody>
           <tr v-for="row in rows" :key="row.keyId">
+            <td><code>{{ row.accountId }}</code></td>
+            <td><code>{{ row.appId }}</code></td>
             <td>{{ row.name }}</td>
             <td>{{ row.environment }}</td>
             <td>
@@ -168,7 +216,7 @@ onMounted(() => {
             </td>
           </tr>
           <tr v-if="rows.length === 0">
-            <td colspan="7" class="muted">No keys found.</td>
+            <td colspan="9" class="muted">No keys found.</td>
           </tr>
         </tbody>
       </table>

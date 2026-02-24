@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 
 import { controlPlaneClient } from '../api/control-plane-client'
+import { getScopeQuery } from './scope-state'
 
 const STORAGE_KEY = 'ai-network-simulator-dashboard-api-keys-v1'
 
@@ -23,9 +24,12 @@ function maskSecret(secret) {
 
 function defaultItems() {
   const rawSecret = buildRawSecret('staging')
+  const scope = getScopeQuery()
   return [
     {
       keyId: `key_${randomString(12)}`,
+      appId: String(scope.appId || 'simulator-chatbot'),
+      accountId: String(scope.accountId || 'org_simulator'),
       name: 'primary-staging',
       environment: 'staging',
       status: 'active',
@@ -51,6 +55,8 @@ function normalizeItem(item) {
 
   return {
     keyId,
+    appId: String(item.appId || item.app_id || 'simulator-chatbot'),
+    accountId: String(item.accountId || item.account_id || item.organizationId || 'org_simulator'),
     name: String(item.name || `key_${keyId.slice(0, 6)}`),
     environment: String(item.environment || item.env || 'staging'),
     status: status === 'revoked' ? 'revoked' : 'active',
@@ -98,9 +104,14 @@ function upsertItem(items, nextItem) {
 
 function createLocalItem(input) {
   const secret = buildRawSecret(input.environment || 'staging')
+  const scope = getScopeQuery()
+  const appId = String(input.appId || scope.appId || 'simulator-chatbot')
+  const accountId = String(input.accountId || scope.accountId || 'org_simulator')
   return {
     item: {
       keyId: `key_${randomString(12)}`,
+      appId,
+      accountId,
       name: String(input.name || 'primary'),
       environment: String(input.environment || 'staging'),
       status: 'active',
@@ -133,7 +144,7 @@ export async function hydrateApiKeys() {
   apiKeysState.meta.loading = true
 
   try {
-    const payload = await controlPlaneClient.credentials.listKeys()
+    const payload = await controlPlaneClient.credentials.listKeys(getScopeQuery())
     const keys = normalizeList(payload)
     if (keys.length > 0) {
       applyItems(keys)
@@ -162,10 +173,16 @@ export async function hydrateApiKeys() {
 export async function createApiKey(input) {
   apiKeysState.meta.syncing = true
   apiKeysState.meta.lastRevealedSecret = ''
+  const scope = getScopeQuery()
+  const scopedInput = {
+    ...(input || {}),
+    appId: String(input?.appId || scope.appId || 'simulator-chatbot'),
+    accountId: String(input?.accountId || scope.accountId || 'org_simulator'),
+  }
 
   try {
     if (apiKeysState.meta.syncMode === 'remote') {
-      const payload = await controlPlaneClient.credentials.createKey(input)
+      const payload = await controlPlaneClient.credentials.createKey(scopedInput)
       const normalized = normalizeItem(payload?.key || payload)
       const secret = String(payload?.secret || payload?.apiKey || '')
 
@@ -180,7 +197,7 @@ export async function createApiKey(input) {
       throw new Error('Unexpected create key response')
     }
 
-    const { item, rawSecret } = createLocalItem(input || {})
+    const { item, rawSecret } = createLocalItem(scopedInput)
     upsertItem(apiKeysState.items, item)
     persist(apiKeysState.items)
     apiKeysState.meta.lastSyncedAt = nowIso()
@@ -188,7 +205,7 @@ export async function createApiKey(input) {
     apiKeysState.meta.error = ''
   } catch (error) {
     apiKeysState.meta.syncMode = 'local'
-    const { item, rawSecret } = createLocalItem(input || {})
+    const { item, rawSecret } = createLocalItem(scopedInput)
     upsertItem(apiKeysState.items, item)
     persist(apiKeysState.items)
     apiKeysState.meta.lastSyncedAt = nowIso()

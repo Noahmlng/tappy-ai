@@ -2,8 +2,10 @@
 import { computed, onMounted } from 'vue'
 
 import { dashboardState, hydrateDashboardState } from '../state/dashboard-state'
+import { scopeState } from '../state/scope-state'
 
 const isLoading = computed(() => Boolean(dashboardState.meta?.loading))
+const scopeLabel = computed(() => `account=${scopeState.accountId} · app=${scopeState.appId}`)
 
 const integrationStatus = computed(() => {
   const hasPlacements = Array.isArray(dashboardState.placements) && dashboardState.placements.length > 0
@@ -104,6 +106,7 @@ onMounted(() => {
       </div>
 
       <p v-if="dashboardState.meta.lastSyncedAt" class="muted">
+        Scope: {{ scopeLabel }} ·
         Last synced: {{ new Date(dashboardState.meta.lastSyncedAt).toLocaleString() }}
       </p>
     </article>
