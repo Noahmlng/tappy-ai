@@ -23,8 +23,8 @@ CREATE INDEX IF NOT EXISTS idx_offer_inventory_norm_lexical_fts
   ON offer_inventory_norm
   USING GIN (
     to_tsvector(
-      'simple',
-      coalesce(title, '') || ' ' || coalesce(description, '') || ' ' || coalesce(array_to_string(tags, ' '), '')
+      'simple'::regconfig,
+      coalesce(title, '') || ' ' || coalesce(description, '')
     )
   );
 

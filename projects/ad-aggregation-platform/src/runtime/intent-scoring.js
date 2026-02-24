@@ -80,13 +80,20 @@ function inferIntentByRules(input = {}) {
 }
 
 function toUnifiedLlmIntent(payload = {}, fallback) {
-  const intentClass = cleanText(payload.intent_class || payload.intentClass).toLowerCase() || fallback.class
+  const fallbackUsed = Boolean(payload.fallbackUsed)
+  const inferredClass = cleanText(payload.intent_class || payload.intentClass).toLowerCase()
+  const inferredScore = clamp01(payload.intent_score ?? payload.intentScore)
+
+  const intentClass = fallbackUsed
+    ? fallback.class
+    : (inferredClass || fallback.class)
+
   return {
-    score: clamp01(payload.intent_score ?? payload.intentScore ?? fallback.score),
+    score: fallbackUsed ? clamp01(fallback.score) : inferredScore,
     class: intentClass,
-    source: payload.fallbackUsed ? fallback.source : 'llm',
+    source: fallbackUsed ? fallback.source : 'llm',
     llm: {
-      fallbackUsed: Boolean(payload.fallbackUsed),
+      fallbackUsed,
       fallbackReason: cleanText(payload.fallbackReason),
       model: cleanText(payload.model),
       validationErrors: Array.isArray(payload.validationErrors) ? payload.validationErrors.slice(0, 8) : [],
