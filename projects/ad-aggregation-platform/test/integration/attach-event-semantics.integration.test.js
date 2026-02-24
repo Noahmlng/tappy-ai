@@ -51,16 +51,32 @@ function createFetchMock({ decisionResult = 'no_fill', ads = [] } = {}) {
       })
     }
 
-    if (parsedUrl.pathname === '/api/v1/sdk/evaluate') {
+    if (parsedUrl.pathname === '/api/v2/bid') {
+      const firstAd = Array.isArray(ads) ? ads[0] : null
+      const served = decisionResult === 'served' && Boolean(firstAd)
+      const bid = served
+        ? {
+          price: 1.24,
+          advertiser: 'Mock Advertiser',
+          headline: String(firstAd.title || 'Mock headline'),
+          description: String(firstAd.description || ''),
+          cta_text: 'Learn more',
+          url: String(firstAd.targetUrl || 'https://example.com'),
+          image_url: '',
+          dsp: 'mock-dsp',
+          bidId: String(firstAd.adId || 'ad_mock_001'),
+          placement: 'CHAT_INLINE',
+          variant: 'base',
+        }
+        : null
       return createJsonResponse(200, {
         requestId: 'adreq_attach_001',
-        placementId: 'chat_inline_v1',
-        decision: {
-          result: decisionResult,
-          reason: decisionResult,
-          reasonDetail: decisionResult,
+        timestamp: '2026-01-01T00:00:00.000Z',
+        status: 'success',
+        message: bid ? 'Bid successful' : 'No bid',
+        data: {
+          bid,
         },
-        ads,
       })
     }
 
@@ -120,17 +136,32 @@ function createNextStepFetchMock({ decisionResult = 'served', ads = [] } = {}) {
       })
     }
 
-    if (parsedUrl.pathname === '/api/v1/sdk/evaluate') {
+    if (parsedUrl.pathname === '/api/v2/bid') {
+      const firstAd = Array.isArray(ads) ? ads[0] : null
+      const served = decisionResult === 'served' && Boolean(firstAd)
+      const bid = served
+        ? {
+          price: 2.11,
+          advertiser: 'Mock Advertiser',
+          headline: String(firstAd.title || 'Mock headline'),
+          description: String(firstAd.snippet || firstAd.description || ''),
+          cta_text: 'Learn more',
+          url: String(firstAd.target_url || firstAd.targetUrl || 'https://example.com'),
+          image_url: '',
+          dsp: 'mock-dsp',
+          bidId: String(firstAd.item_id || firstAd.itemId || firstAd.adId || 'next_item_001'),
+          placement: 'FOLLOW_UP',
+          variant: 'base',
+        }
+        : null
       return createJsonResponse(200, {
         requestId: 'adreq_next_step_001',
-        placementId: 'chat_followup_v1',
-        placementKey: 'next_step.intent_card',
-        decision: {
-          result: decisionResult,
-          reason: decisionResult,
-          reasonDetail: decisionResult,
+        timestamp: '2026-01-01T00:00:00.000Z',
+        status: 'success',
+        message: bid ? 'Bid successful' : 'No bid',
+        data: {
+          bid,
         },
-        ads,
       })
     }
 

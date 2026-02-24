@@ -334,7 +334,13 @@ export function createAdsSdkClient(options = {}) {
       error.payload = response.payload
       throw error
     }
-    return response
+    return {
+      ...response,
+      deprecated: true,
+      migration: response?.payload?.migration && typeof response.payload.migration === 'object'
+        ? response.payload.migration
+        : { endpoint: '/v2/bid' },
+    }
   }
 
   async function requestBid(input = {}, reqOptions = {}) {
@@ -414,6 +420,28 @@ export function createAdsSdkClient(options = {}) {
     return response
   }
 
+  function normalizeFlowAdsFromBid(bid) {
+    if (!bid || typeof bid !== 'object') return []
+    const adId = cleanText(bid.bidId || bid.item_id || bid.itemId)
+    const targetUrl = cleanText(bid.url)
+    if (!adId || !targetUrl) return []
+    return [
+      {
+        adId,
+        itemId: adId,
+        title: cleanText(bid.headline),
+        description: cleanText(bid.description),
+        targetUrl,
+        disclosure: 'Sponsored',
+        reason: cleanText(bid.dsp),
+        tracking: {
+          clickUrl: targetUrl,
+        },
+        sourceNetwork: cleanText(bid.dsp),
+      },
+    ]
+  }
+
   function buildDefaultFlowResult(placementId, placementKey) {
     return {
       failOpenApplied: false,
@@ -446,7 +474,10 @@ export function createAdsSdkClient(options = {}) {
     const schemaVersion = cleanText(input.schemaVersion)
     const sdkVersion = cleanText(input.sdkVersion)
     const configTimeoutMs = toFiniteNumber(input.configTimeoutMs, timeouts.config)
-    const evaluateTimeoutMs = toFiniteNumber(input.evaluateTimeoutMs, timeouts.evaluate)
+    const bidTimeoutMs = toFiniteNumber(
+      input.bidTimeoutMs,
+      toFiniteNumber(input.evaluateTimeoutMs, timeouts.bid),
+    )
     const eventsTimeoutMs = toFiniteNumber(input.eventsTimeoutMs, timeouts.events)
 
     const flow = buildDefaultFlowResult(placementId, placementKey)
@@ -509,35 +540,69 @@ export function createAdsSdkClient(options = {}) {
       return flow
     }
 
-    const evaluatePayload = input.evaluatePayload && typeof input.evaluatePayload === 'object'
-      ? input.evaluatePayload
+    const rawBidPayload = input.bidPayload && typeof input.bidPayload === 'object'
+      ? input.bidPayload
       : null
-    if (!evaluatePayload) {
+    if (!rawBidPayload) {
       flow.failOpenApplied = true
-      flow.error = 'missing_evaluate_payload'
+      flow.error = 'missing_bid_payload'
       flow.decision = normalizeDecision({
         result: 'error',
         reason: 'error',
-        reasonDetail: 'missing_evaluate_payload',
+        reasonDetail: 'missing_bid_payload',
         intentScore: toFiniteNumber(input.intentScore, 0),
       })
       return flow
     }
 
-    let evaluateResponse = null
+    const bidPayload = {
+      userId: cleanText(rawBidPayload.userId || input.userId || input.sessionId),
+      chatId: cleanText(rawBidPayload.chatId || input.chatId || input.sessionId),
+      placementId: cleanText(rawBidPayload.placementId || flow.placementId || placementId),
+      messages: Array.isArray(rawBidPayload.messages) ? rawBidPayload.messages : [],
+    }
+
+    if (bidPayload.messages.length === 0 && Array.isArray(input.messages)) {
+      bidPayload.messages = input.messages
+    }
+    if (bidPayload.messages.length === 0) {
+      const query = cleanText(rawBidPayload.query || input.query)
+      const answerText = cleanText(rawBidPayload.answerText || input.answerText)
+      const fallbackMessages = []
+      if (query) fallbackMessages.push({ role: 'user', content: query })
+      if (answerText) fallbackMessages.push({ role: 'assistant', content: answerText })
+      bidPayload.messages = fallbackMessages
+    }
+
+    const evaluatePayload = input.evaluatePayload && typeof input.evaluatePayload === 'object'
+      ? input.evaluatePayload
+      : null
+    let bidResponse = null
     try {
-      evaluateResponse = await evaluate(evaluatePayload, { timeoutMs: evaluateTimeoutMs })
-      const payload = evaluateResponse.payload && typeof evaluateResponse.payload === 'object'
-        ? evaluateResponse.payload
-        : {}
-      flow.requestId = cleanText(payload.requestId)
-      flow.placementId = cleanText(payload.placementId || flow.placementId)
-      flow.decision = normalizeDecision(payload.decision)
-      flow.ads = normalizeAds(payload.ads)
+      bidResponse = await requestBid(bidPayload, { timeoutMs: bidTimeoutMs })
+      const winnerBid = bidResponse?.data?.bid && typeof bidResponse.data.bid === 'object'
+        ? bidResponse.data.bid
+        : null
+      flow.requestId = cleanText(bidResponse?.requestId)
+      flow.placementId = cleanText(bidPayload.placementId || flow.placementId)
+      flow.decision = normalizeDecision(winnerBid
+        ? {
+          result: 'served',
+          reason: 'served',
+          reasonDetail: 'v2_bid_served',
+          intentScore: toFiniteNumber(input.intentScore, 0),
+        }
+        : {
+          result: 'no_fill',
+          reason: 'no_fill',
+          reasonDetail: 'v2_bid_no_fill',
+          intentScore: toFiniteNumber(input.intentScore, 0),
+        })
+      flow.ads = winnerBid ? normalizeFlowAdsFromBid(winnerBid) : []
       flow.evidence.evaluate = {
         ok: true,
-        status: evaluateResponse.status,
-        latencyMs: evaluateResponse.latencyMs,
+        status: toFiniteNumber(bidResponse?.evidence?.status, 200),
+        latencyMs: toFiniteNumber(bidResponse?.evidence?.latencyMs, 0),
         requestId: flow.requestId,
         result: flow.decision.result,
         reasonDetail: flow.decision.reasonDetail,
@@ -545,7 +610,7 @@ export function createAdsSdkClient(options = {}) {
       }
     } catch (error) {
       flow.failOpenApplied = true
-      flow.error = error instanceof Error ? error.message : 'evaluate_failed'
+      flow.error = error instanceof Error ? error.message : 'bid_failed'
       flow.evidence.evaluate = {
         ...buildEvaluateEvidence(),
         ok: false,
@@ -554,20 +619,29 @@ export function createAdsSdkClient(options = {}) {
       flow.decision = normalizeDecision({
         result: 'error',
         reason: 'error',
-        reasonDetail: 'evaluate_failed',
+        reasonDetail: 'bid_failed',
         intentScore: toFiniteNumber(input.intentScore, 0),
       })
       return flow
     }
 
-    const eventPayload = input.eventPayloadFactory && typeof input.eventPayloadFactory === 'function'
-      ? input.eventPayloadFactory({
+    const eventFactoryInput = {
+      requestId: flow.requestId,
+      bidPayload,
+      bidResponse,
+      evaluatePayload: evaluatePayload || bidPayload,
+      evaluateResponse: {
         requestId: flow.requestId,
-        evaluatePayload,
-        evaluateResponse: evaluateResponse?.payload || {},
         decision: flow.decision,
         ads: flow.ads,
-      })
+        data: bidResponse?.data || {},
+      },
+      decision: flow.decision,
+      ads: flow.ads,
+    }
+
+    const eventPayload = input.eventPayloadFactory && typeof input.eventPayloadFactory === 'function'
+      ? input.eventPayloadFactory(eventFactoryInput)
       : null
 
     if (eventPayload === null || eventPayload === undefined) {
@@ -615,7 +689,7 @@ export function createAdsSdkClient(options = {}) {
     const appId = cleanText(input.appId)
     const placementId = cleanText(input.placementId || ATTACH_DEFAULTS.placementId) || ATTACH_DEFAULTS.placementId
     const placementKey = cleanText(input.placementKey || ATTACH_DEFAULTS.placementKey) || ATTACH_DEFAULTS.placementKey
-    const evaluatePayload = {
+    const eventPayload = {
       sessionId: cleanText(input.sessionId),
       turnId: cleanText(input.turnId),
       query: cleanText(input.query),
@@ -623,8 +697,20 @@ export function createAdsSdkClient(options = {}) {
       intentScore: toFiniteNumber(input.intentScore, 0),
       locale: cleanText(input.locale) || 'en-US',
     }
+    const bidPayload = {
+      userId: cleanText(input.userId || input.sessionId),
+      chatId: cleanText(input.chatId || input.sessionId),
+      placementId,
+      messages: Array.isArray(input.messages) ? input.messages : [],
+    }
+    if (bidPayload.messages.length === 0) {
+      const fallback = []
+      if (eventPayload.query) fallback.push({ role: 'user', content: eventPayload.query })
+      if (eventPayload.answerText) fallback.push({ role: 'assistant', content: eventPayload.answerText })
+      bidPayload.messages = fallback
+    }
     if (appId) {
-      evaluatePayload.appId = appId
+      eventPayload.appId = appId
     }
 
     return runManagedFlow({
@@ -635,8 +721,9 @@ export function createAdsSdkClient(options = {}) {
       schemaVersion: cleanText(input.schemaVersion || ATTACH_DEFAULTS.schemaVersion) || ATTACH_DEFAULTS.schemaVersion,
       sdkVersion: cleanText(input.sdkVersion || ATTACH_DEFAULTS.sdkVersion) || ATTACH_DEFAULTS.sdkVersion,
       requestAt: cleanText(input.requestAt) || new Date().toISOString(),
-      evaluatePayload,
-      intentScore: evaluatePayload.intentScore,
+      bidPayload,
+      evaluatePayload: eventPayload,
+      intentScore: eventPayload.intentScore,
       eventPayloadFactory: ({ requestId, decision, ads }) => {
         const decisionResult = cleanText(decision?.result).toLowerCase()
         const firstAdId = cleanText(Array.isArray(ads) ? ads[0]?.adId : '')
@@ -644,7 +731,7 @@ export function createAdsSdkClient(options = {}) {
           return null
         }
         return {
-          ...evaluatePayload,
+          ...eventPayload,
           requestId,
           kind: 'impression',
           placementId,
@@ -652,7 +739,7 @@ export function createAdsSdkClient(options = {}) {
         }
       },
       configTimeoutMs: input.configTimeoutMs,
-      evaluateTimeoutMs: input.evaluateTimeoutMs,
+      bidTimeoutMs: input.bidTimeoutMs || input.evaluateTimeoutMs,
       eventsTimeoutMs: input.eventsTimeoutMs,
     })
   }
@@ -681,7 +768,7 @@ export function createAdsSdkClient(options = {}) {
       context.constraints = contextInput.constraints
     }
 
-    const evaluatePayload = {
+    const eventPayload = {
       sessionId: cleanText(input.sessionId),
       turnId: cleanText(input.turnId),
       userId: cleanText(input.userId),
@@ -690,8 +777,23 @@ export function createAdsSdkClient(options = {}) {
       placementKey,
       context,
     }
+    const bidPayload = {
+      userId: cleanText(input.userId || input.sessionId),
+      chatId: cleanText(input.chatId || input.sessionId),
+      placementId,
+      messages: Array.isArray(input.messages) ? input.messages : [],
+    }
+    if (bidPayload.messages.length === 0 && Array.isArray(context.recent_turns)) {
+      bidPayload.messages = context.recent_turns
+    }
+    if (bidPayload.messages.length === 0) {
+      const fallback = []
+      if (context.query) fallback.push({ role: 'user', content: context.query })
+      if (context.answerText) fallback.push({ role: 'assistant', content: context.answerText })
+      bidPayload.messages = fallback
+    }
     if (appId) {
-      evaluatePayload.appId = appId
+      eventPayload.appId = appId
     }
 
     return runManagedFlow({
@@ -702,16 +804,15 @@ export function createAdsSdkClient(options = {}) {
       schemaVersion: cleanText(input.schemaVersion || NEXT_STEP_DEFAULTS.schemaVersion) || NEXT_STEP_DEFAULTS.schemaVersion,
       sdkVersion: cleanText(input.sdkVersion || NEXT_STEP_DEFAULTS.sdkVersion) || NEXT_STEP_DEFAULTS.sdkVersion,
       requestAt: cleanText(input.requestAt) || new Date().toISOString(),
-      evaluatePayload,
+      bidPayload,
+      evaluatePayload: eventPayload,
       intentScore: context.intent_score,
-      eventPayloadFactory: ({ requestId, decision, evaluateResponse, ads }) => {
+      eventPayloadFactory: ({ requestId, decision, ads }) => {
         const decisionResult = cleanText(decision?.result).toLowerCase()
-        const rawAds = Array.isArray(evaluateResponse?.ads) ? evaluateResponse.ads : []
         const firstAdId = cleanText(
-          rawAds[0]?.adId
-            || rawAds[0]?.item_id
-            || rawAds[0]?.itemId
-            || ads[0]?.adId,
+          ads[0]?.adId
+            || ads[0]?.item_id
+            || ads[0]?.itemId,
         )
 
         if (decisionResult !== 'served' || !firstAdId) {
@@ -719,7 +820,7 @@ export function createAdsSdkClient(options = {}) {
         }
 
         return {
-          ...evaluatePayload,
+          ...eventPayload,
           requestId,
           kind: 'impression',
           adId: firstAdId,
@@ -728,7 +829,7 @@ export function createAdsSdkClient(options = {}) {
         }
       },
       configTimeoutMs: input.configTimeoutMs,
-      evaluateTimeoutMs: input.evaluateTimeoutMs,
+      bidTimeoutMs: input.bidTimeoutMs || input.evaluateTimeoutMs,
       eventsTimeoutMs: input.eventsTimeoutMs,
     })
   }

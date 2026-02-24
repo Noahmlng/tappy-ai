@@ -19,16 +19,22 @@ const __dirname = path.dirname(__filename)
 const PROJECT_ROOT = path.resolve(__dirname, '../../..')
 const STATE_DIR = path.join(PROJECT_ROOT, '.local')
 const DEFAULT_STATE_FILE_NAME = 'simulator-gateway-state.json'
-const SETTLEMENT_STORAGE_MODE = String(process.env.SIMULATOR_SETTLEMENT_STORAGE || 'auto').trim().toLowerCase()
-const SETTLEMENT_DB_URL = String(
-  process.env.SIMULATOR_SETTLEMENT_DB_URL
-  || process.env.SUPABASE_DB_URL
-  || process.env.DATABASE_URL
-  || '',
-).trim()
+const RAW_SETTLEMENT_STORAGE_MODE = String(process.env.SIMULATOR_SETTLEMENT_STORAGE || 'auto').trim().toLowerCase()
+const SETTLEMENT_STORAGE_MODE = RAW_SETTLEMENT_STORAGE_MODE === 'postgres'
+  ? 'supabase'
+  : RAW_SETTLEMENT_STORAGE_MODE
+const SETTLEMENT_STORAGE_COMPAT_POSTGRES = RAW_SETTLEMENT_STORAGE_MODE === 'postgres'
+const SETTLEMENT_DB_URL = String(process.env.SUPABASE_DB_URL || '').trim()
 const SETTLEMENT_FACT_TABLE = 'simulator_settlement_conversion_facts'
 const RUNTIME_DECISION_LOG_TABLE = 'simulator_runtime_decision_logs'
 const RUNTIME_EVENT_LOG_TABLE = 'simulator_runtime_event_logs'
+const CONTROL_PLANE_APPS_TABLE = 'control_plane_apps'
+const CONTROL_PLANE_APP_ENVIRONMENTS_TABLE = 'control_plane_app_environments'
+const CONTROL_PLANE_API_KEYS_TABLE = 'control_plane_api_keys'
+const CONTROL_PLANE_DASHBOARD_USERS_TABLE = 'control_plane_dashboard_users'
+const CONTROL_PLANE_DASHBOARD_SESSIONS_TABLE = 'control_plane_dashboard_sessions'
+const CONTROL_PLANE_INTEGRATION_TOKENS_TABLE = 'control_plane_integration_tokens'
+const CONTROL_PLANE_AGENT_ACCESS_TOKENS_TABLE = 'control_plane_agent_access_tokens'
 
 const PORT = Number(process.env.SIMULATOR_GATEWAY_PORT || 3100)
 const HOST = process.env.SIMULATOR_GATEWAY_HOST || '127.0.0.1'
@@ -304,11 +310,11 @@ function applyCollectionLimit(rows = [], limit = 0) {
 }
 
 function resolvePreferredSettlementStoreMode() {
-  if (REQUIRE_DURABLE_SETTLEMENT) return 'postgres'
-  if (REQUIRE_RUNTIME_LOG_DB_PERSISTENCE) return 'postgres'
-  if (SETTLEMENT_STORAGE_MODE === 'postgres') return 'postgres'
+  if (REQUIRE_DURABLE_SETTLEMENT) return 'supabase'
+  if (REQUIRE_RUNTIME_LOG_DB_PERSISTENCE) return 'supabase'
+  if (SETTLEMENT_STORAGE_MODE === 'supabase') return 'supabase'
   if (SETTLEMENT_STORAGE_MODE === 'state_file' || SETTLEMENT_STORAGE_MODE === 'json') return 'state_file'
-  return SETTLEMENT_DB_URL ? 'postgres' : 'state_file'
+  return SETTLEMENT_DB_URL ? 'supabase' : 'state_file'
 }
 
 const settlementStore = {
@@ -317,12 +323,36 @@ const settlementStore = {
   initPromise: null,
 }
 
+function isSupabaseSettlementStore() {
+  return settlementStore.mode === 'supabase' && Boolean(settlementStore.pool)
+}
+
 function isPostgresSettlementStore() {
-  return settlementStore.mode === 'postgres' && Boolean(settlementStore.pool)
+  return isSupabaseSettlementStore()
 }
 
 function shouldPersistConversionFactsToStateFile() {
   return !isPostgresSettlementStore()
+}
+
+function shouldPersistControlPlaneToStateFile() {
+  return !isSupabaseSettlementStore()
+}
+
+function normalizeDbTimestamp(value, fallback = '') {
+  if (!value) return fallback
+  const parsed = Date.parse(String(value))
+  if (!Number.isFinite(parsed)) return fallback
+  return new Date(parsed).toISOString()
+}
+
+function toDbNullableTimestamptz(value) {
+  const normalized = normalizeDbTimestamp(value, '')
+  return normalized || null
+}
+
+function toDbJsonObject(value, fallback = {}) {
+  return value && typeof value === 'object' ? value : fallback
 }
 
 function clampNumber(value, min, max, fallback) {
@@ -1600,7 +1630,7 @@ function ensureControlPlaneState(raw) {
   }
 }
 
-function ensureControlPlaneAppAndEnvironment(appId, environment, accountId = '') {
+async function ensureControlPlaneAppAndEnvironment(appId, environment, accountId = '') {
   const normalizedAppId = String(appId || '').trim()
   if (!normalizedAppId) {
     throw new Error('appId is required.')
@@ -1611,42 +1641,72 @@ function ensureControlPlaneAppAndEnvironment(appId, environment, accountId = '')
     throw new Error('accountId is required.')
   }
   const controlPlane = state.controlPlane
+  const now = nowIso()
 
-  let app = controlPlane.apps.find((item) => item.appId === normalizedAppId)
-  if (!app) {
-    app = buildControlPlaneAppRecord({
+  const existingApp = controlPlane.apps.find((item) => item.appId === normalizedAppId)
+  let appRecord = null
+  if (!existingApp) {
+    appRecord = buildControlPlaneAppRecord({
       appId: normalizedAppId,
       accountId: requestedAccountId,
       displayName: normalizedAppId,
       organizationId: requestedAccountId,
+      createdAt: now,
+      updatedAt: now,
     })
-    if (!app) {
+    if (!appRecord) {
       throw new Error('failed to create control plane app.')
     }
-    controlPlane.apps.push(app)
   } else {
-    const existingAccountId = normalizeControlPlaneAccountId(app.accountId || app.organizationId)
+    const existingAccountId = normalizeControlPlaneAccountId(existingApp.accountId || existingApp.organizationId)
     if (requestedAccountId && requestedAccountId !== existingAccountId) {
       throw new Error(`appId ${normalizedAppId} is already bound to accountId ${existingAccountId}.`)
     }
-    app.accountId = existingAccountId
-    app.organizationId = existingAccountId
+    appRecord = buildControlPlaneAppRecord({
+      ...existingApp,
+      accountId: existingAccountId,
+      organizationId: existingAccountId,
+      updatedAt: now,
+    })
   }
-  const effectiveAccountId = normalizeControlPlaneAccountId(app.accountId || app.organizationId)
+  const effectiveAccountId = normalizeControlPlaneAccountId(appRecord?.accountId || appRecord?.organizationId)
+  if (!effectiveAccountId) {
+    throw new Error('accountId is required.')
+  }
 
   const dedupKey = `${normalizedAppId}::${normalizedEnvironment}`
-  const hasEnvironment = controlPlane.appEnvironments.some((item) => (
+  const existingEnvironment = controlPlane.appEnvironments.find((item) => (
     `${item.appId}::${item.environment}` === dedupKey
   ))
-  if (!hasEnvironment) {
-    const environmentRecord = buildControlPlaneEnvironmentRecord({
+  let environmentRecord = null
+  if (!existingEnvironment) {
+    environmentRecord = buildControlPlaneEnvironmentRecord({
       appId: normalizedAppId,
       accountId: effectiveAccountId,
       environment: normalizedEnvironment,
+      createdAt: now,
+      updatedAt: now,
     })
+  } else {
+    environmentRecord = buildControlPlaneEnvironmentRecord({
+      ...existingEnvironment,
+      accountId: effectiveAccountId,
+      appId: normalizedAppId,
+      environment: normalizedEnvironment,
+      updatedAt: now,
+    })
+  }
+
+  if (isSupabaseSettlementStore()) {
+    await upsertControlPlaneAppToSupabase(appRecord)
     if (environmentRecord) {
-      controlPlane.appEnvironments.push(environmentRecord)
+      await upsertControlPlaneEnvironmentToSupabase(environmentRecord)
     }
+  }
+
+  upsertControlPlaneStateRecord('apps', 'appId', appRecord)
+  if (environmentRecord) {
+    upsertControlPlaneEnvironmentStateRecord(environmentRecord)
   }
 
   getPlacementConfigForApp(normalizedAppId, effectiveAccountId, { createIfMissing: true })
@@ -2719,6 +2779,895 @@ async function ensureRuntimeLogTables(pool) {
   `)
 }
 
+async function ensureControlPlaneTables(pool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ${CONTROL_PLANE_APPS_TABLE} (
+      id BIGSERIAL PRIMARY KEY,
+      app_id TEXT NOT NULL UNIQUE,
+      organization_id TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (status IN ('active', 'disabled', 'archived'))
+    )
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_control_plane_apps_org_status
+      ON ${CONTROL_PLANE_APPS_TABLE} (organization_id, status, created_at DESC)
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ${CONTROL_PLANE_APP_ENVIRONMENTS_TABLE} (
+      id BIGSERIAL PRIMARY KEY,
+      environment_id TEXT NOT NULL UNIQUE,
+      app_id TEXT NOT NULL REFERENCES ${CONTROL_PLANE_APPS_TABLE}(app_id) ON DELETE CASCADE ON UPDATE CASCADE,
+      environment TEXT NOT NULL,
+      api_base_url TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (app_id, environment),
+      CHECK (environment IN ('sandbox', 'staging', 'prod')),
+      CHECK (status IN ('active', 'disabled'))
+    )
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_control_plane_env_app_env
+      ON ${CONTROL_PLANE_APP_ENVIRONMENTS_TABLE} (app_id, environment)
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_control_plane_env_status
+      ON ${CONTROL_PLANE_APP_ENVIRONMENTS_TABLE} (status, created_at DESC)
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ${CONTROL_PLANE_API_KEYS_TABLE} (
+      id BIGSERIAL PRIMARY KEY,
+      key_id TEXT NOT NULL UNIQUE,
+      app_id TEXT NOT NULL REFERENCES ${CONTROL_PLANE_APPS_TABLE}(app_id) ON DELETE CASCADE ON UPDATE CASCADE,
+      environment TEXT NOT NULL,
+      key_name TEXT NOT NULL,
+      key_prefix TEXT NOT NULL,
+      secret_hash TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'active',
+      revoked_at TIMESTAMPTZ,
+      last_used_at TIMESTAMPTZ,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (environment IN ('sandbox', 'staging', 'prod')),
+      CHECK (status IN ('active', 'revoked'))
+    )
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_control_plane_api_keys_app_env_status
+      ON ${CONTROL_PLANE_API_KEYS_TABLE} (app_id, environment, status, created_at DESC)
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_control_plane_api_keys_prefix
+      ON ${CONTROL_PLANE_API_KEYS_TABLE} (key_prefix)
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_control_plane_api_keys_last_used
+      ON ${CONTROL_PLANE_API_KEYS_TABLE} (last_used_at DESC)
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ${CONTROL_PLANE_DASHBOARD_USERS_TABLE} (
+      id BIGSERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL UNIQUE,
+      email TEXT NOT NULL UNIQUE,
+      display_name TEXT NOT NULL,
+      account_id TEXT NOT NULL,
+      app_id TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active',
+      password_hash TEXT NOT NULL,
+      password_salt TEXT NOT NULL,
+      last_login_at TIMESTAMPTZ,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (status IN ('active', 'disabled'))
+    )
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_cp_dashboard_users_account
+      ON ${CONTROL_PLANE_DASHBOARD_USERS_TABLE} (account_id, created_at DESC)
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_cp_dashboard_users_app
+      ON ${CONTROL_PLANE_DASHBOARD_USERS_TABLE} (app_id, created_at DESC)
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ${CONTROL_PLANE_DASHBOARD_SESSIONS_TABLE} (
+      id BIGSERIAL PRIMARY KEY,
+      session_id TEXT NOT NULL UNIQUE,
+      token_hash TEXT NOT NULL UNIQUE,
+      user_id TEXT NOT NULL REFERENCES ${CONTROL_PLANE_DASHBOARD_USERS_TABLE}(user_id) ON DELETE CASCADE ON UPDATE CASCADE,
+      email TEXT NOT NULL,
+      account_id TEXT NOT NULL,
+      app_id TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active',
+      issued_at TIMESTAMPTZ NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      revoked_at TIMESTAMPTZ,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (status IN ('active', 'expired', 'revoked'))
+    )
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_cp_dashboard_sessions_user
+      ON ${CONTROL_PLANE_DASHBOARD_SESSIONS_TABLE} (user_id, issued_at DESC)
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_cp_dashboard_sessions_account
+      ON ${CONTROL_PLANE_DASHBOARD_SESSIONS_TABLE} (account_id, issued_at DESC)
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_cp_dashboard_sessions_status
+      ON ${CONTROL_PLANE_DASHBOARD_SESSIONS_TABLE} (status, expires_at DESC)
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ${CONTROL_PLANE_INTEGRATION_TOKENS_TABLE} (
+      id BIGSERIAL PRIMARY KEY,
+      token_id TEXT NOT NULL UNIQUE,
+      app_id TEXT NOT NULL REFERENCES ${CONTROL_PLANE_APPS_TABLE}(app_id) ON DELETE CASCADE ON UPDATE CASCADE,
+      account_id TEXT NOT NULL,
+      environment TEXT NOT NULL,
+      placement_id TEXT NOT NULL DEFAULT '',
+      token_hash TEXT NOT NULL UNIQUE,
+      token_type TEXT NOT NULL DEFAULT 'integration_token',
+      one_time BOOLEAN NOT NULL DEFAULT TRUE,
+      status TEXT NOT NULL DEFAULT 'active',
+      scope JSONB NOT NULL DEFAULT '{}'::jsonb,
+      issued_at TIMESTAMPTZ NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ,
+      revoked_at TIMESTAMPTZ,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (environment IN ('sandbox', 'staging', 'prod')),
+      CHECK (status IN ('active', 'used', 'expired', 'revoked'))
+    )
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_cp_integration_tokens_account
+      ON ${CONTROL_PLANE_INTEGRATION_TOKENS_TABLE} (account_id, app_id, issued_at DESC)
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_cp_integration_tokens_status
+      ON ${CONTROL_PLANE_INTEGRATION_TOKENS_TABLE} (status, expires_at DESC)
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ${CONTROL_PLANE_AGENT_ACCESS_TOKENS_TABLE} (
+      id BIGSERIAL PRIMARY KEY,
+      token_id TEXT NOT NULL UNIQUE,
+      app_id TEXT NOT NULL REFERENCES ${CONTROL_PLANE_APPS_TABLE}(app_id) ON DELETE CASCADE ON UPDATE CASCADE,
+      account_id TEXT NOT NULL,
+      environment TEXT NOT NULL,
+      placement_id TEXT NOT NULL DEFAULT '',
+      source_token_id TEXT NOT NULL DEFAULT '',
+      token_hash TEXT NOT NULL UNIQUE,
+      token_type TEXT NOT NULL DEFAULT 'agent_access_token',
+      status TEXT NOT NULL DEFAULT 'active',
+      scope JSONB NOT NULL DEFAULT '{}'::jsonb,
+      issued_at TIMESTAMPTZ NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (environment IN ('sandbox', 'staging', 'prod')),
+      CHECK (status IN ('active', 'expired', 'revoked'))
+    )
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_cp_agent_access_tokens_account
+      ON ${CONTROL_PLANE_AGENT_ACCESS_TOKENS_TABLE} (account_id, app_id, issued_at DESC)
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_cp_agent_access_tokens_status
+      ON ${CONTROL_PLANE_AGENT_ACCESS_TOKENS_TABLE} (status, expires_at DESC)
+  `)
+}
+
+function upsertControlPlaneStateRecord(collectionKey, recordKey, record, max = 0) {
+  if (!state?.controlPlane || typeof state.controlPlane !== 'object') {
+    state.controlPlane = createInitialControlPlaneState()
+  }
+  const rows = Array.isArray(state.controlPlane[collectionKey]) ? state.controlPlane[collectionKey] : []
+  const key = String(record?.[recordKey] || '').trim()
+  if (!key) return
+  const nextRows = [record, ...rows.filter((item) => String(item?.[recordKey] || '').trim() !== key)]
+  state.controlPlane[collectionKey] = max > 0 ? nextRows.slice(0, max) : nextRows
+}
+
+function upsertControlPlaneEnvironmentStateRecord(record) {
+  if (!record || typeof record !== 'object') return
+  if (!state?.controlPlane || typeof state.controlPlane !== 'object') {
+    state.controlPlane = createInitialControlPlaneState()
+  }
+  const rows = Array.isArray(state.controlPlane.appEnvironments) ? state.controlPlane.appEnvironments : []
+  const appId = String(record.appId || '').trim()
+  const environment = normalizeControlPlaneEnvironment(record.environment)
+  if (!appId) return
+  const dedupKey = `${appId}::${environment}`
+  state.controlPlane.appEnvironments = [
+    {
+      ...record,
+      appId,
+      environment,
+    },
+    ...rows.filter((item) => `${String(item?.appId || '').trim()}::${normalizeControlPlaneEnvironment(item?.environment)}` !== dedupKey),
+  ]
+}
+
+async function loadControlPlaneStateFromSupabase(pool) {
+  const db = pool || settlementStore.pool
+  if (!db) return createInitialControlPlaneState()
+
+  const [
+    appsResult,
+    environmentsResult,
+    keysResult,
+    usersResult,
+    sessionsResult,
+    integrationTokensResult,
+    agentTokensResult,
+  ] = await Promise.all([
+    db.query(`
+      SELECT
+        app_id,
+        organization_id AS account_id,
+        display_name,
+        status,
+        metadata,
+        created_at,
+        updated_at
+      FROM ${CONTROL_PLANE_APPS_TABLE}
+      ORDER BY updated_at DESC
+    `),
+    db.query(`
+      SELECT
+        env.environment_id,
+        env.app_id,
+        apps.organization_id AS account_id,
+        env.environment,
+        env.api_base_url,
+        env.status,
+        env.metadata,
+        env.created_at,
+        env.updated_at
+      FROM ${CONTROL_PLANE_APP_ENVIRONMENTS_TABLE} AS env
+      LEFT JOIN ${CONTROL_PLANE_APPS_TABLE} AS apps
+        ON apps.app_id = env.app_id
+      ORDER BY env.updated_at DESC
+    `),
+    db.query(`
+      SELECT
+        keys.key_id,
+        keys.app_id,
+        apps.organization_id AS account_id,
+        keys.environment,
+        keys.key_name,
+        keys.key_prefix,
+        keys.secret_hash,
+        keys.status,
+        keys.revoked_at,
+        keys.last_used_at,
+        keys.metadata,
+        keys.created_at,
+        keys.updated_at
+      FROM ${CONTROL_PLANE_API_KEYS_TABLE} AS keys
+      LEFT JOIN ${CONTROL_PLANE_APPS_TABLE} AS apps
+        ON apps.app_id = keys.app_id
+      ORDER BY keys.updated_at DESC
+    `),
+    db.query(`
+      SELECT
+        user_id,
+        email,
+        display_name,
+        account_id,
+        app_id,
+        status,
+        password_hash,
+        password_salt,
+        last_login_at,
+        metadata,
+        created_at,
+        updated_at
+      FROM ${CONTROL_PLANE_DASHBOARD_USERS_TABLE}
+      ORDER BY updated_at DESC
+    `),
+    db.query(`
+      SELECT
+        session_id,
+        token_hash,
+        user_id,
+        email,
+        account_id,
+        app_id,
+        status,
+        issued_at,
+        expires_at,
+        revoked_at,
+        metadata,
+        updated_at
+      FROM ${CONTROL_PLANE_DASHBOARD_SESSIONS_TABLE}
+      ORDER BY issued_at DESC
+    `),
+    db.query(`
+      SELECT
+        token_id,
+        app_id,
+        account_id,
+        environment,
+        placement_id,
+        token_hash,
+        token_type,
+        one_time,
+        status,
+        scope,
+        issued_at,
+        expires_at,
+        used_at,
+        revoked_at,
+        metadata,
+        updated_at
+      FROM ${CONTROL_PLANE_INTEGRATION_TOKENS_TABLE}
+      ORDER BY issued_at DESC
+    `),
+    db.query(`
+      SELECT
+        token_id,
+        app_id,
+        account_id,
+        environment,
+        placement_id,
+        source_token_id,
+        token_hash,
+        token_type,
+        status,
+        scope,
+        issued_at,
+        expires_at,
+        metadata,
+        updated_at
+      FROM ${CONTROL_PLANE_AGENT_ACCESS_TOKENS_TABLE}
+      ORDER BY issued_at DESC
+    `),
+  ])
+
+  const loaded = ensureControlPlaneState({
+    apps: Array.isArray(appsResult.rows)
+      ? appsResult.rows.map((row) => ({
+        appId: row.app_id,
+        accountId: row.account_id,
+        displayName: row.display_name,
+        status: row.status,
+        metadata: toDbJsonObject(row.metadata, {}),
+        createdAt: normalizeDbTimestamp(row.created_at, nowIso()),
+        updatedAt: normalizeDbTimestamp(row.updated_at, nowIso()),
+      }))
+      : [],
+    appEnvironments: Array.isArray(environmentsResult.rows)
+      ? environmentsResult.rows.map((row) => ({
+        environmentId: row.environment_id,
+        appId: row.app_id,
+        accountId: row.account_id,
+        environment: row.environment,
+        apiBaseUrl: row.api_base_url,
+        status: row.status,
+        metadata: toDbJsonObject(row.metadata, {}),
+        createdAt: normalizeDbTimestamp(row.created_at, nowIso()),
+        updatedAt: normalizeDbTimestamp(row.updated_at, nowIso()),
+      }))
+      : [],
+    apiKeys: Array.isArray(keysResult.rows)
+      ? keysResult.rows.map((row) => ({
+        keyId: row.key_id,
+        appId: row.app_id,
+        accountId: row.account_id,
+        environment: row.environment,
+        keyName: row.key_name,
+        keyPrefix: row.key_prefix,
+        secretHash: row.secret_hash,
+        status: row.status,
+        revokedAt: normalizeDbTimestamp(row.revoked_at, ''),
+        lastUsedAt: normalizeDbTimestamp(row.last_used_at, ''),
+        metadata: toDbJsonObject(row.metadata, {}),
+        createdAt: normalizeDbTimestamp(row.created_at, nowIso()),
+        updatedAt: normalizeDbTimestamp(row.updated_at, nowIso()),
+      }))
+      : [],
+    dashboardUsers: Array.isArray(usersResult.rows)
+      ? usersResult.rows.map((row) => ({
+        userId: row.user_id,
+        email: row.email,
+        displayName: row.display_name,
+        accountId: row.account_id,
+        appId: row.app_id,
+        status: row.status,
+        passwordHash: row.password_hash,
+        passwordSalt: row.password_salt,
+        lastLoginAt: normalizeDbTimestamp(row.last_login_at, ''),
+        metadata: toDbJsonObject(row.metadata, {}),
+        createdAt: normalizeDbTimestamp(row.created_at, nowIso()),
+        updatedAt: normalizeDbTimestamp(row.updated_at, nowIso()),
+      }))
+      : [],
+    dashboardSessions: Array.isArray(sessionsResult.rows)
+      ? sessionsResult.rows.map((row) => ({
+        sessionId: row.session_id,
+        tokenHash: row.token_hash,
+        userId: row.user_id,
+        email: row.email,
+        accountId: row.account_id,
+        appId: row.app_id,
+        status: row.status,
+        issuedAt: normalizeDbTimestamp(row.issued_at, nowIso()),
+        expiresAt: normalizeDbTimestamp(row.expires_at, nowIso()),
+        revokedAt: normalizeDbTimestamp(row.revoked_at, ''),
+        metadata: toDbJsonObject(row.metadata, {}),
+        updatedAt: normalizeDbTimestamp(row.updated_at, nowIso()),
+      }))
+      : [],
+    integrationTokens: Array.isArray(integrationTokensResult.rows)
+      ? integrationTokensResult.rows.map((row) => ({
+        tokenId: row.token_id,
+        appId: row.app_id,
+        accountId: row.account_id,
+        environment: row.environment,
+        placementId: row.placement_id,
+        tokenHash: row.token_hash,
+        tokenType: row.token_type || 'integration_token',
+        oneTime: row.one_time !== false,
+        status: row.status,
+        scope: toDbJsonObject(row.scope, createMinimalAgentScope()),
+        issuedAt: normalizeDbTimestamp(row.issued_at, nowIso()),
+        expiresAt: normalizeDbTimestamp(row.expires_at, nowIso()),
+        usedAt: normalizeDbTimestamp(row.used_at, ''),
+        revokedAt: normalizeDbTimestamp(row.revoked_at, ''),
+        metadata: toDbJsonObject(row.metadata, {}),
+        updatedAt: normalizeDbTimestamp(row.updated_at, nowIso()),
+      }))
+      : [],
+    agentAccessTokens: Array.isArray(agentTokensResult.rows)
+      ? agentTokensResult.rows.map((row) => ({
+        tokenId: row.token_id,
+        appId: row.app_id,
+        accountId: row.account_id,
+        environment: row.environment,
+        placementId: row.placement_id,
+        sourceTokenId: row.source_token_id,
+        tokenHash: row.token_hash,
+        tokenType: row.token_type || 'agent_access_token',
+        status: row.status,
+        scope: toDbJsonObject(row.scope, createMinimalAgentScope()),
+        issuedAt: normalizeDbTimestamp(row.issued_at, nowIso()),
+        expiresAt: normalizeDbTimestamp(row.expires_at, nowIso()),
+        metadata: toDbJsonObject(row.metadata, {}),
+        updatedAt: normalizeDbTimestamp(row.updated_at, nowIso()),
+      }))
+      : [],
+  })
+
+  state.controlPlane = loaded
+
+  for (const app of loaded.apps) {
+    const appId = String(app?.appId || '').trim()
+    const accountId = normalizeControlPlaneAccountId(app?.accountId || app?.organizationId, '')
+    if (!appId || !accountId) continue
+    getPlacementConfigForApp(appId, accountId, { createIfMissing: true })
+  }
+  if (DEFAULT_CONTROL_PLANE_APP_ID) {
+    syncLegacyPlacementSnapshot()
+  }
+
+  return loaded
+}
+
+async function upsertControlPlaneAppToSupabase(recordInput, pool = null) {
+  const record = buildControlPlaneAppRecord(recordInput)
+  if (!record) {
+    throw new Error('control plane app record is invalid.')
+  }
+  const db = pool || settlementStore.pool
+  if (!db) return record
+
+  await db.query(
+    `
+      INSERT INTO ${CONTROL_PLANE_APPS_TABLE} (
+        app_id,
+        organization_id,
+        display_name,
+        status,
+        metadata,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5::jsonb, $6::timestamptz, $7::timestamptz)
+      ON CONFLICT (app_id) DO UPDATE SET
+        organization_id = EXCLUDED.organization_id,
+        display_name = EXCLUDED.display_name,
+        status = EXCLUDED.status,
+        metadata = EXCLUDED.metadata,
+        updated_at = EXCLUDED.updated_at
+    `,
+    [
+      record.appId,
+      record.accountId,
+      record.displayName,
+      record.status,
+      JSON.stringify(toDbJsonObject(record.metadata, {})),
+      normalizeDbTimestamp(record.createdAt, nowIso()),
+      normalizeDbTimestamp(record.updatedAt, nowIso()),
+    ],
+  )
+  return record
+}
+
+async function upsertControlPlaneEnvironmentToSupabase(recordInput, pool = null) {
+  const record = buildControlPlaneEnvironmentRecord(recordInput)
+  if (!record) {
+    throw new Error('control plane app environment record is invalid.')
+  }
+  const db = pool || settlementStore.pool
+  if (!db) return record
+
+  await db.query(
+    `
+      INSERT INTO ${CONTROL_PLANE_APP_ENVIRONMENTS_TABLE} (
+        environment_id,
+        app_id,
+        environment,
+        api_base_url,
+        status,
+        metadata,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz, $8::timestamptz)
+      ON CONFLICT (app_id, environment) DO UPDATE SET
+        environment_id = EXCLUDED.environment_id,
+        api_base_url = EXCLUDED.api_base_url,
+        status = EXCLUDED.status,
+        metadata = EXCLUDED.metadata,
+        updated_at = EXCLUDED.updated_at
+    `,
+    [
+      record.environmentId,
+      record.appId,
+      record.environment,
+      record.apiBaseUrl,
+      record.status,
+      JSON.stringify(toDbJsonObject(record.metadata, {})),
+      normalizeDbTimestamp(record.createdAt, nowIso()),
+      normalizeDbTimestamp(record.updatedAt, nowIso()),
+    ],
+  )
+  return record
+}
+
+async function upsertControlPlaneKeyToSupabase(recordInput, pool = null) {
+  const record = normalizeControlPlaneKeyRecord(recordInput)
+  if (!record) {
+    throw new Error('control plane api key record is invalid.')
+  }
+  const db = pool || settlementStore.pool
+  if (!db) return record
+
+  await db.query(
+    `
+      INSERT INTO ${CONTROL_PLANE_API_KEYS_TABLE} (
+        key_id,
+        app_id,
+        environment,
+        key_name,
+        key_prefix,
+        secret_hash,
+        status,
+        revoked_at,
+        last_used_at,
+        metadata,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7,
+        $8::timestamptz, $9::timestamptz, $10::jsonb, $11::timestamptz, $12::timestamptz
+      )
+      ON CONFLICT (key_id) DO UPDATE SET
+        app_id = EXCLUDED.app_id,
+        environment = EXCLUDED.environment,
+        key_name = EXCLUDED.key_name,
+        key_prefix = EXCLUDED.key_prefix,
+        secret_hash = EXCLUDED.secret_hash,
+        status = EXCLUDED.status,
+        revoked_at = EXCLUDED.revoked_at,
+        last_used_at = EXCLUDED.last_used_at,
+        metadata = EXCLUDED.metadata,
+        updated_at = EXCLUDED.updated_at
+    `,
+    [
+      record.keyId,
+      record.appId,
+      record.environment,
+      record.keyName,
+      record.keyPrefix,
+      record.secretHash,
+      record.status,
+      toDbNullableTimestamptz(record.revokedAt),
+      toDbNullableTimestamptz(record.lastUsedAt),
+      JSON.stringify(toDbJsonObject(record.metadata, {})),
+      normalizeDbTimestamp(record.createdAt, nowIso()),
+      normalizeDbTimestamp(record.updatedAt, nowIso()),
+    ],
+  )
+  return record
+}
+
+async function upsertDashboardUserToSupabase(recordInput, pool = null) {
+  const record = normalizeDashboardUserRecord(recordInput)
+  if (!record) {
+    throw new Error('dashboard user record is invalid.')
+  }
+  const db = pool || settlementStore.pool
+  if (!db) return record
+
+  await db.query(
+    `
+      INSERT INTO ${CONTROL_PLANE_DASHBOARD_USERS_TABLE} (
+        user_id,
+        email,
+        display_name,
+        account_id,
+        app_id,
+        status,
+        password_hash,
+        password_salt,
+        last_login_at,
+        metadata,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8,
+        $9::timestamptz, $10::jsonb, $11::timestamptz, $12::timestamptz
+      )
+      ON CONFLICT (user_id) DO UPDATE SET
+        email = EXCLUDED.email,
+        display_name = EXCLUDED.display_name,
+        account_id = EXCLUDED.account_id,
+        app_id = EXCLUDED.app_id,
+        status = EXCLUDED.status,
+        password_hash = EXCLUDED.password_hash,
+        password_salt = EXCLUDED.password_salt,
+        last_login_at = EXCLUDED.last_login_at,
+        metadata = EXCLUDED.metadata,
+        updated_at = EXCLUDED.updated_at
+    `,
+    [
+      record.userId,
+      record.email,
+      record.displayName,
+      record.accountId,
+      record.appId,
+      record.status,
+      record.passwordHash,
+      record.passwordSalt,
+      toDbNullableTimestamptz(record.lastLoginAt),
+      JSON.stringify(toDbJsonObject(record.metadata, {})),
+      normalizeDbTimestamp(record.createdAt, nowIso()),
+      normalizeDbTimestamp(record.updatedAt, nowIso()),
+    ],
+  )
+  return record
+}
+
+async function upsertDashboardSessionToSupabase(recordInput, pool = null) {
+  const record = normalizeDashboardSessionRecord(recordInput)
+  if (!record) {
+    throw new Error('dashboard session record is invalid.')
+  }
+  const db = pool || settlementStore.pool
+  if (!db) return record
+
+  await db.query(
+    `
+      INSERT INTO ${CONTROL_PLANE_DASHBOARD_SESSIONS_TABLE} (
+        session_id,
+        token_hash,
+        user_id,
+        email,
+        account_id,
+        app_id,
+        status,
+        issued_at,
+        expires_at,
+        revoked_at,
+        metadata,
+        updated_at
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7,
+        $8::timestamptz, $9::timestamptz, $10::timestamptz,
+        $11::jsonb, $12::timestamptz
+      )
+      ON CONFLICT (session_id) DO UPDATE SET
+        token_hash = EXCLUDED.token_hash,
+        user_id = EXCLUDED.user_id,
+        email = EXCLUDED.email,
+        account_id = EXCLUDED.account_id,
+        app_id = EXCLUDED.app_id,
+        status = EXCLUDED.status,
+        issued_at = EXCLUDED.issued_at,
+        expires_at = EXCLUDED.expires_at,
+        revoked_at = EXCLUDED.revoked_at,
+        metadata = EXCLUDED.metadata,
+        updated_at = EXCLUDED.updated_at
+    `,
+    [
+      record.sessionId,
+      record.tokenHash,
+      record.userId,
+      record.email,
+      record.accountId,
+      record.appId,
+      record.status,
+      normalizeDbTimestamp(record.issuedAt, nowIso()),
+      normalizeDbTimestamp(record.expiresAt, nowIso()),
+      toDbNullableTimestamptz(record.revokedAt),
+      JSON.stringify(toDbJsonObject(record.metadata, {})),
+      normalizeDbTimestamp(record.updatedAt, nowIso()),
+    ],
+  )
+  return record
+}
+
+async function upsertIntegrationTokenToSupabase(recordInput, pool = null) {
+  const record = normalizeIntegrationTokenRecord(recordInput)
+  if (!record) {
+    throw new Error('integration token record is invalid.')
+  }
+  const db = pool || settlementStore.pool
+  if (!db) return record
+
+  await db.query(
+    `
+      INSERT INTO ${CONTROL_PLANE_INTEGRATION_TOKENS_TABLE} (
+        token_id,
+        app_id,
+        account_id,
+        environment,
+        placement_id,
+        token_hash,
+        token_type,
+        one_time,
+        status,
+        scope,
+        issued_at,
+        expires_at,
+        used_at,
+        revoked_at,
+        metadata,
+        updated_at
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9,
+        $10::jsonb, $11::timestamptz, $12::timestamptz,
+        $13::timestamptz, $14::timestamptz, $15::jsonb, $16::timestamptz
+      )
+      ON CONFLICT (token_id) DO UPDATE SET
+        app_id = EXCLUDED.app_id,
+        account_id = EXCLUDED.account_id,
+        environment = EXCLUDED.environment,
+        placement_id = EXCLUDED.placement_id,
+        token_hash = EXCLUDED.token_hash,
+        token_type = EXCLUDED.token_type,
+        one_time = EXCLUDED.one_time,
+        status = EXCLUDED.status,
+        scope = EXCLUDED.scope,
+        issued_at = EXCLUDED.issued_at,
+        expires_at = EXCLUDED.expires_at,
+        used_at = EXCLUDED.used_at,
+        revoked_at = EXCLUDED.revoked_at,
+        metadata = EXCLUDED.metadata,
+        updated_at = EXCLUDED.updated_at
+    `,
+    [
+      record.tokenId,
+      record.appId,
+      record.accountId,
+      record.environment,
+      record.placementId,
+      record.tokenHash,
+      record.tokenType || 'integration_token',
+      record.oneTime !== false,
+      record.status,
+      JSON.stringify(toDbJsonObject(record.scope, createMinimalAgentScope())),
+      normalizeDbTimestamp(record.issuedAt, nowIso()),
+      normalizeDbTimestamp(record.expiresAt, nowIso()),
+      toDbNullableTimestamptz(record.usedAt),
+      toDbNullableTimestamptz(record.revokedAt),
+      JSON.stringify(toDbJsonObject(record.metadata, {})),
+      normalizeDbTimestamp(record.updatedAt, nowIso()),
+    ],
+  )
+  return record
+}
+
+async function upsertAgentAccessTokenToSupabase(recordInput, pool = null) {
+  const record = normalizeAgentAccessTokenRecord(recordInput)
+  if (!record) {
+    throw new Error('agent access token record is invalid.')
+  }
+  const db = pool || settlementStore.pool
+  if (!db) return record
+
+  await db.query(
+    `
+      INSERT INTO ${CONTROL_PLANE_AGENT_ACCESS_TOKENS_TABLE} (
+        token_id,
+        app_id,
+        account_id,
+        environment,
+        placement_id,
+        source_token_id,
+        token_hash,
+        token_type,
+        status,
+        scope,
+        issued_at,
+        expires_at,
+        metadata,
+        updated_at
+      )
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9,
+        $10::jsonb, $11::timestamptz, $12::timestamptz, $13::jsonb, $14::timestamptz
+      )
+      ON CONFLICT (token_id) DO UPDATE SET
+        app_id = EXCLUDED.app_id,
+        account_id = EXCLUDED.account_id,
+        environment = EXCLUDED.environment,
+        placement_id = EXCLUDED.placement_id,
+        source_token_id = EXCLUDED.source_token_id,
+        token_hash = EXCLUDED.token_hash,
+        token_type = EXCLUDED.token_type,
+        status = EXCLUDED.status,
+        scope = EXCLUDED.scope,
+        issued_at = EXCLUDED.issued_at,
+        expires_at = EXCLUDED.expires_at,
+        metadata = EXCLUDED.metadata,
+        updated_at = EXCLUDED.updated_at
+    `,
+    [
+      record.tokenId,
+      record.appId,
+      record.accountId,
+      record.environment,
+      record.placementId,
+      record.sourceTokenId,
+      record.tokenHash,
+      record.tokenType || 'agent_access_token',
+      record.status,
+      JSON.stringify(toDbJsonObject(record.scope, createMinimalAgentScope())),
+      normalizeDbTimestamp(record.issuedAt, nowIso()),
+      normalizeDbTimestamp(record.expiresAt, nowIso()),
+      JSON.stringify(toDbJsonObject(record.metadata, {})),
+      normalizeDbTimestamp(record.updatedAt, nowIso()),
+    ],
+  )
+  return record
+}
+
 async function upsertConversionFactToPostgres(fact, pool = null) {
   const db = pool || settlementStore.pool
   if (!db) return null
@@ -2794,48 +3743,6 @@ async function findConversionFactByIdempotencyKeyFromPostgres(idempotencyKey) {
   return mapPostgresRowToConversionFact(result.rows[0])
 }
 
-async function migrateLegacyConversionFactsToPostgres(rows = []) {
-  const db = settlementStore.pool
-  if (!db) return { inserted: 0, duplicates: 0 }
-  let inserted = 0
-  let duplicates = 0
-  for (const row of rows) {
-    const fact = normalizeConversionFact(row)
-    const created = await upsertConversionFactToPostgres(fact, db)
-    if (created) inserted += 1
-    else duplicates += 1
-  }
-  return { inserted, duplicates }
-}
-
-async function migrateLegacyDecisionLogsToPostgres(rows = []) {
-  const db = settlementStore.pool
-  if (!db) return { inserted: 0, duplicates: 0 }
-  let inserted = 0
-  let duplicates = 0
-  for (const row of rows) {
-    const normalized = normalizeRuntimeDecisionLogRecord(row)
-    const created = await upsertDecisionLogToPostgres(normalized, db)
-    if (created) inserted += 1
-    else duplicates += 1
-  }
-  return { inserted, duplicates }
-}
-
-async function migrateLegacyEventLogsToPostgres(rows = []) {
-  const db = settlementStore.pool
-  if (!db) return { inserted: 0, duplicates: 0 }
-  let inserted = 0
-  let duplicates = 0
-  for (const row of rows) {
-    const normalized = normalizeRuntimeEventLogRecord(row)
-    const created = await upsertEventLogToPostgres(normalized, db)
-    if (created) inserted += 1
-    else duplicates += 1
-  }
-  return { inserted, duplicates }
-}
-
 async function ensureSettlementStoreReady() {
   if (settlementStore.initPromise) {
     await settlementStore.initPromise
@@ -2843,18 +3750,19 @@ async function ensureSettlementStoreReady() {
   }
 
   settlementStore.initPromise = (async () => {
-    if (settlementStore.mode !== 'postgres') {
-      if (REQUIRE_DURABLE_SETTLEMENT) {
+    const requiresSupabasePersistence = REQUIRE_DURABLE_SETTLEMENT || REQUIRE_RUNTIME_LOG_DB_PERSISTENCE
+    if (settlementStore.mode !== 'supabase') {
+      if (requiresSupabasePersistence) {
         throw new Error(
-          'durable settlement storage is required, but simulator settlement mode resolved to state_file.',
+          'supabase persistence is required, but simulator settlement mode resolved to state_file.',
         )
       }
       return
     }
     if (!SETTLEMENT_DB_URL) {
-      if (REQUIRE_DURABLE_SETTLEMENT) {
+      if (requiresSupabasePersistence) {
         throw new Error(
-          'durable settlement storage is required, but SIMULATOR_SETTLEMENT_DB_URL/DATABASE_URL is missing.',
+          'supabase persistence is required, but SUPABASE_DB_URL is missing.',
         )
       }
       settlementStore.mode = 'state_file'
@@ -2872,48 +3780,19 @@ async function ensureSettlementStoreReady() {
       await pool.query('SELECT 1')
       await ensureSettlementFactTable(pool)
       await ensureRuntimeLogTables(pool)
+      await ensureControlPlaneTables(pool)
       settlementStore.pool = pool
-      const legacyFacts = Array.isArray(state?.conversionFacts)
-        ? state.conversionFacts.map((item) => normalizeConversionFact(item))
-        : []
-      const legacyDecisionLogs = Array.isArray(state?.decisionLogs)
-        ? state.decisionLogs.map((item) => normalizeRuntimeDecisionLogRecord(item))
-        : []
-      const legacyEventLogs = Array.isArray(state?.eventLogs)
-        ? state.eventLogs.map((item) => normalizeRuntimeEventLogRecord(item))
-        : []
-      if (legacyFacts.length > 0) {
-        const migrated = await migrateLegacyConversionFactsToPostgres(legacyFacts)
-        console.log(
-          `[simulator-gateway] settlement legacy facts migrated to postgres inserted=${migrated.inserted} duplicates=${migrated.duplicates}`,
-        )
-        state.conversionFacts = []
-      }
-      if (legacyDecisionLogs.length > 0) {
-        const migrated = await migrateLegacyDecisionLogsToPostgres(legacyDecisionLogs)
-        console.log(
-          `[simulator-gateway] decision logs migrated to postgres inserted=${migrated.inserted} duplicates=${migrated.duplicates}`,
-        )
-      }
-      if (legacyEventLogs.length > 0) {
-        const migrated = await migrateLegacyEventLogsToPostgres(legacyEventLogs)
-        console.log(
-          `[simulator-gateway] event logs migrated to postgres inserted=${migrated.inserted} duplicates=${migrated.duplicates}`,
-        )
-      }
-      if (legacyFacts.length > 0) {
-        persistState(state)
-      }
+      await loadControlPlaneStateFromSupabase(pool)
     } catch (error) {
-      if (REQUIRE_DURABLE_SETTLEMENT) {
+      if (requiresSupabasePersistence) {
         throw new Error(
-          `durable settlement storage init failed: ${error instanceof Error ? error.message : String(error)}`,
+          `supabase persistence init failed: ${error instanceof Error ? error.message : String(error)}`,
         )
       }
       settlementStore.mode = 'state_file'
       settlementStore.pool = null
       console.error(
-        '[simulator-gateway] settlement store postgres init failed, fallback to state_file:',
+        '[simulator-gateway] settlement store supabase init failed, fallback to state_file:',
         error instanceof Error ? error.message : String(error),
       )
     }
@@ -3168,6 +4047,9 @@ function persistState(state) {
     fs.mkdirSync(STATE_DIR, { recursive: true })
     const persistedState = {
       ...state,
+      controlPlane: shouldPersistControlPlaneToStateFile()
+        ? ensureControlPlaneState(state?.controlPlane)
+        : createInitialControlPlaneState(),
       conversionFacts: shouldPersistConversionFactsToStateFile()
         ? (Array.isArray(state?.conversionFacts) ? state.conversionFacts : [])
         : [],
@@ -5605,6 +6487,54 @@ function findActiveApiKey({ appId, accountId = '', environment, keyId = '' }) {
   return rows[0] || null
 }
 
+async function ensureBootstrapApiKeyForScope({
+  appId,
+  accountId = '',
+  environment = 'staging',
+  actor = 'bootstrap',
+} = {}) {
+  if (STRICT_MANUAL_INTEGRATION) return null
+
+  const normalizedAppId = String(appId || '').trim()
+  const normalizedAccountId = normalizeControlPlaneAccountId(accountId || resolveAccountIdForApp(normalizedAppId), '')
+  const normalizedEnvironment = normalizeControlPlaneEnvironment(environment)
+  if (!normalizedAppId || !normalizedAccountId) return null
+
+  const existing = findActiveApiKey({
+    appId: normalizedAppId,
+    accountId: normalizedAccountId,
+    environment: normalizedEnvironment,
+  })
+  if (existing) return existing
+
+  const { keyRecord } = createControlPlaneKeyRecord({
+    appId: normalizedAppId,
+    accountId: normalizedAccountId,
+    environment: normalizedEnvironment,
+    keyName: `bootstrap-${normalizedEnvironment}`,
+  })
+
+  if (isSupabaseSettlementStore()) {
+    await upsertControlPlaneKeyToSupabase(keyRecord)
+  }
+  upsertControlPlaneStateRecord('apiKeys', 'keyId', keyRecord)
+  recordControlPlaneAudit({
+    action: 'key_create',
+    actor,
+    accountId: keyRecord.accountId,
+    appId: keyRecord.appId,
+    environment: keyRecord.environment,
+    resourceType: 'api_key',
+    resourceId: keyRecord.keyId,
+    metadata: {
+      keyName: keyRecord.keyName,
+      status: keyRecord.status,
+      bootstrap: true,
+    },
+  })
+  return keyRecord
+}
+
 function hasRequiredAgentScope(scope, requiredScope) {
   if (!requiredScope) return true
   if (!scope || typeof scope !== 'object') return false
@@ -5616,7 +6546,7 @@ function getExchangeForbiddenFields(payload) {
   return [...TOKEN_EXCHANGE_FORBIDDEN_FIELDS].filter((key) => Object.prototype.hasOwnProperty.call(payload, key))
 }
 
-function issueDashboardSession(user, options = {}) {
+async function issueDashboardSession(user, options = {}) {
   const inputUser = normalizeDashboardUserRecord(user)
   if (!inputUser) {
     throw new Error('dashboard user is invalid.')
@@ -5630,22 +6560,33 @@ function issueDashboardSession(user, options = {}) {
     ttlSeconds: options.ttlSeconds,
     metadata: options.metadata,
   })
-  state.controlPlane.dashboardSessions = [sessionRecord, ...state.controlPlane.dashboardSessions]
-    .slice(0, MAX_DASHBOARD_SESSIONS)
+  if (isSupabaseSettlementStore()) {
+    await upsertDashboardSessionToSupabase(sessionRecord)
+  }
+  upsertControlPlaneStateRecord('dashboardSessions', 'sessionId', sessionRecord, MAX_DASHBOARD_SESSIONS)
   return {
     sessionRecord,
     accessToken,
   }
 }
 
-function revokeDashboardSessionByToken(accessToken) {
+async function revokeDashboardSessionByToken(accessToken) {
   const session = findDashboardSessionByPlaintext(accessToken)
   if (!session) return null
   if (String(session.status || '').toLowerCase() !== 'revoked') {
-    session.status = 'revoked'
-    session.revokedAt = nowIso()
-    session.updatedAt = session.revokedAt
+    const revokedAt = nowIso()
+    const nextSession = {
+      ...session,
+      status: 'revoked',
+      revokedAt,
+      updatedAt: revokedAt,
+    }
+    if (isSupabaseSettlementStore()) {
+      await upsertDashboardSessionToSupabase(nextSession)
+    }
+    Object.assign(session, nextSession)
   }
+  upsertControlPlaneStateRecord('dashboardSessions', 'sessionId', session, MAX_DASHBOARD_SESSIONS)
   return session
 }
 
@@ -5679,7 +6620,7 @@ function recordSecurityDenyAudit({
   })
 }
 
-function resolveRuntimeCredential(req) {
+async function resolveRuntimeCredential(req) {
   const token = parseBearerToken(req)
   if (!token) {
     return { kind: 'none' }
@@ -5728,8 +6669,16 @@ function resolveRuntimeCredential(req) {
 
     const expiresAtMs = Date.parse(String(access.expiresAt || ''))
     if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
-      access.status = 'expired'
-      access.updatedAt = nowIso()
+      const expiredAccess = {
+        ...access,
+        status: 'expired',
+        updatedAt: nowIso(),
+      }
+      if (isSupabaseSettlementStore()) {
+        await upsertAgentAccessTokenToSupabase(expiredAccess)
+      }
+      Object.assign(access, expiredAccess)
+      upsertControlPlaneStateRecord('agentAccessTokens', 'tokenId', access, MAX_AGENT_ACCESS_TOKENS)
       persistState(state)
       return {
         kind: 'invalid',
@@ -5763,7 +6712,7 @@ function resolveRuntimeCredential(req) {
   }
 }
 
-function authorizeRuntimeCredential(req, options = {}) {
+async function authorizeRuntimeCredential(req, options = {}) {
   const requirement = options && typeof options === 'object' ? options : {}
   const allowAnonymous = requirement.allowAnonymous === true
   const requiredScope = String(requirement.requiredScope || '').trim()
@@ -5772,7 +6721,7 @@ function authorizeRuntimeCredential(req, options = {}) {
   const requiredPlacementId = String(requirement.placementId || '').trim()
   const operation = String(requirement.operation || '').trim() || 'runtime_call'
 
-  const resolved = resolveRuntimeCredential(req)
+  const resolved = await resolveRuntimeCredential(req)
   if (resolved.kind === 'none') {
     if (allowAnonymous || !RUNTIME_AUTH_REQUIRED) {
       return { ok: true, mode: 'anonymous' }
@@ -5837,8 +6786,16 @@ function authorizeRuntimeCredential(req, options = {}) {
         },
       }
     }
-    key.lastUsedAt = nowIso()
-    key.updatedAt = key.lastUsedAt
+    const touchedKey = {
+      ...key,
+      lastUsedAt: nowIso(),
+    }
+    touchedKey.updatedAt = touchedKey.lastUsedAt
+    if (isSupabaseSettlementStore()) {
+      await upsertControlPlaneKeyToSupabase(touchedKey)
+    }
+    Object.assign(key, touchedKey)
+    upsertControlPlaneStateRecord('apiKeys', 'keyId', key)
     persistState(state)
     return { ok: true, mode: 'api_key', credential: key }
   }
@@ -5956,9 +6913,17 @@ function authorizeRuntimeCredential(req, options = {}) {
     }
   }
 
-  access.updatedAt = nowIso()
-  access.metadata = access.metadata && typeof access.metadata === 'object' ? access.metadata : {}
-  access.metadata.lastUsedAt = access.updatedAt
+  const touchedAccess = {
+    ...access,
+    updatedAt: nowIso(),
+    metadata: access.metadata && typeof access.metadata === 'object' ? { ...access.metadata } : {},
+  }
+  touchedAccess.metadata.lastUsedAt = touchedAccess.updatedAt
+  if (isSupabaseSettlementStore()) {
+    await upsertAgentAccessTokenToSupabase(touchedAccess)
+  }
+  Object.assign(access, touchedAccess)
+  upsertControlPlaneStateRecord('agentAccessTokens', 'tokenId', access, MAX_AGENT_ACCESS_TOKENS)
   persistState(state)
   return { ok: true, mode: 'agent_access_token', credential: access }
 }
@@ -6044,6 +7009,9 @@ async function requestHandler(req, res) {
     const previousPlacementConfigVersion = state.placementConfigVersion
     resetGatewayState()
     await resetConversionFactStore()
+    if (isSupabaseSettlementStore()) {
+      await loadControlPlaneStateFromSupabase()
+    }
     sendJson(res, 200, {
       ok: true,
       previousPlacementConfigVersion,
@@ -6068,7 +7036,7 @@ async function requestHandler(req, res) {
 
   if (pathname === '/api/v1/mediation/config' && req.method === 'GET') {
     try {
-      const auth = authorizeRuntimeCredential(req, {
+      const auth = await authorizeRuntimeCredential(req, {
         operation: 'mediation_config_read',
         requiredScope: 'mediationConfigRead',
         placementId: String(requestUrl.searchParams.get('placementId') || '').trim(),
@@ -6223,10 +7191,12 @@ async function requestHandler(req, res) {
       })
       return
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid request'
       sendJson(res, 400, {
         error: {
-          code: 'INVALID_REQUEST',
-          message: error instanceof Error ? error.message : 'Invalid request',
+          code: 'SDK_EVENTS_INVALID_PAYLOAD',
+          message,
+          route: '/api/v1/sdk/events',
         },
       })
       return
@@ -6269,7 +7239,7 @@ async function requestHandler(req, res) {
         const generated = request.accountId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 42) || 'customer'
         appId = `${generated}_app`
       }
-      const ensured = ensureControlPlaneAppAndEnvironment(appId, 'staging', request.accountId)
+      const ensured = await ensureControlPlaneAppAndEnvironment(appId, 'staging', request.accountId)
       if (!appBelongsToAccount(ensured.appId, request.accountId)) {
         sendJson(res, 403, {
           error: {
@@ -6278,6 +7248,14 @@ async function requestHandler(req, res) {
           },
         })
         return
+      }
+      if (!STRICT_MANUAL_INTEGRATION) {
+        await ensureBootstrapApiKeyForScope({
+          appId: ensured.appId,
+          accountId: ensured.accountId,
+          environment: 'staging',
+          actor: resolveAuditActor(req, 'bootstrap'),
+        })
       }
 
       const userRecord = createDashboardUserRecord({
@@ -6288,13 +7266,24 @@ async function requestHandler(req, res) {
         appId: ensured.appId,
       })
 
-      state.controlPlane.dashboardUsers = [userRecord, ...state.controlPlane.dashboardUsers]
-        .slice(0, MAX_DASHBOARD_USERS)
-      const { sessionRecord, accessToken } = issueDashboardSession(userRecord, {
+      if (isSupabaseSettlementStore()) {
+        await upsertDashboardUserToSupabase(userRecord)
+      }
+      upsertControlPlaneStateRecord('dashboardUsers', 'userId', userRecord, MAX_DASHBOARD_USERS)
+
+      const { sessionRecord, accessToken } = await issueDashboardSession(userRecord, {
         metadata: { source: 'register' },
       })
-      userRecord.lastLoginAt = sessionRecord.issuedAt
-      userRecord.updatedAt = sessionRecord.issuedAt
+      const loggedInUserRecord = {
+        ...userRecord,
+        lastLoginAt: sessionRecord.issuedAt,
+        updatedAt: sessionRecord.issuedAt,
+      }
+      if (isSupabaseSettlementStore()) {
+        await upsertDashboardUserToSupabase(loggedInUserRecord)
+      }
+      Object.assign(userRecord, loggedInUserRecord)
+      upsertControlPlaneStateRecord('dashboardUsers', 'userId', userRecord, MAX_DASHBOARD_USERS)
       persistState(state)
 
       sendJson(res, 201, {
@@ -6303,6 +7292,15 @@ async function requestHandler(req, res) {
       })
       return
     } catch (error) {
+      if (error && typeof error === 'object' && error.code === '23505') {
+        sendJson(res, 409, {
+          error: {
+            code: 'DASHBOARD_USER_EXISTS',
+            message: 'dashboard user already exists for this account.',
+          },
+        })
+        return
+      }
       sendJson(res, 400, {
         error: {
           code: 'INVALID_REQUEST',
@@ -6346,11 +7344,19 @@ async function requestHandler(req, res) {
         return
       }
 
-      const { sessionRecord, accessToken } = issueDashboardSession(user, {
+      const { sessionRecord, accessToken } = await issueDashboardSession(user, {
         metadata: { source: 'login' },
       })
-      user.lastLoginAt = sessionRecord.issuedAt
-      user.updatedAt = sessionRecord.issuedAt
+      const loggedInUser = {
+        ...user,
+        lastLoginAt: sessionRecord.issuedAt,
+        updatedAt: sessionRecord.issuedAt,
+      }
+      if (isSupabaseSettlementStore()) {
+        await upsertDashboardUserToSupabase(loggedInUser)
+      }
+      Object.assign(user, loggedInUser)
+      upsertControlPlaneStateRecord('dashboardUsers', 'userId', user, MAX_DASHBOARD_USERS)
       persistState(state)
 
       sendJson(res, 200, {
@@ -6404,7 +7410,7 @@ async function requestHandler(req, res) {
       return
     }
 
-    revokeDashboardSessionByToken(resolved.accessToken)
+    await revokeDashboardSessionByToken(resolved.accessToken)
     persistState(state)
     sendJson(res, 200, { ok: true })
     return
@@ -6464,22 +7470,22 @@ async function requestHandler(req, res) {
       }
 
       const placementId = String(payload?.placementId || payload?.placement_id || '').trim() || 'chat_inline_v1'
-      const activeKey = findActiveApiKey({
-        appId,
-        accountId: scopedAccountId,
-        environment,
+      const ensured = await ensureControlPlaneAppAndEnvironment(appId, environment, scopedAccountId)
+      let activeKey = findActiveApiKey({
+        appId: ensured.appId,
+        accountId: ensured.accountId,
+        environment: ensured.environment,
       })
       if (!activeKey) {
         sendJson(res, 409, {
           error: {
             code: 'PRECONDITION_FAILED',
-            message: `No active API key for appId=${appId} environment=${environment}.`,
+            message: `No active API key for appId=${ensured.appId} environment=${ensured.environment}.`,
           },
         })
         return
       }
 
-      const ensured = ensureControlPlaneAppAndEnvironment(appId, environment, scopedAccountId)
       cleanupExpiredIntegrationTokens()
 
       const { tokenRecord, token } = createIntegrationTokenRecord({
@@ -6493,8 +7499,10 @@ async function requestHandler(req, res) {
         },
       })
 
-      state.controlPlane.integrationTokens = [tokenRecord, ...state.controlPlane.integrationTokens]
-        .slice(0, MAX_INTEGRATION_TOKENS)
+      if (isSupabaseSettlementStore()) {
+        await upsertIntegrationTokenToSupabase(tokenRecord)
+      }
+      upsertControlPlaneStateRecord('integrationTokens', 'tokenId', tokenRecord, MAX_INTEGRATION_TOKENS)
 
       recordControlPlaneAudit({
         action: 'integration_token_issue',
@@ -6636,8 +7644,16 @@ async function requestHandler(req, res) {
       const now = nowIso()
       const expiresAtMs = Date.parse(String(sourceToken.expiresAt || ''))
       if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
-        sourceToken.status = 'expired'
-        sourceToken.updatedAt = now
+        const expiredSourceToken = {
+          ...sourceToken,
+          status: 'expired',
+          updatedAt: now,
+        }
+        if (isSupabaseSettlementStore()) {
+          await upsertIntegrationTokenToSupabase(expiredSourceToken)
+        }
+        Object.assign(sourceToken, expiredSourceToken)
+        upsertControlPlaneStateRecord('integrationTokens', 'tokenId', sourceToken, MAX_INTEGRATION_TOKENS)
         recordSecurityDenyAudit({
           req,
           action: 'integration_token_exchange_deny',
@@ -6666,8 +7682,17 @@ async function requestHandler(req, res) {
         || !hasRequiredAgentScope(sourceToken.scope, 'sdkEvaluate')
         || !hasRequiredAgentScope(sourceToken.scope, 'sdkEvents')
       ) {
-        sourceToken.status = 'revoked'
-        sourceToken.updatedAt = now
+        const revokedSourceToken = {
+          ...sourceToken,
+          status: 'revoked',
+          updatedAt: now,
+          revokedAt: sourceToken.revokedAt || now,
+        }
+        if (isSupabaseSettlementStore()) {
+          await upsertIntegrationTokenToSupabase(revokedSourceToken)
+        }
+        Object.assign(sourceToken, revokedSourceToken)
+        upsertControlPlaneStateRecord('integrationTokens', 'tokenId', sourceToken, MAX_INTEGRATION_TOKENS)
         recordSecurityDenyAudit({
           req,
           action: 'integration_token_exchange_deny',
@@ -6693,9 +7718,17 @@ async function requestHandler(req, res) {
         String(item?.sourceTokenId || '') === sourceToken.tokenId
       ))
       if (replayBySource) {
-        sourceToken.status = 'used'
-        sourceToken.usedAt = now
-        sourceToken.updatedAt = now
+        const usedSourceToken = {
+          ...sourceToken,
+          status: 'used',
+          usedAt: now,
+          updatedAt: now,
+        }
+        if (isSupabaseSettlementStore()) {
+          await upsertIntegrationTokenToSupabase(usedSourceToken)
+        }
+        Object.assign(sourceToken, usedSourceToken)
+        upsertControlPlaneStateRecord('integrationTokens', 'tokenId', sourceToken, MAX_INTEGRATION_TOKENS)
         recordSecurityDenyAudit({
           req,
           action: 'integration_token_exchange_deny',
@@ -6753,8 +7786,16 @@ async function requestHandler(req, res) {
 
       const remainingTtlSeconds = Math.floor((expiresAtMs - Date.now()) / 1000)
       if (remainingTtlSeconds < MIN_AGENT_ACCESS_TTL_SECONDS) {
-        sourceToken.status = 'expired'
-        sourceToken.updatedAt = now
+        const expiredSourceToken = {
+          ...sourceToken,
+          status: 'expired',
+          updatedAt: now,
+        }
+        if (isSupabaseSettlementStore()) {
+          await upsertIntegrationTokenToSupabase(expiredSourceToken)
+        }
+        Object.assign(sourceToken, expiredSourceToken)
+        upsertControlPlaneStateRecord('integrationTokens', 'tokenId', sourceToken, MAX_INTEGRATION_TOKENS)
         recordSecurityDenyAudit({
           req,
           action: 'integration_token_exchange_deny',
@@ -6796,12 +7837,20 @@ async function requestHandler(req, res) {
         },
       })
 
-      sourceToken.status = 'used'
-      sourceToken.usedAt = now
-      sourceToken.updatedAt = now
+      const usedSourceToken = {
+        ...sourceToken,
+        status: 'used',
+        usedAt: now,
+        updatedAt: now,
+      }
 
-      state.controlPlane.agentAccessTokens = [tokenRecord, ...state.controlPlane.agentAccessTokens]
-        .slice(0, MAX_AGENT_ACCESS_TOKENS)
+      if (isSupabaseSettlementStore()) {
+        await upsertIntegrationTokenToSupabase(usedSourceToken)
+        await upsertAgentAccessTokenToSupabase(tokenRecord)
+      }
+      Object.assign(sourceToken, usedSourceToken)
+      upsertControlPlaneStateRecord('integrationTokens', 'tokenId', sourceToken, MAX_INTEGRATION_TOKENS)
+      upsertControlPlaneStateRecord('agentAccessTokens', 'tokenId', tokenRecord, MAX_AGENT_ACCESS_TOKENS)
 
       recordControlPlaneAudit({
         action: 'integration_token_exchange',
@@ -6961,7 +8010,7 @@ async function requestHandler(req, res) {
       const keyName = String(payload?.name || payload?.keyName || payload?.key_name || '').trim()
         || `primary-${environment}`
 
-      const ensured = ensureControlPlaneAppAndEnvironment(appId, environment, scopedAccountId)
+      const ensured = await ensureControlPlaneAppAndEnvironment(appId, environment, scopedAccountId)
       const { keyRecord, secret } = createControlPlaneKeyRecord({
         appId: ensured.appId,
         accountId: ensured.accountId,
@@ -6969,7 +8018,10 @@ async function requestHandler(req, res) {
         keyName,
       })
 
-      state.controlPlane.apiKeys.unshift(keyRecord)
+      if (isSupabaseSettlementStore()) {
+        await upsertControlPlaneKeyToSupabase(keyRecord)
+      }
+      upsertControlPlaneStateRecord('apiKeys', 'keyId', keyRecord)
       recordControlPlaneAudit({
         action: 'key_create',
         actor: resolveAuditActor(req, 'public_api'),
@@ -7053,13 +8105,22 @@ async function requestHandler(req, res) {
       status: 'active',
     })
 
-    target.keyPrefix = keyRecord.keyPrefix
-    target.secretHash = keyRecord.secretHash
-    target.status = 'active'
-    target.revokedAt = ''
-    target.maskedKey = keyRecord.maskedKey
-    target.accountId = keyRecord.accountId
-    target.updatedAt = keyRecord.updatedAt
+    const rotatedTarget = {
+      ...target,
+      keyPrefix: keyRecord.keyPrefix,
+      secretHash: keyRecord.secretHash,
+      status: 'active',
+      revokedAt: '',
+      maskedKey: keyRecord.maskedKey,
+      accountId: keyRecord.accountId,
+      updatedAt: keyRecord.updatedAt,
+    }
+
+    if (isSupabaseSettlementStore()) {
+      await upsertControlPlaneKeyToSupabase(rotatedTarget)
+    }
+    Object.assign(target, rotatedTarget)
+    upsertControlPlaneStateRecord('apiKeys', 'keyId', target)
 
     recordControlPlaneAudit({
       action: 'key_rotate',
@@ -7124,9 +8185,17 @@ async function requestHandler(req, res) {
 
     if (target.status !== 'revoked') {
       const revokedAt = nowIso()
-      target.status = 'revoked'
-      target.revokedAt = revokedAt
-      target.updatedAt = revokedAt
+      const revokedTarget = {
+        ...target,
+        status: 'revoked',
+        revokedAt,
+        updatedAt: revokedAt,
+      }
+      if (isSupabaseSettlementStore()) {
+        await upsertControlPlaneKeyToSupabase(revokedTarget)
+      }
+      Object.assign(target, revokedTarget)
+      upsertControlPlaneStateRecord('apiKeys', 'keyId', target)
       recordControlPlaneAudit({
         action: 'key_revoke',
         actor: resolveAuditActor(req, 'public_api'),
@@ -7656,7 +8725,7 @@ async function requestHandler(req, res) {
     try {
       const payload = await readJsonBody(req)
       const request = normalizeV2BidPayload(payload, 'v2/bid')
-      const auth = authorizeRuntimeCredential(req, {
+      const auth = await authorizeRuntimeCredential(req, {
         operation: 'v2_bid',
         requiredScope: 'sdkEvaluate',
         placementId: request.placementId,
@@ -7712,7 +8781,7 @@ async function requestHandler(req, res) {
     try {
       const payload = await readJsonBody(req)
       const placementIdHint = String(payload?.placementId || '').trim()
-      const auth = authorizeRuntimeCredential(req, {
+      const auth = await authorizeRuntimeCredential(req, {
         operation: 'sdk_evaluate',
         requiredScope: 'sdkEvaluate',
         placementId: placementIdHint || '',
@@ -7768,7 +8837,7 @@ async function requestHandler(req, res) {
       let responsePayload = { ok: true }
       if (isPostbackConversionPayload(payload)) {
         const request = normalizePostbackConversionPayload(payload, 'sdk/events')
-        const auth = authorizeRuntimeCredential(req, {
+        const auth = await authorizeRuntimeCredential(req, {
           operation: 'sdk_events',
           requiredScope: 'sdkEvents',
           placementId: request.placementId || findPlacementIdByRequestId(request.requestId) || 'chat_inline_v1',
@@ -7816,7 +8885,7 @@ async function requestHandler(req, res) {
         }
       } else if (isNextStepIntentCardPayload(payload)) {
         const request = normalizeNextStepIntentCardPayload(payload, 'sdk/events')
-        const auth = authorizeRuntimeCredential(req, {
+        const auth = await authorizeRuntimeCredential(req, {
           operation: 'sdk_events',
           requiredScope: 'sdkEvents',
           placementId: request.placementId,
@@ -7861,7 +8930,7 @@ async function requestHandler(req, res) {
         })
       } else {
         const request = normalizeAttachMvpPayload(payload, 'sdk/events')
-        const auth = authorizeRuntimeCredential(req, {
+        const auth = await authorizeRuntimeCredential(req, {
           operation: 'sdk_events',
           requiredScope: 'sdkEvents',
           placementId: request.placementId || 'chat_inline_v1',
@@ -7942,15 +9011,18 @@ async function startServer() {
   server.listen(PORT, HOST, () => {
     console.log(`[simulator-gateway] listening on http://${HOST}:${PORT}`)
     console.log(`[simulator-gateway] state file: ${STATE_FILE}`)
+    if (SETTLEMENT_STORAGE_COMPAT_POSTGRES) {
+      console.warn('[simulator-gateway] SIMULATOR_SETTLEMENT_STORAGE=postgres is deprecated, treating as supabase.')
+    }
     console.log(`[simulator-gateway] settlement store mode: ${settlementStore.mode}`)
     console.log(`[simulator-gateway] strict manual integration: ${STRICT_MANUAL_INTEGRATION}`)
     console.log(`[simulator-gateway] runtime log db persistence required: ${REQUIRE_RUNTIME_LOG_DB_PERSISTENCE}`)
     if (REQUIRE_DURABLE_SETTLEMENT && !isPostgresSettlementStore()) {
-      console.error('[simulator-gateway] durable settlement is required but postgres store is unavailable.')
+      console.error('[simulator-gateway] durable settlement is required but supabase store is unavailable.')
       process.exit(1)
     }
     if (REQUIRE_RUNTIME_LOG_DB_PERSISTENCE && !isPostgresSettlementStore()) {
-      console.error('[simulator-gateway] runtime log DB persistence is required but postgres store is unavailable.')
+      console.error('[simulator-gateway] runtime log DB persistence is required but supabase store is unavailable.')
       process.exit(1)
     }
   })

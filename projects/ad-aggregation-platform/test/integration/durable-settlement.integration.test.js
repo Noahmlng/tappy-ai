@@ -150,14 +150,12 @@ async function issueRuntimeApiKeyHeaders(baseUrl, input = {}, headers = {}) {
   }
 }
 
-test('settlement durability: production mode fails fast without postgres database', async () => {
+test('settlement durability: production mode fails fast without SUPABASE_DB_URL', async () => {
   const port = 7250 + Math.floor(Math.random() * 100)
   const gateway = startGateway(port, {
     SIMULATOR_PRODUCTION_MODE: 'true',
     SIMULATOR_REQUIRE_DURABLE_SETTLEMENT: 'true',
-    SIMULATOR_SETTLEMENT_STORAGE: 'postgres',
-    SIMULATOR_SETTLEMENT_DB_URL: '',
-    DATABASE_URL: '',
+    SIMULATOR_SETTLEMENT_STORAGE: 'supabase',
     SUPABASE_DB_URL: '',
   })
 

@@ -17,9 +17,7 @@ function parseArgs(argv) {
 }
 
 function resolveDbUrl() {
-  const supabaseDbUrl = String(process.env.SUPABASE_DB_URL || '').trim()
-  if (supabaseDbUrl) return supabaseDbUrl
-  return String(process.env.DATABASE_URL || '').trim()
+  return String(process.env.SUPABASE_DB_URL || '').trim()
 }
 
 function checksum(content) {
@@ -76,14 +74,14 @@ async function run() {
   const dbUrl = resolveDbUrl()
   if (!dbUrl) {
     if (args.dryRun || args.statusOnly) {
-      console.log('[db:migrate] no SUPABASE_DB_URL/DATABASE_URL provided, running in local status mode.')
+      console.log('[db:migrate] no SUPABASE_DB_URL provided, running in local status mode.')
       console.log('[db:migrate] pending migrations:')
       for (const file of files) {
         console.log(`  - ${file}`)
       }
       return
     }
-    throw new Error('SUPABASE_DB_URL or DATABASE_URL is required for db:migrate.')
+    throw new Error('SUPABASE_DB_URL is required for db:migrate.')
   }
 
   const { Client } = await import('pg')
@@ -157,4 +155,3 @@ run().catch((error) => {
   console.error(`[db:migrate] failed: ${error.message}`)
   process.exit(1)
 })
-
