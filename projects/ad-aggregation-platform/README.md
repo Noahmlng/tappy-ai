@@ -47,10 +47,29 @@
 
 可复制 `projects/ad-aggregation-platform/.env.example` 作为本地配置模板。
 
+House Ads（Supabase 库）相关变量：
+
+- `HOUSE_ADS_SOURCE`：`supabase`（默认）或 `file`
+- `HOUSE_ADS_DB_CACHE_TTL_MS`：House offers DB 读取缓存时间（毫秒）
+- `HOUSE_ADS_DB_FETCH_LIMIT`：House offers 单次抓取上限
+- `SUPABASE_DB_URL`：用于迁移、导入以及 runtime 读取
+
 校验命令：
 
 ```bash
 npm --prefix ./projects/ad-aggregation-platform run check:env
+```
+
+## House Ads Brand/Offer 库（Supabase）
+
+本项目新增了 House Ads 品牌维表和 Offer 事实表迁移：
+
+- `migrations/0005_house_ads_brand_offer_library.sql`
+
+执行迁移：
+
+```bash
+npm --prefix ./projects/ad-aggregation-platform run db:migrate
 ```
 
 ## 联调与 Smoke Test
