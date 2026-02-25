@@ -95,6 +95,10 @@ const MAX_INTEGRATION_TOKENS = 500
 const MAX_AGENT_ACCESS_TOKENS = 1200
 const MAX_DASHBOARD_USERS = 500
 const MAX_DASHBOARD_SESSIONS = 1500
+const CONTROL_PLANE_REFRESH_THROTTLE_MS = toPositiveInteger(
+  process.env.SIMULATOR_CONTROL_PLANE_REFRESH_THROTTLE_MS,
+  1000,
+)
 const DECISION_REASON_ENUM = new Set(['served', 'no_fill', 'blocked', 'error'])
 const CONTROL_PLANE_ENVIRONMENTS = new Set(['prod'])
 const CONTROL_PLANE_KEY_STATUS = new Set(['active', 'revoked'])
@@ -339,12 +343,55 @@ const settlementStore = {
   initPromise: null,
 }
 
+const controlPlaneRefreshState = {
+  lastLoadedAt: 0,
+  refreshPromise: null,
+}
+
 function isSupabaseSettlementStore() {
   return settlementStore.mode === 'supabase' && Boolean(settlementStore.pool)
 }
 
 function isPostgresSettlementStore() {
   return isSupabaseSettlementStore()
+}
+
+async function refreshControlPlaneStateFromStore(options = {}) {
+  if (!isSupabaseSettlementStore()) return false
+
+  const force = options?.force === true
+  const now = Date.now()
+  const elapsedMs = now - toPositiveInteger(controlPlaneRefreshState.lastLoadedAt, 0)
+  if (!force && elapsedMs >= 0 && elapsedMs < CONTROL_PLANE_REFRESH_THROTTLE_MS) {
+    return false
+  }
+
+  if (controlPlaneRefreshState.refreshPromise) {
+    await controlPlaneRefreshState.refreshPromise
+    return true
+  }
+
+  controlPlaneRefreshState.refreshPromise = (async () => {
+    await loadControlPlaneStateFromSupabase()
+    controlPlaneRefreshState.lastLoadedAt = Date.now()
+    return true
+  })()
+
+  try {
+    await controlPlaneRefreshState.refreshPromise
+    return true
+  } catch (error) {
+    if (!force) {
+      console.error(
+        '[simulator-gateway] control plane refresh skipped due to transient error:',
+        error instanceof Error ? error.message : String(error),
+      )
+      return false
+    }
+    throw error
+  } finally {
+    controlPlaneRefreshState.refreshPromise = null
+  }
 }
 
 function shouldPersistConversionFactsToStateFile() {
@@ -1188,12 +1235,22 @@ function findDashboardUserById(userId) {
   return rows.find((item) => String(item?.userId || '') === normalizedUserId) || null
 }
 
-function findDashboardSessionByPlaintext(accessToken) {
+function findDashboardSessionByTokenHashFromState(tokenHash = '') {
+  const normalizedTokenHash = String(tokenHash || '').trim()
+  if (!normalizedTokenHash) return null
+  const rows = Array.isArray(state?.controlPlane?.dashboardSessions) ? state.controlPlane.dashboardSessions : []
+  return rows.find((item) => String(item?.tokenHash || '') === normalizedTokenHash) || null
+}
+
+async function findDashboardSessionByPlaintext(accessToken) {
   const token = String(accessToken || '').trim()
   if (!token) return null
   const tokenHash = hashToken(token)
-  const rows = Array.isArray(state?.controlPlane?.dashboardSessions) ? state.controlPlane.dashboardSessions : []
-  return rows.find((item) => String(item?.tokenHash || '') === tokenHash) || null
+  const current = findDashboardSessionByTokenHashFromState(tokenHash)
+  if (current || !isSupabaseSettlementStore()) return current
+
+  await refreshControlPlaneStateFromStore({ force: true }).catch(() => {})
+  return findDashboardSessionByTokenHashFromState(tokenHash)
 }
 
 function findLatestAppForAccount(accountId) {
@@ -1212,6 +1269,13 @@ function appBelongsToAccount(appId, accountId) {
   const app = resolveControlPlaneAppRecord(normalizedAppId)
   if (!app) return false
   return normalizeControlPlaneAccountId(app.accountId || app.organizationId, '') === normalizedAccountId
+}
+
+async function appBelongsToAccountReadThrough(appId, accountId) {
+  if (appBelongsToAccount(appId, accountId)) return true
+  if (!isSupabaseSettlementStore()) return false
+  await refreshControlPlaneStateFromStore({ force: true }).catch(() => {})
+  return appBelongsToAccount(appId, accountId)
 }
 
 function listDashboardUsersByAccount(accountId) {
@@ -1281,7 +1345,7 @@ function hasNonBootstrapAccountResources(accountId) {
   return hasRuntimeOrAuditRows
 }
 
-function resolveDashboardRegisterOwnershipProof(req, accountId = '') {
+async function resolveDashboardRegisterOwnershipProof(req, accountId = '') {
   const normalizedAccountId = normalizeControlPlaneAccountId(accountId, '')
   if (!normalizedAccountId) return { ok: false, mode: 'none' }
 
@@ -1289,7 +1353,7 @@ function resolveDashboardRegisterOwnershipProof(req, accountId = '') {
   if (!token) return { ok: false, mode: 'none' }
 
   if (token.startsWith(DASHBOARD_SESSION_PREFIX)) {
-    const sessionAuth = resolveDashboardSession(req)
+    const sessionAuth = await resolveDashboardSession(req)
     if (sessionAuth.kind === 'dashboard_session') {
       const scopedAccountId = normalizeControlPlaneAccountId(
         sessionAuth.user?.accountId || sessionAuth.session?.accountId,
@@ -1307,7 +1371,7 @@ function resolveDashboardRegisterOwnershipProof(req, accountId = '') {
     return { ok: false, mode: 'dashboard_session_invalid' }
   }
 
-  const apiKey = findActiveApiKeyBySecret(token)
+  const apiKey = await findActiveApiKeyBySecret(token)
   if (!apiKey) return { ok: false, mode: 'none' }
   const apiKeyAccountId = normalizeControlPlaneAccountId(apiKey.accountId || resolveAccountIdForApp(apiKey.appId), '')
   if (apiKeyAccountId !== normalizedAccountId) {
@@ -1320,7 +1384,7 @@ function resolveDashboardRegisterOwnershipProof(req, accountId = '') {
   }
 }
 
-function validateDashboardRegisterOwnership(req, accountId = '') {
+async function validateDashboardRegisterOwnership(req, accountId = '') {
   const normalizedAccountId = normalizeControlPlaneAccountId(accountId, '')
   if (!normalizedAccountId) {
     return {
@@ -1343,7 +1407,7 @@ function validateDashboardRegisterOwnership(req, accountId = '') {
     }
   }
 
-  const proof = resolveDashboardRegisterOwnershipProof(req, normalizedAccountId)
+  const proof = await resolveDashboardRegisterOwnershipProof(req, normalizedAccountId)
   if (proof.ok) {
     return {
       ok: true,
@@ -1363,7 +1427,7 @@ function validateDashboardRegisterOwnership(req, accountId = '') {
   }
 }
 
-function resolveDashboardSession(req) {
+async function resolveDashboardSession(req) {
   cleanupExpiredDashboardSessions()
   const token = parseBearerToken(req)
   if (!token) return { kind: 'none' }
@@ -1375,7 +1439,7 @@ function resolveDashboardSession(req) {
       message: 'Dashboard access token is invalid.',
     }
   }
-  const session = findDashboardSessionByPlaintext(token)
+  const session = await findDashboardSessionByPlaintext(token)
   if (!session) {
     return {
       kind: 'invalid',
@@ -1434,11 +1498,11 @@ function resolveDashboardSession(req) {
   }
 }
 
-function authorizeDashboardScope(req, searchParams, options = {}) {
+async function authorizeDashboardScope(req, searchParams, options = {}) {
   const option = options && typeof options === 'object' ? options : {}
   const requireAuth = option.requireAuth === true || DASHBOARD_AUTH_REQUIRED
   const requestedScope = parseScopeFiltersFromSearchParams(searchParams)
-  const resolved = resolveDashboardSession(req)
+  const resolved = await resolveDashboardSession(req)
 
   if (resolved.kind === 'none') {
     if (requireAuth) {
@@ -1475,7 +1539,7 @@ function authorizeDashboardScope(req, searchParams, options = {}) {
   const user = resolved.user
   const enforcedAccountId = normalizeControlPlaneAccountId(user.accountId || session.accountId, '')
   let enforcedAppId = String(requestedScope.appId || '').trim()
-  if (enforcedAppId && !appBelongsToAccount(enforcedAppId, enforcedAccountId)) {
+  if (enforcedAppId && !(await appBelongsToAccountReadThrough(enforcedAppId, enforcedAccountId))) {
     return {
       ok: false,
       status: 403,
@@ -1529,10 +1593,14 @@ function validateDashboardAccountOwnership(requestedAccountId, authorizedAccount
   }
 }
 
-function validateDashboardAppOwnership(appId, authorizedAccountId) {
+async function validateDashboardAppOwnership(appId, authorizedAccountId) {
   const normalizedAppId = String(appId || '').trim()
   if (!normalizedAppId) return { ok: true }
-  const app = resolveControlPlaneAppRecord(normalizedAppId)
+  let app = resolveControlPlaneAppRecord(normalizedAppId)
+  if (!app && isSupabaseSettlementStore()) {
+    await refreshControlPlaneStateFromStore({ force: true }).catch(() => {})
+    app = resolveControlPlaneAppRecord(normalizedAppId)
+  }
   if (!app) return { ok: true }
   const appAccountId = normalizeControlPlaneAccountId(app.accountId || app.organizationId, '')
   const scopedAccountId = normalizeControlPlaneAccountId(authorizedAccountId, '')
@@ -1547,20 +1615,40 @@ function validateDashboardAppOwnership(appId, authorizedAccountId) {
   }
 }
 
-function findIntegrationTokenByPlaintext(integrationToken) {
+function findIntegrationTokenByHashFromState(tokenHash = '') {
+  const normalizedTokenHash = String(tokenHash || '').trim()
+  if (!normalizedTokenHash) return null
+  const rows = Array.isArray(state?.controlPlane?.integrationTokens) ? state.controlPlane.integrationTokens : []
+  return rows.find((item) => String(item?.tokenHash || '') === normalizedTokenHash) || null
+}
+
+async function findIntegrationTokenByPlaintext(integrationToken) {
   const token = String(integrationToken || '').trim()
   if (!token) return null
   const tokenHash = hashToken(token)
-  const rows = Array.isArray(state?.controlPlane?.integrationTokens) ? state.controlPlane.integrationTokens : []
-  return rows.find((item) => String(item?.tokenHash || '') === tokenHash) || null
+  const current = findIntegrationTokenByHashFromState(tokenHash)
+  if (current || !isSupabaseSettlementStore()) return current
+
+  await refreshControlPlaneStateFromStore({ force: true }).catch(() => {})
+  return findIntegrationTokenByHashFromState(tokenHash)
 }
 
-function findAgentAccessTokenByPlaintext(accessToken) {
+function findAgentAccessTokenByHashFromState(tokenHash = '') {
+  const normalizedTokenHash = String(tokenHash || '').trim()
+  if (!normalizedTokenHash) return null
+  const rows = Array.isArray(state?.controlPlane?.agentAccessTokens) ? state.controlPlane.agentAccessTokens : []
+  return rows.find((item) => String(item?.tokenHash || '') === normalizedTokenHash) || null
+}
+
+async function findAgentAccessTokenByPlaintext(accessToken) {
   const token = String(accessToken || '').trim()
   if (!token) return null
   const tokenHash = hashToken(token)
-  const rows = Array.isArray(state?.controlPlane?.agentAccessTokens) ? state.controlPlane.agentAccessTokens : []
-  return rows.find((item) => String(item?.tokenHash || '') === tokenHash) || null
+  const current = findAgentAccessTokenByHashFromState(tokenHash)
+  if (current || !isSupabaseSettlementStore()) return current
+
+  await refreshControlPlaneStateFromStore({ force: true }).catch(() => {})
+  return findAgentAccessTokenByHashFromState(tokenHash)
 }
 
 function parseBearerToken(req) {
@@ -3461,6 +3549,7 @@ async function loadControlPlaneStateFromSupabase(pool) {
     syncLegacyPlacementSnapshot()
   }
 
+  controlPlaneRefreshState.lastLoadedAt = Date.now()
   return loaded
 }
 
@@ -4799,12 +4888,34 @@ async function recordEvent(payload) {
   return record
 }
 
-function findPlacementIdByRequestId(requestId) {
+async function findPlacementIdByRequestId(requestId) {
   const targetRequestId = String(requestId || '').trim()
   if (!targetRequestId) return ''
   for (const row of state.decisionLogs) {
     if (String(row?.requestId || '').trim() !== targetRequestId) continue
     return String(row?.placementId || '').trim()
+  }
+  if (!isPostgresSettlementStore()) return ''
+  try {
+    const result = await settlementStore.pool.query(
+      `
+        SELECT placement_id
+        FROM ${RUNTIME_DECISION_LOG_TABLE}
+        WHERE request_id = $1
+          AND placement_id IS NOT NULL
+          AND placement_id <> ''
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      [targetRequestId],
+    )
+    const row = Array.isArray(result.rows) ? result.rows[0] : null
+    return String(row?.placement_id || '').trim()
+  } catch (error) {
+    console.error(
+      '[simulator-gateway] failed to resolve placementId by requestId from runtime decision logs:',
+      error instanceof Error ? error.message : String(error),
+    )
   }
   return ''
 }
@@ -4841,7 +4952,7 @@ async function recordConversionFact(payload) {
     state.conversionFacts = []
   }
 
-  const placementId = String(request.placementId || '').trim() || findPlacementIdByRequestId(request.requestId)
+  const placementId = String(request.placementId || '').trim() || await findPlacementIdByRequestId(request.requestId)
   const placementKey = String(request.placementKey || '').trim() || resolvePlacementKeyById(placementId, request.appId)
   const idempotencyKey = buildConversionFactIdempotencyKey({
     ...request,
@@ -6812,7 +6923,7 @@ function buildQuickStartVerifyRequest(input = {}) {
   }
 }
 
-function findActiveApiKeyBySecret(secret) {
+function findActiveApiKeyBySecretFromState(secret) {
   const value = String(secret || '').trim()
   if (!value) return null
   const digest = hashToken(value)
@@ -6825,7 +6936,15 @@ function findActiveApiKeyBySecret(secret) {
   return matched[0] || null
 }
 
-function findActiveApiKey({ appId, accountId = '', environment, keyId = '' }) {
+async function findActiveApiKeyBySecret(secret) {
+  const current = findActiveApiKeyBySecretFromState(secret)
+  if (current || !isSupabaseSettlementStore()) return current
+
+  await refreshControlPlaneStateFromStore({ force: true }).catch(() => {})
+  return findActiveApiKeyBySecretFromState(secret)
+}
+
+function findActiveApiKeyFromState({ appId, accountId = '', environment, keyId = '' }) {
   const normalizedAppId = String(appId || '').trim()
   const normalizedAccountId = normalizeControlPlaneAccountId(accountId, '')
   const normalizedEnvironment = normalizeControlPlaneEnvironment(environment)
@@ -6848,6 +6967,14 @@ function findActiveApiKey({ appId, accountId = '', environment, keyId = '' }) {
   return rows[0] || null
 }
 
+async function findActiveApiKey(input = {}) {
+  const current = findActiveApiKeyFromState(input)
+  if (current || !isSupabaseSettlementStore()) return current
+
+  await refreshControlPlaneStateFromStore({ force: true }).catch(() => {})
+  return findActiveApiKeyFromState(input)
+}
+
 async function ensureBootstrapApiKeyForScope({
   appId,
   accountId = '',
@@ -6861,7 +6988,7 @@ async function ensureBootstrapApiKeyForScope({
   const normalizedEnvironment = normalizeControlPlaneEnvironment(environment)
   if (!normalizedAppId || !normalizedAccountId) return null
 
-  const existing = findActiveApiKey({
+  const existing = await findActiveApiKey({
     appId: normalizedAppId,
     accountId: normalizedAccountId,
     environment: normalizedEnvironment,
@@ -6932,7 +7059,7 @@ async function issueDashboardSession(user, options = {}) {
 }
 
 async function revokeDashboardSessionByToken(accessToken) {
-  const session = findDashboardSessionByPlaintext(accessToken)
+  const session = await findDashboardSessionByPlaintext(accessToken)
   if (!session) return null
   if (String(session.status || '').toLowerCase() !== 'revoked') {
     const revokedAt = nowIso()
@@ -6988,7 +7115,7 @@ async function resolveRuntimeCredential(req) {
   }
 
   if (token.startsWith('sk_')) {
-    const key = findActiveApiKeyBySecret(token)
+    const key = await findActiveApiKeyBySecret(token)
     if (!key) {
       return {
         kind: 'invalid',
@@ -7005,7 +7132,7 @@ async function resolveRuntimeCredential(req) {
 
   if (token.startsWith('atk_')) {
     cleanupExpiredAgentAccessTokens()
-    const access = findAgentAccessTokenByPlaintext(token)
+    const access = await findAgentAccessTokenByPlaintext(token)
     if (!access) {
       return {
         kind: 'invalid',
@@ -7358,6 +7485,13 @@ export async function requestHandler(req, res) {
     return
   }
 
+  await refreshControlPlaneStateFromStore().catch((error) => {
+    console.error(
+      '[simulator-gateway] control plane state refresh warning:',
+      error instanceof Error ? error.message : String(error),
+    )
+  })
+
   if (pathname === '/api/v1/dev/reset' && req.method === 'POST') {
     const auth = authorizeDevReset(req)
     if (!auth.ok) {
@@ -7453,7 +7587,7 @@ export async function requestHandler(req, res) {
     try {
       const payload = await readJsonBody(req)
       const request = buildQuickStartVerifyRequest(payload)
-      const activeKey = findActiveApiKey({
+      const activeKey = await findActiveApiKey({
         appId: request.appId,
         accountId: request.accountId,
         environment: request.environment,
@@ -7585,7 +7719,7 @@ export async function requestHandler(req, res) {
         })
         return
       }
-      const ownership = validateDashboardRegisterOwnership(req, request.accountId)
+      const ownership = await validateDashboardRegisterOwnership(req, request.accountId)
       if (!ownership.ok) {
         sendJson(res, ownership.status, { error: ownership.error })
         return
@@ -7601,7 +7735,7 @@ export async function requestHandler(req, res) {
         appId = `${generated}_app`
       }
       const ensured = await ensureControlPlaneAppAndEnvironment(appId, 'prod', request.accountId)
-      if (!appBelongsToAccount(ensured.appId, request.accountId)) {
+      if (!(await appBelongsToAccountReadThrough(ensured.appId, request.accountId))) {
         sendJson(res, 403, {
           error: {
             code: 'DASHBOARD_SCOPE_VIOLATION',
@@ -7737,7 +7871,7 @@ export async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/public/dashboard/me' && req.method === 'GET') {
-    const auth = authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
+    const auth = await authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
     if (!auth.ok) {
       sendJson(res, auth.status, { error: auth.error })
       return
@@ -7751,7 +7885,7 @@ export async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/public/dashboard/logout' && req.method === 'POST') {
-    const resolved = resolveDashboardSession(req)
+    const resolved = await resolveDashboardSession(req)
     if (resolved.kind === 'none') {
       sendJson(res, 401, {
         error: {
@@ -7779,7 +7913,7 @@ export async function requestHandler(req, res) {
 
   if (pathname === '/api/v1/public/agent/integration-token' && req.method === 'POST') {
     try {
-      const auth = authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
+      const auth = await authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
       if (!auth.ok) {
         sendJson(res, auth.status, { error: auth.error })
         return
@@ -7805,7 +7939,7 @@ export async function requestHandler(req, res) {
         sendJson(res, accountOwnership.status, { error: accountOwnership.error })
         return
       }
-      const appOwnership = validateDashboardAppOwnership(appId, scopedAccountId)
+      const appOwnership = await validateDashboardAppOwnership(appId, scopedAccountId)
       if (!appOwnership.ok) {
         sendJson(res, appOwnership.status, { error: appOwnership.error })
         return
@@ -7832,7 +7966,7 @@ export async function requestHandler(req, res) {
 
       const placementId = String(payload?.placementId || payload?.placement_id || '').trim() || 'chat_inline_v1'
       const ensured = await ensureControlPlaneAppAndEnvironment(appId, environment, scopedAccountId)
-      let activeKey = findActiveApiKey({
+      let activeKey = await findActiveApiKey({
         appId: ensured.appId,
         accountId: ensured.accountId,
         environment: ensured.environment,
@@ -7901,7 +8035,7 @@ export async function requestHandler(req, res) {
       const forbiddenFields = getExchangeForbiddenFields(payload)
       if (forbiddenFields.length > 0) {
         const providedToken = String(payload?.integrationToken || payload?.integration_token || '').trim()
-        const sourceToken = providedToken ? findIntegrationTokenByPlaintext(providedToken) : null
+        const sourceToken = providedToken ? await findIntegrationTokenByPlaintext(providedToken) : null
         recordSecurityDenyAudit({
           req,
           action: 'integration_token_exchange_deny',
@@ -7932,7 +8066,7 @@ export async function requestHandler(req, res) {
         'integrationToken',
       )
 
-      const sourceToken = findIntegrationTokenByPlaintext(integrationToken)
+      const sourceToken = await findIntegrationTokenByPlaintext(integrationToken)
       if (!sourceToken) {
         recordSecurityDenyAudit({
           req,
@@ -8244,7 +8378,7 @@ export async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/public/credentials/keys' && req.method === 'GET') {
-    const auth = authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
+    const auth = await authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
     if (!auth.ok) {
       sendJson(res, auth.status, { error: auth.error })
       return
@@ -8270,7 +8404,7 @@ export async function requestHandler(req, res) {
       sendJson(res, accountOwnership.status, { error: accountOwnership.error })
       return
     }
-    const appOwnership = validateDashboardAppOwnership(appId, scopedAccountId)
+    const appOwnership = await validateDashboardAppOwnership(appId, scopedAccountId)
     if (!appOwnership.ok) {
       sendJson(res, appOwnership.status, { error: appOwnership.error })
       return
@@ -8324,7 +8458,7 @@ export async function requestHandler(req, res) {
 
   if (pathname === '/api/v1/public/credentials/keys' && req.method === 'POST') {
     try {
-      const auth = authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
+      const auth = await authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
       if (!auth.ok) {
         sendJson(res, auth.status, { error: auth.error })
         return
@@ -8350,7 +8484,7 @@ export async function requestHandler(req, res) {
         sendJson(res, accountOwnership.status, { error: accountOwnership.error })
         return
       }
-      const appOwnership = validateDashboardAppOwnership(appId, scopedAccountId)
+      const appOwnership = await validateDashboardAppOwnership(appId, scopedAccountId)
       if (!appOwnership.ok) {
         sendJson(res, appOwnership.status, { error: appOwnership.error })
         return
@@ -8416,7 +8550,7 @@ export async function requestHandler(req, res) {
 
   const rotateKeyMatch = pathname.match(/^\/api\/v1\/public\/credentials\/keys\/([^/]+)\/rotate$/)
   if (rotateKeyMatch && req.method === 'POST') {
-    const auth = authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
+    const auth = await authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
     if (!auth.ok) {
       sendJson(res, auth.status, { error: auth.error })
       return
@@ -8506,7 +8640,7 @@ export async function requestHandler(req, res) {
 
   const revokeKeyMatch = pathname.match(/^\/api\/v1\/public\/credentials\/keys\/([^/]+)\/revoke$/)
   if (revokeKeyMatch && req.method === 'POST') {
-    const auth = authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
+    const auth = await authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
     if (!auth.ok) {
       sendJson(res, auth.status, { error: auth.error })
       return
@@ -8581,7 +8715,7 @@ export async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/dashboard/state' && req.method === 'GET') {
-    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    const auth = await authorizeDashboardScope(req, requestUrl.searchParams)
     if (!auth.ok) {
       sendJson(res, auth.status, { error: auth.error })
       return
@@ -8592,7 +8726,7 @@ export async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/dashboard/placements' && req.method === 'GET') {
-    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    const auth = await authorizeDashboardScope(req, requestUrl.searchParams)
     if (!auth.ok) {
       sendJson(res, auth.status, { error: auth.error })
       return
@@ -8623,7 +8757,7 @@ export async function requestHandler(req, res) {
 
   if (pathname === '/api/v1/dashboard/placements' && req.method === 'POST') {
     try {
-      const auth = authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
+      const auth = await authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
       if (!auth.ok) {
         sendJson(res, auth.status, { error: auth.error })
         return
@@ -8752,7 +8886,7 @@ export async function requestHandler(req, res) {
 
   if (pathname.startsWith('/api/v1/dashboard/placements/') && req.method === 'PUT') {
     try {
-      const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+      const auth = await authorizeDashboardScope(req, requestUrl.searchParams)
       if (!auth.ok) {
         sendJson(res, auth.status, { error: auth.error })
         return
@@ -8850,7 +8984,7 @@ export async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/dashboard/metrics/summary' && req.method === 'GET') {
-    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    const auth = await authorizeDashboardScope(req, requestUrl.searchParams)
     if (!auth.ok) {
       sendJson(res, auth.status, { error: auth.error })
       return
@@ -8862,7 +8996,7 @@ export async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/dashboard/metrics/by-day' && req.method === 'GET') {
-    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    const auth = await authorizeDashboardScope(req, requestUrl.searchParams)
     if (!auth.ok) {
       sendJson(res, auth.status, { error: auth.error })
       return
@@ -8874,7 +9008,7 @@ export async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/dashboard/metrics/by-placement' && req.method === 'GET') {
-    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    const auth = await authorizeDashboardScope(req, requestUrl.searchParams)
     if (!auth.ok) {
       sendJson(res, auth.status, { error: auth.error })
       return
@@ -8886,7 +9020,7 @@ export async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/dashboard/usage-revenue' && req.method === 'GET') {
-    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    const auth = await authorizeDashboardScope(req, requestUrl.searchParams)
     if (!auth.ok) {
       sendJson(res, auth.status, { error: auth.error })
       return
@@ -8900,7 +9034,7 @@ export async function requestHandler(req, res) {
     const result = requestUrl.searchParams.get('result')
     const placementId = requestUrl.searchParams.get('placementId')
     const requestId = requestUrl.searchParams.get('requestId')
-    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    const auth = await authorizeDashboardScope(req, requestUrl.searchParams)
     if (!auth.ok) {
       sendJson(res, auth.status, { error: auth.error })
       return
@@ -8929,7 +9063,7 @@ export async function requestHandler(req, res) {
     const placementId = requestUrl.searchParams.get('placementId')
     const requestId = requestUrl.searchParams.get('requestId')
     const eventType = requestUrl.searchParams.get('eventType')
-    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    const auth = await authorizeDashboardScope(req, requestUrl.searchParams)
     if (!auth.ok) {
       sendJson(res, auth.status, { error: auth.error })
       return
@@ -8956,7 +9090,7 @@ export async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/dashboard/audit/logs' && req.method === 'GET') {
-    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    const auth = await authorizeDashboardScope(req, requestUrl.searchParams)
     if (!auth.ok) {
       sendJson(res, auth.status, { error: auth.error })
       return
@@ -8972,7 +9106,7 @@ export async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/dashboard/placement-audits' && req.method === 'GET') {
-    const auth = authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
+    const auth = await authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
     if (!auth.ok) {
       sendJson(res, auth.status, { error: auth.error })
       return
@@ -8988,7 +9122,7 @@ export async function requestHandler(req, res) {
   }
 
   if (pathname === '/api/v1/dashboard/network-health' && req.method === 'GET') {
-    const auth = authorizeDashboardScope(req, requestUrl.searchParams)
+    const auth = await authorizeDashboardScope(req, requestUrl.searchParams)
     if (!auth.ok) {
       sendJson(res, auth.status, { error: auth.error })
       return
@@ -9227,7 +9361,7 @@ export async function requestHandler(req, res) {
         const auth = await authorizeRuntimeCredential(req, {
           operation: 'sdk_events',
           requiredScope: 'sdkEvents',
-          placementId: request.placementId || findPlacementIdByRequestId(request.requestId) || 'chat_inline_v1',
+          placementId: request.placementId || (await findPlacementIdByRequestId(request.requestId)) || 'chat_inline_v1',
         })
         if (!auth.ok) {
           sendJson(res, auth.status, {
