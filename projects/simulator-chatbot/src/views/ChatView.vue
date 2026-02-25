@@ -1881,11 +1881,11 @@ async function handleSend(options = {}) {
   border: 0;
   border-radius: 10px;
   background: transparent;
-  color: #2f2f2f;
-  padding: 0 12px;
+  color: #0d0d0d;
+  padding: 6px 10px;
   font-size: 14px;
   line-height: 20px;
-  font-weight: 500;
+  font-weight: 400;
   cursor: pointer;
   transition:
     background-color var(--motion-fast) var(--ease-standard),
@@ -1894,7 +1894,7 @@ async function handleSend(options = {}) {
 }
 
 .sim-new-chat-btn:hover {
-  background: #ececec;
+  background: color-mix(in srgb, #000 4%, transparent);
 }
 
 .sim-new-chat-btn:focus-visible {
@@ -1916,8 +1916,8 @@ async function handleSend(options = {}) {
   border: 0;
   border-radius: 10px;
   background: transparent;
-  color: #8a8a8a;
-  padding: 0 10px;
+  color: #0d0d0d;
+  padding: 6px 10px;
   cursor: text;
   transition: background-color var(--motion-fast) var(--ease-standard);
 }
@@ -1937,7 +1937,11 @@ async function handleSend(options = {}) {
 }
 
 .sim-search-field:focus-within {
-  background: #ececec;
+  background: color-mix(in srgb, #000 4%, transparent);
+}
+
+.sim-search-field:hover {
+  background: color-mix(in srgb, #000 4%, transparent);
 }
 
 .sim-sidebar-links {
@@ -1951,17 +1955,17 @@ async function handleSend(options = {}) {
   border: 0;
   border-radius: 10px;
   background: transparent;
-  color: #2f2f2f;
+  color: #0d0d0d;
   font-size: 14px;
   line-height: 20px;
   text-align: left;
-  padding: 0 10px;
+  padding: 6px 10px;
   cursor: pointer;
   transition: background-color var(--motion-fast) var(--ease-standard);
 }
 
 .sim-link-btn:hover {
-  background: #ececec;
+  background: color-mix(in srgb, #000 4%, transparent);
 }
 
 .sim-link-btn:focus-visible {
@@ -2165,17 +2169,22 @@ async function handleSend(options = {}) {
   gap: 4px;
   min-height: 36px;
   min-width: 0;
+  appearance: none;
+  -webkit-appearance: none;
   border: 0;
   border-radius: 8px;
   padding: 0 10px;
   background: transparent;
-  color: #1f1f1f;
+  color: #0d0d0d;
+  font-size: 18px;
+  line-height: 28px;
+  font-weight: 400;
   cursor: pointer;
   transition: background-color var(--motion-fast) var(--ease-standard);
 }
 
 .sim-title-wrap:hover {
-  background: #ececec;
+  background: color-mix(in srgb, #000 7%, transparent);
 }
 
 .sim-title-wrap:focus-visible {
@@ -2185,10 +2194,10 @@ async function handleSend(options = {}) {
 
 .sim-kicker {
   margin: 0;
-  font-size: 18px;
-  color: #1f1f1f;
-  font-weight: 500;
-  line-height: 28px;
+  font-size: inherit;
+  color: inherit;
+  font-weight: inherit;
+  line-height: inherit;
 }
 
 .sim-topbar-actions {
@@ -2277,7 +2286,7 @@ async function handleSend(options = {}) {
   letter-spacing: 0.38px;
   font-weight: 400;
   max-width: none;
-  color: #202123;
+  color: #0d0d0d;
 }
 
 .sim-hero p {
