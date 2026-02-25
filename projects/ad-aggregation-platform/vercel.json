@@ -1,19 +1,10 @@
 {
-  "version": 2,
   "functions": {
+    "api/[...path].js": {
+      "maxDuration": 60
+    },
     "api/index.js": {
-      "runtime": "nodejs20.x",
       "maxDuration": 60
     }
-  },
-  "routes": [
-    {
-      "src": "/api",
-      "dest": "/api/index.js"
-    },
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/index.js"
-    }
-  ]
+  }
 }

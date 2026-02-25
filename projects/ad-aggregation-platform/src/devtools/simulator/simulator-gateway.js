@@ -26,15 +26,10 @@ import {
 } from '../../providers/intent-card/index.js'
 import { normalizeUnifiedOffers } from '../../offers/index.js'
 
-function readCompatEnvValue(keys, fallback = '') {
-  if (!Array.isArray(keys) || keys.length === 0) {
-    return String(fallback || '').trim()
-  }
-  for (const key of keys) {
-    const value = process.env[key]
-    if (typeof value === 'string' && value.trim().length > 0) {
-      return value.trim()
-    }
+function readEnvValue(key, fallback = '') {
+  const value = process.env[key]
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value.trim()
   }
   return String(fallback || '').trim()
 }
@@ -44,14 +39,7 @@ const __dirname = path.dirname(__filename)
 const PROJECT_ROOT = path.resolve(__dirname, '../../..')
 const STATE_DIR = path.join(PROJECT_ROOT, '.local')
 const DEFAULT_STATE_FILE_NAME = 'simulator-gateway-state.json'
-const RAW_SETTLEMENT_STORAGE_MODE = readCompatEnvValue(
-  ['MEDIATION_SETTLEMENT_STORAGE'],
-  'auto',
-).toLowerCase()
-const SETTLEMENT_STORAGE_MODE = RAW_SETTLEMENT_STORAGE_MODE === 'postgres'
-  ? 'supabase'
-  : RAW_SETTLEMENT_STORAGE_MODE
-const SETTLEMENT_STORAGE_COMPAT_POSTGRES = RAW_SETTLEMENT_STORAGE_MODE === 'postgres'
+const SETTLEMENT_STORAGE_MODE = readEnvValue('MEDIATION_SETTLEMENT_STORAGE', 'auto').toLowerCase()
 const SETTLEMENT_DB_URL = String(process.env.SUPABASE_DB_URL || '').trim()
 const SETTLEMENT_FACT_TABLE = 'simulator_settlement_conversion_facts'
 const RUNTIME_DECISION_LOG_TABLE = 'simulator_runtime_decision_logs'
@@ -64,57 +52,63 @@ const CONTROL_PLANE_DASHBOARD_SESSIONS_TABLE = 'control_plane_dashboard_sessions
 const CONTROL_PLANE_INTEGRATION_TOKENS_TABLE = 'control_plane_integration_tokens'
 const CONTROL_PLANE_AGENT_ACCESS_TOKENS_TABLE = 'control_plane_agent_access_tokens'
 
-const PORT = Number(readCompatEnvValue(['MEDIATION_GATEWAY_PORT'], '3100'))
-const HOST = readCompatEnvValue(['MEDIATION_GATEWAY_HOST'], '127.0.0.1')
-const STATE_FILE = readCompatEnvValue(['MEDIATION_STATE_FILE'], '')
+const PORT = Number(readEnvValue('MEDIATION_GATEWAY_PORT', '3100'))
+const HOST = readEnvValue('MEDIATION_GATEWAY_HOST', '127.0.0.1')
+const STATE_FILE = readEnvValue('MEDIATION_STATE_FILE', '')
   || path.join(
     STATE_DIR,
     PORT === 3100 ? DEFAULT_STATE_FILE_NAME : `simulator-gateway-state-${PORT}.json`,
   )
 const PRODUCTION_RUNTIME = (
-  readCompatEnvValue(['MEDIATION_PRODUCTION_MODE'], '').toLowerCase() === 'true'
+  readEnvValue('MEDIATION_PRODUCTION_MODE', '').toLowerCase() === 'true'
   || String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production'
 )
-const REQUIRE_DURABLE_SETTLEMENT = String(
-  readCompatEnvValue(
-    ['MEDIATION_REQUIRE_DURABLE_SETTLEMENT'],
-    PRODUCTION_RUNTIME ? 'true' : 'false',
+const DB_POOL_MAX = Math.max(
+  1,
+  Math.min(
+    toPositiveInteger(readEnvValue('MEDIATION_DB_POOL_MAX', ''), PRODUCTION_RUNTIME ? 1 : 5),
+    20,
   ),
+)
+const DB_POOL_IDLE_TIMEOUT_MS = toPositiveInteger(
+  readEnvValue('MEDIATION_DB_POOL_IDLE_TIMEOUT_MS', ''),
+  10000,
+)
+const DB_POOL_CONNECTION_TIMEOUT_MS = toPositiveInteger(
+  readEnvValue('MEDIATION_DB_POOL_CONNECTION_TIMEOUT_MS', ''),
+  5000,
+)
+const REQUIRE_DURABLE_SETTLEMENT = String(
+  readEnvValue('MEDIATION_REQUIRE_DURABLE_SETTLEMENT', PRODUCTION_RUNTIME ? 'true' : 'false'),
 ).trim().toLowerCase() !== 'false'
 const STRICT_MANUAL_INTEGRATION = String(
-  readCompatEnvValue(['MEDIATION_STRICT_MANUAL_INTEGRATION'], 'false'),
+  readEnvValue('MEDIATION_STRICT_MANUAL_INTEGRATION', 'false'),
 ).trim().toLowerCase() === 'true'
 const REQUIRE_RUNTIME_LOG_DB_PERSISTENCE = String(
-  readCompatEnvValue(
-    ['MEDIATION_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE'],
-    REQUIRE_DURABLE_SETTLEMENT ? 'true' : 'false',
-  ),
+  readEnvValue('MEDIATION_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE', REQUIRE_DURABLE_SETTLEMENT ? 'true' : 'false'),
 ).trim().toLowerCase() !== 'false'
 const DEV_RESET_ENABLED = String(
-  readCompatEnvValue(
-    ['MEDIATION_DEV_RESET_ENABLED'],
-    PRODUCTION_RUNTIME ? 'false' : 'true',
-  ),
+  readEnvValue('MEDIATION_DEV_RESET_ENABLED', PRODUCTION_RUNTIME ? 'false' : 'true'),
 ).trim().toLowerCase() !== 'false'
-const DEV_RESET_TOKEN = readCompatEnvValue(['MEDIATION_DEV_RESET_TOKEN'], '')
+const DEV_RESET_TOKEN = readEnvValue('MEDIATION_DEV_RESET_TOKEN', '')
 const MAX_DECISION_LOGS = parseCollectionLimit(
-  readCompatEnvValue(['MEDIATION_MAX_DECISION_LOGS'], ''),
+  readEnvValue('MEDIATION_MAX_DECISION_LOGS', ''),
   PRODUCTION_RUNTIME ? 0 : 500,
 )
 const MAX_EVENT_LOGS = parseCollectionLimit(
-  readCompatEnvValue(['MEDIATION_MAX_EVENT_LOGS'], ''),
+  readEnvValue('MEDIATION_MAX_EVENT_LOGS', ''),
   PRODUCTION_RUNTIME ? 0 : 500,
 )
 const MAX_PLACEMENT_AUDIT_LOGS = parseCollectionLimit(
-  readCompatEnvValue(['MEDIATION_MAX_PLACEMENT_AUDIT_LOGS'], ''),
+  readEnvValue('MEDIATION_MAX_PLACEMENT_AUDIT_LOGS', ''),
   PRODUCTION_RUNTIME ? 0 : 500,
 )
 const MAX_NETWORK_FLOW_LOGS = parseCollectionLimit(
-  readCompatEnvValue(['MEDIATION_MAX_NETWORK_FLOW_LOGS'], ''),
+  readEnvValue('MEDIATION_MAX_NETWORK_FLOW_LOGS', ''),
   PRODUCTION_RUNTIME ? 0 : 300,
 )
 const MAX_CONTROL_PLANE_AUDIT_LOGS = parseCollectionLimit(
-  readCompatEnvValue(['MEDIATION_MAX_CONTROL_PLANE_AUDIT_LOGS'], ''),
+  readEnvValue('MEDIATION_MAX_CONTROL_PLANE_AUDIT_LOGS', ''),
   PRODUCTION_RUNTIME ? 0 : 800,
 )
 const MAX_INTEGRATION_TOKENS = 500
@@ -122,10 +116,7 @@ const MAX_AGENT_ACCESS_TOKENS = 1200
 const MAX_DASHBOARD_USERS = 500
 const MAX_DASHBOARD_SESSIONS = 1500
 const CONTROL_PLANE_REFRESH_THROTTLE_MS = toPositiveInteger(
-  readCompatEnvValue(
-    ['MEDIATION_CONTROL_PLANE_REFRESH_THROTTLE_MS'],
-    '',
-  ),
+  readEnvValue('MEDIATION_CONTROL_PLANE_REFRESH_THROTTLE_MS', ''),
   1000,
 )
 const DECISION_REASON_ENUM = new Set(['served', 'no_fill', 'blocked', 'error'])
@@ -136,17 +127,17 @@ const DEFAULT_CONTROL_PLANE_ORG_ID = ''
 const TRACKING_ACCOUNT_QUERY_PARAM = 'aid'
 const DASHBOARD_SESSION_PREFIX = 'dsh_'
 const DASHBOARD_SESSION_TTL_SECONDS = toPositiveInteger(
-  readCompatEnvValue(['MEDIATION_DASHBOARD_SESSION_TTL_SECONDS'], ''),
+  readEnvValue('MEDIATION_DASHBOARD_SESSION_TTL_SECONDS', ''),
   86400 * 7,
 )
 const DASHBOARD_AUTH_REQUIRED = String(
-  readCompatEnvValue(['MEDIATION_DASHBOARD_AUTH_REQUIRED'], 'true'),
+  readEnvValue('MEDIATION_DASHBOARD_AUTH_REQUIRED', 'true'),
 ).trim().toLowerCase() !== 'false'
 const RUNTIME_AUTH_REQUIRED = String(
-  readCompatEnvValue(['MEDIATION_RUNTIME_AUTH_REQUIRED'], 'true'),
+  readEnvValue('MEDIATION_RUNTIME_AUTH_REQUIRED', 'true'),
 ).trim().toLowerCase() !== 'false'
 const INVENTORY_FALLBACK_WHEN_UNAVAILABLE = String(
-  readCompatEnvValue(['MEDIATION_V2_INVENTORY_FALLBACK'], 'true'),
+  readEnvValue('MEDIATION_V2_INVENTORY_FALLBACK', 'true'),
 ).trim().toLowerCase() !== 'false'
 const MIN_AGENT_ACCESS_TTL_SECONDS = 60
 const MAX_AGENT_ACCESS_TTL_SECONDS = 900
@@ -165,14 +156,14 @@ const TOKEN_EXCHANGE_FORBIDDEN_FIELDS = new Set([
 ])
 const ALLOWED_CORS_ORIGINS = Array.from(
   new Set(
-    readCompatEnvValue(['MEDIATION_ALLOWED_ORIGINS'], '')
+    readEnvValue('MEDIATION_ALLOWED_ORIGINS', '')
       .split(',')
       .map((item) => String(item || '').trim())
       .filter(Boolean),
   ),
 )
 const API_SERVICE_ROLE = normalizeApiServiceRole(
-  readCompatEnvValue(['MEDIATION_API_SERVICE_ROLE', 'MEDIATION_API_ROLE'], 'all'),
+  readEnvValue('MEDIATION_API_SERVICE_ROLE', 'all'),
 )
 const RUNTIME_ROUTE_MATCHERS = Object.freeze([
   { type: 'prefix', value: '/api/v1/mediation/' },
@@ -224,16 +215,9 @@ function isRouteAllowedForServiceRole(pathname, role) {
 
 const PLACEMENT_ID_FROM_ANSWER = 'chat_from_answer_v1'
 const PLACEMENT_ID_INTENT_RECOMMENDATION = 'chat_intent_recommendation_v1'
-const LEGACY_PLACEMENT_ID_RENAMES = Object.freeze({
-  chat_inline_v1: PLACEMENT_ID_FROM_ANSWER,
-  chat_followup_v1: PLACEMENT_ID_INTENT_RECOMMENDATION,
-})
-
 const PLACEMENT_KEY_BY_ID = {
   [PLACEMENT_ID_FROM_ANSWER]: 'attach.post_answer_render',
   [PLACEMENT_ID_INTENT_RECOMMENDATION]: 'next_step.intent_card',
-  chat_inline_v1: 'attach.post_answer_render',
-  chat_followup_v1: 'next_step.intent_card',
   search_parallel_v1: 'intervention.search_parallel',
 }
 
@@ -515,7 +499,7 @@ function createOpportunityChainWriter() {
 
 function isLlmIntentFallbackEnabled() {
   return String(
-    readCompatEnvValue(['MEDIATION_INTENT_LLM_FALLBACK'], 'true'),
+    readEnvValue('MEDIATION_INTENT_LLM_FALLBACK', 'true'),
   ).trim().toLowerCase() !== 'false'
 }
 
@@ -2191,40 +2175,14 @@ function requiredNonEmptyString(value, fieldName) {
   return text
 }
 
-function resolveRenamedPlacementId(value) {
-  const placementId = String(value || '').trim()
-  if (!placementId) return ''
-  return String(LEGACY_PLACEMENT_ID_RENAMES[placementId] || '').trim()
-}
-
 function normalizePlacementIdWithMigration(value, fallback = '') {
   const placementId = String(value || '').trim() || String(fallback || '').trim()
-  if (!placementId) return ''
-  return resolveRenamedPlacementId(placementId) || placementId
+  return placementId
 }
 
-function createPlacementRenamedError(legacyPlacementId, fieldName = 'placementId') {
-  const oldPlacementId = String(legacyPlacementId || '').trim()
-  const newPlacementId = resolveRenamedPlacementId(oldPlacementId)
-  const error = new Error(
-    `${fieldName} ${oldPlacementId} was renamed to ${newPlacementId}. Please use the new placement ID.`,
-  )
-  error.code = 'PLACEMENT_ID_RENAMED'
-  error.status = 400
-  error.details = {
-    oldPlacementId,
-    newPlacementId,
-  }
-  return error
-}
-
-function assertPlacementIdNotRenamed(value, fieldName = 'placementId') {
+function assertPlacementIdNotRenamed(value, _fieldName = 'placementId') {
   const placementId = String(value || '').trim()
   if (!placementId) return placementId
-  const renamedTo = resolveRenamedPlacementId(placementId)
-  if (renamedTo) {
-    throw createPlacementRenamedError(placementId, fieldName)
-  }
   return placementId
 }
 
@@ -4258,6 +4216,10 @@ async function ensureSettlementStoreReady() {
       const { Pool } = await import('pg')
       const pool = new Pool({
         connectionString: SETTLEMENT_DB_URL,
+        max: DB_POOL_MAX,
+        idleTimeoutMillis: DB_POOL_IDLE_TIMEOUT_MS,
+        connectionTimeoutMillis: DB_POOL_CONNECTION_TIMEOUT_MS,
+        allowExitOnIdle: true,
         ssl: SETTLEMENT_DB_URL.includes('supabase.co')
           ? { rejectUnauthorized: false }
           : undefined,
@@ -7865,7 +7827,7 @@ export async function requestHandler(req, res, options = {}) {
     return
   }
 
-  if (pathname === '/api/health' && req.method === 'GET') {
+  if ((pathname === '/' || pathname === '/health' || pathname === '/api/health') && req.method === 'GET') {
     sendJson(res, 200, {
       ok: true,
       service: 'mediation-api',
@@ -7923,16 +7885,12 @@ export async function requestHandler(req, res, options = {}) {
       return
     } catch (error) {
       const isPlacementNotFound = error instanceof Error && error.code === 'PLACEMENT_NOT_FOUND'
-      const isPlacementRenamed = error instanceof Error && error.code === 'PLACEMENT_ID_RENAMED'
       sendJson(res, isPlacementNotFound ? 404 : 400, {
         error: {
           code: isPlacementNotFound
             ? 'PLACEMENT_NOT_FOUND'
-            : (isPlacementRenamed ? 'PLACEMENT_ID_RENAMED' : 'INVALID_REQUEST'),
+            : 'INVALID_REQUEST',
           message: error instanceof Error ? error.message : 'Invalid request',
-          ...(isPlacementRenamed && error?.details && typeof error.details === 'object'
-            ? error.details
-            : {}),
         },
       })
       return
@@ -8045,14 +8003,9 @@ export async function requestHandler(req, res, options = {}) {
       const message = error instanceof Error ? error.message : 'Invalid request'
       sendJson(res, 400, {
         error: {
-          code: error instanceof Error && error.code === 'PLACEMENT_ID_RENAMED'
-            ? 'PLACEMENT_ID_RENAMED'
-            : 'QUICKSTART_INVALID_PAYLOAD',
+          code: 'QUICKSTART_INVALID_PAYLOAD',
           message,
           route: '/api/v1/public/quick-start/verify',
-          ...(error instanceof Error && error.code === 'PLACEMENT_ID_RENAMED' && error?.details && typeof error.details === 'object'
-            ? error.details
-            : {}),
         },
       })
       return
@@ -8221,16 +8174,10 @@ export async function requestHandler(req, res, options = {}) {
       })
       return
     } catch (error) {
-      const errorCode = error instanceof Error && error.code === 'PLACEMENT_ID_RENAMED'
-        ? 'PLACEMENT_ID_RENAMED'
-        : 'INVALID_REQUEST'
       sendJson(res, 400, {
         error: {
-          code: errorCode,
+          code: 'INVALID_REQUEST',
           message: error instanceof Error ? error.message : 'Invalid request',
-          ...(errorCode === 'PLACEMENT_ID_RENAMED' && error?.details && typeof error.details === 'object'
-            ? error.details
-            : {}),
         },
       })
       return
@@ -8387,16 +8334,10 @@ export async function requestHandler(req, res, options = {}) {
       sendJson(res, 201, toPublicIntegrationTokenRecord(tokenRecord, token))
       return
     } catch (error) {
-      const errorCode = error instanceof Error && error.code === 'PLACEMENT_ID_RENAMED'
-        ? 'PLACEMENT_ID_RENAMED'
-        : 'INVALID_REQUEST'
       sendJson(res, 400, {
         error: {
-          code: errorCode,
+          code: 'INVALID_REQUEST',
           message: error instanceof Error ? error.message : 'Invalid request',
-          ...(errorCode === 'PLACEMENT_ID_RENAMED' && error?.details && typeof error.details === 'object'
-            ? error.details
-            : {}),
         },
       })
       return
@@ -9721,16 +9662,10 @@ export async function requestHandler(req, res, options = {}) {
       })
       return
     } catch (error) {
-      const errorCode = error instanceof Error && error.code === 'PLACEMENT_ID_RENAMED'
-        ? 'PLACEMENT_ID_RENAMED'
-        : 'INVALID_REQUEST'
       sendJson(res, 400, {
         error: {
-          code: errorCode,
+          code: 'INVALID_REQUEST',
           message: error instanceof Error ? error.message : 'Invalid request',
-          ...(errorCode === 'PLACEMENT_ID_RENAMED' && error?.details && typeof error.details === 'object'
-            ? error.details
-            : {}),
         },
       })
       return
@@ -9945,16 +9880,10 @@ export async function requestHandler(req, res, options = {}) {
       sendJson(res, 200, responsePayload)
       return
     } catch (error) {
-      const errorCode = error instanceof Error && error.code === 'PLACEMENT_ID_RENAMED'
-        ? 'PLACEMENT_ID_RENAMED'
-        : 'INVALID_REQUEST'
       sendJson(res, 400, {
         error: {
-          code: errorCode,
+          code: 'INVALID_REQUEST',
           message: error instanceof Error ? error.message : 'Invalid request',
-          ...(errorCode === 'PLACEMENT_ID_RENAMED' && error?.details && typeof error.details === 'object'
-            ? error.details
-            : {}),
         },
       })
       return
@@ -10048,11 +9977,6 @@ async function startServer() {
   server.listen(PORT, HOST, () => {
     console.log(`[simulator-gateway] listening on http://${HOST}:${PORT}`)
     console.log(`[simulator-gateway] state file: ${STATE_FILE}`)
-    if (SETTLEMENT_STORAGE_COMPAT_POSTGRES) {
-      console.warn(
-        '[simulator-gateway] MEDIATION_SETTLEMENT_STORAGE=postgres is deprecated, treating as supabase.',
-      )
-    }
     console.log(`[simulator-gateway] settlement store mode: ${settlementStore.mode}`)
     console.log(`[simulator-gateway] strict manual integration: ${STRICT_MANUAL_INTEGRATION}`)
     console.log(`[simulator-gateway] runtime log db persistence required: ${REQUIRE_RUNTIME_LOG_DB_PERSISTENCE}`)
