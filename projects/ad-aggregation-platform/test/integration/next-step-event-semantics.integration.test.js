@@ -137,7 +137,7 @@ async function registerDashboardHeaders(baseUrl, input = {}) {
 async function issueRuntimeApiKeyHeaders(baseUrl, input = {}, headers = {}) {
   const accountId = String(input.accountId || 'org_simulator')
   const appId = String(input.appId || 'simulator-chatbot')
-  const environment = String(input.environment || 'staging')
+  const environment = String(input.environment || 'prod')
   const created = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
     method: 'POST',
     headers,

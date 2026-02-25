@@ -158,7 +158,7 @@ test('integration token: issues one-time token with short ttl and audit log', as
       },
       body: {
         appId: 'simulator-chatbot',
-        environment: 'staging',
+        environment: 'prod',
         placementId: 'chat_inline_v1',
         ttlMinutes: 12,
       },
@@ -169,7 +169,7 @@ test('integration token: issues one-time token with short ttl and audit log', as
     assert.equal(issue.payload?.oneTime, true)
     assert.equal(issue.payload?.ttlSeconds, 12 * 60)
     assert.equal(typeof issue.payload?.integrationToken, 'string')
-    assert.match(issue.payload.integrationToken, /^itk_staging_[a-z0-9]+$/)
+    assert.match(issue.payload.integrationToken, /^itk_prod_[a-z0-9]+$/)
     assert.equal(typeof issue.payload?.tokenId, 'string')
     assert.equal(issue.payload.tokenId.length > 0, true)
 
@@ -220,7 +220,7 @@ test('integration token: enforces ttl range and active-key precondition', async 
       headers: authHeaders,
       body: {
         appId: 'simulator-chatbot',
-        environment: 'staging',
+        environment: 'prod',
         ttlMinutes: 30,
       },
     })
@@ -229,12 +229,12 @@ test('integration token: enforces ttl range and active-key precondition', async 
 
     const listKeys = await requestJson(
       baseUrl,
-      '/api/v1/public/credentials/keys?appId=simulator-chatbot&environment=staging',
+      '/api/v1/public/credentials/keys?appId=simulator-chatbot&environment=prod',
       { headers: authHeaders },
     )
     assert.equal(listKeys.ok, true, `list keys failed: ${JSON.stringify(listKeys.payload)}`)
     const keys = Array.isArray(listKeys.payload?.keys) ? listKeys.payload.keys : []
-    assert.equal(keys.length > 0, true, 'staging keys should exist after reset')
+    assert.equal(keys.length > 0, true, 'prod keys should exist after reset')
 
     for (const row of keys) {
       await requestJson(
@@ -249,7 +249,7 @@ test('integration token: enforces ttl range and active-key precondition', async 
       headers: authHeaders,
       body: {
         appId: 'simulator-chatbot',
-        environment: 'staging',
+        environment: 'prod',
         ttlMinutes: 10,
       },
     })

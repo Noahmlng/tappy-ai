@@ -155,7 +155,7 @@ test('quick start verifier runs config -> v2 bid -> events and returns evidence'
       body: {
         accountId: 'org_simulator',
         appId: 'simulator-chatbot',
-        environment: 'staging',
+        environment: 'prod',
         name: 'quickstart-active-key',
       },
     })
@@ -166,7 +166,7 @@ test('quick start verifier runs config -> v2 bid -> events and returns evidence'
       body: {
         accountId: 'org_simulator',
         appId: 'simulator-chatbot',
-        environment: 'staging',
+        environment: 'prod',
         placementId: 'chat_inline_v1',
       },
     })
@@ -231,18 +231,18 @@ test('quick start verifier returns precondition failed when app has no active ke
       body: {
         accountId: 'org_simulator',
         appId: 'simulator-chatbot',
-        environment: 'staging',
+        environment: 'prod',
         name: 'precondition-test-key',
       },
     })
     assert.equal(createKey.status, 201, `key create failed: ${JSON.stringify(createKey.payload)}`)
 
-    const listKeys = await requestJson(baseUrl, '/api/v1/public/credentials/keys?appId=simulator-chatbot&environment=staging', {
+    const listKeys = await requestJson(baseUrl, '/api/v1/public/credentials/keys?appId=simulator-chatbot&environment=prod', {
       headers: dashboardHeaders,
     })
     assert.equal(listKeys.ok, true, `key list failed: ${JSON.stringify(listKeys.payload)}`)
     const keys = Array.isArray(listKeys.payload?.keys) ? listKeys.payload.keys : []
-    assert.equal(keys.length > 0, true, 'staging keys should exist after reset')
+    assert.equal(keys.length > 0, true, 'prod keys should exist after reset')
 
     for (const row of keys) {
       await requestJson(
@@ -257,7 +257,7 @@ test('quick start verifier returns precondition failed when app has no active ke
       body: {
         accountId: 'org_simulator',
         appId: 'simulator-chatbot',
-        environment: 'staging',
+        environment: 'prod',
         placementId: 'chat_inline_v1',
       },
     })

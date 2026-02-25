@@ -12,7 +12,7 @@ function buildAuthContext() {
     issuedAt: '2026-02-21T10:00:00.000Z',
     expiresAt: '2026-02-21T12:00:00.000Z',
     scopeBindings: {
-      allowedEnvironments: ['prod', 'staging'],
+      allowedEnvironments: ['prod'],
       allowedAppIdsOrWildcard: '*',
       allowedPlacementIdsOrWildcard: '*'
     },

@@ -158,7 +158,7 @@ test('token exchange: exchanges one-time integration token into short-lived scop
       },
       body: {
         appId: 'simulator-chatbot',
-        environment: 'staging',
+        environment: 'prod',
         placementId: 'chat_inline_v1',
         ttlMinutes: 10,
       },
@@ -179,7 +179,7 @@ test('token exchange: exchanges one-time integration token into short-lived scop
     assert.equal(exchange.status, 201, `exchange failed: ${JSON.stringify(exchange.payload)}`)
     assert.equal(exchange.payload?.tokenType, 'agent_access_token')
     assert.equal(typeof exchange.payload?.accessToken, 'string')
-    assert.match(exchange.payload.accessToken, /^atk_staging_[a-z0-9]+$/)
+    assert.match(exchange.payload.accessToken, /^atk_prod_[a-z0-9]+$/)
     assert.equal(exchange.payload?.ttlSeconds, 300)
     assert.equal(exchange.payload?.scope?.mediationConfigRead, true)
     assert.equal(exchange.payload?.scope?.sdkEvaluate, true)
@@ -235,7 +235,7 @@ test('token exchange: rejects invalid payload and invalid integration token', as
     const invalidToken = await requestJson(baseUrl, '/api/v1/public/agent/token-exchange', {
       method: 'POST',
       body: {
-        integrationToken: 'itk_staging_invalidtoken123',
+        integrationToken: 'itk_prod_invalidtoken123',
       },
     })
     assert.equal(invalidToken.status, 401)

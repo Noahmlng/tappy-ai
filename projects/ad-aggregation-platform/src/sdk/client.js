@@ -7,7 +7,7 @@ const DEFAULT_TIMEOUT_MS = Object.freeze({
 const ATTACH_DEFAULTS = Object.freeze({
   placementId: 'chat_inline_v1',
   placementKey: 'attach.post_answer_render',
-  environment: 'staging',
+  environment: 'prod',
   schemaVersion: 'schema_v1',
   sdkVersion: '1.0.0',
 })
@@ -15,7 +15,7 @@ const ATTACH_DEFAULTS = Object.freeze({
 const NEXT_STEP_DEFAULTS = Object.freeze({
   placementId: 'chat_followup_v1',
   placementKey: 'next_step.intent_card',
-  environment: 'staging',
+  environment: 'prod',
   schemaVersion: 'schema_v1',
   sdkVersion: '1.0.0',
 })

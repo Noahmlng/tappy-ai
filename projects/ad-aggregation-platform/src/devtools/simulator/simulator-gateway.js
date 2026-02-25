@@ -24,6 +24,7 @@ import {
   normalizeIntentCardCatalogItems,
   retrieveIntentCardTopK,
 } from '../../providers/intent-card/index.js'
+import { normalizeUnifiedOffers } from '../../offers/index.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -95,7 +96,7 @@ const MAX_AGENT_ACCESS_TOKENS = 1200
 const MAX_DASHBOARD_USERS = 500
 const MAX_DASHBOARD_SESSIONS = 1500
 const DECISION_REASON_ENUM = new Set(['served', 'no_fill', 'blocked', 'error'])
-const CONTROL_PLANE_ENVIRONMENTS = new Set(['sandbox', 'staging', 'prod'])
+const CONTROL_PLANE_ENVIRONMENTS = new Set(['prod'])
 const CONTROL_PLANE_KEY_STATUS = new Set(['active', 'revoked'])
 const DEFAULT_CONTROL_PLANE_APP_ID = ''
 const DEFAULT_CONTROL_PLANE_ORG_ID = ''
@@ -104,6 +105,9 @@ const DASHBOARD_SESSION_PREFIX = 'dsh_'
 const DASHBOARD_SESSION_TTL_SECONDS = toPositiveInteger(process.env.SIMULATOR_DASHBOARD_SESSION_TTL_SECONDS, 86400 * 7)
 const DASHBOARD_AUTH_REQUIRED = String(process.env.SIMULATOR_DASHBOARD_AUTH_REQUIRED || 'true').trim().toLowerCase() !== 'false'
 const RUNTIME_AUTH_REQUIRED = String(process.env.SIMULATOR_RUNTIME_AUTH_REQUIRED || 'true').trim().toLowerCase() !== 'false'
+const INVENTORY_FALLBACK_WHEN_UNAVAILABLE = String(
+  process.env.SIMULATOR_V2_INVENTORY_FALLBACK || 'true',
+).trim().toLowerCase() !== 'false'
 const MIN_AGENT_ACCESS_TTL_SECONDS = 60
 const MAX_AGENT_ACCESS_TTL_SECONDS = 900
 const TOKEN_EXCHANGE_FORBIDDEN_FIELDS = new Set([
@@ -381,6 +385,115 @@ function deriveInventoryNetworksFromPlacement(placement = {}) {
   return enabled
 }
 
+function isInventoryFallbackEnabled() {
+  return INVENTORY_FALLBACK_WHEN_UNAVAILABLE
+}
+
+const SIMULATED_LIVE_FALLBACK_OFFERS = Object.freeze([
+  {
+    offerId: 'house:broker_low_fee',
+    sourceNetwork: 'house',
+    sourceId: 'house_broker_001',
+    sourceType: 'offer',
+    title: 'Low-Fee Brokerage for ETF + Options',
+    description: 'Compare broker fee tiers, mobile UX, and options contract pricing.',
+    targetUrl: 'https://example.com/offers/broker-low-fee',
+    market: 'US',
+    locale: 'en-US',
+    availability: 'active',
+    qualityScore: 0.88,
+    bidValue: 7.1,
+    metadata: { policyWeight: 0.2, tags: ['broker', 'etf', 'options', 'fees'] },
+  },
+  {
+    offerId: 'house:research_scanner',
+    sourceNetwork: 'house',
+    sourceId: 'house_research_001',
+    sourceType: 'offer',
+    title: 'Earnings Scanner + Analyst Alerts',
+    description: 'Track revisions, analyst upgrades, and post-earnings moves in one tool.',
+    targetUrl: 'https://example.com/offers/research-scanner',
+    market: 'US',
+    locale: 'en-US',
+    availability: 'active',
+    qualityScore: 0.84,
+    bidValue: 6.6,
+    metadata: { policyWeight: 0.18, tags: ['research', 'earnings', 'analyst'] },
+  },
+  {
+    offerId: 'house:crypto_exchange',
+    sourceNetwork: 'house',
+    sourceId: 'house_crypto_001',
+    sourceType: 'offer',
+    title: 'Crypto Exchange Fee & Depth Comparison',
+    description: 'Compare maker-taker fees and orderbook depth for BTC and ETH.',
+    targetUrl: 'https://example.com/offers/crypto-exchange',
+    market: 'US',
+    locale: 'en-US',
+    availability: 'active',
+    qualityScore: 0.83,
+    bidValue: 6.2,
+    metadata: { policyWeight: 0.16, tags: ['crypto', 'exchange', 'fees', 'trading'] },
+  },
+  {
+    offerId: 'partnerstack:budget_app',
+    sourceNetwork: 'partnerstack',
+    sourceId: 'ps_budget_001',
+    sourceType: 'link',
+    title: 'Budget App with Account Aggregation',
+    description: 'Sync accounts, track categories, and plan monthly spending.',
+    targetUrl: 'https://example.com/offers/budget-app',
+    market: 'US',
+    locale: 'en-US',
+    availability: 'active',
+    qualityScore: 0.79,
+    bidValue: 2.9,
+    metadata: { policyWeight: 0.14, tags: ['budget', 'finance app', 'credit', 'savings'] },
+  },
+  {
+    offerId: 'cj:hardware_wallet',
+    sourceNetwork: 'cj',
+    sourceId: 'cj_wallet_001',
+    sourceType: 'link',
+    title: 'Hardware Wallet Security Picks',
+    description: 'Secure element design, recovery UX, and firmware trust signals.',
+    targetUrl: 'https://example.com/offers/hardware-wallet',
+    market: 'US',
+    locale: 'en-US',
+    availability: 'active',
+    qualityScore: 0.77,
+    bidValue: 2.4,
+    metadata: { policyWeight: 0.1, tags: ['hardware wallet', 'crypto', 'security'] },
+  },
+])
+
+function buildSimulatedFallbackOffers(networks = []) {
+  const normalizedNetworks = Array.isArray(networks)
+    ? networks.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean)
+    : []
+  const allowAll = normalizedNetworks.length === 0
+  return SIMULATED_LIVE_FALLBACK_OFFERS.filter((offer) => (
+    allowAll || normalizedNetworks.includes(String(offer.sourceNetwork || '').trim().toLowerCase())
+  ))
+}
+
+async function fetchLiveFallbackOpportunityCandidates(input = {}) {
+  const filters = input?.filters && typeof input.filters === 'object' ? input.filters : {}
+  const requestedNetworks = Array.isArray(filters.networks) ? filters.networks : []
+  const allOffers = normalizeUnifiedOffers(buildSimulatedFallbackOffers(requestedNetworks))
+
+  return {
+    offers: allOffers,
+    debug: {
+      mode: 'connector_live_fallback',
+      networkCount: requestedNetworks.length > 0 ? requestedNetworks.length : 3,
+      fetchedOfferCount: allOffers.length,
+      source: 'simulated_catalog',
+      errors: [],
+    },
+  }
+}
+
 function mapOpportunityReasonToDecision(reasonCode = '', served = false) {
   if (served) return 'served'
   if (reasonCode === 'policy_blocked') return 'blocked'
@@ -437,7 +550,7 @@ function normalizeDisclosure(value) {
   return 'Sponsored'
 }
 
-function normalizeControlPlaneEnvironment(value, fallback = 'staging') {
+function normalizeControlPlaneEnvironment(value, fallback = 'prod') {
   const normalized = String(value || '').trim().toLowerCase()
   if (CONTROL_PLANE_ENVIRONMENTS.has(normalized)) return normalized
   return fallback
@@ -504,7 +617,7 @@ function createMinimalAgentScope() {
   }
 }
 
-function buildApiKeySecret(environment = 'staging', preferredSecret = '') {
+function buildApiKeySecret(environment = 'prod', preferredSecret = '') {
   const env = normalizeControlPlaneEnvironment(environment)
   const preferred = String(preferredSecret || '').trim()
   if (preferred && preferred.startsWith(`sk_${env}_`)) {
@@ -2888,7 +3001,7 @@ async function ensureControlPlaneTables(pool) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (app_id, environment),
-      CHECK (environment IN ('sandbox', 'staging', 'prod')),
+      CHECK (environment IN ('prod')),
       CHECK (status IN ('active', 'disabled'))
     )
   `)
@@ -2916,7 +3029,7 @@ async function ensureControlPlaneTables(pool) {
       metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      CHECK (environment IN ('sandbox', 'staging', 'prod')),
+      CHECK (environment IN ('prod')),
       CHECK (status IN ('active', 'revoked'))
     )
   `)
@@ -3010,7 +3123,7 @@ async function ensureControlPlaneTables(pool) {
       revoked_at TIMESTAMPTZ,
       metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      CHECK (environment IN ('sandbox', 'staging', 'prod')),
+      CHECK (environment IN ('prod')),
       CHECK (status IN ('active', 'used', 'expired', 'revoked'))
     )
   `)
@@ -3040,7 +3153,7 @@ async function ensureControlPlaneTables(pool) {
       expires_at TIMESTAMPTZ NOT NULL,
       metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      CHECK (environment IN ('sandbox', 'staging', 'prod')),
+      CHECK (environment IN ('prod')),
       CHECK (status IN ('active', 'expired', 'revoked'))
     )
   `)
@@ -5222,27 +5335,45 @@ function buildRuntimeAdRequest(request, placement, intentScore, requestId = '') 
 
 function deriveBidMessageContext(messages = []) {
   const rows = Array.isArray(messages) ? messages : []
+  const normalized = rows
+    .map((row) => ({
+      role: String(row?.role || '').trim().toLowerCase(),
+      content: String(row?.content || '').trim(),
+      timestamp: String(row?.timestamp || '').trim(),
+    }))
+    .filter((row) => row.content && V2_BID_MESSAGE_ROLES.has(row.role))
+  const recentTurns = normalized.slice(-12)
   let query = ''
   let answerText = ''
+  const recentUserTurns = recentTurns
+    .filter((row) => row.role === 'user')
+    .slice(-3)
+    .map((row) => row.content)
+  const recentAssistantTurns = recentTurns
+    .filter((row) => row.role === 'assistant')
+    .slice(-3)
+    .map((row) => row.content)
 
-  for (let index = rows.length - 1; index >= 0; index -= 1) {
-    const row = rows[index]
-    const role = String(row?.role || '').trim().toLowerCase()
-    const content = String(row?.content || '').trim()
-    if (!content) continue
-    if (!query && role === 'user') {
-      query = content
+  if (recentUserTurns.length > 0) {
+    query = recentUserTurns.join(' ').trim()
+  }
+  if (recentAssistantTurns.length > 0) {
+    answerText = recentAssistantTurns.join(' ').trim()
+  }
+
+  if (!query || !answerText) {
+    for (let index = recentTurns.length - 1; index >= 0; index -= 1) {
+      const row = recentTurns[index]
+      if (!query && row.role === 'user') query = row.content
+      if (!answerText && row.role === 'assistant') answerText = row.content
+      if (query && answerText) break
     }
-    if (!answerText && role === 'assistant') {
-      answerText = content
-    }
-    if (query && answerText) break
   }
 
   return {
-    query,
-    answerText,
-    recentTurns: rows.slice(-8),
+    query: clipText(query, 1200),
+    answerText: clipText(answerText, 1200),
+    recentTurns,
   }
 }
 
@@ -5417,6 +5548,8 @@ async function evaluateV2BidOpportunityFirst(payload) {
         finalTopK: 24,
       }, {
         pool: isPostgresSettlementStore() ? settlementStore.pool : null,
+        enableFallbackWhenInventoryUnavailable: isInventoryFallbackEnabled(),
+        fallbackProvider: fetchLiveFallbackOpportunityCandidates,
       })
 
       retrievalDebug = retrieval?.debug && typeof retrieval.debug === 'object'
@@ -5557,6 +5690,17 @@ async function evaluateV2BidOpportunityFirst(payload) {
     },
     diagnostics: {
       reasonCode,
+      intentThreshold,
+      retrievalMode: String(retrievalDebug?.mode || '').trim(),
+      retrievalHitCount: toPositiveInteger(retrievalDebug?.fusedHitCount, 0),
+      ...(reasonCode === 'policy_blocked'
+        ? {
+            policyBlockedReason: String(
+              rankingDebug?.policyBlockedTopic
+              || (rankingDebug?.intentBelowThreshold ? 'intent_below_threshold' : 'policy_blocked'),
+            ).trim(),
+          }
+        : {}),
       stageStatusMap,
       retrievalDebug,
       rankingDebug,
@@ -6601,11 +6745,7 @@ async function getDashboardStatePayload(scopeInput = {}) {
 function resolveMediationConfigSnapshot(query = {}) {
   const appId = requiredNonEmptyString(query.appId, 'appId')
   const placementId = requiredNonEmptyString(query.placementId, 'placementId')
-  const rawEnvironment = requiredNonEmptyString(query.environment, 'environment')
-  const environment = normalizeControlPlaneEnvironment(rawEnvironment, '')
-  if (!CONTROL_PLANE_ENVIRONMENTS.has(environment)) {
-    throw new Error(`environment must be one of: ${Array.from(CONTROL_PLANE_ENVIRONMENTS).join(', ')}`)
-  }
+  const environment = normalizeControlPlaneEnvironment(query.environment || 'prod', 'prod')
   const schemaVersion = requiredNonEmptyString(query.schemaVersion, 'schemaVersion')
   const sdkVersion = requiredNonEmptyString(query.sdkVersion, 'sdkVersion')
   const requestAt = requiredNonEmptyString(query.requestAt, 'requestAt')
@@ -6656,7 +6796,7 @@ function buildQuickStartVerifyRequest(input = {}) {
     requiredNonEmptyString(input.accountId || input.account_id, 'accountId'),
     '',
   )
-  const environment = normalizeControlPlaneEnvironment(input.environment || 'staging')
+  const environment = normalizeControlPlaneEnvironment(input.environment || 'prod')
   const placementId = String(input.placementId || '').trim() || 'chat_inline_v1'
   return {
     appId,
@@ -6711,7 +6851,7 @@ function findActiveApiKey({ appId, accountId = '', environment, keyId = '' }) {
 async function ensureBootstrapApiKeyForScope({
   appId,
   accountId = '',
-  environment = 'staging',
+  environment = 'prod',
   actor = 'bootstrap',
 } = {}) {
   if (STRICT_MANUAL_INTEGRATION) return null
@@ -7460,7 +7600,7 @@ async function requestHandler(req, res) {
         const generated = request.accountId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 42) || 'customer'
         appId = `${generated}_app`
       }
-      const ensured = await ensureControlPlaneAppAndEnvironment(appId, 'staging', request.accountId)
+      const ensured = await ensureControlPlaneAppAndEnvironment(appId, 'prod', request.accountId)
       if (!appBelongsToAccount(ensured.appId, request.accountId)) {
         sendJson(res, 403, {
           error: {
@@ -7474,7 +7614,7 @@ async function requestHandler(req, res) {
         await ensureBootstrapApiKeyForScope({
           appId: ensured.appId,
           accountId: ensured.accountId,
-          environment: 'staging',
+          environment: 'prod',
           actor: resolveAuditActor(req, 'bootstrap'),
         })
       }
@@ -7680,7 +7820,7 @@ async function requestHandler(req, res) {
       }
 
       const requestedEnvironment = String(payload?.environment || payload?.env || '').trim().toLowerCase()
-      const environment = requestedEnvironment || 'staging'
+      const environment = requestedEnvironment || 'prod'
       if (!CONTROL_PLANE_ENVIRONMENTS.has(environment)) {
         throw new Error(`environment must be one of: ${Array.from(CONTROL_PLANE_ENVIRONMENTS).join(', ')}`)
       }
@@ -8224,7 +8364,7 @@ async function requestHandler(req, res) {
         appId = `${generated}_app`
       }
       const requestedEnvironment = String(payload?.environment || payload?.env || '').trim().toLowerCase()
-      const environment = requestedEnvironment || 'staging'
+      const environment = requestedEnvironment || 'prod'
       if (!CONTROL_PLANE_ENVIRONMENTS.has(environment)) {
         throw new Error(`environment must be one of: ${Array.from(CONTROL_PLANE_ENVIRONMENTS).join(', ')}`)
       }
@@ -8580,7 +8720,7 @@ async function requestHandler(req, res) {
         actor,
         accountId: scopedAccountId,
         appId: scopedAppId,
-        environment: 'staging',
+        environment: 'prod',
         resourceType: 'placement',
         resourceId: placementId,
         metadata: {
@@ -8679,7 +8819,7 @@ async function requestHandler(req, res) {
           actor,
           accountId: scopedAccountId,
           appId: scopedAppId,
-          environment: 'staging',
+          environment: 'prod',
           resourceType: 'placement',
           resourceId: placementId,
           metadata: {

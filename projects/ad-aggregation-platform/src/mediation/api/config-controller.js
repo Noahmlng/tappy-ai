@@ -17,7 +17,7 @@ const GET_CONFIG_REQUIRED_FIELDS = Object.freeze([
   'requestAt'
 ])
 
-const ALLOWED_ENVIRONMENTS = new Set(['prod', 'staging'])
+const ALLOWED_ENVIRONMENTS = new Set(['prod'])
 
 function nowIso(nowMs) {
   return new Date(nowMs).toISOString()
@@ -62,7 +62,7 @@ function validateRequest(request) {
     return {
       ok: false,
       reasonCode: H_CONFIG_RESOLUTION_REASON_CODES.INVALID_RANGE,
-      message: 'environment must be prod or staging'
+      message: 'environment must be prod'
     }
   }
 

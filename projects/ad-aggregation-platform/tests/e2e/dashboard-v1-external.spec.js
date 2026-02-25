@@ -128,7 +128,7 @@ async function stopGateway(handle) {
 async function issueRuntimeApiKeyHeaders(baseUrl, input = {}, headers = {}) {
   const accountId = String(input.accountId || 'org_simulator')
   const appId = String(input.appId || 'simulator-chatbot')
-  const environment = String(input.environment || 'staging')
+  const environment = String(input.environment || 'prod')
   const created = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
     method: 'POST',
     headers,
@@ -284,7 +284,7 @@ test('dashboard v1 external e2e happy path: config -> v2 bid -> events', async (
 
     const keys = await requestJson(
       baseUrl,
-      '/api/v1/public/credentials/keys?appId=simulator-chatbot&environment=staging',
+      '/api/v1/public/credentials/keys?appId=simulator-chatbot&environment=prod',
       { headers: dashboardHeaders },
     )
     assert.equal(keys.ok, true, `list keys failed: ${JSON.stringify(keys.payload)}`)
@@ -293,7 +293,7 @@ test('dashboard v1 external e2e happy path: config -> v2 bid -> events', async (
 
     const config = await requestJson(
       baseUrl,
-      '/api/v1/mediation/config?appId=simulator-chatbot&placementId=chat_inline_v1&environment=staging&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z',
+      '/api/v1/mediation/config?appId=simulator-chatbot&placementId=chat_inline_v1&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z',
       { headers: runtimeHeaders },
     )
     assert.equal(config.ok, true, `config failed: ${JSON.stringify(config.payload)}`)

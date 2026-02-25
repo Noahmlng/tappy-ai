@@ -213,8 +213,8 @@ test('managed default: new app environment is initialized with managed_mediation
       },
       body: {
         appId: 'new_mvp_app',
-        environment: 'sandbox',
-        keyName: 'primary-sandbox',
+        environment: 'prod',
+        keyName: 'primary-prod',
       },
     })
     assert.equal(createKey.status, 201, `create key failed: ${JSON.stringify(createKey.payload)}`)
@@ -223,9 +223,9 @@ test('managed default: new app environment is initialized with managed_mediation
     const envRows = Array.isArray(state?.controlPlane?.appEnvironments) ? state.controlPlane.appEnvironments : []
     const target = envRows.find((item) => (
       String(item?.appId || '') === 'new_mvp_app'
-      && String(item?.environment || '') === 'sandbox'
+      && String(item?.environment || '') === 'prod'
     ))
-    assert.equal(Boolean(target), true, 'new app sandbox environment should be created')
+    assert.equal(Boolean(target), true, 'new app prod environment should be created')
     assert.equal(String(target?.routingMode || ''), 'managed_mediation')
   } catch (error) {
     const logs = gateway.getLogs()

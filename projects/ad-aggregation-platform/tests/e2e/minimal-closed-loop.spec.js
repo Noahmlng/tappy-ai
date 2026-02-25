@@ -185,7 +185,7 @@ async function issueRuntimeApiKeyHeaders(baseUrl, dashboardHeaders) {
     body: {
       accountId: 'org_simulator',
       appId: 'simulator-chatbot',
-      environment: 'staging',
+      environment: 'prod',
       name: `runtime-${Date.now()}`,
     },
   })

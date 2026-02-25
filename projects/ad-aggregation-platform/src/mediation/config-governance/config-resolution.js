@@ -27,7 +27,7 @@ const REQUEST_REQUIRED_FIELDS = Object.freeze([
   'configResolutionContractVersion'
 ])
 
-const ALLOWED_ENVIRONMENTS = new Set(['prod', 'staging'])
+const ALLOWED_ENVIRONMENTS = new Set(['prod'])
 const MISSING_VALUE = Symbol('missing')
 
 const FIELD_SPECS = Object.freeze({

@@ -1,4 +1,4 @@
-const REDIS_ENV_KEYS = new Set(['dev', 'staging', 'preprod', 'prod'])
+const REDIS_ENV_KEYS = new Set(['dev', 'prod'])
 
 const REDIS_MODULE_KEYS = new Set(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'shared'])
 
@@ -23,7 +23,7 @@ function normalizePart(value) {
 function normalizeEnv(env) {
   const normalized = normalizePart(env)
   if (REDIS_ENV_KEYS.has(normalized)) return normalized
-  return 'dev'
+  return 'prod'
 }
 
 function normalizeModule(moduleName) {
@@ -88,4 +88,3 @@ export {
   buildIdempotencyKey,
   buildRedisKey
 }
-
