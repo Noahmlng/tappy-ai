@@ -20,13 +20,14 @@
 
 这是一个多项目工作区，目标是完成 AI Native App 场景的广告聚合、策略验证与可观测闭环。
 
-当前仓库分为两块核心项目：
+当前仓库聚焦 Core 平台（协议、runtime、gateway、control plane）：
 
 1. `projects/ad-aggregation-platform`
 - 广告聚合平台核心（协议、runtime、gateway、control plane）。
 
-2. `projects/simulator-dashboard`
+2. `chat-ads-dashboard`（外部独立仓库）
 - Developer Dashboard（接入方侧），负责配置、审计、决策和事件观测。
+- 本地路径：`/Users/zeming/Documents/chat-ads-dashboard`
 
 外部测试客户端（已迁出仓库）：
 - `/Users/zeming/Documents/simulator-chatbot`
@@ -156,9 +157,10 @@
 ### 核心代码目录
 
 - `projects/ad-aggregation-platform`
-- `projects/simulator-dashboard`
-- `scripts/dev-local.js`
+- `apps/runtime-api`
+- `apps/control-plane-api`
 - `/Users/zeming/Documents/simulator-chatbot`（外部仓库）
+- `/Users/zeming/Documents/chat-ads-dashboard`（外部仓库）
 
 ### 关键文档目录
 
@@ -173,7 +175,7 @@
 <a id="readme-run"></a>
 ## 本地联调与运行
 
-### 一键联调（Gateway + Dashboard）
+### 一键联调（Core Gateway）
 
 ```bash
 npm run dev:local
@@ -182,13 +184,12 @@ npm run dev:local
 默认本地拓扑：
 
 1. Gateway: `http://127.0.0.1:3100`
-2. Dashboard: `http://127.0.0.1:3002`
 
 ### 单独启动
 
 ```bash
 npm --prefix ./projects/ad-aggregation-platform run dev:gateway
-npm --prefix ./projects/simulator-dashboard run dev
+npm --prefix /Users/zeming/Documents/chat-ads-dashboard run dev
 ```
 
 外部客户端（可选）：
