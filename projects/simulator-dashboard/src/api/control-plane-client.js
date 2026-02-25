@@ -1,8 +1,8 @@
-const API_BASE_URL = (
+const API_PROXY_BASE_URL = '/api'
+const API_BASE_URL = String(
   import.meta.env.VITE_MEDIATION_CONTROL_PLANE_API_BASE_URL
-  || import.meta.env.VITE_MEDIATION_API_BASE_URL
-  || '/api'
-).replace(/\/$/, '')
+  || API_PROXY_BASE_URL,
+).trim().replace(/\/$/, '')
 let dashboardAccessToken = ''
 
 export function setDashboardAccessToken(token) {
@@ -23,11 +23,36 @@ export class ControlPlaneApiError extends Error {
   }
 }
 
-function buildUrl(pathname, query) {
-  const isAbsoluteBase = /^https?:\/\//i.test(API_BASE_URL)
+function isAbsoluteHttpUrl(value) {
+  return /^https?:\/\//i.test(String(value || ''))
+}
+
+function isLikelyNetworkError(error) {
+  if (error instanceof TypeError) return true
+  const message = String(error instanceof Error ? error.message : error || '').toLowerCase()
+  return message.includes('failed to fetch') || message.includes('networkerror')
+}
+
+function createNetworkError(error, details = {}) {
+  return new ControlPlaneApiError(
+    'Failed to reach dashboard API. Check HTTPS/CORS or configure same-origin /api proxy.',
+    {
+      status: 0,
+      code: 'NETWORK_ERROR',
+      details: {
+        ...details,
+        cause: error instanceof Error ? error.message : String(error || ''),
+      },
+    },
+  )
+}
+
+function buildUrl(baseUrl, pathname, query) {
+  const normalizedBaseUrl = String(baseUrl || API_PROXY_BASE_URL)
+  const isAbsoluteBase = isAbsoluteHttpUrl(normalizedBaseUrl)
   const url = isAbsoluteBase
-    ? new URL(`${API_BASE_URL}${pathname}`)
-    : new URL(`${API_BASE_URL}${pathname}`, 'http://localhost')
+    ? new URL(`${normalizedBaseUrl}${pathname}`)
+    : new URL(`${normalizedBaseUrl}${pathname}`, 'http://localhost')
 
   if (query && typeof query === 'object') {
     Object.entries(query).forEach(([key, value]) => {
@@ -37,6 +62,34 @@ function buildUrl(pathname, query) {
   }
 
   return isAbsoluteBase ? url.toString() : `${url.pathname}${url.search}`
+}
+
+async function fetchWithProxyFallback(pathname, requestOptions = {}, query) {
+  try {
+    return await fetch(buildUrl(API_BASE_URL, pathname, query), requestOptions)
+  } catch (error) {
+    const shouldRetryViaProxy = (
+      API_BASE_URL !== API_PROXY_BASE_URL
+      && isAbsoluteHttpUrl(API_BASE_URL)
+      && isLikelyNetworkError(error)
+    )
+    if (!shouldRetryViaProxy) {
+      throw createNetworkError(error, {
+        apiBaseUrl: API_BASE_URL,
+        pathname,
+      })
+    }
+
+    try {
+      return await fetch(buildUrl(API_PROXY_BASE_URL, pathname, query), requestOptions)
+    } catch (fallbackError) {
+      throw createNetworkError(fallbackError, {
+        apiBaseUrl: API_BASE_URL,
+        fallbackBaseUrl: API_PROXY_BASE_URL,
+        pathname,
+      })
+    }
+  }
 }
 
 async function request(pathname, options = {}) {
@@ -54,12 +107,12 @@ async function request(pathname, options = {}) {
     body = JSON.stringify(body)
   }
 
-  const response = await fetch(buildUrl(pathname, options.query), {
+  const response = await fetchWithProxyFallback(pathname, {
     method: options.method || 'GET',
     headers,
     body,
     signal: options.signal,
-  })
+  }, options.query)
 
   const contentType = String(response.headers.get('content-type') || '').toLowerCase()
   const isJson = contentType.includes('application/json')
