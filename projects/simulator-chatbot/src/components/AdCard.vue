@@ -68,6 +68,17 @@ defineEmits(['ad-click'])
   gap: 12px;
   text-decoration: none;
   color: inherit;
+  border-radius: 14px;
+  transition: transform 0.16s ease;
+}
+
+.ad-card-link:hover {
+  transform: translateY(-1px);
+}
+
+.ad-card-link:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-sea) 56%, white);
+  outline-offset: 2px;
 }
 
 .ad-card-link img {

@@ -55,6 +55,11 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+::selection {
+  background: color-mix(in srgb, var(--accent-sea) 26%, white);
+  color: color-mix(in srgb, var(--ink) 92%, black);
+}
+
 button,
 input,
 textarea {
@@ -125,5 +130,16 @@ textarea::-webkit-scrollbar {
   50%,
   100% {
     opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

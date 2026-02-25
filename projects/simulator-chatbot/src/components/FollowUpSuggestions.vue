@@ -65,6 +65,12 @@ defineEmits(['select'])
   color: color-mix(in srgb, var(--accent-sea) 90%, black);
 }
 
+.followup-grid button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-sea) 56%, white);
+  outline-offset: 2px;
+  border-color: color-mix(in srgb, var(--accent-sea) 44%, transparent);
+}
+
 .followup-grid button:disabled {
   opacity: 0.6;
   cursor: not-allowed;

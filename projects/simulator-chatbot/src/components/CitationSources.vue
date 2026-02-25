@@ -69,6 +69,12 @@ defineEmits(['source-click'])
   border-color: color-mix(in srgb, var(--accent-sea) 38%, transparent);
 }
 
+.citation-sources li a:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-sea) 56%, white);
+  outline-offset: 2px;
+  border-color: color-mix(in srgb, var(--accent-sea) 44%, transparent);
+}
+
 .source-index {
   display: grid;
   place-items: center;

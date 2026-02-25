@@ -114,6 +114,16 @@ const renderedHtml = computed(() => markdownParser.render(String(props.content |
   text-decoration-thickness: 1.2px;
 }
 
+.markdown-content :deep(a:hover) {
+  color: color-mix(in srgb, var(--accent-sea) 82%, #02160f);
+}
+
+.markdown-content :deep(a:focus-visible) {
+  outline: 2px solid color-mix(in srgb, var(--accent-sea) 56%, white);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 .markdown-content :deep(ul),
 .markdown-content :deep(ol) {
   padding-left: 1.5em;

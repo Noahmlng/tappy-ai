@@ -118,7 +118,12 @@
     <main class="sim-main">
       <header class="sim-topbar">
         <div class="sim-topbar-left">
-          <button v-if="!isSidebarOpen" class="sim-icon-btn" @click="isSidebarOpen = true" aria-label="Open sidebar">
+          <button
+            v-if="!isSidebarOpen"
+            class="sim-icon-btn sim-open-sidebar-btn"
+            @click="isSidebarOpen = true"
+            aria-label="Open sidebar"
+          >
             <Menu :size="18" />
           </button>
           <div class="sim-title-wrap">
@@ -1794,6 +1799,11 @@ async function handleSend(options = {}) {
   border-color: color-mix(in srgb, var(--ink) 20%, transparent);
 }
 
+.sim-icon-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-sea) 58%, white);
+  outline-offset: 2px;
+}
+
 .sim-mobile-only {
   color: var(--sidebar-muted);
   border-color: var(--sidebar-border);
@@ -1821,6 +1831,11 @@ async function handleSend(options = {}) {
   transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--accent-sea) 36%, white);
   box-shadow: 0 8px 20px color-mix(in srgb, var(--accent-sea) 20%, transparent);
+}
+
+.sim-new-chat-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-sea) 58%, white);
+  outline-offset: 2px;
 }
 
 .sim-new-chat-copy {
@@ -1851,6 +1866,11 @@ async function handleSend(options = {}) {
 
 .sim-search-field input::placeholder {
   color: var(--sidebar-muted);
+}
+
+.sim-search-field:focus-within {
+  border-color: color-mix(in srgb, var(--accent-sea) 44%, white);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-sea) 26%, transparent);
 }
 
 .sim-sidebar-section-label {
@@ -1900,6 +1920,12 @@ async function handleSend(options = {}) {
   cursor: pointer;
 }
 
+.sim-session-main:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-sea) 58%, white);
+  outline-offset: -2px;
+  border-radius: 10px;
+}
+
 .sim-session-title {
   margin: 0;
   font-size: 13px;
@@ -1940,6 +1966,12 @@ async function handleSend(options = {}) {
   background: color-mix(in srgb, var(--sidebar-border) 34%, transparent);
 }
 
+.sim-session-delete:focus-visible {
+  opacity: 1;
+  outline: 2px solid color-mix(in srgb, var(--accent-sea) 58%, white);
+  outline-offset: 1px;
+}
+
 .sim-session-empty {
   margin: 6px 4px 0;
   color: var(--sidebar-muted);
@@ -1969,6 +2001,12 @@ async function handleSend(options = {}) {
   font-weight: 650;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+.sim-panel summary:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-sea) 56%, white);
+  outline-offset: 2px;
+  border-radius: 8px;
 }
 
 .sim-panel-row {
@@ -2001,6 +2039,12 @@ async function handleSend(options = {}) {
 .sim-clear-history-btn:hover {
   color: var(--sidebar-text);
   border-color: color-mix(in srgb, var(--accent-sea) 35%, white);
+}
+
+.sim-panel-row button:focus-visible,
+.sim-clear-history-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-sea) 58%, white);
+  outline-offset: 2px;
 }
 
 .sim-panel textarea {
@@ -2047,6 +2091,12 @@ async function handleSend(options = {}) {
 
 .sim-trace-card summary {
   cursor: pointer;
+}
+
+.sim-trace-card summary:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-sea) 56%, white);
+  outline-offset: 2px;
+  border-radius: 8px;
 }
 
 .sim-trace-head {
@@ -2117,6 +2167,11 @@ async function handleSend(options = {}) {
   z-index: 40;
   border: 0;
   background: color-mix(in srgb, #000 42%, transparent);
+}
+
+.sim-sidebar-overlay:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-sea) 56%, white);
+  outline-offset: -2px;
 }
 
 .sim-main {
@@ -2194,6 +2249,11 @@ async function handleSend(options = {}) {
   transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--accent-sea) 34%, transparent);
   background: color-mix(in srgb, var(--accent-sea) 15%, var(--paper));
+}
+
+.sim-pill-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-sea) 58%, white);
+  outline-offset: 2px;
 }
 
 .sim-scroll-region {
@@ -2388,6 +2448,12 @@ async function handleSend(options = {}) {
   background: color-mix(in srgb, var(--ink) 86%, #1f4f3f);
 }
 
+.sim-ghost-btn:focus-visible,
+.sim-solid-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-sea) 58%, white);
+  outline-offset: 2px;
+}
+
 .sim-ghost-btn:disabled,
 .sim-solid-btn:disabled {
   opacity: 0.55;
@@ -2471,6 +2537,12 @@ async function handleSend(options = {}) {
   text-decoration: underline;
 }
 
+.sim-tool-results a:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-sea) 56%, white);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
 .sim-tool-results p {
   margin: 5px 0 0;
   font-size: 12px;
@@ -2520,6 +2592,13 @@ async function handleSend(options = {}) {
   background: color-mix(in srgb, white 80%, var(--paper));
   box-shadow: var(--elev-shadow);
   padding: 8px;
+}
+
+.sim-composer-card:focus-within {
+  border-color: color-mix(in srgb, var(--accent-sea) 36%, transparent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--accent-sea) 18%, transparent),
+    var(--elev-shadow);
 }
 
 .sim-composer-input {
@@ -2578,6 +2657,11 @@ async function handleSend(options = {}) {
   transform: translateY(-1px) scale(1.02);
 }
 
+.sim-send-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-sea) 58%, white);
+  outline-offset: 2px;
+}
+
 .sim-send-btn:disabled {
   cursor: not-allowed;
 }
@@ -2590,6 +2674,10 @@ async function handleSend(options = {}) {
   }
 
   .sim-mobile-only {
+    display: none;
+  }
+
+  .sim-open-sidebar-btn {
     display: none;
   }
 
@@ -2609,6 +2697,20 @@ async function handleSend(options = {}) {
 
   .sim-kicker {
     font-size: 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sim-orb,
+  .sim-turn,
+  .sim-hero,
+  .sim-thread,
+  .sim-pill-btn,
+  .sim-new-chat-btn,
+  .sim-send-btn,
+  .sim-icon-btn {
+    animation: none !important;
+    transition: none !important;
   }
 }
 
