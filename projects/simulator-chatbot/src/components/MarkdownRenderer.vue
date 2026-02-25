@@ -38,38 +38,38 @@ const renderedHtml = computed(() => markdownParser.render(String(props.content |
 .markdown-content {
   word-wrap: break-word;
   display: block;
-  color: var(--ink);
-  font-size: 15px;
-  line-height: 1.78;
+  color: #0d0d0d;
+  font-size: 16px;
+  line-height: 24px;
 }
 
 .markdown-content :deep(h1) {
   font-family: var(--font-display);
-  font-size: 1.72em;
-  font-weight: 650;
-  margin: 0.78em 0 0.48em;
-  line-height: 1.15;
+  font-size: 1.55em;
+  font-weight: 600;
+  margin: 0.72em 0 0.44em;
+  line-height: 1.22;
   display: block;
 }
 
 .markdown-content :deep(h2) {
   font-family: var(--font-display);
-  font-size: 1.46em;
-  font-weight: 620;
-  margin: 0.76em 0 0.46em;
-  line-height: 1.2;
+  font-size: 1.3em;
+  font-weight: 600;
+  margin: 0.7em 0 0.42em;
+  line-height: 1.24;
   display: block;
 }
 
 .markdown-content :deep(h3) {
-  font-size: 1.14em;
-  font-weight: 680;
-  margin: 0.7em 0 0.4em;
+  font-size: 1.12em;
+  font-weight: 600;
+  margin: 0.66em 0 0.38em;
   display: block;
 }
 
 .markdown-content :deep(p) {
-  margin: 0 0 1.02em;
+  margin: 0 0 0.94em;
 }
 
 .markdown-content :deep(p:last-child) {
@@ -77,22 +77,22 @@ const renderedHtml = computed(() => markdownParser.render(String(props.content |
 }
 
 .markdown-content :deep(code) {
-  background-color: color-mix(in srgb, var(--surface) 70%, white);
-  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
-  padding: 0.14em 0.44em;
-  border-radius: var(--radius-xs);
+  background: #f3f3f3;
+  border: 1px solid #dfdfdf;
+  padding: 0.14em 0.42em;
+  border-radius: 6px;
   font-family: var(--font-mono);
   font-size: 0.86em;
-  color: color-mix(in srgb, var(--ink) 85%, var(--accent-sea));
+  color: #0d0d0d;
 }
 
 .markdown-content :deep(pre) {
-  background-color: color-mix(in srgb, var(--surface) 82%, white);
-  border-radius: var(--radius-md);
+  background: #f3f3f3;
+  border-radius: 10px;
   padding: 0.95em 1em;
   overflow-x: auto;
   margin: 0.75em 0;
-  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+  border: 1px solid #dfdfdf;
   display: block;
 }
 
@@ -104,25 +104,25 @@ const renderedHtml = computed(() => markdownParser.render(String(props.content |
   line-height: 1.65;
   font-family: var(--font-mono);
   display: block;
-  color: color-mix(in srgb, var(--ink) 90%, #24342d);
+  color: #0d0d0d;
 }
 
 .markdown-content :deep(a) {
-  color: color-mix(in srgb, var(--accent-sea) 90%, #0b1712);
+  color: #0d0d0d;
   text-decoration: underline;
   text-underline-offset: 2px;
-  text-decoration-thickness: 1.2px;
+  text-decoration-thickness: 1px;
   transition:
     color var(--motion-fast) var(--ease-standard),
     text-decoration-color var(--motion-fast) var(--ease-standard);
 }
 
 .markdown-content :deep(a:hover) {
-  color: color-mix(in srgb, var(--accent-sea) 82%, #02160f);
+  color: #3a3a3a;
 }
 
 .markdown-content :deep(a:focus-visible) {
-  outline: 2px solid color-mix(in srgb, var(--accent-sea) 56%, white);
+  outline: 1.5px solid #0d0d0d;
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -135,17 +135,17 @@ const renderedHtml = computed(() => markdownParser.render(String(props.content |
 }
 
 .markdown-content :deep(blockquote) {
-  margin: 0.86em 0;
-  border-left: 3px solid color-mix(in srgb, var(--accent-sea) 72%, white);
-  background: color-mix(in srgb, var(--indigo-soft) 42%, white);
+  margin: 0.8em 0;
+  border-left: 3px solid #d6d6d6;
+  background: #f3f3f3;
   border-radius: 0 10px 10px 0;
-  padding: 0.55em 0.92em;
-  color: color-mix(in srgb, var(--graphite) 95%, #23352d);
+  padding: 0.52em 0.9em;
+  color: #5d5d5d;
 }
 
 .markdown-content :deep(hr) {
   border: 0;
-  border-top: 1px solid color-mix(in srgb, var(--ink) 14%, transparent);
+  border-top: 1px solid #dfdfdf;
   margin: 0.9em 0;
 }
 
@@ -157,13 +157,13 @@ const renderedHtml = computed(() => markdownParser.render(String(props.content |
 
 .markdown-content :deep(th),
 .markdown-content :deep(td) {
-  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  border: 1px solid #dfdfdf;
   padding: 7px 9px;
   text-align: left;
 }
 
 .markdown-content :deep(th) {
-  background: color-mix(in srgb, var(--surface) 75%, white);
-  font-weight: 700;
+  background: #f3f3f3;
+  font-weight: 600;
 }
 </style>

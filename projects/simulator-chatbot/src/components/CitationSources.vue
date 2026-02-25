@@ -29,16 +29,16 @@ defineEmits(['source-click'])
 
 <style scoped>
 .citation-sources {
-  margin-top: 14px;
-  border-top: 1px solid #dddddd;
+  margin-top: 16px;
+  border-top: 1px solid #e5e5e5;
   padding-top: 12px;
 }
 
 .citation-sources > p {
   margin: 0;
-  color: var(--pencil);
+  color: #8f8f8f;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -56,34 +56,24 @@ defineEmits(['source-click'])
   grid-template-columns: auto 1fr;
   align-items: center;
   gap: 6px 9px;
-  border: 1px solid #dcdcdc;
-  border-radius: var(--radius-sm);
-  background: #f1f1f1;
+  border: 1px solid #e4e4e4;
+  border-radius: 10px;
+  background: #fff;
   text-decoration: none;
   padding: 8px 10px;
-  box-shadow: none;
   transition:
     border-color var(--motion-fast) var(--ease-standard),
-    transform var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard);
+    background-color var(--motion-fast) var(--ease-standard);
 }
 
 .citation-sources li a:hover {
-  transform: none;
-  border-color: #d4d4d4;
-  background: #ededed;
-  box-shadow: none;
+  border-color: #d7d7d7;
+  background: #f9f9f9;
 }
 
 .citation-sources li a:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent-sea) 56%, white);
+  outline: 1.5px solid #0d0d0d;
   outline-offset: 2px;
-  border-color: color-mix(in srgb, var(--accent-sea) 44%, transparent);
-}
-
-.citation-sources li a:active {
-  transform: none;
 }
 
 .source-index {
@@ -91,17 +81,17 @@ defineEmits(['source-click'])
   place-items: center;
   width: 18px;
   height: 18px;
-  border-radius: var(--radius-pill);
-  border: 1px solid #d5d5d5;
-  color: var(--graphite);
+  border-radius: 999px;
+  border: 1px solid #d7d7d7;
+  color: #5d5d5d;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .source-title {
-  color: #202123;
+  color: #0d0d0d;
   font-size: 12px;
-  font-weight: 620;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -109,14 +99,14 @@ defineEmits(['source-click'])
 
 .source-host {
   grid-column: 2;
-  color: var(--pencil);
+  color: #8f8f8f;
   font-size: 11px;
   letter-spacing: 0.01em;
 }
 
 .citation-empty {
   margin-top: 10px;
-  color: var(--pencil);
+  color: #8f8f8f;
   font-size: 11px;
 }
 </style>

@@ -30,27 +30,23 @@ defineEmits(['ad-click'])
 
 <style scoped>
 .ad-card {
-  margin-top: 14px;
-  border-radius: var(--radius-lg);
+  margin-top: 16px;
+  border-radius: 12px;
   border: 1px solid #dddddd;
   background: #f3f3f3;
-  box-shadow: none;
   padding: 12px;
   transition:
-    transform var(--motion-base) var(--ease-standard),
     border-color var(--motion-base) var(--ease-standard),
-    box-shadow var(--motion-base) var(--ease-standard);
+    background-color var(--motion-base) var(--ease-standard);
 }
 
 .ad-card:hover {
-  transform: none;
-  border-color: #d3d3d3;
-  box-shadow: none;
+  border-color: #d4d4d4;
+  background: #efefef;
 }
 
 .ad-card:focus-within {
-  border-color: #c9c9c9;
-  box-shadow: none;
+  border-color: #cfcfcf;
 }
 
 .ad-card-meta {
@@ -62,19 +58,19 @@ defineEmits(['ad-click'])
 }
 
 .ad-card-meta span:first-child {
-  border-radius: var(--radius-pill);
+  border-radius: 999px;
   border: 1px solid #d4d4d4;
   background: #ededed;
-  color: var(--graphite);
+  color: #5d5d5d;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.09em;
   text-transform: uppercase;
   padding: 4px 8px;
 }
 
 .ad-card-meta span:last-child {
-  color: var(--pencil);
+  color: #8f8f8f;
   font-size: 11px;
 }
 
@@ -83,21 +79,12 @@ defineEmits(['ad-click'])
   gap: 12px;
   text-decoration: none;
   color: inherit;
-  border-radius: var(--radius-md);
-  transition: transform var(--motion-fast) var(--ease-standard);
-}
-
-.ad-card-link:hover {
-  transform: none;
+  border-radius: 10px;
 }
 
 .ad-card-link:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent-sea) 56%, white);
+  outline: 1.5px solid #0d0d0d;
   outline-offset: 2px;
-}
-
-.ad-card-link:active {
-  transform: translateY(0);
 }
 
 .ad-card-link img {
@@ -105,7 +92,7 @@ defineEmits(['ad-click'])
   width: 72px;
   height: 72px;
   object-fit: cover;
-  border-radius: var(--radius-sm);
+  border-radius: 10px;
   border: 1px solid #d6d6d6;
   background: #fff;
 }
@@ -118,14 +105,14 @@ defineEmits(['ad-click'])
 .ad-card-copy h4 {
   margin: 0;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.35;
-  color: var(--ink);
+  color: #0d0d0d;
 }
 
 .ad-card-copy p {
   margin: 6px 0 0;
-  color: var(--graphite);
+  color: #5d5d5d;
   font-size: 12px;
   line-height: 1.42;
   display: -webkit-box;
@@ -138,21 +125,23 @@ defineEmits(['ad-click'])
   margin-top: 12px;
   display: inline-flex;
   align-items: center;
-  border-radius: var(--radius-pill);
+  min-height: 32px;
+  border-radius: 999px;
   border: 1px solid #000;
   background: #000;
   color: #fff;
-  padding: 6px 11px;
-  font-size: 11px;
-  font-weight: 650;
+  padding: 7px 12px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
   transition:
-    transform var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
     background-color var(--motion-fast) var(--ease-standard);
 }
 
 .ad-card-link:hover .ad-card-cta {
-  transform: none;
-  background: #000;
+  border-color: #1f1f1f;
+  background: #1f1f1f;
 }
 
 @media (max-width: 560px) {
