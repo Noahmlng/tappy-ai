@@ -1,7 +1,7 @@
 # 外部链路复核报告（Key Scope + 链路追踪 + CPA 结算）
 
 - 日期：2026-02-25（CST）
-- 工作区：`/Users/zeming/Documents/chat-ads-main`
+- 工作区：`/Users/zeming/Documents/mediation-main`
 - 负责人：Codex
 
 ## 1. 目标
@@ -47,14 +47,14 @@ Run ID：`external_chain_1771961461644`
 
 产物：
 
-- `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/external_chain_1771961461644/summary.json`
-- `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/external_chain_1771961461644/snapshots.json`
+- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/external_chain_1771961461644/summary.json`
+- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/external_chain_1771961461644/snapshots.json`
 
 ### 3.3 已应用修复
 
 变更文件：
 
-- `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/src/devtools/simulator/simulator-gateway.js`
+- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/src/devtools/mediation/mediation-gateway.js`
 
 修复内容：
 
@@ -82,9 +82,9 @@ Run ID：`external_chain_1771961602184`
 
 产物：
 
-- `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/external_chain_1771961602184/summary.json`
-- `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/external_chain_1771961602184/snapshots.json`
-- `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/external_chain_1771961602184/gateway-stdout.log`
+- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/external_chain_1771961602184/summary.json`
+- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/external_chain_1771961602184/snapshots.json`
+- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/external_chain_1771961602184/gateway-stdout.log`
 
 ## 4. 结论
 
@@ -115,12 +115,12 @@ Run ID：`external_chain_1771961602184`
 
 ### 5.2 Final Check 命令矩阵
 
-执行目录：`/Users/zeming/Documents/chat-ads-main`
+执行目录：`/Users/zeming/Documents/mediation-main`
 
 ```bash
-npm --prefix projects/ad-aggregation-platform run test:integration
-npm --prefix projects/ad-aggregation-platform run test:functional:p0
-npm --prefix projects/simulator-dashboard run build
+npm --prefix projects/tappy-ai-mediation run test:integration
+npm --prefix projects/tappy-ai-mediation run test:functional:p0
+npm --prefix projects/mediation-dashboard run build
 ```
 
 结果：
@@ -132,7 +132,7 @@ npm --prefix projects/simulator-dashboard run build
    - contracts：38 pass，0 fail
    - integration：189 pass，0 fail
    - e2e：7 pass，0 fail
-3. `simulator-dashboard build`：**PASS**
+3. `mediation-dashboard build`：**PASS**
 
 ### 5.3 外部开发者路径验证
 
@@ -140,7 +140,7 @@ npm --prefix projects/simulator-dashboard run build
 
 1. Onboarding 主链路明确为 `config -> v2/bid -> events`
 2. Dashboard 导航开放 `Home + Usage + Quick Start`
-3. 收益继续由 fact 驱动（`simulator_settlement_conversion_facts`），并在 Dashboard 结算聚合中可见
+3. 收益继续由 fact 驱动（`mediation_settlement_conversion_facts`），并在 Dashboard 结算聚合中可见
 4. 运行时环境固定为 `environment=prod`，用户侧不再暴露 staging/sandbox 选择
 5. 对外接入文档已从占位模板补齐为可执行版本
 

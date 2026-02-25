@@ -35,10 +35,10 @@ Verification evidence:
 
 - health: `curl http://127.0.0.1:3100/api/health` -> `{"ok":true,...}`
 - minimal closed-loop:
-  - `node --test ./projects/ad-aggregation-platform/tests/e2e/minimal-closed-loop.spec.js`
+  - `node --test ./projects/tappy-ai-mediation/tests/e2e/minimal-closed-loop.spec.js`
   - pass `1`, fail `0`
 - replay determinism:
-  - `node --test ./projects/ad-aggregation-platform/tests/e2e/g-replay-determinism.spec.js`
+  - `node --test ./projects/tappy-ai-mediation/tests/e2e/g-replay-determinism.spec.js`
   - pass `3`, fail `0`
 
 State transition evidence:

@@ -131,7 +131,7 @@
 ## 6. 仓库目录建议
 
 ```text
-projects/ad-aggregation-platform/data/house-ads/
+projects/tappy-ai-mediation/data/house-ads/
   raw/
     brand-seeds/
   curated/

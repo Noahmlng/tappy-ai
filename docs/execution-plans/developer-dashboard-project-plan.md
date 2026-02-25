@@ -11,7 +11,7 @@
 3. 自动提交 PR 默认关闭。
 4. `managed_mediation` 作为默认路由，但不要求开发者理解或配置供应商细节。
 5. `sandbox/staging/prod` 凭证强制分离。
-6. Reset 功能仅供内部 simulator 调试，不对外部开发者展示。
+6. Reset 功能仅供内部 mediation 调试，不对外部开发者展示。
 7. ZeroClick / TryGravity 兼容是“迁移加速能力”，不是 v1 外部接入硬门槛。
 
 ## 1. Product Principles (v1)
@@ -123,7 +123,7 @@ Agent 指令中不放长期 API Key，不要求用户把长期 key 贴进 prompt
 
 定位修正：
 
-1. Reset 是 simulator 联调能力，不是外部开发者能力。
+1. Reset 是 mediation 联调能力，不是外部开发者能力。
 2. Reset 入口仅内部可见（feature flag + internal role）。
 3. 生产外部门户不显示 Reset UI。
 
@@ -177,7 +177,7 @@ Exit:
 
 1. 新项目在零 provider 配置前提下可稳定跑通。
 
-## 10.4 Milestone D: Internal Simulator Reset (3-4 days)
+## 10.4 Milestone D: Internal Mediation Reset (3-4 days)
 
 1. Reset/Snapshot/Validation-run 仅内部开关启用。
 2. 外部门户隐藏全部 reset 功能。
@@ -200,5 +200,5 @@ Exit:
 1. 自动提交 PR：`NO`（默认关闭）。
 2. 新项目默认路由：`managed_mediation`（对开发者无额外负担）。
 3. 环境 key 强制分离：`YES`。
-4. Reset 能力：`Internal simulator only`。
+4. Reset 能力：`Internal mediation only`。
 5. ZeroClick/TryGravity：`P2 migration accelerator`，非 v1 硬门槛。

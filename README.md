@@ -22,15 +22,15 @@
 
 当前仓库聚焦 Core 平台（协议、runtime、gateway、control plane）：
 
-1. `projects/ad-aggregation-platform`
+1. `projects/tappy-ai-mediation`
 - 广告聚合平台核心（协议、runtime、gateway、control plane）。
 
-2. `chat-ads-dashboard`（外部独立仓库）
+2. `mediation-dashboard`（外部独立仓库）
 - Developer Dashboard（接入方侧），负责配置、审计、决策和事件观测。
-- 本地路径：`/Users/zeming/Documents/chat-ads-dashboard`
+- 本地路径：`/Users/zeming/Documents/mediation-dashboard`
 
 外部测试客户端（已迁出仓库）：
-- `/Users/zeming/Documents/simulator-chatbot`
+- `/Users/zeming/Documents/mediation-chatbot`
 - 作为独立 AI Native Chat 容器，用于触发与验证广告链路。
 
 <a id="readme-status"></a>
@@ -54,7 +54,7 @@
 <a id="readme-placements"></a>
 ## 广告位配置与接入方式
 
-配置来源：`projects/ad-aggregation-platform/config/default-placements.json`
+配置来源：`projects/tappy-ai-mediation/config/default-placements.json`
 
 ### 已接入广告位（默认）
 
@@ -84,13 +84,13 @@
 
 ### 契约与配置入口
 
-- Placement schema：`projects/ad-aggregation-platform/schemas/placement.schema.json`
+- Placement schema：`projects/tappy-ai-mediation/schemas/placement.schema.json`
 - V2 Bid schema：
-  - `projects/ad-aggregation-platform/schemas/v2-bid-request.schema.json`
-  - `projects/ad-aggregation-platform/schemas/v2-bid-response.schema.json`
+  - `projects/tappy-ai-mediation/schemas/v2-bid-request.schema.json`
+  - `projects/tappy-ai-mediation/schemas/v2-bid-response.schema.json`
 - Next-Step schema：
-  - `projects/ad-aggregation-platform/schemas/next-step-intent-card-request.schema.json`
-  - `projects/ad-aggregation-platform/schemas/next-step-intent-card-response.schema.json`
+  - `projects/tappy-ai-mediation/schemas/next-step-intent-card-request.schema.json`
+  - `projects/tappy-ai-mediation/schemas/next-step-intent-card-response.schema.json`
 
 <a id="readme-output-modes"></a>
 ## 输出方式（按形态）
@@ -100,15 +100,15 @@
 - 触发点：`answer_completed`
 - 渲染位置：assistant 消息下方 Sponsored 区块
 - 关键代码：
-  - `projects/ad-aggregation-platform/src/devtools/simulator/simulator-gateway.js`
-  - 外部客户端：`/Users/zeming/Documents/simulator-chatbot`
+  - `projects/tappy-ai-mediation/src/devtools/mediation/mediation-gateway.js`
+  - 外部客户端：`/Users/zeming/Documents/mediation-chatbot`
 
 ### Next-Step 输出：Intent Card
 
 - 触发点：`followup_generation` / `follow_up_generation`
 - 渲染位置：回答下方 Next-Step 卡片区
 - 契约文档：
-  - `projects/ad-aggregation-platform/docs/next-step-intent-card-contract.md`
+  - `projects/tappy-ai-mediation/docs/next-step-intent-card-contract.md`
 
 <a id="readme-architecture"></a>
 ## 框架设计（控制面/决策面/检索面/体验面）
@@ -129,10 +129,10 @@
 ## SDK 文档入口（重点）
 
 1. 平台 Quick Start（对外主文档）：
-- `projects/ad-aggregation-platform/docs/sdk-quick-start-v2.md`
+- `projects/tappy-ai-mediation/docs/sdk-quick-start-v2.md`
 
 2. SDK 文档规范（编写标准）：
-- `projects/ad-aggregation-platform/docs/sdk-integration-document-spec.md`
+- `projects/tappy-ai-mediation/docs/sdk-integration-document-spec.md`
 
 3. Integration Pack 索引：
 - `docs/other/integration/developer-integration-pack/README.md`
@@ -156,21 +156,21 @@
 
 ### 核心代码目录
 
-- `projects/ad-aggregation-platform`
+- `projects/tappy-ai-mediation`
 - `apps/runtime-api`
 - `apps/control-plane-api`
 - `packages/mediation-sdk-contracts`
-- `/Users/zeming/Documents/simulator-chatbot`（外部仓库）
-- `/Users/zeming/Documents/chat-ads-dashboard`（外部仓库）
+- `/Users/zeming/Documents/mediation-chatbot`（外部仓库）
+- `/Users/zeming/Documents/mediation-dashboard`（外部仓库）
 
 ### 关键文档目录
 
 - 文档分类索引：`docs/README.md`
 - 路线图：`docs/ai-network-development-plan.md`
 - Placement 框架：`docs/design/ai-assistant-placement-framework.md`
-- Gateway 设计：`projects/ad-aggregation-platform/docs/local-simulator-gateway.md`
-- SDK Quick Start：`projects/ad-aggregation-platform/docs/sdk-quick-start-v2.md`
-- SDK 文档规范：`projects/ad-aggregation-platform/docs/sdk-integration-document-spec.md`
+- Gateway 设计：`projects/tappy-ai-mediation/docs/local-mediation-gateway.md`
+- SDK Quick Start：`projects/tappy-ai-mediation/docs/sdk-quick-start-v2.md`
+- SDK 文档规范：`projects/tappy-ai-mediation/docs/sdk-integration-document-spec.md`
 - 集成文档包：`docs/other/integration/developer-integration-pack/README.md`
 
 <a id="readme-run"></a>
@@ -189,29 +189,29 @@ npm run dev:local
 ### 单独启动
 
 ```bash
-npm --prefix ./projects/ad-aggregation-platform run dev:gateway
-npm --prefix /Users/zeming/Documents/chat-ads-dashboard run dev
+npm --prefix ./projects/tappy-ai-mediation run dev:gateway
+npm --prefix /Users/zeming/Documents/mediation-dashboard run dev
 ```
 
 外部客户端（可选）：
 
 ```bash
-npm --prefix /Users/zeming/Documents/simulator-chatbot run dev
+npm --prefix /Users/zeming/Documents/mediation-chatbot run dev
 ```
 
 ### 重置联调状态（可选）
 
 ```bash
-npm run sim:reset
+npm run mediation:reset
 ```
 
 ## Vercel 重建入口（双仓）
 
 1. `mediation-runtime-api`
-- Root Directory: `/Users/zeming/Documents/chat-ads-main/apps/runtime-api`
+- Root Directory: `apps/runtime-api`
 
 2. `mediation-control-plane-api`
-- Root Directory: `/Users/zeming/Documents/chat-ads-main/apps/control-plane-api`
+- Root Directory: `apps/control-plane-api`
 
-3. `simulator-dashboard`
-- Root Directory: `/Users/zeming/Documents/chat-ads-dashboard`
+3. `mediation-dashboard`
+- Root Directory: Dashboard 独立仓库根目录

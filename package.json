@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "workspaces": [
-    "projects/ad-aggregation-platform",
+    "projects/tappy-ai-mediation",
     "apps/runtime-api",
     "apps/control-plane-api",
     "packages/mediation-sdk-contracts"
@@ -12,9 +12,9 @@
     "dev": "npm run dev:gateway",
     "build": "echo \"No root build. Use workspace builds.\"",
     "lint": "echo \"No root lint. Use workspace lint commands.\"",
-    "dev:gateway": "npm run dev:gateway --workspace @ai-network/ad-aggregation-platform",
+    "dev:gateway": "npm run dev:gateway --workspace @ai-network/tappy-ai-mediation",
     "dev:local": "npm run dev:gateway",
-    "sim:reset": "bash ./scripts/reset-simulator-integration.sh",
+    "mediation:reset": "bash ./scripts/reset-mediation-integration.sh",
     "infra:up": "bash ./scripts/dev-mediation-infra.sh up",
     "infra:down": "bash ./scripts/dev-mediation-infra.sh down",
     "infra:status": "bash ./scripts/dev-mediation-infra.sh status"

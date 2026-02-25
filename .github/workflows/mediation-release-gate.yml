@@ -5,7 +5,7 @@ on:
     paths:
       - 'apps/**'
       - 'packages/mediation-sdk-contracts/**'
-      - 'projects/ad-aggregation-platform/**'
+      - 'projects/tappy-ai-mediation/**'
       - 'docs/implementation/**'
       - '.github/workflows/mediation-release-gate.yml'
   push:
@@ -14,7 +14,7 @@ on:
     paths:
       - 'apps/**'
       - 'packages/mediation-sdk-contracts/**'
-      - 'projects/ad-aggregation-platform/**'
+      - 'projects/tappy-ai-mediation/**'
       - '.github/workflows/mediation-release-gate.yml'
   workflow_dispatch:
     inputs:
@@ -59,13 +59,13 @@ jobs:
           npm pack --workspace @ai-network/mediation-sdk-contracts --dry-run
 
       - name: Migration dry run
-        run: npm --prefix ./projects/ad-aggregation-platform run db:migrate:dry-run
+        run: npm --prefix ./projects/tappy-ai-mediation run db:migrate:dry-run
 
       - name: Functional P0 gate
-        run: npm --prefix ./projects/ad-aggregation-platform run test:functional:p0
+        run: npm --prefix ./projects/tappy-ai-mediation run test:functional:p0
 
       - name: E2E gate
-        run: npm --prefix ./projects/ad-aggregation-platform run test:e2e
+        run: npm --prefix ./projects/tappy-ai-mediation run test:e2e
 
   release-checklist:
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'release' }}

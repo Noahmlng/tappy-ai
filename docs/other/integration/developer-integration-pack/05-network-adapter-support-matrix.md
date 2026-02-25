@@ -7,8 +7,8 @@
 
 | Adapter | Status | Supported Regions | Formats | Timeout | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `partnerstack` | supported | global (simulator baseline) | card / text-link payload mapped to bid schema | default 800ms | primary bidder in default config |
-| `cj` | supported | global (simulator baseline) | card / text-link payload mapped to bid schema | default 800ms | secondary bidder in default config |
+| `partnerstack` | supported | global (mediation baseline) | card / text-link payload mapped to bid schema | default 800ms | primary bidder in default config |
+| `cj` | supported | global (mediation baseline) | card / text-link payload mapped to bid schema | default 800ms | secondary bidder in default config |
 | `house` | supported (fallback) | global | internal house-ads payload | follows placement timeout budget | enabled when fallback store switch is on |
 
 ## 2. Feature Coverage

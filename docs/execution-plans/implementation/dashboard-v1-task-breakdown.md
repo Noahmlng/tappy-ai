@@ -11,7 +11,7 @@
 3. Agent 接入不暴露长期 API Key。
 4. 默认 `managed_mediation`，开发者不需要 provider 细节。
 5. `sandbox/staging/prod` key 强制分离。
-6. Reset 仅内部 simulator 可见。
+6. Reset 仅内部 mediation 可见。
 7. ZeroClick/TryGravity 作为 P2 迁移加速能力。
 
 ## 2. Workstreams
@@ -87,7 +87,7 @@ Exit Criteria:
 1. 新项目无需 provider key 即可跑通。
 2. 统一路由失败不阻塞主流程（fail-open 成立）。
 
-## 3.4 Milestone D: Internal Simulator Reset (Must for internal dev)
+## 3.4 Milestone D: Internal Mediation Reset (Must for internal dev)
 
 目标：支持内部反复“重置-重配-重测”，但外部不可见。
 
@@ -97,7 +97,7 @@ Exit Criteria:
 2. `DASH-D-002` soft reset（清理测试配置，保留账号组织）。
 3. `DASH-D-003` snapshot restore（回到指定联调状态）。
 4. `DASH-D-004` validation run 隔离（runId + 数据隔离）。
-5. `DASH-D-005` simulator 内部 UI 面板。
+5. `DASH-D-005` mediation 内部 UI 面板。
 6. `DASH-D-006` reset 安全保护（禁止外部和 prod 误用）。
 
 Exit Criteria:

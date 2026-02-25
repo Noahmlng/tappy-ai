@@ -79,7 +79,7 @@ Mandatory audit fields:
 
 Must all pass before Go:
 
-1. auth integration tests pass (`npm --prefix ./projects/ad-aggregation-platform run test:integration -- auth`)
+1. auth integration tests pass (`npm --prefix ./projects/tappy-ai-mediation run test:integration -- auth`)
 2. no endpoint bypasses `authorizeServiceRequest`
 3. audit logging on deny path is enabled
 4. key rotation runbook verified in staging

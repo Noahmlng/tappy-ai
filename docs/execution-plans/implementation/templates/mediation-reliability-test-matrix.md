@@ -24,9 +24,9 @@ Use this matrix to prove the mediation system is complete and reliable before re
 Execute these checks first and record failures early:
 
 ```bash
-npm --prefix ./projects/ad-aggregation-platform run check:env
-npm --prefix ./projects/ad-aggregation-platform run check:managed-services
-npm --prefix ./projects/ad-aggregation-platform run test:functional:p0
+npm --prefix ./projects/tappy-ai-mediation run check:env
+npm --prefix ./projects/tappy-ai-mediation run check:managed-services
+npm --prefix ./projects/tappy-ai-mediation run test:functional:p0
 ```
 
 If preflight fails, stop the matrix and create a blocker ticket with logs.
@@ -45,10 +45,10 @@ Status values: `Not Started | Running | Passed | Failed | Blocked`
 | RES-02 | P0 | Adapter 5xx degradation | Inject 5xx response from adapter | Run evaluate call | Request survives; adapter error is logged and tagged | No unhandled exception | Not Started | |
 | RES-03 | P1 | Invalid request payload | Missing required request fields | Call evaluate/events with bad payload | HTTP 400 with stable error code | 100% pass | Not Started | |
 | RES-04 | P1 | Network jitter and retry behavior | Simulate transient transport error | Run event post with retry policy | Retry happens only for retryable errors; no retry storm | Retry attempts <= 3 per request | Not Started | |
-| PERF-01 | P0 | Evaluate latency baseline | Normal load profile | Load test evaluate endpoint | p95 latency <= target_ms | p95 <= 300 ms | Failed | baseline eval p95=4105.503ms, p99=12001ms (`projects/ad-aggregation-platform/tests/performance-reports/perf-sdk-batch-2026-02-22_08-19-09-597.json`) |
-| PERF-02 | P0 | Event ingest latency baseline | Normal load profile | Load test events endpoint | p95 latency <= target_ms | p95 <= 200 ms | Passed | baseline events p95=17.423ms, p99=35.709ms (`projects/ad-aggregation-platform/tests/performance-reports/perf-sdk-batch-2026-02-22_08-19-09-597.json`) |
-| PERF-03 | P1 | Burst traffic resilience | 2x-3x expected QPS for 5 min | Run burst test | Error rate stays under threshold; autoscaling/degrade works | error_rate <= 1.0% | Failed | burst error_rate=1.2667%, actualQps=9.8039 (`projects/ad-aggregation-platform/tests/performance-reports/perf-sdk-batch-2026-02-22_08-19-09-597.json`) |
-| PERF-04 | P1 | Sustained load stability | 60 min at expected peak | Run soak test | No memory leak, no queue backlog growth | RSS growth <= 10% and MQ lag <= 60s | Failed | soak 60m RSS growth=184.6816% (49.359MB -> 140.516MB); MQ lag not exposed by dev gateway (`projects/ad-aggregation-platform/tests/performance-reports/perf-sdk-batch-2026-02-22_08-19-09-597.json`) |
+| PERF-01 | P0 | Evaluate latency baseline | Normal load profile | Load test evaluate endpoint | p95 latency <= target_ms | p95 <= 300 ms | Failed | baseline eval p95=4105.503ms, p99=12001ms (`projects/tappy-ai-mediation/tests/performance-reports/perf-sdk-batch-2026-02-22_08-19-09-597.json`) |
+| PERF-02 | P0 | Event ingest latency baseline | Normal load profile | Load test events endpoint | p95 latency <= target_ms | p95 <= 200 ms | Passed | baseline events p95=17.423ms, p99=35.709ms (`projects/tappy-ai-mediation/tests/performance-reports/perf-sdk-batch-2026-02-22_08-19-09-597.json`) |
+| PERF-03 | P1 | Burst traffic resilience | 2x-3x expected QPS for 5 min | Run burst test | Error rate stays under threshold; autoscaling/degrade works | error_rate <= 1.0% | Failed | burst error_rate=1.2667%, actualQps=9.8039 (`projects/tappy-ai-mediation/tests/performance-reports/perf-sdk-batch-2026-02-22_08-19-09-597.json`) |
+| PERF-04 | P1 | Sustained load stability | 60 min at expected peak | Run soak test | No memory leak, no queue backlog growth | RSS growth <= 10% and MQ lag <= 60s | Failed | soak 60m RSS growth=184.6816% (49.359MB -> 140.516MB); MQ lag not exposed by dev gateway (`projects/tappy-ai-mediation/tests/performance-reports/perf-sdk-batch-2026-02-22_08-19-09-597.json`) |
 | DATA-01 | P0 | Decision to event reconciliation | Sample same request set from logs, archive, report | Run reconciliation script | Delta is explainable and under threshold | mismatch <= 1% | Not Started | |
 | DATA-02 | P0 | Billing facts consistency | Compare billing records vs archive facts | Daily reconciliation check | Counts and revenue align within tolerance | delta <= 1% | Not Started | |
 | DATA-03 | P1 | Replay determinism | Replay archived request set | Run replay API / script | Same input yields same decision envelope (within allowed non-deterministic fields) | deterministic pass >= 99.99% | Not Started | |

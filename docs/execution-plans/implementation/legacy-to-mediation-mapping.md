@@ -4,8 +4,8 @@
 - Date: 2026-02-21
 - 依赖任务: FND-001
 - 设计依据:
-  - `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/mediation-development-plan.md`
-  - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/src/`
+  - `/Users/zeming/Documents/mediation-main/docs/execution-plans/mediation-development-plan.md`
+  - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/src/`
 
 ## 1. 分类口径
 
@@ -22,7 +22,7 @@
 | `src/offers/` | Mediation（重构后） | offer 归一与网络映射 | 可复用：`unified-offer.js`、`network-mappers.js` -> `Module B` + `Module D` | 拆为 `normalization` 与 `candidate-normalization` 两层，挂接 B/D 合同测试 |
 | `src/runtime/network-health-state.js` | Mediation（重构后） | 网络健康与降级状态管理 | 可复用：健康评分、熔断状态 -> `Module D` | 下沉到 D 路由策略域，纳入版本锚点与审计 |
 | `src/runtime/ads-runtime.js`、`src/runtime/index.js` | Tooling/过渡实现 | 历史主流程编排（混合临时逻辑） | 有限复用：编排骨架 -> `Module D/E/F` 参考 | 不直接复用为生产主链；按 A-H 重新实现 orchestration |
-| `src/devtools/simulator/simulator-gateway.js` | tooling | 本地 dashboard + 模拟网关 | 可复用：联调入口与模拟负载 -> 测试工具链 | 迁出生产主链，保留为 `devtools/simulator` |
+| `src/devtools/mediation/mediation-gateway.js` | tooling | 本地 dashboard + 模拟网关 | 可复用：联调入口与模拟负载 -> 测试工具链 | 迁出生产主链，保留为 `devtools/mediation` |
 | `src/providers/intent/` | 非 Mediation | 意图推断（LLM） | 可复用：可作为可选 provider 输入 -> `Module A` 外围 | 迁出主链，移至 `providers/intent` |
 | `src/providers/intent-card/` | 非 Mediation | 向量召回与意图卡补位 | 可复用：可选召回 provider -> `Module A` 外围 | 迁出主链，移至 `providers/intent-card` |
 | `src/providers/ner/` | 非 Mediation | 实体抽取（LLM NER） | 可复用：实体 signal provider -> `Module B` 前置输入源 | 迁出主链，移至 `providers/ner` |
@@ -65,7 +65,7 @@
 1. `src/providers/ner/`（迁出主链）
 2. `src/providers/intent/`（迁出主链）
 3. `src/providers/intent-card/`（迁出主链）
-4. `src/devtools/simulator/simulator-gateway.js`（迁出生产主链，保留 tooling）
+4. `src/devtools/mediation/mediation-gateway.js`（迁出生产主链，保留 tooling）
 
 ## 5. 实施约束（执行时必须遵守）
 

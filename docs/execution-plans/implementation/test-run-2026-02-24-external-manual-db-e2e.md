@@ -1,7 +1,7 @@
 # External E2E Test Report (Manual Integration + DB Persistence)
 
 - Date: 2026-02-24
-- Workspace: `/Users/zeming/Documents/chat-ads-main`
+- Workspace: `/Users/zeming/Documents/mediation-main`
 - Run ID: `e2e_20260224_154150`
 - Owner: Codex
 
@@ -21,7 +21,7 @@ Verify a complete external-user flow under **strict manual integration** with **
 Gateway runtime confirmed:
 
 - `MEDIATION_STRICT_MANUAL_INTEGRATION=true`
-- `MEDIATION_SETTLEMENT_STORAGE=postgres`
+- `MEDIATION_SETTLEMENT_STORAGE=supabase`
 - `MEDIATION_REQUIRE_DURABLE_SETTLEMENT=true`
 - `MEDIATION_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE=true`
 
@@ -35,13 +35,13 @@ Gateway startup logs confirmed:
 
 - Dashboard user: `sim-e2e-1771919050@local.test`
 - Account ID: `org_ext_e2e_1771919050`
-- App ID: `simulator_chatbot_e2e_1771919050`
+- App ID: `mediation_chatbot_e2e_1771919050`
 - API key status: `active` (staging key created via Dashboard credentials API)
 
 Evidence:
 
-- `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/e2e_20260224_154150/register-response.json`
-- `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/e2e_20260224_154150/key-create-response.json`
+- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/e2e_20260224_154150/register-response.json`
+- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/e2e_20260224_154150/key-create-response.json`
 
 ## 4. Test Cases and Results
 
@@ -55,9 +55,9 @@ Evidence:
 - Expected: Account-scoped auth and key issuance work under strict-manual mode
 - Result: **PASS**
 - Evidence:
-  - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/e2e_20260224_154150/register-response.json`
-  - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/e2e_20260224_154150/key-create-response.json`
-  - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/e2e_20260224_154150/placement-followup-enable-response.json`
+  - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/e2e_20260224_154150/register-response.json`
+  - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/e2e_20260224_154150/key-create-response.json`
+  - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/e2e_20260224_154150/placement-followup-enable-response.json`
 
 ### TC-02 config -> evaluate -> events API chain
 
@@ -68,9 +68,9 @@ Evidence:
 - Expected: requestId returned; events ack success
 - Result: **PASS**
 - Evidence:
-  - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/e2e_20260224_154150/manual-config-response.json`
-  - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/e2e_20260224_154150/manual-evaluate-response.json`
-  - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/e2e_20260224_154150/manual-events-response.json`
+  - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/e2e_20260224_154150/manual-config-response.json`
+  - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/e2e_20260224_154150/manual-evaluate-response.json`
+  - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/e2e_20260224_154150/manual-events-response.json`
 
 ### TC-03 Chatbot render chain (real UI)
 
@@ -81,8 +81,8 @@ Evidence:
 - Expected: non-blocking chat completion + ad card render with real links
 - Result: **PASS**
 - Evidence:
-  - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/e2e_20260224_154150/playwright-evidence/chatbot-related-products.png`
-  - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/e2e_20260224_154150/playwright-evidence/chatbot-related-products.yml`
+  - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/e2e_20260224_154150/playwright-evidence/chatbot-related-products.png`
+  - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/e2e_20260224_154150/playwright-evidence/chatbot-related-products.yml`
 
 ### TC-04 Behavior tracking (impression/click/dismiss)
 
@@ -92,9 +92,9 @@ Evidence:
 - Expected: `sdk_event` rows include `impression/click/dismiss`
 - Result: **PASS**
 - Evidence:
-  - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/e2e_20260224_154150/dashboard-events-after-ui-click.json`
+  - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/e2e_20260224_154150/dashboard-events-after-ui-click.json`
   - Request-specific DB events in:
-    `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/e2e_20260224_154150/db-verification.json`
+    `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/e2e_20260224_154150/db-verification.json`
 
 ### TC-05 Postback conversion persistence
 
@@ -106,9 +106,9 @@ Evidence:
   - Dashboard usage shows `settledConversions=1`, `settledRevenueUsd=6.25`
 - Result: **PASS**
 - Evidence:
-  - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/e2e_20260224_154150/postback-response.json`
-  - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/e2e_20260224_154150/dashboard-state-after-postback.json`
-  - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/e2e_20260224_154150/db-verification.json`
+  - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/e2e_20260224_154150/postback-response.json`
+  - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/e2e_20260224_154150/dashboard-state-after-postback.json`
+  - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/e2e_20260224_154150/db-verification.json`
 
 ### TC-06 Dashboard display and refresh stability
 
@@ -118,9 +118,9 @@ Evidence:
 - Expected: logs remain visible after refresh (not empty reset)
 - Result: **PASS** (for this run and this account scope)
 - Evidence:
-  - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/e2e_20260224_154150/playwright-evidence/dashboard-usage-postback.png`
-  - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/e2e_20260224_154150/playwright-evidence/dashboard-decision-logs.png`
-  - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/e2e_20260224_154150/playwright-evidence/dashboard-decision-logs-refresh.yml`
+  - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/e2e_20260224_154150/playwright-evidence/dashboard-usage-postback.png`
+  - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/e2e_20260224_154150/playwright-evidence/dashboard-decision-logs.png`
+  - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/e2e_20260224_154150/playwright-evidence/dashboard-decision-logs-refresh.yml`
 
 ## 5. Key Data Checkpoints
 
@@ -165,7 +165,7 @@ Fix:
 
 Changed file:
 
-- `/Users/zeming/Documents/chat-ads-main/projects/simulator-chatbot/src/api/adsPlatformClient.js`
+- `/Users/zeming/Documents/mediation-main/projects/mediation-chatbot/src/api/adsPlatformClient.js`
 
 ## 7. Known Blocker (MCP)
 

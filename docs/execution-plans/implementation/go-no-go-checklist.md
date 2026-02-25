@@ -19,7 +19,7 @@
 
 ## 3. 测试阻断项
 
-- [ ] `npm --prefix ./projects/ad-aggregation-platform run test:integration` 全部通过
+- [ ] `npm --prefix ./projects/tappy-ai-mediation run test:integration` 全部通过
 - [ ] 关键链路 smoke/E2E 通过（Request -> Delivery -> Event -> Archive -> Replay）
 - [ ] 发布门禁工作流可执行并通过
 - [ ] 回滚演练模板已填写并评审

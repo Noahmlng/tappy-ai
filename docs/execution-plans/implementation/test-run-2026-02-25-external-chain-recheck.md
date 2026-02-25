@@ -1,7 +1,7 @@
 # External Chain Recheck Report (Key Scope + Link Trace + CPA Settlement)
 
 - Date: 2026-02-25 (CST)
-- Workspace: `/Users/zeming/Documents/chat-ads-main`
+- Workspace: `/Users/zeming/Documents/mediation-main`
 - Owner: Codex
 
 ## 1. Goal
@@ -47,14 +47,14 @@ Evidence summary:
 
 Artifacts:
 
-- `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/external_chain_1771961461644/summary.json`
-- `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/external_chain_1771961461644/snapshots.json`
+- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/external_chain_1771961461644/summary.json`
+- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/external_chain_1771961461644/snapshots.json`
 
 ### 3.3 Fix applied
 
 File changed:
 
-- `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/src/devtools/simulator/simulator-gateway.js`
+- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/src/devtools/mediation/mediation-gateway.js`
 
 Change:
 
@@ -82,9 +82,9 @@ Key results:
 
 Artifacts:
 
-- `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/external_chain_1771961602184/summary.json`
-- `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/external_chain_1771961602184/snapshots.json`
-- `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/.local/external_chain_1771961602184/gateway-stdout.log`
+- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/external_chain_1771961602184/summary.json`
+- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/external_chain_1771961602184/snapshots.json`
+- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/external_chain_1771961602184/gateway-stdout.log`
 
 ## 4. Conclusion
 
@@ -115,12 +115,12 @@ Additional confirmed behavior:
 
 ### 5.2 Final Check Command Matrix
 
-Executed from workspace `/Users/zeming/Documents/chat-ads-main`:
+Executed from workspace `/Users/zeming/Documents/mediation-main`:
 
 ```bash
-npm --prefix projects/ad-aggregation-platform run test:integration
-npm --prefix projects/ad-aggregation-platform run test:functional:p0
-npm --prefix projects/simulator-dashboard run build
+npm --prefix projects/tappy-ai-mediation run test:integration
+npm --prefix projects/tappy-ai-mediation run test:functional:p0
+npm --prefix projects/mediation-dashboard run build
 ```
 
 Results:
@@ -132,7 +132,7 @@ Results:
    - contracts: 38 pass, 0 fail
    - integration: 189 pass, 0 fail
    - e2e: 7 pass, 0 fail
-3. `simulator-dashboard build`: **PASS**
+3. `mediation-dashboard build`: **PASS**
 
 ### 5.3 External Developer Path Verification
 
@@ -140,7 +140,7 @@ Verified expectations are now aligned:
 
 1. Onboarding path is explicitly `config -> v2/bid -> events`.
 2. Dashboard navigation exposes `Home + Usage + Quick Start`.
-3. Revenue remains fact-driven (`simulator_settlement_conversion_facts`) and visible in dashboard settlement aggregates.
+3. Revenue remains fact-driven (`mediation_settlement_conversion_facts`) and visible in dashboard settlement aggregates.
 4. Runtime scope is fixed to `environment=prod`; user-facing staging/sandbox selection is removed.
 5. Developer-facing integration docs are no longer placeholder templates.
 
@@ -157,34 +157,34 @@ Final Check gate is **PASS** for the V2-only / Fast-first + prod-only strategy:
 
 - 时间: 2026-02-25 18:31-18:44 CST
 - 目标: 在真实生产域名完成 `注册 -> 创建 key -> config/bid/events -> conversion postback -> Usage 收益可见` 全流程
-- 范围: `mediation-runtime-api` + `mediation-control-plane-api` + `simulator-dashboard`（Chatbot 不在部署范围）
+- 范围: `mediation-runtime-api` + `mediation-control-plane-api` + `mediation-dashboard`（Chatbot 不在部署范围）
 
 ### 6.1 生产部署结果
 
 执行（prod）：
 
 ```bash
-vercel deploy /Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform --prod -y --local-config /tmp/vercel.runtime.prod.json
-vercel deploy /Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform --prod -y --local-config /tmp/vercel.control-plane.prod.json
-vercel deploy /Users/zeming/Documents/chat-ads-main/projects/simulator-dashboard --prod -y
+vercel deploy /Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation --prod -y --local-config /tmp/vercel.runtime.prod.json
+vercel deploy /Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation --prod -y --local-config /tmp/vercel.control-plane.prod.json
+vercel deploy /Users/zeming/Documents/mediation-main/projects/mediation-dashboard --prod -y
 ```
 
 对应生产部署（Ready）：
 
 - Runtime API: `https://mediation-runtime-oc8x2epwz-noahs-projects-09088504.vercel.app`
 - Control Plane API: `https://mediation-control-plane-ixx3masf7-noahs-projects-09088504.vercel.app`
-- Dashboard: `https://simulator-dashboard-cl5wzpxti-noahs-projects-09088504.vercel.app`
+- Dashboard: `https://mediation-dashboard-cl5wzpxti-noahs-projects-09088504.vercel.app`
 
 别名：
 
 - `https://mediation-runtime-api.vercel.app`
 - `https://mediation-control-plane-api.vercel.app`
-- `https://simulator-dashboard.vercel.app`
+- `https://mediation-dashboard.vercel.app`
 
 Dashboard 补充修复（同日）：
 
-- 问题: 直接访问 `https://simulator-dashboard.vercel.app/login` 等深链接会出现 404
-- 修复: 增加 `projects/simulator-dashboard/vercel.json`（`filesystem` + `index.html` fallback）
+- 问题: 直接访问 `https://mediation-dashboard.vercel.app/login` 等深链接会出现 404
+- 修复: 增加 `projects/mediation-dashboard/vercel.json`（`filesystem` + `index.html` fallback）
 - 复测: 深链接 `/login?redirect=/home` 已可直接打开并进入应用
 
 ### 6.2 在线链路验证步骤与结果

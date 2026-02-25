@@ -2,12 +2,12 @@
 
 - 版本：v1.0
 - 日期：2026-02-21
-- 适用范围：`/Users/zeming/Documents/chat-ads-main`
+- 适用范围：`/Users/zeming/Documents/mediation-main`
 - 目标：按 `docs/design/mediation/` 的 A-H 冻结合同落地可运行 Mediation 产品，并保证功能测试链路 100% 通过后再产出 SDK 接入文档。
 
 ## 1. 结论先行（执行策略）
 
-1. 以 `docs/design/mediation/` 为唯一设计真相源，历史 `ad-aggregation-platform` 仅做“资产复用池”。
+1. 以 `docs/design/mediation/` 为唯一设计真相源，历史 `tappy-ai-mediation` 仅做“资产复用池”。
 2. 先建测试骨架与验收门禁，再按 A->B->C->D->E->F->G 主链 + H 横切落地。
 3. 对历史代码进行三类拆分：
    - Mediation 可复用核心（保留并重构）
@@ -38,7 +38,7 @@
 
 ## 3. 历史版本审计：哪些不是 Mediation 层
 
-分析对象：`/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform`
+分析对象：`/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation`
 
 ### 3.1 明确属于“非 Mediation 临时替代层”
 
@@ -57,10 +57,10 @@
 
 ### 3.2 属于“本地模拟/运营工具层（非生产 Mediation 主链）”
 
-1. `src/devtools/simulator/simulator-gateway.js`
+1. `src/devtools/mediation/mediation-gateway.js`
    - 包含 dashboard 配置管理、统计聚合、日志查询、本地状态持久化等。
    - 结论：可作为开发联调壳保留，但要拆出生产 Mediation API 主服务。
-2. `docs/local-simulator-gateway.md` 与 dashboard 相关 API。
+2. `docs/local-mediation-gateway.md` 与 dashboard 相关 API。
    - 结论：dev tooling 文档，保留但与产品化 SDK/API 文档分离。
 
 ### 3.3 可复用的 Mediation 重合资产
@@ -84,7 +84,7 @@
 
 ## 4. 目标架构与代码拆分建议
 
-建议将现有 `ad-aggregation-platform` 重组为：
+建议将现有 `tappy-ai-mediation` 重组为：
 
 1. `packages/mediation-core`
    - 领域模型、状态机、原因码、版本锚点、幂等键、审计键。
@@ -96,7 +96,7 @@
    - D 模块 supply adapter（cj/partnerstack/mock 等）。
 5. `packages/providers-external`（可选）
    - 非 Mediation 核心：NER/intent/intent-card 等临时上游能力。
-6. `apps/simulator-gateway`（dev only）
+6. `apps/mediation-gateway`（dev only）
    - 仅本地联调和 dashboard 演示。
 
 ## 5. 分阶段实施计划（可拆分子任务）
@@ -224,7 +224,7 @@
 1. T6-1：SDK 最小接入路径
    - config 拉取、evaluate 触发、events 上报。
 2. T6-2：接入样例
-   - JS/TS SDK demo + server-side demo + simulator 对接。
+   - JS/TS SDK demo + server-side demo + mediation 对接。
 3. T6-3：SDK 文档包
    - Quickstart / Integration / API Reference / Runbook。
 4. T6-4：发布与回滚演练
@@ -389,7 +389,7 @@
 3. 迁移为 D 健康与降级基础：
    - `src/runtime/network-health-state.js`
 4. 保留为 dev tooling：
-   - `src/devtools/simulator/simulator-gateway.js`（拆分 dashboard 接口与 mediation API）
+   - `src/devtools/mediation/mediation-gateway.js`（拆分 dashboard 接口与 mediation API）
 5. 迁出主链为可选 provider：
    - `src/providers/ner/*`
    - `src/providers/intent/*`

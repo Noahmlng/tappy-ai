@@ -27,8 +27,8 @@
 建议启动（示例）：
 
 ```bash
-cd /Users/zeming/Documents/chat-ads-main
-set -a; source ./projects/ad-aggregation-platform/.env; set +a
+cd /Users/zeming/Documents/mediation-main
+set -a; source ./projects/tappy-ai-mediation/.env; set +a
 MEDIATION_RUNTIME_AUTH_REQUIRED=false \
 MEDIATION_DASHBOARD_AUTH_REQUIRED=false \
 MEDIATION_STRICT_MANUAL_INTEGRATION=false \
@@ -36,7 +36,7 @@ MEDIATION_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE=false \
 MEDIATION_REQUIRE_DURABLE_SETTLEMENT=false \
 MEDIATION_SETTLEMENT_STORAGE=state_file \
 HOUSE_ADS_SOURCE=file \
-node ./projects/ad-aggregation-platform/src/devtools/simulator/simulator-gateway.js
+node ./projects/tappy-ai-mediation/src/devtools/mediation/mediation-gateway.js
 ```
 
 ## 3. 标准联调 Pipeline（可复用）
@@ -44,9 +44,9 @@ node ./projects/ad-aggregation-platform/src/devtools/simulator/simulator-gateway
 ### Step 1) 启动三服务
 
 ```bash
-cd /Users/zeming/Documents/chat-ads-main
+cd /Users/zeming/Documents/mediation-main
 npm run dev:dashboard
-npm --prefix /Users/zeming/Documents/simulator-chatbot run dev -- --port 3001
+npm --prefix /Users/zeming/Documents/mediation-chatbot run dev -- --port 3001
 # Gateway 按上面的 A/B 模式单独启动
 ```
 

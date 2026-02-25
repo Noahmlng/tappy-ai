@@ -2,7 +2,7 @@
 
 - 版本：v1.0
 - 日期：2026-02-21
-- 关联总计划：`/Users/zeming/Documents/chat-ads-main/docs/execution-plans/mediation-development-plan.md`
+- 关联总计划：`/Users/zeming/Documents/mediation-main/docs/execution-plans/mediation-development-plan.md`
 - 目标：把 Mediation 落地任务拆为可独立执行的原子任务，确保单次 agent context 可控且任务可闭环验收。
 
 ## 0. 使用规则（所有任务通用）
@@ -23,10 +23,10 @@
 
 1. Batch-0（INFRA-001~INFRA-010）状态：`已完成`。
 2. 前置外部依赖连通状态：
-   - `npm --prefix ./projects/ad-aggregation-platform run check:managed-services` 通过。
+   - `npm --prefix ./projects/tappy-ai-mediation run check:managed-services` 通过。
    - Doppler/Grafana/Synadia 均已通过授权与连通校验。
 3. 基础质量门禁状态：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration` 通过（13/13）。
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration` 通过（13/13）。
 4. 数据库基线状态：
    - Supabase 项目 `bkqjenmznafkqqwvwrad` 已完成 `0001_mediation_core_baseline.sql` 执行并记录 `schema_migrations`。
 5. 允许进入正式开发：
@@ -43,9 +43,9 @@
 2. 前置依赖：
    - 无
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/operations/06-production-readiness-and-infra.md`
+   - `/Users/zeming/Documents/mediation-main/docs/design/mediation/operations/06-production-readiness-and-infra.md`
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/implementation/infra-topology-and-capacity.md`
+   - 新增 `/Users/zeming/Documents/mediation-main/docs/execution-plans/implementation/infra-topology-and-capacity.md`
 5. 执行步骤：
    - 定义服务拓扑、数据流、峰值 QPS、事件 TPS、存储增长模型。
 6. 验收标准：
@@ -83,9 +83,9 @@
 2. 前置依赖：
    - INFRA-002
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/operations/06-production-readiness-and-infra.md`
+   - `/Users/zeming/Documents/mediation-main/docs/design/mediation/operations/06-production-readiness-and-infra.md`
 4. 允许改动：
-   - 新增 `projects/ad-aggregation-platform/migrations/*`
+   - 新增 `projects/tappy-ai-mediation/migrations/*`
    - 新增 migration runner 脚本
 5. 执行步骤：
    - 创建核心表与索引。
@@ -93,7 +93,7 @@
 6. 验收标准：
    - 新库可一键迁移到最新版本。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run db:migrate`
+   - `npm --prefix ./projects/tappy-ai-mediation run db:migrate`
 8. 输出物：
    - migration baseline
 
@@ -154,7 +154,7 @@
 6. 验收标准：
    - 未授权请求可稳定拒绝并审计。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- auth`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- auth`
 8. 输出物：
    - security baseline
 
@@ -175,7 +175,7 @@
 6. 验收标准：
    - 核心链路指标可被查询且有告警策略。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- observability`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- observability`
 8. 输出物：
    - observability baseline
 
@@ -217,7 +217,7 @@
 6. 验收标准：
    - 差异可定位到 `recordKey` 与版本锚点。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- reconcile`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- reconcile`
 8. 输出物：
    - reconciliation baseline
 
@@ -230,7 +230,7 @@
 3. 必读 context：
    - operations/06 的 `6.11`
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/implementation/go-no-go-checklist.md`
+   - 新增 `/Users/zeming/Documents/mediation-main/docs/execution-plans/implementation/go-no-go-checklist.md`
 5. 执行步骤：
    - 把服务、测试、安全、运维、业务就绪项转为可勾选清单。
 6. 验收标准：
@@ -251,10 +251,10 @@
 2. 前置依赖：
    - 无
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/INDEX.md`
-   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/modules/`
+   - `/Users/zeming/Documents/mediation-main/docs/design/mediation/INDEX.md`
+   - `/Users/zeming/Documents/mediation-main/docs/design/mediation/modules/`
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/implementation/contract-catalog.md`
+   - 新增 `/Users/zeming/Documents/mediation-main/docs/execution-plans/implementation/contract-catalog.md`
 5. 执行步骤：
    - 为 A-H 每个模块建立小节。
    - 每模块至少列出：核心接口、输入合同、输出合同、关键事件、原因码段、版本锚点字段。
@@ -273,16 +273,16 @@
 2. 前置依赖：
    - FND-001
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/src/`
-   - `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/mediation-development-plan.md`
+   - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/src/`
+   - `/Users/zeming/Documents/mediation-main/docs/execution-plans/mediation-development-plan.md`
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/implementation/legacy-to-mediation-mapping.md`
+   - 新增 `/Users/zeming/Documents/mediation-main/docs/execution-plans/implementation/legacy-to-mediation-mapping.md`
 5. 执行步骤：
    - 按目录级别列出归属分类。
    - 标注“可复用资产 -> 对应模块（B/D/H等）”。
    - 标注“迁出主链”的目录。
 6. 验收标准：
-   - 至少覆盖 `src/connectors`、`src/offers`、`src/runtime`、`src/devtools/simulator`、`src/providers/intent*`、`src/providers/ner`。
+   - 至少覆盖 `src/connectors`、`src/offers`、`src/runtime`、`src/devtools/mediation`、`src/providers/intent*`、`src/providers/ner`。
 7. 验证命令：
    - `rg -n "可复用|迁出主链|tooling|Module D|Module B" docs/execution-plans/implementation/legacy-to-mediation-mapping.md`
 8. 输出物：
@@ -296,9 +296,9 @@
    - FND-001
    - FND-002
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/mediation-atomic-task-pack.md`
+   - `/Users/zeming/Documents/mediation-main/docs/execution-plans/mediation-atomic-task-pack.md`
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/implementation/task-board-seed.csv`
+   - 新增 `/Users/zeming/Documents/mediation-main/docs/execution-plans/implementation/task-board-seed.csv`
 5. 执行步骤：
    - 列：`task_id,module,owner,status,depends_on,dod,test_command,artifact_path`
    - 把本文件任务卡同步入表。
@@ -317,18 +317,18 @@
 2. 前置依赖：
    - FND-001
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/package.json`
-   - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/package.json`
+   - `/Users/zeming/Documents/mediation-main/package.json`
+   - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/package.json`
 4. 允许改动：
-   - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/package.json`
-   - 新增 `tests/contracts/`, `tests/integration/`, `tests/e2e/`（在 ad-aggregation-platform 内）
+   - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/package.json`
+   - 新增 `tests/contracts/`, `tests/integration/`, `tests/e2e/`（在 tappy-ai-mediation 内）
 5. 执行步骤：
    - 增加脚本：`test:contracts`, `test:integration`, `test:e2e`, `test:functional:p0`。
    - 每个目录放置占位测试，先可执行通过。
 6. 验收标准：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:functional:p0` 可运行。
+   - `npm --prefix ./projects/tappy-ai-mediation run test:functional:p0` 可运行。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:functional:p0`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:functional:p0`
 8. 输出物：
    - 测试命令基线
 
@@ -339,16 +339,16 @@
 2. 前置依赖：
    - FND-004
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/schemas/`
+   - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/schemas/`
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/tests/utils/contract-runner.*`
-   - 新增 `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/tests/contracts/base-contract.spec.*`
+   - 新增 `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/tests/utils/contract-runner.*`
+   - 新增 `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/tests/contracts/base-contract.spec.*`
 5. 执行步骤：
    - 支持 JSON schema 校验、required 字段断言、错误码断言。
 6. 验收标准：
    - 基础合同测试可复用到 A-H。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:contracts`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:contracts`
 8. 输出物：
    - contract-runner
 
@@ -359,16 +359,16 @@
 2. 前置依赖：
    - FND-004
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/operations/01-closed-loop-model.md`
-   - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/scripts/e2e-next-step-scenarios.js`
+   - `/Users/zeming/Documents/mediation-main/docs/design/mediation/operations/01-closed-loop-model.md`
+   - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/scripts/e2e-next-step-scenarios.js`
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/tests/e2e/minimal-closed-loop.spec.*`
+   - 新增 `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/tests/e2e/minimal-closed-loop.spec.*`
 5. 执行步骤：
    - 构建 `request -> delivery -> event -> archive` 最小场景。
 6. 验收标准：
    - E2E 套件可运行并有明确 fail 条件。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:e2e`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:e2e`
 8. 输出物：
    - minimal e2e baseline
 
@@ -383,7 +383,7 @@
 2. 前置依赖：
    - FND-005
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/modules/module-h-config-version-governance.md`
+   - `/Users/zeming/Documents/mediation-main/docs/design/mediation/modules/module-h-config-version-governance.md`
    - 小节：`3.10.3` 到 `3.10.8`
 4. 允许改动：
    - 新增 `src/mediation/config-governance/config-resolution.*`
@@ -394,7 +394,7 @@
 6. 验收标准：
    - 缺失/非法值有稳定动作与原因码。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- h-config-resolution`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- h-config-resolution`
 8. 输出物：
    - 配置解析模块
 
@@ -416,7 +416,7 @@
 6. 验收标准：
    - 304 命中和过期失败路径均可测试。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- h-get-config`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- h-get-config`
 8. 输出物：
    - GET /config API
 
@@ -438,7 +438,7 @@
 6. 验收标准：
    - duplicate 与 payload conflict 可区分。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- h-publish`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- h-publish`
 8. 输出物：
    - publish API + 状态机
 
@@ -461,7 +461,7 @@
 6. 验收标准：
    - 同请求同版本下门禁动作确定性一致。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- h-version-gate`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- h-version-gate`
 8. 输出物：
    - version gate + anchor injector
 
@@ -483,7 +483,7 @@
 6. 验收标准：
    - `force_fallback` 语义、原因码、审计快照齐全。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- h-rollout`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- h-rollout`
 8. 输出物：
    - 灰度与失效治理模块
 
@@ -498,7 +498,7 @@
 2. 前置依赖：
    - H-004
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/modules/module-a-sdk-ingress-opportunity-sensing.md`
+   - `/Users/zeming/Documents/mediation-main/docs/design/mediation/modules/module-a-sdk-ingress-opportunity-sensing.md`
    - 小节：`3.3.10` 到 `3.3.13`
 4. 允许改动：
    - `src/mediation/ingress-opportunity/trigger-handler.*`
@@ -509,7 +509,7 @@
 6. 验收标准：
    - 合同校验失败返回稳定 reason code。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:contracts -- a-trigger`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:contracts -- a-trigger`
 8. 输出物：
    - trigger handler
 
@@ -530,7 +530,7 @@
 6. 验收标准：
    - trace 初始化与继承一致。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- a-create-opportunity`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- a-create-opportunity`
 8. 输出物：
    - createOpportunity service
 
@@ -551,7 +551,7 @@
 6. 验收标准：
    - duplicate 不重复发送；重发复用同键。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- a-opportunity-event`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- a-opportunity-event`
 8. 输出物：
    - A event emitter
 
@@ -577,7 +577,7 @@
 6. 验收标准：
    - 字段缺失/非法有稳定动作与原因码。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:contracts -- b-input`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:contracts -- b-input`
 8. 输出物：
    - B input normalizer
 
@@ -599,7 +599,7 @@
 6. 验收标准：
    - 同输入多次运行结果一致。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- b-conflict`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- b-conflict`
 8. 输出物：
    - conflict resolver
 
@@ -622,7 +622,7 @@
 6. 验收标准：
    - 三个快照：projection/redaction/bucket 均可输出。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- b-projection`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- b-projection`
 8. 输出物：
    - B advanced pipeline
 
@@ -643,7 +643,7 @@
 6. 验收标准：
    - sampled_out 不发送；sampled_in 可追踪 ACK。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- b-signal-event`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- b-signal-event`
 8. 输出物：
    - B signal event emitter
 
@@ -658,7 +658,7 @@
 2. 前置依赖：
    - B-004
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/modules/module-c-policy-safety-governor.md`
+   - `/Users/zeming/Documents/mediation-main/docs/design/mediation/modules/module-c-policy-safety-governor.md`
    - 小节：`3.5.4` 到 `3.5.11`
 4. 允许改动：
    - `src/mediation/policy-safety/policy-engine.*`
@@ -668,7 +668,7 @@
 6. 验收标准：
    - `short_circuit_block/allow` 行为稳定。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- c-short-circuit`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- c-short-circuit`
 8. 输出物：
    - policy engine core
 
@@ -690,7 +690,7 @@
 6. 验收标准：
    - C->D/E 出口字段完整可消费。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:contracts -- c-output`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:contracts -- c-output`
 8. 输出物：
    - C output + audit module
 
@@ -705,9 +705,9 @@
 2. 前置依赖：
    - C-002
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/modules/module-d-supply-orchestrator-adapter-layer.md`
+   - `/Users/zeming/Documents/mediation-main/docs/design/mediation/modules/module-d-supply-orchestrator-adapter-layer.md`
    - 小节：`3.6.9` 到 `3.6.15`
-   - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/src/connectors/`
+   - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/src/connectors/`
 4. 允许改动：
    - `src/mediation/supply-routing/adapter-registry.*`
    - `src/adapters/*`（对接 cj/partnerstack）
@@ -718,7 +718,7 @@
 6. 验收标准：
    - adapter 启停与能力声明可测试。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- d-adapter-registry`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- d-adapter-registry`
 8. 输出物：
    - adapter registry
 
@@ -739,7 +739,7 @@
 6. 验收标准：
    - `routePlan` 可确定性复现。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- d-route-plan`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- d-route-plan`
 8. 输出物：
    - route planner
 
@@ -761,7 +761,7 @@
 6. 验收标准：
    - E 可以无推断消费 D 输出。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:contracts -- d-output`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:contracts -- d-output`
 8. 输出物：
    - D output + route audit
 
@@ -776,7 +776,7 @@
 2. 前置依赖：
    - D-003
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/modules/module-e-delivery-composer.md`
+   - `/Users/zeming/Documents/mediation-main/docs/design/mediation/modules/module-e-delivery-composer.md`
    - 小节：`3.7.4` 到 `3.7.13`
 4. 允许改动：
    - `src/mediation/delivery-composer/compose.*`
@@ -787,7 +787,7 @@
 6. 验收标准：
    - 合同错误返回稳定 reason code。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:contracts -- e-compose`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:contracts -- e-compose`
 8. 输出物：
    - compose module
 
@@ -809,7 +809,7 @@
 6. 验收标准：
    - no_fill/error 判定一致且可审计。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- e-gate`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- e-gate`
 8. 输出物：
    - render gate + degrade engine
 
@@ -831,7 +831,7 @@
 6. 验收标准：
    - `routed -> served/no_fill/error` 一致。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- e-output`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- e-output`
 8. 输出物：
    - final delivery/output module
 
@@ -846,7 +846,7 @@
 2. 前置依赖：
    - E-003
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/modules/module-f-event-attribution-processor.md`
+   - `/Users/zeming/Documents/mediation-main/docs/design/mediation/modules/module-f-event-attribution-processor.md`
    - 小节：`3.8.4` 到 `3.8.11`
 4. 允许改动：
    - `src/mediation/event-attribution/events-controller.*`
@@ -857,7 +857,7 @@
 6. 验收标准：
    - 错误事件不影响合法事件 ACK 返回。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- f-events-api`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- f-events-api`
 8. 输出物：
    - events API
 
@@ -869,7 +869,7 @@
    - F-001
 3. 必读 context：
    - module-f 小节：`3.8.12` 到 `3.8.20`
-   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/operations/01-closed-loop-model.md`
+   - `/Users/zeming/Documents/mediation-main/docs/design/mediation/operations/01-closed-loop-model.md`
 4. 允许改动：
    - `src/mediation/event-attribution/idempotency.*`
    - `src/mediation/event-attribution/terminal-closure.*`
@@ -880,7 +880,7 @@
 6. 验收标准：
    - 闭环状态可重放验证。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- f-closure`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- f-closure`
 8. 输出物：
    - dedup + closure engine
 
@@ -902,7 +902,7 @@
 6. 验收标准：
    - 单尝试唯一计费、recordKey 幂等语义成立。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- f-output`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- f-output`
 8. 输出物：
    - F output contract module
 
@@ -917,7 +917,7 @@
 2. 前置依赖：
    - F-003
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/modules/module-g-audit-replay-controller.md`
+   - `/Users/zeming/Documents/mediation-main/docs/design/mediation/modules/module-g-audit-replay-controller.md`
    - 小节：`3.9.7` 到 `3.9.13`
 4. 允许改动：
    - `src/mediation/audit-replay/append-controller.*`
@@ -929,7 +929,7 @@
 6. 验收标准：
    - duplicate no-op 与 payload conflict 可区分。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration -- g-append`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- g-append`
 8. 输出物：
    - append API
 
@@ -951,7 +951,7 @@
 6. 验收标准：
    - 同锚点回放 diff 为 0。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:e2e -- g-replay-determinism`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:e2e -- g-replay-determinism`
 8. 输出物：
    - replay API + engine
 
@@ -966,7 +966,7 @@
 2. 前置依赖：
    - H-005, A-003, B-004, C-002, D-003, E-003, F-003, G-002
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/mediation-development-plan.md` 第 6 章
+   - `/Users/zeming/Documents/mediation-main/docs/execution-plans/mediation-development-plan.md` 第 6 章
 4. 允许改动：
    - `tests/contracts/*`
    - `tests/integration/*`
@@ -975,7 +975,7 @@
 6. 验收标准：
    - 所有矩阵 case 明确 PASS/FAIL。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:functional:p0`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:functional:p0`
 8. 输出物：
    - `tests/p0-matrix-report.json`
 
@@ -986,7 +986,7 @@
 2. 前置依赖：
    - QA-001
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/mediation-development-plan.md` 第 6.3 节
+   - `/Users/zeming/Documents/mediation-main/docs/execution-plans/mediation-development-plan.md` 第 6.3 节
 4. 允许改动：
    - `tests/e2e/*`
 5. 执行步骤：
@@ -994,7 +994,7 @@
 6. 验收标准：
    - 8 场景全部可复现执行。
 7. 验证命令：
-   - `npm --prefix ./projects/ad-aggregation-platform run test:e2e`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:e2e`
 8. 输出物：
    - `tests/e2e-report.json`
 
@@ -1027,7 +1027,7 @@
 3. 必读 context：
    - QA-001/QA-002 测试输出
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/implementation/test-readiness-report.md`
+   - 新增 `/Users/zeming/Documents/mediation-main/docs/execution-plans/implementation/test-readiness-report.md`
 5. 执行步骤：
    - 汇总模块通过率、场景通过率、失败清零证明。
 6. 验收标准：
@@ -1048,10 +1048,10 @@
 2. 前置依赖：
    - QA-004
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/design/mediation/operations/02-sdk-integration-guide-and-minimal-checklist.md`
-   - `/Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/docs/sdk-integration-document-spec.md`
+   - `/Users/zeming/Documents/mediation-main/docs/design/mediation/operations/02-sdk-integration-guide-and-minimal-checklist.md`
+   - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/docs/sdk-integration-document-spec.md`
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/other/integration/quickstart.md`
+   - 新增 `/Users/zeming/Documents/mediation-main/docs/other/integration/quickstart.md`
 5. 执行步骤：
    - 包含 init/evaluate/events/验证步骤。
 6. 验收标准：
@@ -1070,7 +1070,7 @@
 3. 必读 context：
    - A/E/F/G/H 模块合同文档
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/other/integration/api-reference.md`
+   - 新增 `/Users/zeming/Documents/mediation-main/docs/other/integration/api-reference.md`
 5. 执行步骤：
    - 每接口列：请求、响应、错误码、重试语义、幂等约束。
 6. 验收标准：
@@ -1087,10 +1087,10 @@
 2. 前置依赖：
    - SDK-002
 3. 必读 context：
-   - `/Users/zeming/Documents/chat-ads-main/docs/execution-plans/mediation-development-plan.md`
-   - `/Users/zeming/Documents/chat-ads-main/docs/other/integration/api-reference.md`
+   - `/Users/zeming/Documents/mediation-main/docs/execution-plans/mediation-development-plan.md`
+   - `/Users/zeming/Documents/mediation-main/docs/other/integration/api-reference.md`
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/chat-ads-main/docs/other/integration/runbook.md`
+   - 新增 `/Users/zeming/Documents/mediation-main/docs/other/integration/runbook.md`
 5. 执行步骤：
    - 覆盖 no_fill、高 blocked、回放不一致、配置发布失败等问题。
 6. 验收标准：

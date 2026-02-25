@@ -9,7 +9,7 @@
 ## 1. Run Command
 
 ```bash
-npm --prefix ./projects/ad-aggregation-platform run perf:sdk-batch -- \
+npm --prefix ./projects/tappy-ai-mediation run perf:sdk-batch -- \
   --gateway-pid=51043 \
   --baseline-duration-sec=300 \
   --burst-duration-sec=300 \
@@ -23,7 +23,7 @@ npm --prefix ./projects/ad-aggregation-platform run perf:sdk-batch -- \
 
 ## 2. Evidence Artifact
 
-- `projects/ad-aggregation-platform/tests/performance-reports/perf-sdk-batch-2026-02-22_08-19-09-597.json`
+- `projects/tappy-ai-mediation/tests/performance-reports/perf-sdk-batch-2026-02-22_08-19-09-597.json`
 
 ## 3. Summary Metrics
 

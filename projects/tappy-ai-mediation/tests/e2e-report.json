@@ -1,0 +1,104 @@
+{
+  "suite": "qa-e2e-closed-loop",
+  "generatedAt": "2026-02-25T09:50:35.968Z",
+  "summary": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0,
+    "passRate": 100
+  },
+  "scenarios": [
+    {
+      "id": "E2E-001",
+      "name": "happy",
+      "status": "PASS",
+      "durationMs": 17,
+      "details": {
+        "deliveryStatus": "served",
+        "terminalState": "closed_success",
+        "replayDeterministic": true
+      }
+    },
+    {
+      "id": "E2E-002",
+      "name": "policy_block",
+      "status": "PASS",
+      "durationMs": 0,
+      "details": {
+        "policyAction": "block",
+        "deliveryStatus": "no_fill",
+        "eventType": "failure"
+      }
+    },
+    {
+      "id": "E2E-003",
+      "name": "no_fill",
+      "status": "PASS",
+      "durationMs": 0,
+      "details": {
+        "routeReason": "d_route_no_available_source",
+        "deliveryStatus": "no_fill",
+        "closureAckStatus": "accepted"
+      }
+    },
+    {
+      "id": "E2E-004",
+      "name": "error",
+      "status": "PASS",
+      "durationMs": 0,
+      "details": {
+        "failOpen": "h_cfg_fail_open_unavailable_stable_snapshot",
+        "failClosed": "h_cfg_fail_closed_no_stable_snapshot"
+      }
+    },
+    {
+      "id": "E2E-005",
+      "name": "duplicate",
+      "status": "PASS",
+      "durationMs": 2,
+      "details": {
+        "fDedupSecondAck": "duplicate",
+        "gDedupReason": "g_append_duplicate_accepted_noop",
+        "billableFirst": 1,
+        "billableSecond": 0
+      }
+    },
+    {
+      "id": "E2E-006",
+      "name": "timeout",
+      "status": "PASS",
+      "durationMs": 0,
+      "details": {
+        "synthesizedCount": 1,
+        "closureState": "closed_failure",
+        "terminalSource": "system_timeout_synthesized"
+      }
+    },
+    {
+      "id": "E2E-007",
+      "name": "version",
+      "status": "PASS",
+      "durationMs": 0,
+      "details": {
+        "degradeReasons": [
+          "h_gate_schema_compatible_degrade",
+          "h_gate_sdk_below_min_degrade"
+        ],
+        "rejectReasons": [
+          "h_gate_schema_incompatible_reject"
+        ]
+      }
+    },
+    {
+      "id": "E2E-008",
+      "name": "replay",
+      "status": "PASS",
+      "durationMs": 4,
+      "details": {
+        "matched": 3,
+        "determinism": "deterministic",
+        "diffStatus": "exact_match"
+      }
+    }
+  ]
+}

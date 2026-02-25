@@ -61,6 +61,6 @@ P2 alerts:
 
 ## 5. Validation Gate
 
-1. `npm --prefix ./projects/ad-aggregation-platform run test:integration -- observability`
+1. `npm --prefix ./projects/tappy-ai-mediation run test:integration -- observability`
 2. Alert routing test proves P0/P1 classification is deterministic.
 3. Log redaction tests prove sensitive fields never leak in structured output.

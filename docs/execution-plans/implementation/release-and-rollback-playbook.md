@@ -9,8 +9,8 @@ CI gate workflow:
 
 1. `/.github/workflows/mediation-release-gate.yml`
 2. hard gate commands:
-   - `npm --prefix ./projects/ad-aggregation-platform run db:migrate:dry-run`
-   - `npm --prefix ./projects/ad-aggregation-platform run test:integration`
+   - `npm --prefix ./projects/tappy-ai-mediation run db:migrate:dry-run`
+   - `npm --prefix ./projects/tappy-ai-mediation run test:integration`
 3. Manual action path:
    - `workflow_dispatch` with `action=release`
 

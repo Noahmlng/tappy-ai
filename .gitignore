@@ -16,9 +16,9 @@ dist
 dist-ssr
 coverage
 *.local
-/projects/ad-aggregation-platform/.local/
-/projects/ad-aggregation-platform/.secrets/
-/projects/ad-aggregation-platform/tests/reports/meyka-regression/
+/projects/tappy-ai-mediation/.local/
+/projects/tappy-ai-mediation/.secrets/
+/projects/tappy-ai-mediation/tests/reports/meyka-regression/
 
 # Editor directories and files
 .vscode/*

@@ -14,7 +14,7 @@
 #### 3.3.2 输入合同（最小）
 
 1. 应用与会话基础信息。
-2. placement 触发信息（与 `/Users/zeming/Documents/chat-ads-main/docs/design/ai-assistant-placement-framework.md` 对齐）。
+2. placement 触发信息（与 `/Users/zeming/Documents/mediation-main/docs/design/ai-assistant-placement-framework.md` 对齐）。
 3. 请求时间与接入通道。
 4. 最小追踪上下文（trace key 初始化所需）。
 

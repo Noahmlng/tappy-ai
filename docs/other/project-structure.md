@@ -1,7 +1,7 @@
 # 项目结构梳理
 
 ## A. 广告侧：广告聚合平台
-路径：`projects/ad-aggregation-platform`
+路径：`projects/tappy-ai-mediation`
 
 包含：
 - `schemas/`：广告位配置、请求、响应协议
@@ -12,7 +12,7 @@
 - 面向 AI Native App 提供标准化广告拉取与配置能力。
 
 ## B. 模拟与测试模块（用户视角）
-路径：`/Users/zeming/Documents/simulator-chatbot`（外部独立仓库）
+路径：`/Users/zeming/Documents/mediation-chatbot`（外部独立仓库）
 
 包含：
 - Vue Chatbot 容器（首个 AI Native App）
@@ -23,7 +23,7 @@
 - 作为 SDK 接入前后的验证容器，观察参数变化与用户体验。
 
 ## C. 模拟与测试模块（开发者视角）
-路径：`/Users/zeming/Documents/chat-ads-dashboard`（外部独立仓库）
+路径：`/Users/zeming/Documents/mediation-dashboard`（外部独立仓库）
 
 包含：
 - Vue Developer Dashboard 容器（接入方管理后台）

@@ -7,7 +7,7 @@
 ## 1. Command
 
 ```bash
-cd /Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform
+cd /Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation
 node --test ./tests/e2e/dashboard-v1-external.spec.js
 ```
 
