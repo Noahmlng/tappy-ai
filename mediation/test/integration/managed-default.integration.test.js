@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import fs from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import test from 'node:test'
@@ -73,6 +72,9 @@ function startGateway(port) {
     cwd: PROJECT_ROOT,
     env: {
       ...process.env,
+      SUPABASE_DB_URL: process.env.SUPABASE_DB_URL_TEST || process.env.SUPABASE_DB_URL || '',
+      MEDIATION_ALLOWED_ORIGINS: 'http://127.0.0.1:3000',
+      MEDIATION_ENABLE_LOCAL_SERVER: 'true',
       MEDIATION_GATEWAY_HOST: HOST,
       MEDIATION_GATEWAY_PORT: String(port),
       OPENROUTER_API_KEY: '',
@@ -110,13 +112,13 @@ async function stopGateway(handle) {
   }
 }
 
-async function readGatewayState(baseUrl) {
-  const health = await requestJson(baseUrl, '/api/health')
-  assert.equal(health.ok, true, `health failed: ${JSON.stringify(health.payload)}`)
-  const stateFile = String(health.payload?.stateFile || '').trim()
-  assert.equal(Boolean(stateFile), true, 'health response should include stateFile')
-  const raw = await fs.readFile(stateFile, 'utf-8')
-  return JSON.parse(raw)
+async function readGatewayState(baseUrl, headers) {
+  const response = await requestJson(baseUrl, '/api/v1/dashboard/state', {
+    method: 'GET',
+    headers,
+  })
+  assert.equal(response.ok, true, `dashboard state failed: ${JSON.stringify(response.payload)}`)
+  return response.payload
 }
 
 async function registerDashboardHeaders(baseUrl, input = {}) {
@@ -150,7 +152,7 @@ test('managed default: placement routing mode is fixed to managed_mediation', as
   try {
     await waitForGateway(baseUrl)
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
-    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    assert.equal(reset.status, 404)
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'managed-default-placement@example.com',
       accountId: 'org_mediation',
@@ -198,7 +200,7 @@ test('managed default: new app environment is initialized with managed_mediation
   try {
     await waitForGateway(baseUrl)
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
-    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    assert.equal(reset.status, 404)
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'managed-default-env@example.com',
       accountId: 'org_mediation',
@@ -219,7 +221,7 @@ test('managed default: new app environment is initialized with managed_mediation
     })
     assert.equal(createKey.status, 201, `create key failed: ${JSON.stringify(createKey.payload)}`)
 
-    const state = await readGatewayState(baseUrl)
+    const state = await readGatewayState(baseUrl, dashboardHeaders)
     const envRows = Array.isArray(state?.controlPlane?.appEnvironments) ? state.controlPlane.appEnvironments : []
     const target = envRows.find((item) => (
       String(item?.appId || '') === 'new_mvp_app'

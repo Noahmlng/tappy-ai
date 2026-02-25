@@ -72,9 +72,11 @@ function startGateway(port) {
     cwd: PROJECT_ROOT,
     env: {
       ...process.env,
+      SUPABASE_DB_URL: process.env.SUPABASE_DB_URL_TEST || process.env.SUPABASE_DB_URL || '',
+      MEDIATION_ALLOWED_ORIGINS: 'http://127.0.0.1:3000',
+      MEDIATION_ENABLE_LOCAL_SERVER: 'true',
       MEDIATION_GATEWAY_HOST: HOST,
       MEDIATION_GATEWAY_PORT: String(port),
-      MEDIATION_RUNTIME_AUTH_REQUIRED: 'false',
       OPENROUTER_API_KEY: '',
       OPENROUTER_MODEL: 'glm-5',
       CJ_TOKEN: 'mock-cj-token',
@@ -111,6 +113,44 @@ async function stopGateway(handle) {
   }
 }
 
+async function registerDashboardHeaders(baseUrl) {
+  const now = Date.now()
+  const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+    method: 'POST',
+    body: {
+      email: `v2_bid_${now}@example.com`,
+      password: 'pass12345',
+      accountId: 'org_mediation',
+      appId: 'sample-client-app',
+    },
+  })
+  assert.equal(register.status, 201, `dashboard register failed: ${JSON.stringify(register.payload)}`)
+  const accessToken = String(register.payload?.session?.accessToken || '').trim()
+  assert.equal(Boolean(accessToken), true, 'dashboard register should return access token')
+  return {
+    Authorization: `Bearer ${accessToken}`,
+  }
+}
+
+async function issueRuntimeApiKeyHeaders(baseUrl, dashboardHeaders) {
+  const created = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
+    method: 'POST',
+    headers: dashboardHeaders,
+    body: {
+      accountId: 'org_mediation',
+      appId: 'sample-client-app',
+      environment: 'prod',
+      name: `runtime-${Date.now()}`,
+    },
+  })
+  assert.equal(created.status, 201, `issue runtime key failed: ${JSON.stringify(created.payload)}`)
+  const secret = String(created.payload?.secret || '').trim()
+  assert.equal(Boolean(secret), true, 'runtime key create should return secret')
+  return {
+    Authorization: `Bearer ${secret}`,
+  }
+}
+
 test('v2 bid API returns unified response and legacy evaluate endpoint is removed', async () => {
   const port = 3950 + Math.floor(Math.random() * 120)
   const baseUrl = `http://${HOST}:${port}`
@@ -120,10 +160,14 @@ test('v2 bid API returns unified response and legacy evaluate endpoint is remove
     await waitForGateway(baseUrl)
 
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
-    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    assert.equal(reset.status, 404)
+
+    const dashboardHeaders = await registerDashboardHeaders(baseUrl)
+    const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, dashboardHeaders)
 
     const bid = await requestJson(baseUrl, '/api/v2/bid', {
       method: 'POST',
+      headers: runtimeHeaders,
       body: {
         userId: 'user_v2_001',
         chatId: 'chat_v2_001',

@@ -73,6 +73,9 @@ function startGateway(port) {
     cwd: PROJECT_ROOT,
     env: {
       ...process.env,
+      SUPABASE_DB_URL: process.env.SUPABASE_DB_URL_TEST || process.env.SUPABASE_DB_URL || '',
+      MEDIATION_ALLOWED_ORIGINS: 'http://127.0.0.1:3000',
+      MEDIATION_ENABLE_LOCAL_SERVER: 'true',
       MEDIATION_GATEWAY_HOST: HOST,
       MEDIATION_GATEWAY_PORT: String(port),
       OPENROUTER_API_KEY: '',
@@ -143,7 +146,7 @@ test('quick start verifier runs config -> v2 bid -> events and returns evidence'
     await waitForGateway(baseUrl)
 
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
-    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    assert.equal(reset.status, 404)
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'quickstart-owner@example.com',
       accountId: 'org_mediation',
@@ -218,7 +221,7 @@ test('quick start verifier returns precondition failed when app has no active ke
     await waitForGateway(baseUrl)
 
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
-    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    assert.equal(reset.status, 404)
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'quickstart-precondition@example.com',
       accountId: 'org_mediation',

@@ -40,7 +40,29 @@ function runNodeTests(files = []) {
   })
 }
 
+function runDatabaseCleanup() {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, ['./scripts/test-db-cleanup.js'], {
+      stdio: 'inherit',
+      cwd: PROJECT_ROOT,
+      env: process.env,
+    })
+
+    child.on('exit', (code) => {
+      resolve(Number.isInteger(code) ? code : 1)
+    })
+  })
+}
+
 async function main() {
+  const supabaseDbUrlTest = String(process.env.SUPABASE_DB_URL_TEST || process.env.SUPABASE_DB_URL || '').trim()
+  if (!supabaseDbUrlTest) {
+    console.error('[test:integration] SUPABASE_DB_URL_TEST (or SUPABASE_DB_URL) is required for prod-only test runs.')
+    process.exit(1)
+  }
+
+  process.env.SUPABASE_DB_URL_TEST = supabaseDbUrlTest
+
   const allTests = await findIntegrationTests()
   if (allTests.length === 0) {
     console.error('[test:integration] no integration test files were found.')
@@ -60,6 +82,12 @@ async function main() {
   console.log(`[test:integration] running ${selectedTests.length} file(s).`)
   for (const filePath of selectedTests) {
     console.log(`  - ${path.relative(PROJECT_ROOT, filePath)}`)
+  }
+
+  console.log('[test:integration] cleaning up test DB...')
+  const cleanupExitCode = await runDatabaseCleanup()
+  if (cleanupExitCode !== 0) {
+    process.exit(cleanupExitCode)
   }
 
   const exitCode = await runNodeTests(selectedTests)
