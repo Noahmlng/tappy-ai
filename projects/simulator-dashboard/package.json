@@ -1,5 +1,5 @@
 {
-  "name": "@ai-network/simulator-dashboard",
+  "name": "@ai-network/dashboard",
   "version": "0.0.0",
   "private": true,
   "type": "module",
