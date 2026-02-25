@@ -3,8 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_FILE="${ROOT_DIR}/projects/ad-aggregation-platform/.local/simulator-gateway-state.json"
-HOST="${SIMULATOR_GATEWAY_HOST:-127.0.0.1}"
-PORT="${SIMULATOR_GATEWAY_PORT:-3100}"
+HOST="${MEDIATION_GATEWAY_HOST:-127.0.0.1}"
+PORT="${MEDIATION_GATEWAY_PORT:-3100}"
 BASE_URL="http://${HOST}:${PORT}"
 
 printf '[sim-reset] target gateway: %s\n' "${BASE_URL}"

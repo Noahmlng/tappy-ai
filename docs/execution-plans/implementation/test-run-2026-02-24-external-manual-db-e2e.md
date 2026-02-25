@@ -20,10 +20,10 @@ Verify a complete external-user flow under **strict manual integration** with **
 
 Gateway runtime confirmed:
 
-- `SIMULATOR_STRICT_MANUAL_INTEGRATION=true`
-- `SIMULATOR_SETTLEMENT_STORAGE=postgres`
-- `SIMULATOR_REQUIRE_DURABLE_SETTLEMENT=true`
-- `SIMULATOR_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE=true`
+- `MEDIATION_STRICT_MANUAL_INTEGRATION=true`
+- `MEDIATION_SETTLEMENT_STORAGE=postgres`
+- `MEDIATION_REQUIRE_DURABLE_SETTLEMENT=true`
+- `MEDIATION_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE=true`
 
 Gateway startup logs confirmed:
 
@@ -186,4 +186,3 @@ For the required scope (**strict manual integration + DB persistence + full chai
 - Chatbot side rendered ad content and produced behavior events
 - Postback conversion persisted and surfaced on Dashboard + DB
 - Dashboard refresh did not reproduce empty-log regression in this scoped run
-

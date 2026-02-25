@@ -1,4 +1,8 @@
-const DEFAULT_ADS_BASE_URL = import.meta.env.VITE_SIMULATOR_API_BASE_URL || '/api'
+const DEFAULT_ADS_BASE_URL = (
+  import.meta.env.VITE_MEDIATION_RUNTIME_API_BASE_URL
+  || import.meta.env.VITE_MEDIATION_API_BASE_URL
+  || '/api'
+)
 const ADS_BASE_URL = String(import.meta.env.VITE_ADS_BASE_URL || DEFAULT_ADS_BASE_URL).replace(/\/+$/, '')
 const ADS_API_KEY = String(import.meta.env.VITE_ADS_API_KEY || '').trim()
 const INLINE_PLACEMENT_ID = 'chat_from_answer_v1'

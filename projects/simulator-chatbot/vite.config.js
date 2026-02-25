@@ -8,7 +8,7 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const proxyTarget = env.SIMULATOR_API_PROXY_TARGET || 'http://127.0.0.1:3100'
+  const proxyTarget = env.MEDIATION_RUNTIME_API_PROXY_TARGET || 'http://127.0.0.1:3100'
 
   return {
     envPrefix: ['VITE_', 'MEDIATION_', 'APP_', 'PLACEMENT_'],
