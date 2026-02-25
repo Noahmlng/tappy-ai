@@ -5431,6 +5431,7 @@ async function evaluateV2BidOpportunityFirst(payload) {
         blockedTopics,
         intentScore: intent.score,
         scoreFloor: 0.32,
+        placementId,
         placement: 'block',
       })
 

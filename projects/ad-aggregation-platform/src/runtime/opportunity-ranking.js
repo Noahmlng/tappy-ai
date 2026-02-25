@@ -1,3 +1,9 @@
+import {
+  computeCandidateEconomicPricing,
+  getPricingModelWeights,
+  getPricingSimulatorDefaults,
+} from './pricing-model.js'
+
 const DEFAULT_SCORE_FLOOR = 0.32
 
 function cleanText(value) {
@@ -61,7 +67,8 @@ function toBid(candidate = {}, context = {}) {
   if (!title || !targetUrl) return null
 
   const bidId = cleanText(candidate.offerId) || `bid_${Date.now()}`
-  const price = Math.max(0, toFiniteNumber(candidate.bidHint, 0))
+  const pricing = candidate?.pricing && typeof candidate.pricing === 'object' ? candidate.pricing : null
+  const price = Math.max(0, toFiniteNumber(pricing?.ecpmUsd ?? candidate.bidHint, 0))
 
   return {
     price,
@@ -74,6 +81,28 @@ function toBid(candidate = {}, context = {}) {
     bidId,
     placement: cleanText(context.placement || 'block') || 'block',
     variant: 'opportunity_first_v1',
+    pricing: pricing
+      ? {
+          modelVersion: cleanText(pricing.modelVersion),
+          targetRpmUsd: toFiniteNumber(pricing.targetRpmUsd, 0),
+          ecpmUsd: toFiniteNumber(pricing.ecpmUsd, 0),
+          cpaUsd: toFiniteNumber(pricing.cpaUsd, 0),
+          pClick: toFiniteNumber(pricing.pClick, 0),
+          pConv: toFiniteNumber(pricing.pConv, 0),
+          network: cleanText(pricing.network || candidate.network || ''),
+          rawSignal: pricing.rawSignal && typeof pricing.rawSignal === 'object'
+            ? {
+                rawBidValue: toFiniteNumber(pricing.rawSignal.rawBidValue, 0),
+                rawUnit: cleanText(pricing.rawSignal.rawUnit),
+                normalizedFactor: toFiniteNumber(pricing.rawSignal.normalizedFactor, 1),
+              }
+            : {
+                rawBidValue: Math.max(0, toFiniteNumber(candidate.bidHint, 0)),
+                rawUnit: 'bid_hint',
+                normalizedFactor: 1,
+              },
+        }
+      : undefined,
   }
 }
 
@@ -93,10 +122,21 @@ function scoreCandidate(candidate = {}, input = {}) {
     + freshness * 0.1
     + availability * 0.05
   ).toFixed(6))
+  const pricing = computeCandidateEconomicPricing({
+    candidate,
+    placementId: input.placementId,
+  })
+  const weights = getPricingModelWeights()
+  const auctionScore = Number((
+    rankScore * weights.rankWeight
+    + pricing.economicScore * weights.economicWeight
+  ).toFixed(6))
 
   return {
     ...candidate,
     rankScore,
+    auctionScore,
+    pricing,
     rankFeatures: {
       intentScore,
       similarity,
@@ -110,6 +150,8 @@ function scoreCandidate(candidate = {}, input = {}) {
 
 export function rankOpportunityCandidates(input = {}) {
   const candidates = Array.isArray(input.candidates) ? input.candidates : []
+  const pricingDefaults = getPricingSimulatorDefaults()
+  const weights = getPricingModelWeights()
   const blockedTopics = Array.isArray(input.blockedTopics)
     ? input.blockedTopics.map((item) => cleanText(item)).filter(Boolean)
     : []
@@ -126,6 +168,7 @@ export function rankOpportunityCandidates(input = {}) {
         policyBlockedTopic: blockedTopic,
         candidateCount: candidates.length,
         scoreFloor: clamp01(input.scoreFloor ?? DEFAULT_SCORE_FLOOR),
+        pricingModel: pricingDefaults.modelVersion,
       },
     }
   }
@@ -138,6 +181,7 @@ export function rankOpportunityCandidates(input = {}) {
       debug: {
         candidateCount: 0,
         scoreFloor: clamp01(input.scoreFloor ?? DEFAULT_SCORE_FLOOR),
+        pricingModel: pricingDefaults.modelVersion,
       },
     }
   }
@@ -155,15 +199,18 @@ export function rankOpportunityCandidates(input = {}) {
         candidateCount: candidates.length,
         eligibleCount: 0,
         scoreFloor: clamp01(input.scoreFloor ?? DEFAULT_SCORE_FLOOR),
+        pricingModel: pricingDefaults.modelVersion,
       },
     }
   }
 
   const ranked = eligible
     .map((candidate) => scoreCandidate(candidate, {
-      intentScore: input.intentScore,
-    }))
+        intentScore: input.intentScore,
+        placementId: input.placementId,
+      }))
     .sort((a, b) => {
+      if (b.auctionScore !== a.auctionScore) return b.auctionScore - a.auctionScore
       if (b.rankScore !== a.rankScore) return b.rankScore - a.rankScore
       if (b.fusedScore !== a.fusedScore) return b.fusedScore - a.fusedScore
       return String(a.offerId || '').localeCompare(String(b.offerId || ''))
@@ -180,7 +227,11 @@ export function rankOpportunityCandidates(input = {}) {
         candidateCount: candidates.length,
         eligibleCount: eligible.length,
         topRankScore: winner ? winner.rankScore : 0,
+        topAuctionScore: winner ? winner.auctionScore : 0,
+        topEconomicScore: winner?.pricing ? winner.pricing.economicScore : 0,
         scoreFloor,
+        pricingModel: pricingDefaults.modelVersion,
+        pricingWeights: weights,
       },
     }
   }
@@ -198,7 +249,11 @@ export function rankOpportunityCandidates(input = {}) {
       candidateCount: candidates.length,
       eligibleCount: eligible.length,
       topRankScore: winner.rankScore,
+      topAuctionScore: winner.auctionScore,
+      topEconomicScore: winner?.pricing ? winner.pricing.economicScore : 0,
       scoreFloor,
+      pricingModel: pricingDefaults.modelVersion,
+      pricingWeights: weights,
     },
   }
 }

@@ -85,6 +85,102 @@ test('opportunity-first ranking: emits stable reason codes for miss and low-rank
   assert.equal(served.reasonCode, 'served')
   assert.equal(Boolean(served.winner?.bid), true)
   assert.equal(served.winner.bid.dsp, 'partnerstack')
+  assert.equal(typeof served.winner.bid.price, 'number')
+  assert.equal(Boolean(served.winner.bid.pricing), true)
+  assert.equal(served.winner.bid.pricing.modelVersion, 'rpm_v1')
+  assert.equal(typeof served.winner.bid.pricing.cpaUsd, 'number')
+  assert.equal(typeof served.winner.bid.pricing.ecpmUsd, 'number')
+  assert.equal(typeof served.winner.bid.pricing.pConv, 'number')
+})
+
+test('opportunity-first ranking: economic score can break close rank ties', () => {
+  const ranked = rankOpportunityCandidates({
+    candidates: [
+      {
+        offerId: 'partnerstack:offer:high_rank_low_econ',
+        network: 'partnerstack',
+        title: 'Creative tools trial',
+        description: 'low payout',
+        targetUrl: 'https://example.com/a',
+        availability: 'active',
+        quality: 0.9,
+        bidHint: 0.2,
+        policyWeight: 0.2,
+        lexicalScore: 0.8,
+        vectorScore: 0.78,
+        fusedScore: 0.81,
+      },
+      {
+        offerId: 'partnerstack:offer:slightly_lower_rank_high_econ',
+        network: 'partnerstack',
+        title: 'Creator suite annual plan',
+        description: 'higher payout',
+        targetUrl: 'https://example.com/b',
+        availability: 'active',
+        quality: 0.86,
+        bidHint: 9.5,
+        policyWeight: 0.2,
+        lexicalScore: 0.77,
+        vectorScore: 0.76,
+        fusedScore: 0.78,
+      },
+    ],
+    placementId: 'chat_inline_v1',
+    query: 'best creator suite deals',
+    answerText: '',
+    intentScore: 0.82,
+  })
+
+  assert.equal(ranked.reasonCode, 'served')
+  assert.equal(Boolean(ranked.winner), true)
+  assert.equal(ranked.winner.offerId, 'partnerstack:offer:slightly_lower_rank_high_econ')
+  assert.equal(ranked.ranked[0].auctionScore > ranked.ranked[1].auctionScore, true)
+  assert.equal(ranked.ranked[0].rankScore < ranked.ranked[1].rankScore, true)
+})
+
+test('opportunity-first ranking: high relevance still wins when rank gap is large', () => {
+  const ranked = rankOpportunityCandidates({
+    candidates: [
+      {
+        offerId: 'partnerstack:offer:very_relevant_low_econ',
+        network: 'partnerstack',
+        title: 'Creator suite trusted offer',
+        description: 'high relevance',
+        targetUrl: 'https://example.com/c',
+        availability: 'active',
+        quality: 0.95,
+        bidHint: 0.2,
+        policyWeight: 0.2,
+        lexicalScore: 0.94,
+        vectorScore: 0.92,
+        fusedScore: 0.93,
+      },
+      {
+        offerId: 'partnerstack:offer:lower_relevance_high_econ',
+        network: 'partnerstack',
+        title: 'Creator suite annual plan',
+        description: 'higher payout',
+        targetUrl: 'https://example.com/d',
+        availability: 'active',
+        quality: 0.86,
+        bidHint: 9.5,
+        policyWeight: 0.2,
+        lexicalScore: 0.77,
+        vectorScore: 0.76,
+        fusedScore: 0.78,
+      },
+    ],
+    placementId: 'chat_inline_v1',
+    query: 'best creator suite deals',
+    answerText: '',
+    intentScore: 0.82,
+  })
+
+  assert.equal(ranked.reasonCode, 'served')
+  assert.equal(Boolean(ranked.winner), true)
+  assert.equal(ranked.winner.offerId, 'partnerstack:offer:very_relevant_low_econ')
+  assert.equal(ranked.ranked[0].rankScore > ranked.ranked[1].rankScore, true)
+  assert.equal(ranked.ranked[0].auctionScore > ranked.ranked[1].auctionScore, true)
 })
 
 test('opportunity writer: state fallback records opportunity->delivery->event chain', async () => {
