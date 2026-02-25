@@ -3,7 +3,6 @@ export async function handleControlPlaneRoutes(context, deps) {
   const {
     state,
     settlementStore,
-    STATE_FILE,
     STRICT_MANUAL_INTEGRATION,
     MAX_DASHBOARD_USERS,
     MAX_INTEGRATION_TOKENS,
@@ -16,9 +15,6 @@ export async function handleControlPlaneRoutes(context, deps) {
     PLACEMENT_ID_FROM_ANSWER,
     sendJson,
     readJsonBody,
-    authorizeDevReset,
-    resetGatewayState,
-    resetConversionFactStore,
     isSupabaseSettlementStore,
     loadControlPlaneStateFromSupabase,
     nowIso,
@@ -102,8 +98,7 @@ export async function handleControlPlaneRoutes(context, deps) {
   } = deps
 
   const isControlPlaneRouteRequest = (
-    (pathname === '/api/v1/dev/reset' && req.method === 'POST')
-    || (pathname === '/api/v1/public/quick-start/verify' && req.method === 'POST')
+    (pathname === '/api/v1/public/quick-start/verify' && req.method === 'POST')
     || (pathname === '/api/v1/public/audit/logs' && req.method === 'GET')
     || (pathname === '/api/v1/public/dashboard/register' && req.method === 'POST')
     || (pathname === '/api/v1/public/dashboard/login' && req.method === 'POST')
@@ -137,32 +132,6 @@ export async function handleControlPlaneRoutes(context, deps) {
   }
 
   await (async () => {
-    if (pathname === '/api/v1/dev/reset' && req.method === 'POST') {
-      const auth = authorizeDevReset(req)
-      if (!auth.ok) {
-        sendJson(res, auth.status, {
-          error: auth.error,
-        })
-        return
-      }
-  
-      const previousPlacementConfigVersion = state.placementConfigVersion
-      resetGatewayState()
-      await resetConversionFactStore()
-      if (isSupabaseSettlementStore()) {
-        await loadControlPlaneStateFromSupabase()
-      }
-      sendJson(res, 200, {
-        ok: true,
-        previousPlacementConfigVersion,
-        placementConfigVersion: state.placementConfigVersion,
-        authMode: auth.mode || 'unknown',
-        stateFile: STATE_FILE,
-        updatedAt: state.updatedAt,
-      })
-      return
-    }
-
     if (pathname === '/api/v1/public/quick-start/verify' && req.method === 'POST') {
       try {
         const payload = await readJsonBody(req)

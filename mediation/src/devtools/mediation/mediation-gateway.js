@@ -1,8 +1,6 @@
-import fs from 'node:fs'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-import http from 'node:http'
 import { createHash } from 'node:crypto'
+import http from 'node:http'
+import { fileURLToPath } from 'node:url'
 
 import defaultPlacements from '../../../config/default-placements.json' with { type: 'json' }
 import { loadRuntimeConfig } from '../../config/runtime-config.js'
@@ -28,21 +26,41 @@ import { normalizeUnifiedOffers } from '../../offers/index.js'
 import { handleRuntimeRoutes } from './runtime-routes.js'
 import { handleControlPlaneRoutes } from './control-plane-routes.js'
 
-function readEnvValue(key, fallback = '') {
-  const value = process.env[key]
+function readEnvValue(env, key, fallback = '') {
+  const value = env[key]
   if (typeof value === 'string' && value.trim().length > 0) {
     return value.trim()
   }
   return String(fallback || '').trim()
 }
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-const PROJECT_ROOT = path.resolve(__dirname, '../../..')
-const STATE_DIR = path.join(PROJECT_ROOT, '.local')
-const DEFAULT_STATE_FILE_NAME = 'mediation-gateway-state.json'
-const SETTLEMENT_STORAGE_MODE = readEnvValue('MEDIATION_SETTLEMENT_STORAGE', 'auto').toLowerCase()
-const SETTLEMENT_DB_URL = String(process.env.SUPABASE_DB_URL || '').trim()
+function loadProductionGatewayConfig(env = process.env) {
+  const supabaseDbUrl = readEnvValue(env, 'SUPABASE_DB_URL', '')
+  if (!supabaseDbUrl) {
+    throw new Error('SUPABASE_DB_URL is required in production mode.')
+  }
+
+  const allowedCorsOrigins = Array.from(
+    new Set(
+      readEnvValue(env, 'MEDIATION_ALLOWED_ORIGINS', '')
+        .split(',')
+        .map((item) => String(item || '').trim())
+        .filter(Boolean),
+    ),
+  )
+  if (allowedCorsOrigins.length === 0) {
+    throw new Error('MEDIATION_ALLOWED_ORIGINS must include at least one allowed origin.')
+  }
+
+  return {
+    supabaseDbUrl,
+    allowedCorsOrigins,
+  }
+}
+
+const GATEWAY_CONFIG = loadProductionGatewayConfig(process.env)
+const REQUEST_BASE_ORIGIN = 'http://mediation.local'
+const SETTLEMENT_DB_URL = GATEWAY_CONFIG.supabaseDbUrl
 const SETTLEMENT_FACT_TABLE = 'mediation_settlement_conversion_facts'
 const RUNTIME_DECISION_LOG_TABLE = 'mediation_runtime_decision_logs'
 const RUNTIME_EVENT_LOG_TABLE = 'mediation_runtime_event_logs'
@@ -54,73 +72,22 @@ const CONTROL_PLANE_DASHBOARD_SESSIONS_TABLE = 'control_plane_dashboard_sessions
 const CONTROL_PLANE_INTEGRATION_TOKENS_TABLE = 'control_plane_integration_tokens'
 const CONTROL_PLANE_AGENT_ACCESS_TOKENS_TABLE = 'control_plane_agent_access_tokens'
 
-const PORT = Number(readEnvValue('MEDIATION_GATEWAY_PORT', '3100'))
-const HOST = readEnvValue('MEDIATION_GATEWAY_HOST', '127.0.0.1')
-const STATE_FILE = readEnvValue('MEDIATION_STATE_FILE', '')
-  || path.join(
-    STATE_DIR,
-    PORT === 3100 ? DEFAULT_STATE_FILE_NAME : `mediation-gateway-state-${PORT}.json`,
-  )
-const PRODUCTION_RUNTIME = (
-  readEnvValue('MEDIATION_PRODUCTION_MODE', '').toLowerCase() === 'true'
-  || String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production'
-)
-const DB_POOL_MAX = Math.max(
-  1,
-  Math.min(
-    toPositiveInteger(readEnvValue('MEDIATION_DB_POOL_MAX', ''), PRODUCTION_RUNTIME ? 1 : 5),
-    20,
-  ),
-)
-const DB_POOL_IDLE_TIMEOUT_MS = toPositiveInteger(
-  readEnvValue('MEDIATION_DB_POOL_IDLE_TIMEOUT_MS', ''),
-  10000,
-)
-const DB_POOL_CONNECTION_TIMEOUT_MS = toPositiveInteger(
-  readEnvValue('MEDIATION_DB_POOL_CONNECTION_TIMEOUT_MS', ''),
-  5000,
-)
-const REQUIRE_DURABLE_SETTLEMENT = String(
-  readEnvValue('MEDIATION_REQUIRE_DURABLE_SETTLEMENT', PRODUCTION_RUNTIME ? 'true' : 'false'),
-).trim().toLowerCase() !== 'false'
-const STRICT_MANUAL_INTEGRATION = String(
-  readEnvValue('MEDIATION_STRICT_MANUAL_INTEGRATION', 'false'),
-).trim().toLowerCase() === 'true'
-const REQUIRE_RUNTIME_LOG_DB_PERSISTENCE = String(
-  readEnvValue('MEDIATION_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE', REQUIRE_DURABLE_SETTLEMENT ? 'true' : 'false'),
-).trim().toLowerCase() !== 'false'
-const DEV_RESET_ENABLED = String(
-  readEnvValue('MEDIATION_DEV_RESET_ENABLED', PRODUCTION_RUNTIME ? 'false' : 'true'),
-).trim().toLowerCase() !== 'false'
-const DEV_RESET_TOKEN = readEnvValue('MEDIATION_DEV_RESET_TOKEN', '')
-const MAX_DECISION_LOGS = parseCollectionLimit(
-  readEnvValue('MEDIATION_MAX_DECISION_LOGS', ''),
-  PRODUCTION_RUNTIME ? 0 : 500,
-)
-const MAX_EVENT_LOGS = parseCollectionLimit(
-  readEnvValue('MEDIATION_MAX_EVENT_LOGS', ''),
-  PRODUCTION_RUNTIME ? 0 : 500,
-)
-const MAX_PLACEMENT_AUDIT_LOGS = parseCollectionLimit(
-  readEnvValue('MEDIATION_MAX_PLACEMENT_AUDIT_LOGS', ''),
-  PRODUCTION_RUNTIME ? 0 : 500,
-)
-const MAX_NETWORK_FLOW_LOGS = parseCollectionLimit(
-  readEnvValue('MEDIATION_MAX_NETWORK_FLOW_LOGS', ''),
-  PRODUCTION_RUNTIME ? 0 : 300,
-)
-const MAX_CONTROL_PLANE_AUDIT_LOGS = parseCollectionLimit(
-  readEnvValue('MEDIATION_MAX_CONTROL_PLANE_AUDIT_LOGS', ''),
-  PRODUCTION_RUNTIME ? 0 : 800,
-)
+const DB_POOL_MAX = 1
+const DB_POOL_IDLE_TIMEOUT_MS = 10000
+const DB_POOL_CONNECTION_TIMEOUT_MS = 5000
+const REQUIRE_DURABLE_SETTLEMENT = true
+const STRICT_MANUAL_INTEGRATION = true
+const REQUIRE_RUNTIME_LOG_DB_PERSISTENCE = true
+const MAX_DECISION_LOGS = 500
+const MAX_EVENT_LOGS = 500
+const MAX_PLACEMENT_AUDIT_LOGS = 500
+const MAX_NETWORK_FLOW_LOGS = 300
+const MAX_CONTROL_PLANE_AUDIT_LOGS = 800
 const MAX_INTEGRATION_TOKENS = 500
 const MAX_AGENT_ACCESS_TOKENS = 1200
 const MAX_DASHBOARD_USERS = 500
 const MAX_DASHBOARD_SESSIONS = 1500
-const CONTROL_PLANE_REFRESH_THROTTLE_MS = toPositiveInteger(
-  readEnvValue('MEDIATION_CONTROL_PLANE_REFRESH_THROTTLE_MS', ''),
-  1000,
-)
+const CONTROL_PLANE_REFRESH_THROTTLE_MS = 1000
 const DECISION_REASON_ENUM = new Set(['served', 'no_fill', 'blocked', 'error'])
 const CONTROL_PLANE_ENVIRONMENTS = new Set(['prod'])
 const CONTROL_PLANE_KEY_STATUS = new Set(['active', 'revoked'])
@@ -128,19 +95,10 @@ const DEFAULT_CONTROL_PLANE_APP_ID = ''
 const DEFAULT_CONTROL_PLANE_ORG_ID = ''
 const TRACKING_ACCOUNT_QUERY_PARAM = 'aid'
 const DASHBOARD_SESSION_PREFIX = 'dsh_'
-const DASHBOARD_SESSION_TTL_SECONDS = toPositiveInteger(
-  readEnvValue('MEDIATION_DASHBOARD_SESSION_TTL_SECONDS', ''),
-  86400 * 7,
-)
-const DASHBOARD_AUTH_REQUIRED = String(
-  readEnvValue('MEDIATION_DASHBOARD_AUTH_REQUIRED', 'true'),
-).trim().toLowerCase() !== 'false'
-const RUNTIME_AUTH_REQUIRED = String(
-  readEnvValue('MEDIATION_RUNTIME_AUTH_REQUIRED', 'true'),
-).trim().toLowerCase() !== 'false'
-const INVENTORY_FALLBACK_WHEN_UNAVAILABLE = String(
-  readEnvValue('MEDIATION_V2_INVENTORY_FALLBACK', 'true'),
-).trim().toLowerCase() !== 'false'
+const DASHBOARD_SESSION_TTL_SECONDS = 86400 * 30
+const DASHBOARD_AUTH_REQUIRED = true
+const RUNTIME_AUTH_REQUIRED = true
+const INVENTORY_FALLBACK_WHEN_UNAVAILABLE = true
 const MIN_AGENT_ACCESS_TTL_SECONDS = 60
 const MAX_AGENT_ACCESS_TTL_SECONDS = 900
 const TOKEN_EXCHANGE_FORBIDDEN_FIELDS = new Set([
@@ -156,17 +114,8 @@ const TOKEN_EXCHANGE_FORBIDDEN_FIELDS = new Set([
   'tokenType',
   'token_type',
 ])
-const ALLOWED_CORS_ORIGINS = Array.from(
-  new Set(
-    readEnvValue('MEDIATION_ALLOWED_ORIGINS', '')
-      .split(',')
-      .map((item) => String(item || '').trim())
-      .filter(Boolean),
-  ),
-)
-const API_SERVICE_ROLE = normalizeApiServiceRole(
-  readEnvValue('MEDIATION_API_SERVICE_ROLE', 'all'),
-)
+const ALLOWED_CORS_ORIGINS = GATEWAY_CONFIG.allowedCorsOrigins
+const API_SERVICE_ROLE = 'all'
 const RUNTIME_ROUTE_MATCHERS = Object.freeze([
   { type: 'prefix', value: '/api/v1/mediation/' },
   { type: 'prefix', value: '/api/v1/sdk/' },
@@ -174,7 +123,6 @@ const RUNTIME_ROUTE_MATCHERS = Object.freeze([
   { type: 'prefix', value: '/api/v1/intent-card/' },
 ])
 const CONTROL_PLANE_ROUTE_MATCHERS = Object.freeze([
-  { type: 'exact', value: '/api/v1/dev/reset' },
   { type: 'prefix', value: '/api/v1/public/' },
   { type: 'prefix', value: '/api/v1/dashboard/' },
   { type: 'prefix', value: '/api/v1/internal/inventory/' },
@@ -418,16 +366,8 @@ function applyCollectionLimit(rows = [], limit = 0) {
   return list.slice(0, Math.floor(limit))
 }
 
-function resolvePreferredSettlementStoreMode() {
-  if (REQUIRE_DURABLE_SETTLEMENT) return 'supabase'
-  if (REQUIRE_RUNTIME_LOG_DB_PERSISTENCE) return 'supabase'
-  if (SETTLEMENT_STORAGE_MODE === 'supabase') return 'supabase'
-  if (SETTLEMENT_STORAGE_MODE === 'state_file' || SETTLEMENT_STORAGE_MODE === 'json') return 'state_file'
-  return SETTLEMENT_DB_URL ? 'supabase' : 'state_file'
-}
-
 const settlementStore = {
-  mode: resolvePreferredSettlementStoreMode(),
+  mode: 'supabase',
   pool: null,
   initPromise: null,
 }
@@ -483,14 +423,6 @@ async function refreshControlPlaneStateFromStore(options = {}) {
   }
 }
 
-function shouldPersistConversionFactsToStateFile() {
-  return !isPostgresSettlementStore()
-}
-
-function shouldPersistControlPlaneToStateFile() {
-  return !isSupabaseSettlementStore()
-}
-
 function createOpportunityChainWriter() {
   return createOpportunityWriter({
     pool: isPostgresSettlementStore() ? settlementStore.pool : null,
@@ -500,9 +432,7 @@ function createOpportunityChainWriter() {
 }
 
 function isLlmIntentFallbackEnabled() {
-  return String(
-    readEnvValue('MEDIATION_INTENT_LLM_FALLBACK', 'true'),
-  ).trim().toLowerCase() !== 'false'
+  return true
 }
 
 function deriveInventoryNetworksFromPlacement(placement = {}) {
@@ -4195,23 +4125,8 @@ async function ensureSettlementStoreReady() {
   }
 
   settlementStore.initPromise = (async () => {
-    const requiresSupabasePersistence = REQUIRE_DURABLE_SETTLEMENT || REQUIRE_RUNTIME_LOG_DB_PERSISTENCE
-    if (settlementStore.mode !== 'supabase') {
-      if (requiresSupabasePersistence) {
-        throw new Error(
-          'supabase persistence is required, but mediation settlement mode resolved to state_file.',
-        )
-      }
-      return
-    }
     if (!SETTLEMENT_DB_URL) {
-      if (requiresSupabasePersistence) {
-        throw new Error(
-          'supabase persistence is required, but SUPABASE_DB_URL is missing.',
-        )
-      }
-      settlementStore.mode = 'state_file'
-      return
+      throw new Error('supabase persistence is required, but SUPABASE_DB_URL is missing.')
     }
 
     try {
@@ -4233,16 +4148,8 @@ async function ensureSettlementStoreReady() {
       settlementStore.pool = pool
       await loadControlPlaneStateFromSupabase(pool)
     } catch (error) {
-      if (requiresSupabasePersistence) {
-        throw new Error(
-          `supabase persistence init failed: ${error instanceof Error ? error.message : String(error)}`,
-        )
-      }
-      settlementStore.mode = 'state_file'
-      settlementStore.pool = null
-      console.error(
-        '[mediation-gateway] settlement store supabase init failed, fallback to state_file:',
-        error instanceof Error ? error.message : String(error),
+      throw new Error(
+        `supabase persistence init failed: ${error instanceof Error ? error.message : String(error)}`,
       )
     }
   })()
@@ -4317,14 +4224,6 @@ async function writeConversionFact(fact) {
   }
 }
 
-async function resetConversionFactStore() {
-  await ensureSettlementStoreReady()
-  if (isPostgresSettlementStore()) {
-    await settlementStore.pool.query(`DELETE FROM ${SETTLEMENT_FACT_TABLE}`)
-  }
-  state.conversionFacts = []
-}
-
 function createInitialState() {
   const placements = buildDefaultPlacementList()
   const placementConfigVersion = Math.max(1, ...placements.map((placement) => placement.configVersion || 1))
@@ -4357,167 +4256,12 @@ function createInitialState() {
 }
 
 function loadState() {
-  try {
-    if (!fs.existsSync(STATE_FILE)) return createInitialState()
-    const raw = fs.readFileSync(STATE_FILE, 'utf-8')
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return createInitialState()
-
-    const controlPlane = ensureControlPlaneState(parsed.controlPlane)
-    const apps = Array.isArray(controlPlane.apps) ? controlPlane.apps : []
-    const accountByAppId = new Map(
-      apps.map((item) => [String(item.appId || '').trim(), normalizeControlPlaneAccountId(item.accountId || item.organizationId, '')]),
-    )
-
-    const legacyPlacements = Array.isArray(parsed.placements)
-      ? parsed.placements.map((item) => normalizePlacement(item))
-      : buildDefaultPlacementList()
-    const legacyDerivedPlacementConfigVersion = Math.max(
-      1,
-      ...legacyPlacements.map((placement) => placement.configVersion || 1),
-    )
-    const legacyPlacementConfigVersion = Math.max(
-      toPositiveInteger(parsed?.placementConfigVersion, 1),
-      legacyDerivedPlacementConfigVersion,
-    )
-
-    const placementConfigMap = new Map()
-    const rawPlacementConfigs = Array.isArray(parsed.placementConfigs) ? parsed.placementConfigs : []
-    for (const row of rawPlacementConfigs) {
-      const appId = String(row?.appId || row?.app_id || '').trim()
-      if (!appId) continue
-      const normalized = normalizePlacementConfigRecord(row, {
-        appId,
-        accountId: accountByAppId.get(appId) || DEFAULT_CONTROL_PLANE_ORG_ID,
-        placements: legacyPlacements,
-        placementConfigVersion: legacyPlacementConfigVersion,
-      })
-      placementConfigMap.set(normalized.appId, normalized)
-    }
-
-    if (DEFAULT_CONTROL_PLANE_APP_ID && !placementConfigMap.has(DEFAULT_CONTROL_PLANE_APP_ID)) {
-      placementConfigMap.set(
-        DEFAULT_CONTROL_PLANE_APP_ID,
-        normalizePlacementConfigRecord(
-          {
-            appId: DEFAULT_CONTROL_PLANE_APP_ID,
-            accountId: accountByAppId.get(DEFAULT_CONTROL_PLANE_APP_ID) || DEFAULT_CONTROL_PLANE_ORG_ID,
-            placementConfigVersion: legacyPlacementConfigVersion,
-            placements: legacyPlacements,
-          },
-        ),
-      )
-    }
-
-    for (const app of apps) {
-      const appId = String(app?.appId || '').trim()
-      if (!appId || placementConfigMap.has(appId)) continue
-      placementConfigMap.set(
-        appId,
-        normalizePlacementConfigRecord({
-          appId,
-          accountId: normalizeControlPlaneAccountId(app?.accountId || app?.organizationId, ''),
-          placementConfigVersion: 1,
-          placements: buildDefaultPlacementList(),
-        }),
-      )
-    }
-
-    const placementConfigs = Array.from(placementConfigMap.values())
-    const placementConfigVersion = Math.max(
-      legacyPlacementConfigVersion,
-      ...placementConfigs.map((item) => toPositiveInteger(item?.placementConfigVersion, 1)),
-    )
-    const defaultPlacementConfig = (
-      (DEFAULT_CONTROL_PLANE_APP_ID ? placementConfigMap.get(DEFAULT_CONTROL_PLANE_APP_ID) : null)
-      || placementConfigs[0]
-      || null
-    )
-    const placements = Array.isArray(defaultPlacementConfig?.placements)
-      ? defaultPlacementConfig.placements.map((item) => normalizePlacement(item))
-      : legacyPlacements
-
-    const placementStats = normalizePlacementStatsSnapshot(
-      parsed.placementStats && typeof parsed.placementStats === 'object'
-        ? parsed.placementStats
-        : initialPlacementStats(placements),
-      placements,
-    )
-
-    return {
-      version: toPositiveInteger(parsed?.version, 6),
-      updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : nowIso(),
-      placementConfigVersion,
-      placements,
-      placementConfigs,
-      placementAuditLogs: Array.isArray(parsed.placementAuditLogs)
-        ? applyCollectionLimit(parsed.placementAuditLogs, MAX_PLACEMENT_AUDIT_LOGS)
-        : [],
-      controlPlaneAuditLogs: Array.isArray(parsed.controlPlaneAuditLogs)
-        ? applyCollectionLimit(parsed.controlPlaneAuditLogs, MAX_CONTROL_PLANE_AUDIT_LOGS)
-        : [],
-      networkFlowStats: normalizeNetworkFlowStats(parsed?.networkFlowStats),
-      networkFlowLogs: Array.isArray(parsed.networkFlowLogs)
-        ? applyCollectionLimit(parsed.networkFlowLogs, MAX_NETWORK_FLOW_LOGS)
-        : [],
-      decisionLogs: Array.isArray(parsed.decisionLogs)
-        ? applyCollectionLimit(
-          parsed.decisionLogs.map((item) => normalizeRuntimeDecisionLogRecord(item)).filter(Boolean),
-          MAX_DECISION_LOGS,
-        )
-        : [],
-      eventLogs: Array.isArray(parsed.eventLogs)
-        ? applyCollectionLimit(
-          parsed.eventLogs.map((item) => normalizeRuntimeEventLogRecord(item)).filter(Boolean),
-          MAX_EVENT_LOGS,
-        )
-        : [],
-      conversionFacts: Array.isArray(parsed.conversionFacts)
-        ? parsed.conversionFacts.map((item) => normalizeConversionFact(item))
-        : [],
-      globalStats: {
-        requests: toPositiveInteger(parsed?.globalStats?.requests, 0),
-        served: toPositiveInteger(parsed?.globalStats?.served, 0),
-        impressions: toPositiveInteger(parsed?.globalStats?.impressions, 0),
-        clicks: toPositiveInteger(parsed?.globalStats?.clicks, 0),
-        revenueUsd: clampNumber(parsed?.globalStats?.revenueUsd, 0, Number.MAX_SAFE_INTEGER, 0),
-      },
-      placementStats,
-      dailyMetrics: ensureDailyMetricsWindow(parsed.dailyMetrics),
-      controlPlane,
-    }
-  } catch (error) {
-    console.error('[mediation-gateway] Failed to load state, fallback to initial state:', error)
-    return createInitialState()
-  }
+  return createInitialState()
 }
 
 function persistState(state) {
-  try {
-    fs.mkdirSync(STATE_DIR, { recursive: true })
-    const persistedState = {
-      ...state,
-      controlPlane: shouldPersistControlPlaneToStateFile()
-        ? ensureControlPlaneState(state?.controlPlane)
-        : createInitialControlPlaneState(),
-      conversionFacts: shouldPersistConversionFactsToStateFile()
-        ? (Array.isArray(state?.conversionFacts) ? state.conversionFacts : [])
-        : [],
-      updatedAt: nowIso(),
-    }
-    const tempFile = `${STATE_FILE}.${process.pid}.tmp`
-    fs.writeFileSync(tempFile, JSON.stringify(persistedState, null, 2), 'utf-8')
-    fs.renameSync(tempFile, STATE_FILE)
-  } catch (error) {
-    console.error('[mediation-gateway] Failed to persist state:', error)
-  }
-}
-
-function clearRuntimeMemory() {
-  runtimeMemory.cooldownBySessionPlacement.clear()
-  runtimeMemory.perSessionPlacementCount.clear()
-  runtimeMemory.perUserPlacementDayCount.clear()
-  runtimeMemory.opportunityContextByRequest.clear()
+  if (!state || typeof state !== 'object') return
+  state.updatedAt = nowIso()
 }
 
 let state = loadState()
@@ -4679,25 +4423,17 @@ function mergePlacementRowsWithObserved(baseRows = [], observedPlacementIds = []
 
 syncLegacyPlacementSnapshot()
 
-function resetGatewayState() {
-  state = createInitialState()
-  syncLegacyPlacementSnapshot()
-  clearRuntimeMemory()
-  persistState(state)
-  return state
-}
-
 function applyCorsOrigin(req, res) {
   const requestOrigin = String(req?.headers?.origin || '').trim()
-  if (ALLOWED_CORS_ORIGINS.length === 0) {
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    return
-  }
+  if (!requestOrigin) return { ok: true, requestOrigin: '' }
 
-  if (requestOrigin && ALLOWED_CORS_ORIGINS.includes(requestOrigin)) {
+  if (ALLOWED_CORS_ORIGINS.includes(requestOrigin)) {
     res.setHeader('Access-Control-Allow-Origin', requestOrigin)
     res.setHeader('Vary', 'Origin')
+    return { ok: true, requestOrigin }
   }
+
+  return { ok: false, requestOrigin }
 }
 
 function withCors(res) {
@@ -4717,6 +4453,15 @@ function sendNotFound(res) {
     error: {
       code: 'NOT_FOUND',
       message: 'Endpoint not found.',
+    },
+  })
+}
+
+function sendCorsForbidden(res, origin) {
+  sendJson(res, 403, {
+    error: {
+      code: 'CORS_ORIGIN_FORBIDDEN',
+      message: `Origin is not allowed: ${String(origin || '').trim() || '<empty>'}`,
     },
   })
 }
@@ -5248,62 +4993,6 @@ function resolveAuditActor(req, fallback = 'dashboard') {
   if (!req || !req.headers) return fallback
   const actor = String(req.headers['x-dashboard-actor'] || req.headers['x-user-id'] || '').trim()
   return actor || fallback
-}
-
-function normalizeHost(value) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/^\[(.*)\]$/, '$1')
-}
-
-function isLoopbackHost(value) {
-  const host = normalizeHost(value)
-  if (!host) return false
-  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true
-  if (host.startsWith('127.')) return true
-  return false
-}
-
-function requiresProtectedReset() {
-  return !isLoopbackHost(HOST)
-}
-
-function authorizeDevReset(req) {
-  if (!DEV_RESET_ENABLED) {
-    return {
-      ok: false,
-      status: 403,
-      error: {
-        code: 'RESET_DISABLED',
-        message: 'Reset endpoint is disabled by mediation policy.',
-      },
-    }
-  }
-
-  if (!requiresProtectedReset()) {
-    return { ok: true, mode: 'loopback_bind' }
-  }
-
-  const providedToken = String(
-    req?.headers?.['x-mediation-reset-token']
-      || req?.headers?.['x-mediation-reset-token']
-      || '',
-  ).trim()
-  if (DEV_RESET_TOKEN && providedToken && providedToken === DEV_RESET_TOKEN) {
-    return { ok: true, mode: 'token' }
-  }
-
-  return {
-    ok: false,
-    status: 403,
-    error: {
-      code: 'RESET_FORBIDDEN',
-      message: DEV_RESET_TOKEN
-        ? 'Reset endpoint requires x-mediation-reset-token when gateway is publicly bound.'
-        : 'Reset endpoint is blocked on non-loopback bind. Configure MEDIATION_DEV_RESET_TOKEN to allow internal reset.',
-    },
-  }
 }
 
 function recordControlPlaneAudit(payload) {
@@ -7827,7 +7516,6 @@ function createControlPlaneRouteDeps() {
   return {
     state,
     settlementStore,
-    STATE_FILE,
     STRICT_MANUAL_INTEGRATION,
     MAX_DASHBOARD_USERS,
     MAX_INTEGRATION_TOKENS,
@@ -7840,9 +7528,6 @@ function createControlPlaneRouteDeps() {
     PLACEMENT_ID_FROM_ANSWER,
     sendJson,
     readJsonBody,
-    authorizeDevReset,
-    resetGatewayState,
-    resetConversionFactStore,
     isSupabaseSettlementStore,
     loadControlPlaneStateFromSupabase,
     nowIso,
@@ -7927,10 +7612,9 @@ function createControlPlaneRouteDeps() {
 }
 
 export async function requestHandler(req, res, options = {}) {
-  const requestUrl = new URL(req.url || '/', `http://${req.headers.host || `${HOST}:${PORT}`}`)
+  const requestUrl = new URL(req.url || '/', REQUEST_BASE_ORIGIN)
   const pathname = requestUrl.pathname
   const apiServiceRole = normalizeApiServiceRole(options?.apiServiceRole || API_SERVICE_ROLE)
-  applyCorsOrigin(req, res)
 
   if (req.method === 'OPTIONS') {
     withCors(res)
@@ -7956,7 +7640,6 @@ export async function requestHandler(req, res, options = {}) {
       ok: true,
       service: 'mediation-api',
       apiServiceRole,
-      stateFile: STATE_FILE,
       updatedAt: state.updatedAt,
       now: nowIso(),
     })
@@ -8018,7 +7701,11 @@ export async function ensureReady() {
 
 export async function handleGatewayRequest(req, res, options = {}) {
   try {
-    applyCorsOrigin(req, res)
+    const corsCheck = applyCorsOrigin(req, res)
+    if (!corsCheck.ok) {
+      sendCorsForbidden(res, corsCheck.requestOrigin)
+      return
+    }
     await ensureReady()
     await requestHandler(req, res, options)
   } catch (error) {
@@ -8026,42 +7713,39 @@ export async function handleGatewayRequest(req, res, options = {}) {
   }
 }
 
-const server = http.createServer((req, res) => {
-  void handleGatewayRequest(req, res, {
-    apiServiceRole: API_SERVICE_ROLE,
-  })
-})
-
 function isDirectExecution() {
   const entry = String(process.argv?.[1] || '').trim()
   if (!entry) return false
-  return path.resolve(entry) === __filename
+  return entry === fileURLToPath(import.meta.url)
 }
 
-async function startServer() {
-  try {
-    await ensureReady()
-  } catch (error) {
-    console.error(
-      '[mediation-gateway] settlement store init error (fail-fast):',
-      error instanceof Error ? error.message : String(error),
-    )
-    process.exit(1)
-    return
-  }
+function resolveLocalListenHost() {
+  return String(process.env.MEDIATION_GATEWAY_HOST || '').trim() || '127.0.0.1'
+}
 
-  server.listen(PORT, HOST, () => {
-    console.log(`[mediation-gateway] listening on http://${HOST}:${PORT}`)
-    console.log(`[mediation-gateway] state file: ${STATE_FILE}`)
-    console.log(`[mediation-gateway] settlement store mode: ${settlementStore.mode}`)
-    console.log(`[mediation-gateway] strict manual integration: ${STRICT_MANUAL_INTEGRATION}`)
-    console.log(`[mediation-gateway] runtime log db persistence required: ${REQUIRE_RUNTIME_LOG_DB_PERSISTENCE}`)
-    console.log(`[mediation-gateway] api service role: ${API_SERVICE_ROLE}`)
+function resolveLocalListenPort() {
+  const raw = Number(process.env.MEDIATION_GATEWAY_PORT)
+  if (!Number.isFinite(raw) || raw <= 0) return 3100
+  return Math.floor(raw)
+}
+
+async function startLocalServer() {
+  await ensureReady()
+  const host = resolveLocalListenHost()
+  const port = resolveLocalListenPort()
+  const server = http.createServer((req, res) => {
+    void handleGatewayRequest(req, res, {
+      apiServiceRole: API_SERVICE_ROLE,
+    })
+  })
+
+  server.listen(port, host, () => {
+    console.log(`[mediation-gateway] local server listening on http://${host}:${port}`)
   })
 }
 
-if (isDirectExecution()) {
-  startServer().catch((error) => {
+if (isDirectExecution() && String(process.env.MEDIATION_ENABLE_LOCAL_SERVER || '').trim().toLowerCase() === 'true') {
+  startLocalServer().catch((error) => {
     console.error('[mediation-gateway] startup failure:', error)
     process.exit(1)
   })
