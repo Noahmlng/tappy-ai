@@ -22,9 +22,8 @@ function text(value, fallback) {
 }
 
 function normalizeInput(input = {}) {
-  const environment = text(input.environment, 'staging').toLowerCase()
   return {
-    environment: ['sandbox', 'staging', 'prod'].includes(environment) ? environment : 'staging',
+    environment: 'prod',
     appId: text(input.appId, '<APP_ID>'),
     placementId: text(input.placementId, 'chat_inline_v1'),
     repoPath: text(input.repoPath, '/path/to/your/repo'),
@@ -37,7 +36,7 @@ function normalizeInput(input = {}) {
 
 function buildEnvBlock(input) {
   return [
-    `MEDIATION_API_BASE_URL=https://api.${input.environment}.example.com`,
+    'MEDIATION_API_BASE_URL=https://api.example.com',
     `APP_ID=${input.appId}`,
     `PLACEMENT_ID=${input.placementId}`,
     `INTEGRATION_TOKEN=${input.integrationToken}`,

@@ -1,6 +1,6 @@
 const DEFAULT_ADS_BASE_URL = import.meta.env.VITE_SIMULATOR_API_BASE_URL || '/api'
 const ADS_BASE_URL = String(import.meta.env.VITE_ADS_BASE_URL || DEFAULT_ADS_BASE_URL).replace(/\/+$/, '')
-const ADS_API_KEY = import.meta.env.VITE_ADS_API_KEY || 'sk_staging_q42gfvn9wfojh5aq28n77g2t'
+const ADS_API_KEY = String(import.meta.env.VITE_ADS_API_KEY || '').trim()
 const INLINE_PLACEMENT_ID = 'chat_inline_v1'
 const FOLLOWUP_PLACEMENT_ID = 'chat_followup_v1'
 const DEFAULT_PLACEMENT_IDS = (() => {

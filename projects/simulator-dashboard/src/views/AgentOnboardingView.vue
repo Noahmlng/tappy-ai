@@ -14,7 +14,7 @@ const contractValidation = ref(null)
 
 const draft = reactive({
   appId: '',
-  environment: 'staging',
+  environment: 'prod',
   placementId: 'chat_inline_v1',
   repoPath: '/path/to/your/repo',
   integrationToken: '<ONE_TIME_INTEGRATION_TOKEN>',
@@ -22,11 +22,10 @@ const draft = reactive({
   exchangeTtlSeconds: 300,
 })
 
-const environmentOptions = ['sandbox', 'staging', 'prod']
 const tabs = AGENT_TEMPLATE_ITEMS
 const templates = computed(() => buildAgentTemplates({
   appId: draft.appId,
-  environment: draft.environment,
+  environment: 'prod',
   placementId: draft.placementId,
   repoPath: draft.repoPath,
   integrationToken: draft.integrationToken,
@@ -69,7 +68,7 @@ async function issueIntegrationToken() {
     }
     const payload = await controlPlaneClient.agent.issueIntegrationToken({
       appId,
-      environment: draft.environment,
+      environment: 'prod',
       placementId: draft.placementId.trim() || 'chat_inline_v1',
       ttlMinutes: Number(draft.tokenTtlMinutes) || 10,
     })
@@ -117,11 +116,7 @@ function contractCheckClass(ok) {
         </label>
         <label>
           Environment
-          <select v-model="draft.environment" class="input">
-            <option v-for="env in environmentOptions" :key="env" :value="env">
-              {{ env }}
-            </option>
-          </select>
+          <input class="input" type="text" value="prod" disabled>
         </label>
         <label>
           Placement ID

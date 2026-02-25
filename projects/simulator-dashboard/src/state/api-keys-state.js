@@ -25,7 +25,7 @@ function normalizeItem(item) {
     appId: String(item.appId || item.app_id || ''),
     accountId: String(item.accountId || item.account_id || item.organizationId || ''),
     name: String(item.name || `key_${keyId.slice(0, 6)}`),
-    environment: String(item.environment || item.env || 'staging'),
+    environment: String(item.environment || item.env || 'prod'),
     status: status === 'revoked' ? 'revoked' : 'active',
     maskedKey,
     createdAt: String(item.createdAt || item.created_at || nowIso()),

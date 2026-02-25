@@ -12,7 +12,7 @@ const editingPlacementId = ref('')
 
 const draft = reactive({
   placementId: 'chat_inline_v1',
-  environment: 'staging',
+  environment: 'prod',
   surface: 'CHAT_INLINE',
   enabled: true,
 })
@@ -21,12 +21,11 @@ const isBusy = computed(() => Boolean(integrationsState.meta.loading || integrat
 const rows = computed(() => Array.isArray(integrationsState.templates) ? integrationsState.templates : [])
 const syncMode = computed(() => String(integrationsState.meta.syncMode || 'local'))
 
-const environmentOptions = ['sandbox', 'staging', 'prod']
 const surfaceOptions = ['CHAT_INLINE', 'FOLLOW_UP', 'AGENT_PANEL']
 
 function resetDraft() {
   draft.placementId = `chat_inline_${Date.now().toString().slice(-4)}`
-  draft.environment = 'staging'
+  draft.environment = 'prod'
   draft.surface = 'CHAT_INLINE'
   draft.enabled = true
 }
@@ -41,7 +40,7 @@ function startEdit(row) {
   createMode.value = false
   editingPlacementId.value = row.placementId
   draft.placementId = row.placementId
-  draft.environment = row.environment
+  draft.environment = 'prod'
   draft.surface = row.surface
   draft.enabled = Boolean(row.enabled)
 }
@@ -60,6 +59,7 @@ async function saveDraft() {
 async function toggleEnabled(row) {
   await savePlacementTemplate({
     ...row,
+    environment: 'prod',
     enabled: !row.enabled,
   })
 }
@@ -123,9 +123,7 @@ onMounted(() => {
           </label>
           <label>
             Environment
-            <select v-model="draft.environment" class="input">
-              <option v-for="env in environmentOptions" :key="env" :value="env">{{ env }}</option>
-            </select>
+            <input class="input" type="text" value="prod" disabled>
           </label>
           <label>
             Surface

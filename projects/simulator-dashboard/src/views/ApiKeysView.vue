@@ -14,8 +14,7 @@ import {
 import { scopeState, setScope } from '../state/scope-state'
 
 const draft = reactive({
-  name: 'runtime-staging',
-  environment: 'staging',
+  name: 'runtime-prod',
 })
 
 const appSelection = reactive({
@@ -23,8 +22,6 @@ const appSelection = reactive({
   error: '',
   options: [],
 })
-
-const environmentOptions = ['sandbox', 'staging', 'prod']
 
 const isBusy = computed(() => Boolean(apiKeysState.meta.loading || apiKeysState.meta.syncing))
 const refreshBusy = computed(() => Boolean(isBusy.value || appSelection.loading))
@@ -118,7 +115,7 @@ async function handleCreate() {
 
   await createApiKey({
     name: String(draft.name || '').trim() || 'runtime',
-    environment: draft.environment,
+    environment: 'prod',
     appId: scopedInput.appId,
     accountId: scopedInput.accountId,
   })
@@ -187,16 +184,8 @@ onMounted(() => {
             class="input"
             type="text"
             maxlength="40"
-            placeholder="runtime-staging"
+            placeholder="runtime-prod"
           >
-        </label>
-        <label>
-          Env
-          <select v-model="draft.environment" class="input">
-            <option v-for="env in environmentOptions" :key="env" :value="env">
-              {{ env }}
-            </option>
-          </select>
         </label>
       </div>
       <div v-if="apiKeysState.meta.lastRevealedSecret" class="secret-banner">

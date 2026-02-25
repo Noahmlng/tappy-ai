@@ -17,7 +17,7 @@ function normalizeTemplate(item) {
 
   return {
     placementId,
-    environment: String(item.environment || item.env || 'staging'),
+    environment: String(item.environment || item.env || 'prod'),
     surface: String(item.surface || 'CHAT_INLINE'),
     enabled: Boolean(item.enabled),
     updatedAt: String(item.updatedAt || item.updated_at || nowIso()),

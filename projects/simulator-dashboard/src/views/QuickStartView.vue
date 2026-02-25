@@ -9,7 +9,7 @@ const verifyLoading = ref(false)
 const verifyError = ref('')
 const verifyResult = ref(null)
 
-const envSnippet = `MEDIATION_API_BASE_URL=https://api.<env>.example.com
+const envSnippet = `MEDIATION_API_BASE_URL=https://api.example.com
 MEDIATION_API_KEY=<issued_api_key>
 APP_ID=<your_app_id>
 PLACEMENT_ID=chat_inline_v1`
@@ -249,7 +249,7 @@ async function runQuickStartVerifier() {
     const payload = await controlPlaneClient.quickStart.verify({
       appId: scope.appId,
       accountId: scope.accountId,
-      environment: 'staging',
+      environment: 'prod',
       placementId: 'chat_inline_v1',
     })
     verifyResult.value = payload

@@ -28,7 +28,7 @@ npm run dev
 - `VITE_DEEPSEEK_MODEL`（默认：`deepseek-reasoner`）
 - `SIMULATOR_API_PROXY_TARGET`（开发代理目标，默认：`http://127.0.0.1:3100`）
 - `VITE_SIMULATOR_API_BASE_URL`（可选，浏览器 API base，默认：`/api`）
-- `VITE_ADS_API_KEY`（可选，不填时使用内置 staging key）
+- `VITE_ADS_API_KEY`（可选，不填时广告请求自动停用，主对话链路保持 fail-open）
 - `VITE_ADS_BASE_URL`（可选，默认继承 `VITE_SIMULATOR_API_BASE_URL`）
 - `VITE_ADS_PLACEMENT_IDS`（可选，默认：`chat_inline_v1,chat_followup_v1`；兼容 `VITE_ADS_PLACEMENT_ID`）
 - `VITE_ADS_BID_TIMEOUT_MS`（可选，默认：`5000`）
