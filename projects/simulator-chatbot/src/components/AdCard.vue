@@ -31,12 +31,15 @@ defineEmits(['ad-click'])
 <style scoped>
 .ad-card {
   margin-top: 14px;
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
   background: linear-gradient(145deg, color-mix(in srgb, var(--paper) 55%, white), color-mix(in srgb, var(--surface) 74%, white));
   box-shadow: var(--soft-shadow);
   padding: 12px;
-  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  transition:
+    transform var(--motion-base) var(--ease-standard),
+    border-color var(--motion-base) var(--ease-standard),
+    box-shadow var(--motion-base) var(--ease-standard);
 }
 
 .ad-card:hover {
@@ -61,7 +64,7 @@ defineEmits(['ad-click'])
 }
 
 .ad-card-meta span:first-child {
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
   background: color-mix(in srgb, var(--surface) 75%, white);
   color: var(--graphite);
@@ -82,8 +85,8 @@ defineEmits(['ad-click'])
   gap: 12px;
   text-decoration: none;
   color: inherit;
-  border-radius: 14px;
-  transition: transform 0.16s ease;
+  border-radius: var(--radius-md);
+  transition: transform var(--motion-fast) var(--ease-standard);
 }
 
 .ad-card-link:hover {
@@ -95,12 +98,16 @@ defineEmits(['ad-click'])
   outline-offset: 2px;
 }
 
+.ad-card-link:active {
+  transform: translateY(0);
+}
+
 .ad-card-link img {
   flex-shrink: 0;
   width: 72px;
   height: 72px;
   object-fit: cover;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
   background: #fff;
 }
@@ -133,14 +140,16 @@ defineEmits(['ad-click'])
   margin-top: 12px;
   display: inline-flex;
   align-items: center;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--accent-sea) 48%, transparent);
   background: color-mix(in srgb, var(--accent-sea) 12%, white);
   color: color-mix(in srgb, var(--accent-sea) 88%, black);
   padding: 6px 11px;
   font-size: 11px;
   font-weight: 650;
-  transition: transform 0.16s ease, background-color 0.16s ease;
+  transition:
+    transform var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard);
 }
 
 .ad-card-link:hover .ad-card-cta {

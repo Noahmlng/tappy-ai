@@ -57,17 +57,25 @@ defineEmits(['source-click'])
   align-items: center;
   gap: 6px 9px;
   border: 1px solid color-mix(in srgb, var(--ink) 11%, transparent);
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, white 84%, var(--paper));
   text-decoration: none;
   padding: 8px 10px;
-  transition: border-color 0.15s ease, transform 0.15s ease;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 62%, transparent);
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }
 
 .citation-sources li a:hover {
   transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--accent-sea) 38%, transparent);
   background: color-mix(in srgb, var(--indigo-soft) 48%, white);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 70%, transparent),
+    0 8px 16px color-mix(in srgb, var(--accent-sea) 9%, transparent);
 }
 
 .citation-sources li a:focus-visible {
@@ -76,12 +84,16 @@ defineEmits(['source-click'])
   border-color: color-mix(in srgb, var(--accent-sea) 44%, transparent);
 }
 
+.citation-sources li a:active {
+  transform: translateY(0);
+}
+
 .source-index {
   display: grid;
   place-items: center;
   width: 18px;
   height: 18px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
   color: var(--graphite);
   font-size: 10px;

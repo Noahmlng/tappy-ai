@@ -8,6 +8,25 @@
   --font-display: "Fraunces", "Iowan Old Style", serif;
   --font-mono: "IBM Plex Mono", "JetBrains Mono", "SF Mono", Menlo, monospace;
 
+  --content-max-width: 860px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+
+  --radius-xs: 8px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 22px;
+  --radius-2xl: 28px;
+  --radius-pill: 999px;
+
   --paper: #f5f1e7;
   --surface: #ebe6da;
   --surface-strong: #e0d8c6;
@@ -31,6 +50,12 @@
 
   --soft-shadow: 0 10px 30px color-mix(in srgb, #182117 12%, transparent);
   --elev-shadow: 0 14px 40px color-mix(in srgb, #182117 14%, transparent);
+  --hairline: color-mix(in srgb, var(--ink) 8%, transparent);
+
+  --motion-fast: 0.14s;
+  --motion-base: 0.2s;
+  --motion-slow: 0.32s;
+  --ease-standard: cubic-bezier(0.22, 0.61, 0.36, 1);
   --focus-ring: color-mix(in srgb, var(--accent-sea) 58%, white);
 }
 
@@ -59,6 +84,7 @@ body {
   -webkit-font-smoothing: antialiased;
   font-feature-settings: "liga", "kern";
   background-attachment: fixed;
+  letter-spacing: 0.002em;
 }
 
 ::selection {
@@ -110,7 +136,7 @@ textarea::-webkit-scrollbar {
 }
 
 .animate-in {
-  animation: fade-up 0.32s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  animation: fade-up var(--motion-slow) var(--ease-standard) both;
 }
 
 @keyframes fade-up {
@@ -125,7 +151,7 @@ textarea::-webkit-scrollbar {
 }
 
 .cubic-bezier-transition {
-  transition-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+  transition-timing-function: var(--ease-standard);
 }
 
 .cursor-blink {

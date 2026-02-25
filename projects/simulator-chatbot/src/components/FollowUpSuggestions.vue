@@ -49,14 +49,19 @@ defineEmits(['select'])
   border: 1px solid color-mix(in srgb, var(--ink) 14%, transparent);
   background: color-mix(in srgb, white 86%, var(--paper));
   color: var(--graphite);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 12px;
   line-height: 1.25;
   text-align: left;
   padding: 7px 11px;
   cursor: pointer;
   box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 65%, transparent);
-  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }
 
 .followup-grid button:hover:not(:disabled) {
@@ -67,6 +72,10 @@ defineEmits(['select'])
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, #fff 72%, transparent),
     0 8px 18px color-mix(in srgb, var(--accent-sea) 10%, transparent);
+}
+
+.followup-grid button:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .followup-grid button:focus-visible {

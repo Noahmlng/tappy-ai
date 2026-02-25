@@ -80,7 +80,7 @@ const renderedHtml = computed(() => markdownParser.render(String(props.content |
   background-color: color-mix(in srgb, var(--surface) 70%, white);
   border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
   padding: 0.14em 0.44em;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   font-family: var(--font-mono);
   font-size: 0.86em;
   color: color-mix(in srgb, var(--ink) 85%, var(--accent-sea));
@@ -88,7 +88,7 @@ const renderedHtml = computed(() => markdownParser.render(String(props.content |
 
 .markdown-content :deep(pre) {
   background-color: color-mix(in srgb, var(--surface) 82%, white);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   padding: 0.95em 1em;
   overflow-x: auto;
   margin: 0.75em 0;
@@ -112,6 +112,9 @@ const renderedHtml = computed(() => markdownParser.render(String(props.content |
   text-decoration: underline;
   text-underline-offset: 2px;
   text-decoration-thickness: 1.2px;
+  transition:
+    color var(--motion-fast) var(--ease-standard),
+    text-decoration-color var(--motion-fast) var(--ease-standard);
 }
 
 .markdown-content :deep(a:hover) {

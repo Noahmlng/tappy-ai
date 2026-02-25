@@ -1662,11 +1662,15 @@ async function handleSend(options = {}) {
 
 <style scoped>
 .sim-shell {
+  --sim-content-width: min(var(--content-max-width), 100%);
+  --sim-edge-padding: clamp(12px, 2.2vw, 34px);
+
   position: relative;
   display: flex;
   height: 100vh;
   width: 100%;
   overflow: hidden;
+  isolation: isolate;
   color: var(--ink);
   font-family: var(--font-body);
   background: var(--paper);
@@ -1745,9 +1749,9 @@ async function handleSend(options = {}) {
   border-right: 1px solid var(--sidebar-border);
   background: linear-gradient(180deg, var(--sidebar-bg), color-mix(in srgb, var(--sidebar-bg) 90%, black));
   color: var(--sidebar-text);
-  padding: 18px 14px;
+  padding: var(--space-5) var(--space-4);
   transform: translateX(-110%);
-  transition: transform 0.28s ease;
+  transition: transform var(--motion-slow) var(--ease-standard);
   box-shadow: 18px 0 42px color-mix(in srgb, #000 26%, transparent);
   backdrop-filter: blur(8px);
   will-change: transform;
@@ -1807,17 +1811,24 @@ async function handleSend(options = {}) {
   height: 36px;
   width: 36px;
   border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--paper) 76%, transparent);
   color: inherit;
   cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
 }
 
 .sim-icon-btn:hover {
   transform: translateY(-1px);
   background: color-mix(in srgb, var(--paper) 92%, transparent);
   border-color: color-mix(in srgb, var(--ink) 20%, transparent);
+}
+
+.sim-icon-btn:active {
+  transform: translateY(0);
 }
 
 .sim-icon-btn:focus-visible {
@@ -1838,20 +1849,27 @@ async function handleSend(options = {}) {
   justify-content: space-between;
   gap: 12px;
   border: 1px solid var(--sidebar-border);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: linear-gradient(145deg, color-mix(in srgb, var(--sidebar-surface) 80%, #111), color-mix(in srgb, var(--sidebar-surface) 100%, #000));
   color: var(--sidebar-text);
   padding: 11px 12px;
   font-size: 13px;
   font-weight: 580;
   cursor: pointer;
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform var(--motion-base) var(--ease-standard),
+    border-color var(--motion-base) var(--ease-standard),
+    box-shadow var(--motion-base) var(--ease-standard);
 }
 
 .sim-new-chat-btn:hover {
   transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--accent-sea) 36%, white);
   box-shadow: 0 8px 20px color-mix(in srgb, var(--accent-sea) 20%, transparent);
+}
+
+.sim-new-chat-btn:active {
+  transform: translateY(0);
 }
 
 .sim-new-chat-btn:focus-visible {
@@ -1870,10 +1888,10 @@ async function handleSend(options = {}) {
   align-items: center;
   gap: 8px;
   border: 1px solid var(--sidebar-border);
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--sidebar-surface) 88%, #0f1110);
   color: var(--sidebar-muted);
-  padding: 9px 10px;
+  padding: var(--space-2) var(--space-3);
 }
 
 .sim-search-field input {
@@ -1914,21 +1932,33 @@ async function handleSend(options = {}) {
   align-content: start;
   grid-auto-rows: max-content;
   border: 1px solid color-mix(in srgb, var(--sidebar-border) 70%, transparent);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: linear-gradient(
     160deg,
     color-mix(in srgb, var(--sidebar-surface) 32%, #151a17),
     color-mix(in srgb, var(--sidebar-bg) 88%, #090b0a)
   );
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, #000 10%, transparent);
+}
+
+.sim-session-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sim-session-list::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--sidebar-muted) 40%, transparent);
 }
 
 .sim-session-card {
   position: relative;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   border: 1px solid transparent;
   background: transparent;
-  transition: border-color 0.16s ease, background-color 0.16s ease;
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard);
   overflow: hidden;
 }
 
@@ -1940,6 +1970,10 @@ async function handleSend(options = {}) {
 .sim-session-card.is-active {
   border-color: color-mix(in srgb, var(--accent-sea) 40%, white);
   background: color-mix(in srgb, var(--sidebar-surface) 84%, #0f1210);
+}
+
+.sim-session-card:focus-within .sim-session-delete {
+  opacity: 1;
 }
 
 .sim-session-main {
@@ -1981,12 +2015,15 @@ async function handleSend(options = {}) {
   height: 24px;
   width: 24px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: var(--sidebar-muted);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.16s ease, background-color 0.16s ease, color 0.16s ease;
+  transition:
+    opacity var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
 }
 
 .sim-session-card:hover .sim-session-delete {
@@ -2020,12 +2057,15 @@ async function handleSend(options = {}) {
 
 .sim-panel {
   border: 1px solid var(--sidebar-border);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--sidebar-surface) 90%, #111);
   padding: 10px;
 }
 
 .sim-panel summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   list-style: none;
   cursor: pointer;
   margin: 0;
@@ -2034,6 +2074,22 @@ async function handleSend(options = {}) {
   font-weight: 650;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+.sim-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.sim-panel summary::after {
+  content: '+';
+  font-size: 14px;
+  line-height: 1;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--sidebar-muted) 90%, #fff);
+}
+
+.sim-panel[open] summary::after {
+  content: '−';
 }
 
 .sim-panel summary:focus-visible {
@@ -2056,7 +2112,10 @@ async function handleSend(options = {}) {
   color: var(--sidebar-muted);
   font-size: 11px;
   cursor: pointer;
-  transition: border-color 0.16s ease, color 0.16s ease;
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
 }
 
 .sim-panel-row button {
@@ -2072,6 +2131,11 @@ async function handleSend(options = {}) {
 .sim-clear-history-btn:hover {
   color: var(--sidebar-text);
   border-color: color-mix(in srgb, var(--accent-sea) 35%, white);
+}
+
+.sim-panel-row button:not(:disabled):active,
+.sim-clear-history-btn:active {
+  transform: translateY(0);
 }
 
 .sim-panel-row button:focus-visible,
@@ -2124,6 +2188,10 @@ async function handleSend(options = {}) {
 
 .sim-trace-card summary {
   cursor: pointer;
+}
+
+.sim-trace-card summary::-webkit-details-marker {
+  display: none;
 }
 
 .sim-trace-card summary:focus-visible {
@@ -2223,12 +2291,14 @@ async function handleSend(options = {}) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 15px 22px 14px;
+  gap: var(--space-4);
+  padding: 15px clamp(14px, 2vw, 22px) 14px;
   border-bottom: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
   background: color-mix(in srgb, var(--paper) 90%, white);
   backdrop-filter: blur(14px);
-  box-shadow: 0 1px 0 color-mix(in srgb, #fff 66%, transparent);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 66%, transparent),
+    0 10px 28px color-mix(in srgb, #19231d 5%, transparent);
 }
 
 .sim-topbar-left {
@@ -2269,20 +2339,29 @@ async function handleSend(options = {}) {
   align-items: center;
   gap: 6px;
   border: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--paper) 86%, white);
   color: var(--ink);
   font-size: 12px;
   font-weight: 600;
   padding: 8px 13px;
   cursor: pointer;
-  transition: transform 0.16s ease, border-color 0.16s ease, background-color 0.16s ease;
+  transition:
+    transform var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }
 
 .sim-pill-btn:hover {
   transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--accent-sea) 34%, transparent);
   background: color-mix(in srgb, var(--accent-sea) 15%, var(--paper));
+  box-shadow: 0 8px 16px color-mix(in srgb, var(--accent-sea) 10%, transparent);
+}
+
+.sim-pill-btn:active {
+  transform: translateY(0);
 }
 
 .sim-pill-btn:focus-visible {
@@ -2294,7 +2373,7 @@ async function handleSend(options = {}) {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
-  padding: clamp(16px, 2vw, 28px) clamp(12px, 2.2vw, 34px) 22px;
+  padding: clamp(16px, 2vw, 28px) var(--sim-edge-padding) var(--space-6);
   background:
     radial-gradient(circle at 60% 100%, color-mix(in srgb, var(--accent-gold) 6%, transparent), transparent 40%),
     radial-gradient(circle at 6% 0%, color-mix(in srgb, var(--accent-sea) 7%, transparent), transparent 42%);
@@ -2302,17 +2381,22 @@ async function handleSend(options = {}) {
 
 .sim-hero {
   margin: clamp(14px, 3vh, 32px) auto 26px;
-  width: min(860px, 100%);
+  width: var(--sim-content-width);
   position: relative;
   isolation: isolate;
   border: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
-  border-radius: 28px;
+  border-radius: var(--radius-2xl);
   background: linear-gradient(152deg, color-mix(in srgb, var(--paper) 88%, white), color-mix(in srgb, var(--surface) 72%, white));
   box-shadow:
     0 28px 60px color-mix(in srgb, #111b17 16%, transparent),
     inset 0 1px 0 color-mix(in srgb, #fff 70%, transparent);
   padding: clamp(22px, 3.5vw, 38px);
-  transition: opacity 0.5s ease, transform 0.5s ease, max-height 0.5s ease, margin 0.5s ease, padding 0.5s ease;
+  transition:
+    opacity var(--motion-slow) var(--ease-standard),
+    transform var(--motion-slow) var(--ease-standard),
+    max-height var(--motion-slow) var(--ease-standard),
+    margin var(--motion-slow) var(--ease-standard),
+    padding var(--motion-slow) var(--ease-standard);
   max-height: 420px;
   overflow: hidden;
 }
@@ -2377,12 +2461,12 @@ async function handleSend(options = {}) {
 
 .sim-thread {
   margin: 0 auto;
-  width: min(860px, 100%);
+  width: var(--sim-content-width);
   padding-top: 4px;
   opacity: 0;
   transform: translateY(16px);
   pointer-events: none;
-  transition: opacity 0.45s ease, transform 0.45s ease;
+  transition: opacity var(--motion-slow) var(--ease-standard), transform var(--motion-slow) var(--ease-standard);
 }
 
 .sim-thread.is-visible {
@@ -2393,8 +2477,8 @@ async function handleSend(options = {}) {
 
 .sim-turn {
   width: 100%;
-  margin-bottom: 20px;
-  animation: rise-in 0.35s ease both;
+  margin-bottom: var(--space-5);
+  animation: rise-in var(--motion-slow) var(--ease-standard) both;
 }
 
 .sim-turn-inner {
@@ -2424,10 +2508,10 @@ async function handleSend(options = {}) {
 
 .sim-message {
   width: min(100%, 680px);
-  border-radius: 22px;
+  border-radius: var(--radius-xl);
   padding: 14px 16px 13px;
   font-size: 15px;
-  line-height: 1.72;
+  line-height: 1.7;
   backdrop-filter: blur(6px);
 }
 
@@ -2473,7 +2557,7 @@ async function handleSend(options = {}) {
   gap: 8px;
   opacity: 0;
   transform: translateY(2px);
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity var(--motion-base) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 
 .sim-message-actions-right {
@@ -2498,11 +2582,15 @@ async function handleSend(options = {}) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 11px;
   font-weight: 650;
   padding: 7px 11px;
-  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard);
 }
 
 .sim-ghost-btn {
@@ -2512,6 +2600,7 @@ async function handleSend(options = {}) {
 }
 
 .sim-ghost-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--accent-sea) 34%, transparent);
   color: color-mix(in srgb, var(--ink) 78%, var(--accent-sea));
 }
@@ -2523,7 +2612,13 @@ async function handleSend(options = {}) {
 }
 
 .sim-solid-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
   background: color-mix(in srgb, var(--ink) 86%, #1f4f3f);
+}
+
+.sim-ghost-btn:active:not(:disabled),
+.sim-solid-btn:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .sim-ghost-btn:focus-visible,
@@ -2540,7 +2635,7 @@ async function handleSend(options = {}) {
 
 .sim-tool-card {
   border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--paper) 82%, white);
   padding: 12px;
 }
@@ -2600,7 +2695,7 @@ async function handleSend(options = {}) {
 
 .sim-tool-results li {
   border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, white 84%, var(--paper));
   padding: 9px 10px;
 }
@@ -2658,7 +2753,7 @@ async function handleSend(options = {}) {
   position: sticky;
   bottom: 0;
   z-index: 24;
-  padding: 10px clamp(12px, 2.1vw, 34px) 18px;
+  padding: var(--space-3) var(--sim-edge-padding) 18px;
   background: linear-gradient(0deg, color-mix(in srgb, var(--paper) 95%, white) 58%, transparent 100%);
   backdrop-filter: blur(9px);
 }
@@ -2668,15 +2763,19 @@ async function handleSend(options = {}) {
 }
 
 .sim-composer-card {
-  width: min(860px, 100%);
+  width: var(--sim-content-width);
   margin: 0 auto;
   border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
-  border-radius: 24px;
+  border-radius: var(--radius-2xl);
   background: color-mix(in srgb, white 84%, var(--paper));
   box-shadow:
     0 18px 45px color-mix(in srgb, #111d18 14%, transparent),
     inset 0 1px 0 color-mix(in srgb, #fff 72%, transparent);
   padding: 8px;
+  transition:
+    border-color var(--motion-base) var(--ease-standard),
+    box-shadow var(--motion-base) var(--ease-standard),
+    background-color var(--motion-base) var(--ease-standard);
 }
 
 .sim-composer-card:focus-within {
@@ -2728,7 +2827,12 @@ async function handleSend(options = {}) {
   border-radius: 999px;
   background: color-mix(in srgb, var(--surface) 70%, white);
   color: var(--pencil);
-  transition: transform 0.16s ease, background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+  transition:
+    transform var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }
 
 .sim-send-btn.is-active {
@@ -2743,6 +2847,10 @@ async function handleSend(options = {}) {
 
 .sim-send-btn.is-active:hover {
   transform: translateY(-1px) scale(1.02);
+}
+
+.sim-send-btn.is-active:active {
+  transform: translateY(0) scale(0.99);
 }
 
 .sim-send-btn:focus-visible {
@@ -2775,6 +2883,10 @@ async function handleSend(options = {}) {
 }
 
 @media (max-width: 1099px) {
+  .sim-sidebar {
+    width: min(84vw, 320px);
+  }
+
   .sim-topbar {
     padding-inline: 14px;
   }
@@ -2808,7 +2920,7 @@ async function handleSend(options = {}) {
   }
 
   .sim-hero {
-    border-radius: 22px;
+    border-radius: var(--radius-xl);
     padding: 18px 17px;
     margin-top: 12px;
   }
@@ -2834,7 +2946,7 @@ async function handleSend(options = {}) {
   .sim-pill-btn {
     height: 34px;
     width: 34px;
-    border-radius: 11px;
+    border-radius: var(--radius-sm);
     padding: 0;
     justify-content: center;
   }
