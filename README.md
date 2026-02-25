@@ -159,6 +159,7 @@
 - `projects/ad-aggregation-platform`
 - `apps/runtime-api`
 - `apps/control-plane-api`
+- `packages/mediation-sdk-contracts`
 - `/Users/zeming/Documents/simulator-chatbot`（外部仓库）
 - `/Users/zeming/Documents/chat-ads-dashboard`（外部仓库）
 

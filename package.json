@@ -5,7 +5,8 @@
   "workspaces": [
     "projects/ad-aggregation-platform",
     "apps/runtime-api",
-    "apps/control-plane-api"
+    "apps/control-plane-api",
+    "packages/mediation-sdk-contracts"
   ],
   "scripts": {
     "dev": "npm run dev:gateway",

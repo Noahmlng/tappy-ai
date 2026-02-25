@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-network.local/schemas/ad-request.schema.json",
+  "title": "AdRequest",
+  "type": "object",
+  "required": ["appId", "sessionId", "placementId", "context"],
+  "properties": {
+    "appId": { "type": "string", "minLength": 1 },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "userId": { "type": "string" },
+    "placementId": { "type": "string", "minLength": 1 },
+    "context": {
+      "type": "object",
+      "required": ["intentScore"],
+      "properties": {
+        "query": { "type": "string" },
+        "answerText": { "type": "string" },
+        "intentScore": { "type": "number", "minimum": 0, "maximum": 1 },
+        "expectedRevenue": { "type": "number", "minimum": 0 },
+        "locale": { "type": "string" },
+        "device": { "type": "string" },
+        "testAllOffers": { "type": "boolean" },
+        "debug": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

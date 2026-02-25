@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-network.local/schemas/v2-bid-request.schema.json",
+  "title": "V2 Bid Request",
+  "type": "object",
+  "required": ["userId", "chatId", "placementId", "messages"],
+  "properties": {
+    "userId": { "type": "string", "minLength": 1 },
+    "chatId": { "type": "string", "minLength": 1 },
+    "placementId": {
+      "type": "string",
+      "enum": ["chat_from_answer_v1", "chat_intent_recommendation_v1"]
+    },
+    "messages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["role", "content"],
+        "properties": {
+          "role": { "type": "string", "enum": ["user", "assistant", "system"] },
+          "content": { "type": "string", "minLength": 1 },
+          "timestamp": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

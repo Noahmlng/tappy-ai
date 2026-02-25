@@ -1,0 +1,23 @@
+{
+  "name": "@ai-network/mediation-sdk-contracts",
+  "version": "0.1.0",
+  "description": "Shared API contracts and clients for Mediation Runtime and Control Plane.",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./src/client.js",
+    "./schemas/*": "./schemas/*"
+  },
+  "files": [
+    "README.md",
+    "src",
+    "schemas"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  }
+}

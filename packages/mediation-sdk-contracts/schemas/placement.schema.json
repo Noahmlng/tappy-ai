@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-network.local/schemas/placement.schema.json",
+  "title": "Placement",
+  "type": "object",
+  "required": ["placementId", "surface", "format", "trigger"],
+  "properties": {
+    "placementId": { "type": "string", "minLength": 1 },
+    "surface": {
+      "type": "string",
+      "enum": ["CHAT_INLINE", "CHAT_CARD", "SIDEBAR", "FOLLOW_UP", "AGENT_PANEL"]
+    },
+    "format": {
+      "type": "string",
+      "enum": ["TEXT_LINK", "CARD", "LIST", "NATIVE_BLOCK"]
+    },
+    "trigger": {
+      "type": "object",
+      "required": ["intentThreshold"],
+      "properties": {
+        "intentThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "minExpectedRevenue": { "type": "number", "minimum": 0 },
+        "cooldownSeconds": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "targeting": {
+      "type": "object",
+      "properties": {
+        "allowedTopics": { "type": "array", "items": { "type": "string" } },
+        "blockedTopics": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "frequencyCap": {
+      "type": "object",
+      "properties": {
+        "maxPerSession": { "type": "integer", "minimum": 0 },
+        "maxPerUserPerDay": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "bidders": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["networkId"],
+        "properties": {
+          "networkId": { "type": "string", "minLength": 1 },
+          "endpoint": { "type": "string" },
+          "timeoutMs": { "type": "integer", "minimum": 1 },
+          "enabled": { "type": "boolean" },
+          "policyWeight": { "type": "number" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "fallback": {
+      "type": "object",
+      "properties": {
+        "store": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "floorPrice": { "type": "number", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "maxFanout": { "type": "integer", "minimum": 1 },
+    "globalTimeoutMs": { "type": "integer", "minimum": 1 },
+    "routingMode": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}
