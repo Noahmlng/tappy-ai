@@ -8,6 +8,8 @@ import {
   DEFAULT_SCENARIO_SET_PATH,
   parseArgs,
   parsePlacements,
+  parseSettlementStorage,
+  parseInventoryNetworks,
   toBoolean,
   toInteger,
   toNumber,
@@ -26,6 +28,7 @@ import {
   buildStableConversionId,
   resolveAuthContext,
   ensurePlacementsEnabled,
+  ensureInventoryReady,
   percentile,
   average,
   writeJson,
@@ -76,14 +79,17 @@ function toAdIdentity(bid = {}) {
 }
 
 function buildBidPayload({ scenario, placementId, sessionId, userId }) {
+  const messages = Array.isArray(scenario.messages) && scenario.messages.length > 0
+    ? scenario.messages
+    : [
+        { role: 'user', content: scenario.query },
+        { role: 'assistant', content: scenario.answerText },
+      ]
   return {
     userId,
     chatId: sessionId,
     placementId,
-    messages: [
-      { role: 'user', content: scenario.query },
-      { role: 'assistant', content: scenario.answerText },
-    ],
+    messages,
   }
 }
 
@@ -181,6 +187,11 @@ async function runClosedLoopRequest(context = {}, sequence = 0) {
       requestId: String(bidRes.payload?.requestId || '').trim(),
       status: bidRes.status,
       reason: 'bid_failed',
+      reasonCode: '',
+      retrievalMode: '',
+      retrievalHitCount: 0,
+      intentThreshold: NaN,
+      intentScore: NaN,
       bidLatencyMs: bidRes.elapsedMs,
       impressionLatencyMs: 0,
       clickLatencyMs: 0,
@@ -192,6 +203,26 @@ async function runClosedLoopRequest(context = {}, sequence = 0) {
   }
 
   const requestId = String(bidRes.payload?.requestId || '').trim()
+  const bidDiagnostics = bidRes.payload?.diagnostics && typeof bidRes.payload.diagnostics === 'object'
+    ? bidRes.payload.diagnostics
+    : {}
+  const reasonCode = String(
+    bidDiagnostics.reasonCode
+    || bidRes.payload?.decisionTrace?.reasonCode
+    || '',
+  ).trim() || 'no_fill'
+  const retrievalMode = String(
+    bidDiagnostics.retrievalMode
+    || bidDiagnostics.retrievalDebug?.mode
+    || '',
+  ).trim()
+  const retrievalHitCount = toNumber(
+    bidDiagnostics.retrievalHitCount
+    ?? bidDiagnostics.retrievalDebug?.fusedHitCount,
+    0,
+  )
+  const intentThreshold = toNumber(bidDiagnostics.intentThreshold, NaN)
+  const intentScoreObserved = toNumber(bidRes.payload?.intent?.score, NaN)
   const winnerBid = bidRes.payload?.data?.bid && typeof bidRes.payload.data.bid === 'object'
     ? bidRes.payload.data.bid
     : null
@@ -203,7 +234,12 @@ async function runClosedLoopRequest(context = {}, sequence = 0) {
       noFill: true,
       requestId,
       status: bidRes.status,
-      reason: 'no_fill',
+      reason: reasonCode,
+      reasonCode,
+      retrievalMode,
+      retrievalHitCount,
+      intentThreshold,
+      intentScore: intentScoreObserved,
       bidLatencyMs: bidRes.elapsedMs,
       impressionLatencyMs: 0,
       clickLatencyMs: 0,
@@ -223,6 +259,11 @@ async function runClosedLoopRequest(context = {}, sequence = 0) {
       requestId,
       status: bidRes.status,
       reason: 'missing_request_or_ad_id',
+      reasonCode,
+      retrievalMode,
+      retrievalHitCount,
+      intentThreshold,
+      intentScore: intentScoreObserved,
       bidLatencyMs: bidRes.elapsedMs,
       impressionLatencyMs: 0,
       clickLatencyMs: 0,
@@ -332,6 +373,11 @@ async function runClosedLoopRequest(context = {}, sequence = 0) {
     requestId,
     status: 200,
     reason: ok ? 'closed_loop_ok' : 'event_failed',
+    reasonCode,
+    retrievalMode,
+    retrievalHitCount,
+    intentThreshold,
+    intentScore: intentScoreObserved,
     bidLatencyMs: bidRes.elapsedMs,
     impressionLatencyMs: impressionRes.elapsedMs,
     clickLatencyMs: clickRes.elapsedMs,
@@ -391,6 +437,22 @@ function summarizePhaseResults(results = [], phaseConfig = {}, durationActualSec
   const postbackAttempted = rows.filter((item) => item.postbackAttempted).length
   const postbackReported = rows.filter((item) => item.postbackReported).length
   const actualRpm = durationActualSec > 0 ? (total / durationActualSec) * 60 : 0
+  const servedRate = total > 0 ? (servedRows.length / total) * 100 : 0
+  const reasonCode = {}
+  const retrievalMode = {}
+  const intentThresholdSamples = []
+  const intentScoreSamples = []
+
+  for (const row of rows) {
+    const reason = String(row?.reasonCode || row?.reason || '').trim()
+    if (reason) reasonCode[reason] = (reasonCode[reason] || 0) + 1
+    const mode = String(row?.retrievalMode || '').trim()
+    if (mode) retrievalMode[mode] = (retrievalMode[mode] || 0) + 1
+    const threshold = toNumber(row?.intentThreshold, NaN)
+    if (Number.isFinite(threshold)) intentThresholdSamples.push(threshold)
+    const score = toNumber(row?.intentScore, NaN)
+    if (Number.isFinite(score)) intentScoreSamples.push(score)
+  }
 
   const summarizeList = (list = []) => ({
     count: list.length,
@@ -414,9 +476,24 @@ function summarizePhaseResults(results = [], phaseConfig = {}, durationActualSec
     noFillClosedLoop: noFillRows.length,
     errorRatePct: round(total > 0 ? (failedRows.length / total) * 100 : 0, 4),
     actualRpm: round(actualRpm, 4),
+    servedRatePct: round(servedRate, 4),
     postbackAttempted,
     postbackReported,
     postbackHitRatePct: round(postbackAttempted > 0 ? (postbackReported / postbackAttempted) * 100 : 0, 4),
+    diagnostics: {
+      reasonCode,
+      retrievalMode,
+      intentThreshold: {
+        count: intentThresholdSamples.length,
+        p50: round(percentile(intentThresholdSamples, 0.5), 4),
+        p95: round(percentile(intentThresholdSamples, 0.95), 4),
+      },
+      intentScore: {
+        count: intentScoreSamples.length,
+        p50: round(percentile(intentScoreSamples, 0.5), 4),
+        p95: round(percentile(intentScoreSamples, 0.95), 4),
+      },
+    },
     bidLatencyMs: {
       count: bidLatencies.length,
       mean: round(average(bidLatencies), 3),
@@ -520,6 +597,11 @@ async function runPhase(input = {}) {
             requestId: '',
             status: 0,
             reason: error instanceof Error ? error.message : 'closed_loop_exception',
+            reasonCode: '',
+            retrievalMode: '',
+            retrievalHitCount: 0,
+            intentThreshold: NaN,
+            intentScore: NaN,
             bidLatencyMs: 0,
             impressionLatencyMs: 0,
             clickLatencyMs: 0,
@@ -576,6 +658,31 @@ function mergePricingSamples(phases = []) {
   }
 
   return merged
+}
+
+function summarizeDiagnosticsByPhase(phases = []) {
+  const reasonCode = {}
+  const retrievalMode = {}
+
+  for (const phase of Array.isArray(phases) ? phases : []) {
+    const diagnostics = phase?.diagnostics && typeof phase.diagnostics === 'object' ? phase.diagnostics : {}
+    const reasonMap = diagnostics.reasonCode && typeof diagnostics.reasonCode === 'object' ? diagnostics.reasonCode : {}
+    const modeMap = diagnostics.retrievalMode && typeof diagnostics.retrievalMode === 'object'
+      ? diagnostics.retrievalMode
+      : {}
+
+    for (const [key, value] of Object.entries(reasonMap)) {
+      reasonCode[key] = (reasonCode[key] || 0) + toNumber(value, 0)
+    }
+    for (const [key, value] of Object.entries(modeMap)) {
+      retrievalMode[key] = (retrievalMode[key] || 0) + toNumber(value, 0)
+    }
+  }
+
+  return {
+    reasonCode,
+    retrievalMode,
+  }
 }
 
 async function fetchDashboardSnapshot(baseUrl, dashboardAuthHeaders = {}) {
@@ -687,11 +794,16 @@ async function main() {
   const rssSampleIntervalSec = Math.max(1, toInteger(args.rssSampleIntervalSec, 30))
   const skipReset = toBoolean(args.skipReset, false)
   const withPostback = toBoolean(args.withPostback, true)
+  const settlementStorage = parseSettlementStorage(args.settlementStorage, 'auto')
+  const inventoryPrewarm = toBoolean(args.inventoryPrewarm, true)
+  const fallbackWhenInventoryUnavailable = toBoolean(args.fallbackWhenInventoryUnavailable, true)
+  const inventoryNetworks = parseInventoryNetworks(args.inventoryNetworks)
   const placements = parsePlacements(args.placements)
   const scenarioSetPath = String(args.scenarioSet || DEFAULT_SCENARIO_SET_PATH).trim()
 
   const startedAtIso = nowIso()
   const baseUrl = externalGatewayUrl || `http://${DEFAULT_HOST}:${port}`
+  let effectiveSettlementStorage = settlementStorage
 
   let gatewayHandle = null
   let rssSampler = null
@@ -700,13 +812,32 @@ async function main() {
     if (!useExternalGateway) {
       gatewayHandle = startGatewayProcess(port, {
         SIMULATOR_STRICT_MANUAL_INTEGRATION: 'false',
-        SIMULATOR_SETTLEMENT_STORAGE: 'state_file',
+        SIMULATOR_SETTLEMENT_STORAGE: effectiveSettlementStorage,
         SIMULATOR_REQUIRE_DURABLE_SETTLEMENT: 'false',
         SIMULATOR_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE: 'false',
         SIMULATOR_RUNTIME_AUTH_REQUIRED: 'true',
+        SIMULATOR_V2_INVENTORY_FALLBACK: fallbackWhenInventoryUnavailable ? 'true' : 'false',
       })
     }
-    await waitForGateway(baseUrl)
+    try {
+      await waitForGateway(baseUrl)
+    } catch (error) {
+      if (!useExternalGateway && settlementStorage === 'auto') {
+        await stopGatewayProcess(gatewayHandle)
+        effectiveSettlementStorage = 'state_file'
+        gatewayHandle = startGatewayProcess(port, {
+          SIMULATOR_STRICT_MANUAL_INTEGRATION: 'false',
+          SIMULATOR_SETTLEMENT_STORAGE: effectiveSettlementStorage,
+          SIMULATOR_REQUIRE_DURABLE_SETTLEMENT: 'false',
+          SIMULATOR_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE: 'false',
+          SIMULATOR_RUNTIME_AUTH_REQUIRED: 'true',
+          SIMULATOR_V2_INVENTORY_FALLBACK: fallbackWhenInventoryUnavailable ? 'true' : 'false',
+        })
+        await waitForGateway(baseUrl)
+      } else {
+        throw error
+      }
+    }
 
     if (!skipReset) {
       const resetRes = await requestJson(baseUrl, '/api/v1/dev/reset', {
@@ -720,6 +851,17 @@ async function main() {
     const auth = await resolveAuthContext(baseUrl, args, { useExternalGateway })
 
     await ensurePlacementsEnabled(baseUrl, placements, auth.dashboardHeaders)
+
+    const inventoryReadiness = await ensureInventoryReady(baseUrl, {
+      inventoryPrewarm,
+      fallbackWhenInventoryUnavailable,
+      networks: inventoryNetworks,
+    })
+    if (!inventoryReadiness.ok && inventoryReadiness.fatal) {
+      throw new Error(
+        `inventory readiness failed (${inventoryReadiness.code}): mode=${inventoryReadiness.mode || 'unknown'} status=${inventoryReadiness.status || 0}`,
+      )
+    }
 
     if (gatewayHandle?.child?.pid) {
       rssSampler = startRssSampler(gatewayHandle.child.pid, rssSampleIntervalSec)
@@ -750,7 +892,9 @@ async function main() {
     const cpaSamplesByNetwork = pricingSamples.cpaUsdByNetwork
 
     const totalClosedLoop = phaseResults.reduce((sum, item) => sum + toNumber(item.totalClosedLoop, 0), 0)
+    const servedClosedLoop = phaseResults.reduce((sum, item) => sum + toNumber(item.servedClosedLoop, 0), 0)
     const failedClosedLoop = phaseResults.reduce((sum, item) => sum + toNumber(item.failedClosedLoop, 0), 0)
+    const diagnosticsSummary = summarizeDiagnosticsByPhase(phaseResults)
 
     const dashboardAfter = await fetchDashboardSnapshot(baseUrl, auth.dashboardHeaders)
     const dashboardDelta = {
@@ -779,6 +923,11 @@ async function main() {
         rssSampleIntervalSec,
         withPostback,
         skipReset,
+        settlementStorage,
+        effectiveSettlementStorage,
+        inventoryPrewarm,
+        fallbackWhenInventoryUnavailable,
+        inventoryNetworks,
         placements,
         scenarioSet: {
           id: scenarioSet.scenarioSet,
@@ -793,13 +942,17 @@ async function main() {
           hasDashboardToken: Boolean(auth.dashboardToken),
         },
         phaseConfigs,
+        inventoryReadiness,
       },
       phases: phaseResults,
       overall: {
         totalClosedLoop,
+        servedClosedLoop,
+        servedRatePct: round(totalClosedLoop > 0 ? (servedClosedLoop / totalClosedLoop) * 100 : 0, 4),
         failedClosedLoop,
         errorRatePct: round(totalClosedLoop > 0 ? (failedClosedLoop / totalClosedLoop) * 100 : 0, 4),
       },
+      diagnostics: diagnosticsSummary,
       pricing: {
         bidPriceSamples,
         cpaSamplesByNetwork,

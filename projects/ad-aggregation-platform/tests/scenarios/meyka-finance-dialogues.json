@@ -1,70 +1,148 @@
 {
-  "scenarioSet": "meyka_finance_v1",
-  "description": "Meyka financial conversation scenarios for connectivity, load, and revenue simulations.",
+  "scenarioSet": "meyka_finance_v2_multiturn",
+  "description": "Meyka finance multi-turn scenarios with strong/medium/non-commercial intent distribution.",
+  "distribution": {
+    "strongCommercial": 0.7,
+    "mediumCommercial": 0.2,
+    "nonCommercial": 0.1
+  },
   "scenarios": [
     {
       "key": "broker_low_fee_account",
       "category": "broker_trading",
-      "query": "I am opening my first brokerage account. Which low-fee platforms are best for US stock and ETF trading with good mobile UX?",
-      "answerText": "Compare account minimums, options pricing, ETF availability, and mobile execution quality before choosing.",
-      "intentClass": "product_exploration",
-      "intentScore": 0.86,
-      "locale": "en-US",
-      "preferenceFacets": [
+      "query": "I need a low-fee US brokerage with good mobile ETF trading and low options costs. Which one should I choose?",
+      "answerText": "Compare trading fees, option contract fees, mobile execution quality, and account minimums before picking a broker.",
+      "messages": [
         {
-          "facet_key": "product_goal",
-          "facet_value": "low_fee_brokerage",
-          "confidence": 0.91,
-          "source": "user_query"
+          "role": "user",
+          "content": "I am opening my first investing account and mostly buy ETFs."
         },
         {
-          "facet_key": "asset_type",
-          "facet_value": "stocks_etfs",
-          "confidence": 0.88,
-          "source": "user_query"
+          "role": "assistant",
+          "content": "Do you care more about zero commissions or advanced trading tools?"
+        },
+        {
+          "role": "user",
+          "content": "Mostly low fees and clean mobile UX."
+        },
+        {
+          "role": "assistant",
+          "content": "Then compare platform fees, spreads, and mobile order flow quality."
+        },
+        {
+          "role": "user",
+          "content": "I need a low-fee US brokerage with good mobile ETF trading and low options costs. Which one should I choose?"
+        },
+        {
+          "role": "assistant",
+          "content": "Compare trading fees, option contract fees, mobile execution quality, and account minimums before picking a broker."
         }
-      ]
+      ],
+      "intentClass": "product_exploration",
+      "intentScore": 0.9,
+      "locale": "en-US"
     },
     {
       "key": "broker_options_tooling",
       "category": "broker_trading",
-      "query": "I trade options weekly and need better Greeks and risk tools. Which brokers should I evaluate?",
-      "answerText": "Focus on options chain depth, Greeks visibility, risk controls, and conditional order support.",
-      "intentClass": "product_exploration",
-      "intentScore": 0.9,
-      "locale": "en-US",
-      "preferenceFacets": [
+      "query": "Which brokers are best for active options trading with strong Greeks and risk controls?",
+      "answerText": "Evaluate chain depth, Greeks visibility, probability analytics, and conditional order controls across broker platforms.",
+      "messages": [
         {
-          "facet_key": "trading_style",
-          "facet_value": "active_options",
-          "confidence": 0.93,
-          "source": "user_query"
+          "role": "user",
+          "content": "I trade options weekly and I keep missing better risk signals."
+        },
+        {
+          "role": "assistant",
+          "content": "Are you using mostly spreads, directional calls/puts, or mixed strategies?"
+        },
+        {
+          "role": "user",
+          "content": "Mostly spreads with some earnings plays."
+        },
+        {
+          "role": "assistant",
+          "content": "Then look for brokers with strong Greeks and scenario analysis."
+        },
+        {
+          "role": "user",
+          "content": "Which brokers are best for active options trading with strong Greeks and risk controls?"
+        },
+        {
+          "role": "assistant",
+          "content": "Evaluate chain depth, Greeks visibility, probability analytics, and conditional order controls across broker platforms."
         }
-      ]
+      ],
+      "intentClass": "product_exploration",
+      "intentScore": 0.92,
+      "locale": "en-US"
     },
     {
       "key": "broker_etf_dca",
       "category": "broker_trading",
-      "query": "I want to automate monthly ETF investing with recurring buys and tax-friendly settings. Any platform suggestions?",
-      "answerText": "Evaluate recurring order automation, tax-lot controls, and rebalancing support for long-term ETF plans.",
-      "intentClass": "product_exploration",
-      "intentScore": 0.84,
-      "locale": "en-US"
-    },
-    {
-      "key": "research_earnings_scanner",
-      "category": "research_analysis",
-      "query": "I need an earnings scanner that flags unusual revisions and post-earnings drift. What research tools fit?",
-      "answerText": "Compare signal freshness, revision tracking depth, and screening flexibility across research platforms.",
+      "query": "What broker platform is best for monthly ETF auto-investing with tax-lot controls?",
+      "answerText": "Compare recurring order automation, tax-lot methods, and rebalancing support for ETF DCA workflows.",
+      "messages": [
+        {
+          "role": "user",
+          "content": "I want to automate monthly ETF investing and keep tax drag low."
+        },
+        {
+          "role": "assistant",
+          "content": "Do you need fractional shares and automated rebalancing too?"
+        },
+        {
+          "role": "user",
+          "content": "Yes, both matter."
+        },
+        {
+          "role": "assistant",
+          "content": "Then focus on recurring orders, lot selection, and rebalance rules."
+        },
+        {
+          "role": "user",
+          "content": "What broker platform is best for monthly ETF auto-investing with tax-lot controls?"
+        },
+        {
+          "role": "assistant",
+          "content": "Compare recurring order automation, tax-lot methods, and rebalancing support for ETF DCA workflows."
+        }
+      ],
       "intentClass": "product_exploration",
       "intentScore": 0.88,
       "locale": "en-US"
     },
     {
-      "key": "research_analyst_rating_alerts",
+      "key": "research_earnings_scanner",
       "category": "research_analysis",
-      "query": "Which tools are good for real-time analyst upgrade and downgrade alerts with watchlist sync?",
-      "answerText": "Prioritize low-latency alerts, watchlist integration, and source transparency for rating changes.",
+      "query": "Which research platform has the best earnings scanner and analyst revision alerts?",
+      "answerText": "Prioritize signal freshness, revision history coverage, and watchlist alert reliability.",
+      "messages": [
+        {
+          "role": "user",
+          "content": "I keep missing earnings moves and downgrade news."
+        },
+        {
+          "role": "assistant",
+          "content": "Do you want real-time alerts or end-of-day summaries?"
+        },
+        {
+          "role": "user",
+          "content": "Real-time alerts on my watchlist."
+        },
+        {
+          "role": "assistant",
+          "content": "Use platforms with low latency and good revision data depth."
+        },
+        {
+          "role": "user",
+          "content": "Which research platform has the best earnings scanner and analyst revision alerts?"
+        },
+        {
+          "role": "assistant",
+          "content": "Prioritize signal freshness, revision history coverage, and watchlist alert reliability."
+        }
+      ],
       "intentClass": "product_exploration",
       "intentScore": 0.87,
       "locale": "en-US"
@@ -72,35 +150,104 @@
     {
       "key": "research_strategy_backtest",
       "category": "research_analysis",
-      "query": "I want to backtest momentum strategies and compare slippage assumptions. Which platforms are practical?",
-      "answerText": "Review backtest engine assumptions, factor libraries, and exportability before committing.",
-      "intentClass": "product_exploration",
-      "intentScore": 0.89,
-      "locale": "en-US"
-    },
-    {
-      "key": "crypto_exchange_fees_depth",
-      "category": "crypto",
-      "query": "For frequent BTC and ETH trades, what exchanges have the best fee tiers and orderbook depth?",
-      "answerText": "Compare taker-maker fees, depth at top levels, and withdrawal policy consistency.",
+      "query": "What platform should I use to backtest equity momentum strategies with realistic slippage assumptions?",
+      "answerText": "Compare factor library depth, slippage modeling controls, and export workflows for strategy validation.",
+      "messages": [
+        {
+          "role": "user",
+          "content": "I need to test momentum ideas before using real money."
+        },
+        {
+          "role": "assistant",
+          "content": "Do you need Python integration or no-code workflow?"
+        },
+        {
+          "role": "user",
+          "content": "Python is preferred but quality of data matters most."
+        },
+        {
+          "role": "assistant",
+          "content": "Then compare data coverage, slippage settings, and export APIs."
+        },
+        {
+          "role": "user",
+          "content": "What platform should I use to backtest equity momentum strategies with realistic slippage assumptions?"
+        },
+        {
+          "role": "assistant",
+          "content": "Compare factor library depth, slippage modeling controls, and export workflows for strategy validation."
+        }
+      ],
       "intentClass": "product_exploration",
       "intentScore": 0.9,
       "locale": "en-US"
     },
     {
-      "key": "crypto_wallet_hardware",
+      "key": "crypto_exchange_fees_depth",
       "category": "crypto",
-      "query": "I want a hardware wallet for long-term holdings but still easy to use. Which ones should I compare?",
-      "answerText": "Evaluate secure element architecture, firmware track record, and recovery workflow clarity.",
+      "query": "Which crypto exchange has the best fee tiers and BTC/ETH orderbook depth for frequent trades?",
+      "answerText": "Evaluate maker-taker fee tiers, top-of-book depth, and withdrawal policy consistency.",
+      "messages": [
+        {
+          "role": "user",
+          "content": "I trade BTC and ETH often and fees are eating my returns."
+        },
+        {
+          "role": "assistant",
+          "content": "Are you mostly market orders or limit orders?"
+        },
+        {
+          "role": "user",
+          "content": "Mostly limit, sometimes market during volatility."
+        },
+        {
+          "role": "assistant",
+          "content": "Then compare maker tiers plus depth near top levels."
+        },
+        {
+          "role": "user",
+          "content": "Which crypto exchange has the best fee tiers and BTC/ETH orderbook depth for frequent trades?"
+        },
+        {
+          "role": "assistant",
+          "content": "Evaluate maker-taker fee tiers, top-of-book depth, and withdrawal policy consistency."
+        }
+      ],
       "intentClass": "product_exploration",
-      "intentScore": 0.83,
+      "intentScore": 0.91,
       "locale": "en-US"
     },
     {
-      "key": "crypto_tax_reporting",
+      "key": "crypto_wallet_hardware",
       "category": "crypto",
-      "query": "I need software that aggregates transactions from multiple exchanges and exports US tax reports.",
-      "answerText": "Check exchange coverage, reconciliation accuracy, and IRS-ready export formats.",
+      "query": "What hardware wallet is safest but still easy for long-term crypto storage?",
+      "answerText": "Compare secure element design, firmware track record, recovery UX, and companion app reliability.",
+      "messages": [
+        {
+          "role": "user",
+          "content": "I want to move crypto off exchanges for long-term holding."
+        },
+        {
+          "role": "assistant",
+          "content": "Do you prioritize maximum security or easier daily usability?"
+        },
+        {
+          "role": "user",
+          "content": "Security first, but I still need simple recovery."
+        },
+        {
+          "role": "assistant",
+          "content": "Then shortlist hardware wallets with proven firmware and good recovery flow."
+        },
+        {
+          "role": "user",
+          "content": "What hardware wallet is safest but still easy for long-term crypto storage?"
+        },
+        {
+          "role": "assistant",
+          "content": "Compare secure element design, firmware track record, recovery UX, and companion app reliability."
+        }
+      ],
       "intentClass": "product_exploration",
       "intentScore": 0.86,
       "locale": "en-US"
@@ -108,28 +255,98 @@
     {
       "key": "pf_budget_aggregation",
       "category": "personal_finance",
-      "query": "What apps are strongest for budget tracking with automatic account aggregation and monthly planning?",
-      "answerText": "Compare sync stability, category accuracy, and forecasting features for budget planning.",
-      "intentClass": "product_exploration",
-      "intentScore": 0.82,
-      "locale": "en-US"
-    },
-    {
-      "key": "pf_roboadvisor_alternative",
-      "category": "personal_finance",
-      "query": "I am moving from a robo-advisor and want lower fees with similar portfolio guidance. What should I evaluate?",
-      "answerText": "Review fee drag, rebalance policy, and goal-planning quality before switching providers.",
-      "intentClass": "product_exploration",
-      "intentScore": 0.85,
+      "query": "Can you compare budget apps with automatic account aggregation and monthly planning features?",
+      "answerText": "Focus on sync stability, category accuracy, and planning workflows when comparing budgeting apps.",
+      "messages": [
+        {
+          "role": "user",
+          "content": "My spending tracking is messy and spread across accounts."
+        },
+        {
+          "role": "assistant",
+          "content": "Do you need shared household budgets or only personal tracking?"
+        },
+        {
+          "role": "user",
+          "content": "Mostly personal, maybe shared later."
+        },
+        {
+          "role": "assistant",
+          "content": "Then prioritize good aggregation plus month planning controls."
+        },
+        {
+          "role": "user",
+          "content": "Can you compare budget apps with automatic account aggregation and monthly planning features?"
+        },
+        {
+          "role": "assistant",
+          "content": "Focus on sync stability, category accuracy, and planning workflows when comparing budgeting apps."
+        }
+      ],
+      "intentClass": "shopping",
+      "intentScore": 0.56,
       "locale": "en-US"
     },
     {
       "key": "pf_credit_savings_stack",
       "category": "personal_finance",
-      "query": "Which services combine credit monitoring with high-yield savings recommendations and financial health insights?",
-      "answerText": "Prioritize monitoring coverage, APY transparency, and actionable guidance quality.",
-      "intentClass": "product_exploration",
-      "intentScore": 0.81,
+      "query": "Which services combine credit monitoring with high-yield savings recommendations?",
+      "answerText": "Compare monitoring breadth, alert speed, and savings account recommendation quality.",
+      "messages": [
+        {
+          "role": "user",
+          "content": "I want to improve credit and park cash in better savings products."
+        },
+        {
+          "role": "assistant",
+          "content": "Do you want daily alerts and personalized product suggestions?"
+        },
+        {
+          "role": "user",
+          "content": "Yes, especially alerts and high-yield account suggestions."
+        },
+        {
+          "role": "assistant",
+          "content": "Then compare services by monitoring coverage and recommendation transparency."
+        },
+        {
+          "role": "user",
+          "content": "Which services combine credit monitoring with high-yield savings recommendations?"
+        },
+        {
+          "role": "assistant",
+          "content": "Compare monitoring breadth, alert speed, and savings account recommendation quality."
+        }
+      ],
+      "intentClass": "shopping",
+      "intentScore": 0.52,
+      "locale": "en-US"
+    },
+    {
+      "key": "finance_learning_noncommercial",
+      "category": "education",
+      "query": "Can you explain how ETFs and index funds differ for a beginner?",
+      "answerText": "ETFs trade intraday like stocks while index funds usually settle once daily; both can track similar indices.",
+      "messages": [
+        {
+          "role": "user",
+          "content": "I am new to investing and trying to understand basics."
+        },
+        {
+          "role": "assistant",
+          "content": "Sure, we can start with ETF vs index fund differences."
+        },
+        {
+          "role": "user",
+          "content": "Can you explain how ETFs and index funds differ for a beginner?"
+        },
+        {
+          "role": "assistant",
+          "content": "ETFs trade intraday like stocks while index funds usually settle once daily; both can track similar indices."
+        }
+      ],
+      "intentClass": "non_commercial",
+      "intentScore": 0.22,
       "locale": "en-US"
     }
   ]

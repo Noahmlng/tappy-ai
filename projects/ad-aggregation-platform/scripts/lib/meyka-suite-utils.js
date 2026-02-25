@@ -16,6 +16,11 @@ export const DEFAULT_REQUEST_TIMEOUT_MS = 30000
 
 export const DEFAULT_PLACEMENTS = Object.freeze(['chat_inline_v1', 'chat_followup_v1'])
 export const DEFAULT_SCENARIO_SET_PATH = path.join(PROJECT_ROOT, 'tests', 'scenarios', 'meyka-finance-dialogues.json')
+export const DEFAULT_INVENTORY_NETWORKS = Object.freeze(['house', 'partnerstack', 'cj'])
+
+const SUPPORTED_SETTLEMENT_STORAGE = new Set(['auto', 'supabase', 'state_file'])
+const SUPPORTED_SCENARIO_ROLES = new Set(['user', 'assistant', 'system'])
+const SUPPORTED_INVENTORY_NETWORKS = new Set(['house', 'partnerstack', 'cj'])
 
 export function parseArgs(argv) {
   const options = {}
@@ -190,20 +195,85 @@ export function parsePlacements(rawValue, fallback = DEFAULT_PLACEMENTS) {
   return [...new Set(values)]
 }
 
+export function parseSettlementStorage(rawValue, fallback = 'auto') {
+  const normalizedFallback = SUPPORTED_SETTLEMENT_STORAGE.has(String(fallback || '').trim().toLowerCase())
+    ? String(fallback).trim().toLowerCase()
+    : 'auto'
+  const normalized = String(rawValue || '').trim().toLowerCase()
+  if (!normalized) return normalizedFallback
+  if (SUPPORTED_SETTLEMENT_STORAGE.has(normalized)) return normalized
+  throw new Error(`invalid settlementStorage: ${rawValue}`)
+}
+
+export function parseInventoryNetworks(rawValue, fallback = DEFAULT_INVENTORY_NETWORKS) {
+  const raw = String(rawValue || '').trim().toLowerCase()
+  if (!raw) return [...fallback]
+  const values = raw
+    .split(',')
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter((item) => SUPPORTED_INVENTORY_NETWORKS.has(item))
+  if (values.length === 0) return [...fallback]
+  return [...new Set(values)]
+}
+
+function normalizeScenarioMessages(value = [], index = 0) {
+  if (!Array.isArray(value)) return []
+  const rows = value.map((item, rowIndex) => {
+    if (!item || typeof item !== 'object') {
+      throw new Error(`invalid scenario messages at index ${index}, row ${rowIndex}`)
+    }
+    const role = String(item.role || '').trim().toLowerCase()
+    const content = String(item.content || '').trim()
+    if (!SUPPORTED_SCENARIO_ROLES.has(role) || !content) {
+      throw new Error(`invalid scenario message role/content at index ${index}, row ${rowIndex}`)
+    }
+    return {
+      role,
+      content,
+    }
+  })
+  return rows
+}
+
+function deriveScenarioTextFromMessages(messages = []) {
+  const rows = Array.isArray(messages) ? messages : []
+  let query = ''
+  let answerText = ''
+  for (let cursor = rows.length - 1; cursor >= 0; cursor -= 1) {
+    const row = rows[cursor]
+    const role = String(row?.role || '').trim().toLowerCase()
+    const content = String(row?.content || '').trim()
+    if (!content) continue
+    if (!query && role === 'user') query = content
+    if (!answerText && role === 'assistant') answerText = content
+    if (query && answerText) break
+  }
+  return { query, answerText }
+}
+
 function normalizeScenarioItem(item = {}, index = 0) {
   const key = String(item.key || `scenario_${index + 1}`).trim()
-  const query = String(item.query || '').trim()
-  const answerText = String(item.answerText || '').trim()
+  const messages = normalizeScenarioMessages(item.messages, index)
+  const derived = deriveScenarioTextFromMessages(messages)
+  const query = String(item.query || derived.query || '').trim()
+  const answerText = String(item.answerText || derived.answerText || '').trim()
   if (!query || !answerText) {
-    throw new Error(`invalid scenario at index ${index}: query/answerText are required`)
+    throw new Error(`invalid scenario at index ${index}: query/answerText or messages are required`)
   }
 
   const intentScore = clamp(toNumber(item.intentScore, 0.82), 0, 1)
+  const normalizedMessages = messages.length > 0
+    ? messages
+    : [
+        { role: 'user', content: query },
+        { role: 'assistant', content: answerText },
+      ]
   return {
     key,
     category: String(item.category || '').trim(),
     query,
     answerText,
+    messages: normalizedMessages,
     locale: String(item.locale || 'en-US').trim() || 'en-US',
     intentClass: String(item.intentClass || 'product_exploration').trim() || 'product_exploration',
     intentScore,
@@ -296,6 +366,15 @@ export function dashboardHeaders(dashboardToken) {
   return { Authorization: `Bearer ${token}` }
 }
 
+function formatApiError(payload = {}) {
+  const code = String(payload?.error?.code || payload?.code || '').trim()
+  const message = String(payload?.error?.message || payload?.message || '').trim()
+  if (code && message) return `${code}: ${message}`
+  if (code) return code
+  if (message) return message
+  return ''
+}
+
 export async function registerDashboardUser(baseUrl, input = {}) {
   const accountId = String(input.accountId || 'org_simulator').trim()
   const appId = String(input.appId || 'simulator-chatbot').trim()
@@ -311,7 +390,8 @@ export async function registerDashboardUser(baseUrl, input = {}) {
     },
   })
   if (!response.ok) {
-    throw new Error(`dashboard register failed: HTTP_${response.status}`)
+    const detail = formatApiError(response.payload)
+    throw new Error(`dashboard register failed: HTTP_${response.status}${detail ? ` ${detail}` : ''}`)
   }
   const accessToken = String(response.payload?.session?.accessToken || '').trim()
   if (!accessToken) {
@@ -327,7 +407,7 @@ export async function registerDashboardUser(baseUrl, input = {}) {
 export async function issueRuntimeKey(baseUrl, input = {}) {
   const accountId = String(input.accountId || '').trim()
   const appId = String(input.appId || '').trim()
-  const environment = String(input.environment || 'staging').trim() || 'staging'
+  const environment = String(input.environment || 'prod').trim() || 'prod'
   const dashboardToken = String(input.dashboardToken || '').trim()
   if (!dashboardToken) {
     throw new Error('issueRuntimeKey requires dashboardToken')
@@ -347,7 +427,8 @@ export async function issueRuntimeKey(baseUrl, input = {}) {
     },
   })
   if (!response.ok) {
-    throw new Error(`issue runtime key failed: HTTP_${response.status}`)
+    const detail = formatApiError(response.payload)
+    throw new Error(`issue runtime key failed: HTTP_${response.status}${detail ? ` ${detail}` : ''}`)
   }
   const secret = String(response.payload?.secret || '').trim()
   if (!secret) {
@@ -363,11 +444,24 @@ export async function resolveAuthContext(baseUrl, args = {}, options = {}) {
     !useExternalGateway,
   )
 
-  let runtimeKey = String(args.runtimeKey || process.env.MEYKA_RUNTIME_KEY || '').trim()
-  let dashboardToken = String(args.dashboardToken || process.env.MEYKA_DASHBOARD_TOKEN || '').trim()
-  const accountId = String(args.accountId || process.env.MEYKA_ACCOUNT_ID || 'org_simulator').trim()
-  const appId = String(args.appId || process.env.MEYKA_APP_ID || 'simulator-chatbot').trim()
-  const environment = String(args.environment || process.env.MEYKA_ENVIRONMENT || 'staging').trim() || 'staging'
+  let runtimeKey = String(
+    args.runtimeKey || (useExternalGateway ? process.env.MEYKA_RUNTIME_KEY : '') || '',
+  ).trim()
+  let dashboardToken = String(
+    args.dashboardToken || (useExternalGateway ? process.env.MEYKA_DASHBOARD_TOKEN : '') || '',
+  ).trim()
+  const explicitAccountId = String(
+    args.accountId || (useExternalGateway ? process.env.MEYKA_ACCOUNT_ID : '') || '',
+  ).trim()
+  const explicitAppId = String(
+    args.appId || (useExternalGateway ? process.env.MEYKA_APP_ID : '') || '',
+  ).trim()
+  const fallbackSuffix = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+  let accountId = explicitAccountId || (allowAutoRegister ? `org_meyka_${fallbackSuffix}` : 'org_simulator')
+  let appId = explicitAppId || (allowAutoRegister ? `meyka_app_${fallbackSuffix}` : 'simulator-chatbot')
+  let environment = String(
+    args.environment || (useExternalGateway ? process.env.MEYKA_ENVIRONMENT : '') || 'prod',
+  ).trim().toLowerCase() || 'prod'
 
   if (!dashboardToken && allowAutoRegister) {
     const registered = await registerDashboardUser(baseUrl, { accountId, appId })
@@ -375,12 +469,54 @@ export async function resolveAuthContext(baseUrl, args = {}, options = {}) {
   }
 
   if (!runtimeKey && dashboardToken) {
-    runtimeKey = await issueRuntimeKey(baseUrl, {
-      accountId,
-      appId,
-      environment,
-      dashboardToken,
-    })
+    let issueError = null
+    try {
+      runtimeKey = await issueRuntimeKey(baseUrl, {
+        accountId,
+        appId,
+        environment,
+        dashboardToken,
+      })
+    } catch (error) {
+      issueError = error
+    }
+
+    if (!runtimeKey && environment !== 'prod') {
+      try {
+        runtimeKey = await issueRuntimeKey(baseUrl, {
+          accountId,
+          appId,
+          environment: 'prod',
+          dashboardToken,
+        })
+        environment = 'prod'
+        issueError = null
+      } catch (error) {
+        issueError = error
+      }
+    }
+
+    if (!runtimeKey) {
+      if (!allowAutoRegister || explicitAccountId || explicitAppId) {
+        throw issueError || new Error('issue runtime key failed')
+      }
+      const recoverSuffix = `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+      accountId = `org_meyka_${recoverSuffix}`
+      appId = `meyka_app_${recoverSuffix}`
+      const registered = await registerDashboardUser(baseUrl, {
+        accountId,
+        appId,
+        email: `meyka_suite_recover_${Date.now()}@example.com`,
+      })
+      dashboardToken = registered.dashboardToken
+      runtimeKey = await issueRuntimeKey(baseUrl, {
+        accountId,
+        appId,
+        environment: 'prod',
+        dashboardToken,
+      })
+      environment = 'prod'
+    }
   }
 
   return {
@@ -429,6 +565,136 @@ export async function ensurePlacementsEnabled(baseUrl, placementIds = [], dashbo
   }
 }
 
+function toInventoryOfferCount(statusPayload = {}) {
+  const counts = Array.isArray(statusPayload?.counts) ? statusPayload.counts : []
+  return counts.reduce((sum, row) => sum + toNumber(row?.offer_count ?? row?.offerCount, 0), 0)
+}
+
+export async function ensureInventoryReady(baseUrl, options = {}) {
+  const inventoryPrewarm = options.inventoryPrewarm === true
+  const fallbackWhenInventoryUnavailable = options.fallbackWhenInventoryUnavailable !== false
+  const networks = parseInventoryNetworks(options.networks, DEFAULT_INVENTORY_NETWORKS)
+
+  const statusRes = await requestJson(baseUrl, '/api/v1/internal/inventory/status', {
+    timeoutMs: toInteger(options.statusTimeoutMs, 15000),
+  })
+
+  if (!statusRes.ok) {
+    return {
+      ok: false,
+      fatal: true,
+      code: 'INVENTORY_STATUS_FAILED',
+      status: statusRes.status,
+      payload: statusRes.payload,
+      mode: '',
+      counts: [],
+      offerCount: 0,
+      prewarmed: false,
+      syncStatus: 0,
+    }
+  }
+
+  const mode = String(statusRes.payload?.mode || '').trim().toLowerCase()
+  const initialOfferCount = toInventoryOfferCount(statusRes.payload)
+  const base = {
+    status: statusRes.status,
+    payload: statusRes.payload,
+    mode,
+    counts: Array.isArray(statusRes.payload?.counts) ? statusRes.payload.counts : [],
+    offerCount: initialOfferCount,
+    prewarmed: false,
+    syncStatus: 0,
+  }
+
+  if (mode !== 'postgres') {
+    if (fallbackWhenInventoryUnavailable) {
+      return {
+        ok: true,
+        fatal: false,
+        code: 'INVENTORY_NON_POSTGRES_FALLBACK',
+        ...base,
+      }
+    }
+    return {
+      ok: false,
+      fatal: true,
+      code: 'INVENTORY_STORE_UNAVAILABLE',
+      ...base,
+    }
+  }
+
+  if (initialOfferCount > 0) {
+    return {
+      ok: true,
+      fatal: false,
+      code: 'INVENTORY_READY',
+      ...base,
+    }
+  }
+
+  if (!inventoryPrewarm) {
+    return {
+      ok: false,
+      fatal: true,
+      code: 'INVENTORY_EMPTY_PREWARM_DISABLED',
+      ...base,
+    }
+  }
+
+  const syncRes = await requestJson(baseUrl, '/api/v1/internal/inventory/sync', {
+    method: 'POST',
+    body: {
+      networks,
+      buildEmbeddings: true,
+      materializeSnapshot: true,
+    },
+    timeoutMs: toInteger(options.syncTimeoutMs, 120000),
+  })
+
+  if (!syncRes.ok) {
+    return {
+      ok: false,
+      fatal: true,
+      code: 'INVENTORY_SYNC_FAILED',
+      ...base,
+      prewarmed: true,
+      syncStatus: syncRes.status,
+      syncPayload: syncRes.payload,
+    }
+  }
+
+  const recheckRes = await requestJson(baseUrl, '/api/v1/internal/inventory/status', {
+    timeoutMs: toInteger(options.statusTimeoutMs, 15000),
+  })
+  const recheckCount = recheckRes.ok ? toInventoryOfferCount(recheckRes.payload) : 0
+  const recheckMode = recheckRes.ok ? String(recheckRes.payload?.mode || mode).trim().toLowerCase() : mode
+
+  if (!recheckRes.ok || recheckMode !== 'postgres' || recheckCount <= 0) {
+    return {
+      ok: false,
+      fatal: true,
+      code: 'INVENTORY_SYNC_EMPTY',
+      ...base,
+      prewarmed: true,
+      syncStatus: syncRes.status,
+      syncPayload: syncRes.payload,
+      recheckStatus: recheckRes.status,
+      recheckPayload: recheckRes.payload,
+    }
+  }
+
+  return {
+    ok: true,
+    fatal: false,
+    code: 'INVENTORY_PREWARMED',
+    ...base,
+    offerCount: recheckCount,
+    counts: Array.isArray(recheckRes.payload?.counts) ? recheckRes.payload.counts : base.counts,
+    prewarmed: true,
+    syncStatus: syncRes.status,
+  }
+}
+
 export function createInlineEventPayload(input = {}) {
   return {
     appId: String(input.appId || 'simulator-chatbot').trim(),
@@ -442,7 +708,6 @@ export function createInlineEventPayload(input = {}) {
     placementId: String(input.placementId || 'chat_inline_v1').trim(),
     requestId: String(input.requestId || '').trim(),
     adId: String(input.adId || '').trim(),
-    userId: String(input.userId || '').trim(),
   }
 }
 

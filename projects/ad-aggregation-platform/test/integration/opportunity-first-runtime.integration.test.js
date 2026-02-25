@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { inferIntentByRules, scoreIntentOpportunityFirst } from '../../src/runtime/intent-scoring.js'
+import { retrieveOpportunityCandidates } from '../../src/runtime/opportunity-retrieval.js'
 import { rankOpportunityCandidates } from '../../src/runtime/opportunity-ranking.js'
 import { createOpportunityWriter } from '../../src/runtime/opportunity-writer.js'
 
@@ -25,6 +26,75 @@ test('opportunity-first intent: commerce query is scored by rules and supports n
   assert.equal(scored.source, 'rule')
   assert.equal(scored.score > 0.3, true)
   assert.equal(typeof scored.class, 'string')
+
+  const financeRule = inferIntentByRules({
+    query: 'Which broker has lower ETF fees and better options tools?',
+    answerText: 'Compare brokerage pricing and trading platform quality.',
+  })
+  assert.equal(financeRule.class !== 'non_commercial', true)
+  assert.equal(financeRule.score >= 0.34, true)
+})
+
+test('opportunity retrieval: connector fallback returns sortable candidates without postgres pool', async () => {
+  const result = await retrieveOpportunityCandidates({
+    query: 'low fee brokerage for etf trading',
+    filters: {
+      networks: ['house'],
+      market: 'US',
+      language: 'en-US',
+    },
+    finalTopK: 5,
+  }, {
+    pool: null,
+    enableFallbackWhenInventoryUnavailable: true,
+    fallbackProvider: async () => ({
+      offers: [
+        {
+          offerId: 'house:finance:001',
+          sourceNetwork: 'house',
+          sourceId: 'house_raw_001',
+          sourceType: 'offer',
+          title: 'Low-fee ETF Brokerage',
+          description: 'US brokerage with low options and ETF fees',
+          targetUrl: 'https://example.com/broker',
+          market: 'US',
+          locale: 'en-US',
+          availability: 'active',
+          qualityScore: 0.9,
+          bidValue: 6.2,
+          metadata: {
+            policyWeight: 0.2,
+            tags: ['brokerage', 'etf', 'trading'],
+          },
+        },
+      ],
+      debug: {
+        mode: 'connector_live_fallback',
+      },
+    }),
+  })
+
+  assert.equal(result.debug.mode, 'connector_live_fallback')
+  assert.equal(result.candidates.length, 1)
+  assert.equal(result.candidates[0].offerId, 'house:finance:001')
+  assert.equal(result.candidates[0].fusedScore > 0, true)
+
+  const disabled = await retrieveOpportunityCandidates({
+    query: 'low fee brokerage for etf trading',
+    filters: {
+      networks: ['house'],
+      market: 'US',
+      language: 'en-US',
+    },
+    finalTopK: 5,
+  }, {
+    pool: null,
+    enableFallbackWhenInventoryUnavailable: false,
+    fallbackProvider: async () => ({ offers: [] }),
+  })
+
+  assert.equal(disabled.debug.mode, 'inventory_store_unavailable')
+  assert.equal(disabled.candidates.length, 0)
 })
 
 test('opportunity-first ranking: emits stable reason codes for miss and low-rank paths', () => {

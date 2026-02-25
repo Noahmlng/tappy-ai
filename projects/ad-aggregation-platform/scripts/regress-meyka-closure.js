@@ -7,6 +7,8 @@ import {
   DEFAULT_SCENARIO_SET_PATH,
   parseArgs,
   parsePlacements,
+  parseSettlementStorage,
+  parseInventoryNetworks,
   toBoolean,
   toInteger,
   toNumber,
@@ -24,6 +26,7 @@ import {
   buildStableConversionId,
   resolveAuthContext,
   ensurePlacementsEnabled,
+  ensureInventoryReady,
   summarizeIssues,
   computeIssueDiff,
   readJsonIfExists,
@@ -46,6 +49,52 @@ function createIssue(severity, code, scope, message, evidence = {}) {
     scope: normalizedScope,
     message: normalizedMessage,
     evidence,
+  }
+}
+
+function summarizeBidDiagnostics(results = []) {
+  const reasonCode = {}
+  const retrievalMode = {}
+  const intentThresholdSamples = []
+  const intentScoreSamples = []
+
+  for (const item of Array.isArray(results) ? results : []) {
+    const diagnostics = item?.evidence?.bidDiagnostics && typeof item.evidence.bidDiagnostics === 'object'
+      ? item.evidence.bidDiagnostics
+      : {}
+    const reason = String(diagnostics.reasonCode || '').trim()
+    if (reason) {
+      reasonCode[reason] = (reasonCode[reason] || 0) + 1
+    }
+    const mode = String(diagnostics.retrievalMode || '').trim()
+    if (mode) {
+      retrievalMode[mode] = (retrievalMode[mode] || 0) + 1
+    }
+    const threshold = toNumber(diagnostics.intentThreshold, NaN)
+    if (Number.isFinite(threshold)) intentThresholdSamples.push(threshold)
+    const score = toNumber(diagnostics.intentScore, NaN)
+    if (Number.isFinite(score)) intentScoreSamples.push(score)
+  }
+
+  return {
+    reasonCode,
+    retrievalMode,
+    intentThreshold: {
+      count: intentThresholdSamples.length,
+      min: intentThresholdSamples.length > 0 ? round(Math.min(...intentThresholdSamples), 4) : 0,
+      max: intentThresholdSamples.length > 0 ? round(Math.max(...intentThresholdSamples), 4) : 0,
+      avg: intentThresholdSamples.length > 0
+        ? round(intentThresholdSamples.reduce((sum, value) => sum + value, 0) / intentThresholdSamples.length, 4)
+        : 0,
+    },
+    intentScore: {
+      count: intentScoreSamples.length,
+      min: intentScoreSamples.length > 0 ? round(Math.min(...intentScoreSamples), 4) : 0,
+      max: intentScoreSamples.length > 0 ? round(Math.max(...intentScoreSamples), 4) : 0,
+      avg: intentScoreSamples.length > 0
+        ? round(intentScoreSamples.reduce((sum, value) => sum + value, 0) / intentScoreSamples.length, 4)
+        : 0,
+    },
   }
 }
 
@@ -84,14 +133,17 @@ async function checkUrlHealth(url) {
 }
 
 function buildBidPayload({ scenario, placementId, sessionId, userId }) {
+  const messages = Array.isArray(scenario.messages) && scenario.messages.length > 0
+    ? scenario.messages
+    : [
+        { role: 'user', content: scenario.query },
+        { role: 'assistant', content: scenario.answerText },
+      ]
   return {
     userId,
     chatId: sessionId,
     placementId,
-    messages: [
-      { role: 'user', content: scenario.query },
-      { role: 'assistant', content: scenario.answerText },
-    ],
+    messages,
   }
 }
 
@@ -212,6 +264,32 @@ async function runOneScenarioPlacement(baseUrl, scenario, placementId, options =
   const winnerBid = bidRes.payload?.data?.bid && typeof bidRes.payload.data.bid === 'object'
     ? bidRes.payload.data.bid
     : null
+  const bidDiagnostics = bidRes.payload?.diagnostics && typeof bidRes.payload.diagnostics === 'object'
+    ? bidRes.payload.diagnostics
+    : {}
+  const reasonCode = String(
+    bidDiagnostics.reasonCode
+    || bidRes.payload?.decisionTrace?.reasonCode
+    || '',
+  ).trim()
+  const retrievalMode = String(
+    bidDiagnostics.retrievalMode
+    || bidDiagnostics.retrievalDebug?.mode
+    || '',
+  ).trim()
+  const retrievalHitCount = toNumber(
+    bidDiagnostics.retrievalHitCount
+    ?? bidDiagnostics.retrievalDebug?.fusedHitCount,
+    0,
+  )
+  const intentThreshold = toNumber(
+    bidDiagnostics.intentThreshold,
+    NaN,
+  )
+  const intentScoreObserved = toNumber(
+    bidRes.payload?.intent?.score,
+    NaN,
+  )
   const decisionResult = winnerBid ? 'served' : 'no_fill'
   const decisionReasonDetail = String(bidRes.payload?.message || '').trim()
 
@@ -225,6 +303,10 @@ async function runOneScenarioPlacement(baseUrl, scenario, placementId, options =
     issues.push(createIssue('P0', 'NO_AD_SERVED', scope, 'scenario returned no fill', {
       requestId,
       message: decisionReasonDetail,
+      reasonCode,
+      retrievalMode,
+      intentThreshold,
+      intentScore: intentScoreObserved,
     }))
   }
 
@@ -456,11 +538,19 @@ async function runOneScenarioPlacement(baseUrl, scenario, placementId, options =
       answerText: scenario.answerText,
       intentClass: scenario.intentClass,
       intentScore: scenario.intentScore,
+      messageCount: Array.isArray(scenario.messages) ? scenario.messages.length : 0,
     },
     evidence: {
       requestId,
       decisionResult,
       decisionReasonDetail,
+      bidDiagnostics: {
+        reasonCode,
+        retrievalMode,
+        retrievalHitCount,
+        intentThreshold: Number.isFinite(intentThreshold) ? round(intentThreshold, 4) : null,
+        intentScore: Number.isFinite(intentScoreObserved) ? round(intentScoreObserved, 4) : null,
+      },
       adId,
       adUrl,
       eventCount: eventRows.length,
@@ -535,26 +625,50 @@ async function main() {
   const skipLandingCheck = toBoolean(args.skipLandingCheck, false)
   const skipReset = toBoolean(args.skipReset, false)
   const withPostback = toBoolean(args.withPostback, false)
+  const settlementStorage = parseSettlementStorage(args.settlementStorage, 'auto')
+  const inventoryPrewarm = toBoolean(args.inventoryPrewarm, true)
+  const fallbackWhenInventoryUnavailable = toBoolean(args.fallbackWhenInventoryUnavailable, true)
+  const inventoryNetworks = parseInventoryNetworks(args.inventoryNetworks)
   const placements = parsePlacements(args.placements)
   const scenarioSetPath = String(args.scenarioSet || DEFAULT_SCENARIO_SET_PATH).trim()
 
   const startedAt = nowIso()
   const baseUrl = externalGatewayUrl || `http://${DEFAULT_HOST}:${port}`
   const useExternalGateway = Boolean(externalGatewayUrl)
+  let effectiveSettlementStorage = settlementStorage
 
   let gatewayHandle = null
   try {
     if (!useExternalGateway) {
       gatewayHandle = startGatewayProcess(port, {
         SIMULATOR_STRICT_MANUAL_INTEGRATION: 'false',
-        SIMULATOR_SETTLEMENT_STORAGE: 'state_file',
+        SIMULATOR_SETTLEMENT_STORAGE: effectiveSettlementStorage,
         SIMULATOR_REQUIRE_DURABLE_SETTLEMENT: 'false',
         SIMULATOR_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE: 'false',
         SIMULATOR_RUNTIME_AUTH_REQUIRED: 'true',
+        SIMULATOR_V2_INVENTORY_FALLBACK: fallbackWhenInventoryUnavailable ? 'true' : 'false',
       })
     }
 
-    await waitForGateway(baseUrl)
+    try {
+      await waitForGateway(baseUrl)
+    } catch (error) {
+      if (!useExternalGateway && settlementStorage === 'auto') {
+        await stopGatewayProcess(gatewayHandle)
+        effectiveSettlementStorage = 'state_file'
+        gatewayHandle = startGatewayProcess(port, {
+          SIMULATOR_STRICT_MANUAL_INTEGRATION: 'false',
+          SIMULATOR_SETTLEMENT_STORAGE: effectiveSettlementStorage,
+          SIMULATOR_REQUIRE_DURABLE_SETTLEMENT: 'false',
+          SIMULATOR_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE: 'false',
+          SIMULATOR_RUNTIME_AUTH_REQUIRED: 'true',
+          SIMULATOR_V2_INVENTORY_FALLBACK: fallbackWhenInventoryUnavailable ? 'true' : 'false',
+        })
+        await waitForGateway(baseUrl)
+      } else {
+        throw error
+      }
+    }
 
     if (!skipReset) {
       const resetRes = await requestJson(baseUrl, '/api/v1/dev/reset', {
@@ -568,6 +682,17 @@ async function main() {
     const auth = await resolveAuthContext(baseUrl, args, { useExternalGateway })
 
     await ensurePlacementsEnabled(baseUrl, placements, auth.dashboardHeaders)
+
+    const inventoryReadiness = await ensureInventoryReady(baseUrl, {
+      inventoryPrewarm,
+      fallbackWhenInventoryUnavailable,
+      networks: inventoryNetworks,
+    })
+    if (!inventoryReadiness.ok && inventoryReadiness.fatal) {
+      throw new Error(
+        `inventory readiness failed (${inventoryReadiness.code}): mode=${inventoryReadiness.mode || 'unknown'} status=${inventoryReadiness.status || 0}`,
+      )
+    }
 
     const scenarioSet = await loadScenarioSet(scenarioSetPath)
     const sampleScenario = scenarioSet.scenarios[0]
@@ -634,6 +759,7 @@ async function main() {
     const finishedAt = nowIso()
     const runId = `meyka_regression_${nowTag(new Date())}`
     const runReportPath = path.join(REPORT_RUNS_DIR, `${runId}.json`)
+    const diagnosticsSummary = summarizeBidDiagnostics(scenarioResults)
 
     const report = {
       runId,
@@ -657,6 +783,8 @@ async function main() {
       precheck: precheck.evidence,
       scenarios: scenarioResults,
       globalEvidence: globalCheck.evidence,
+      inventoryReadiness,
+      diagnosticsSummary,
       issues: currentIssues,
       issueSummary: summarizeIssues(currentIssues),
       newIssueSummary: summarizeIssues(diff.newIssues),
@@ -672,6 +800,11 @@ async function main() {
         skipLandingCheck,
         skipReset,
         withPostback,
+        settlementStorage,
+        effectiveSettlementStorage,
+        inventoryPrewarm,
+        fallbackWhenInventoryUnavailable,
+        inventoryNetworks,
         reportPaths: {
           latest: path.relative(PROJECT_ROOT, LATEST_REPORT_PATH),
           diffLatest: path.relative(PROJECT_ROOT, DIFF_REPORT_PATH),
@@ -703,6 +836,7 @@ async function main() {
       issueSummary: summarizeIssues(currentIssues),
       newIssueSummary: summarizeIssues(diff.newIssues),
       resolvedIssueSummary: summarizeIssues(diff.resolvedIssues),
+      diagnosticsSummary,
       outputFiles: {
         latest: path.relative(PROJECT_ROOT, LATEST_REPORT_PATH),
         diffLatest: path.relative(PROJECT_ROOT, DIFF_REPORT_PATH),

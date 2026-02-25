@@ -1,4 +1,5 @@
 import { buildQueryEmbedding, vectorToSqlLiteral } from './embedding.js'
+import { normalizeUnifiedOffers } from '../offers/index.js'
 
 const DEFAULT_LEXICAL_TOP_K = 30
 const DEFAULT_VECTOR_TOP_K = 30
@@ -39,6 +40,102 @@ function normalizeFilters(filters = {}) {
 
 function createQueryTextExpression(alias = 'n') {
   return `to_tsvector('simple', coalesce(${alias}.title, '') || ' ' || coalesce(${alias}.description, '') || ' ' || coalesce(array_to_string(${alias}.tags, ' '), ''))`
+}
+
+function tokenize(value = '') {
+  return cleanText(value)
+    .toLowerCase()
+    .split(/[^a-z0-9\u4e00-\u9fff]+/g)
+    .filter((item) => item.length >= 2)
+}
+
+function overlapScore(queryTokens = [], candidateTokens = []) {
+  if (!Array.isArray(queryTokens) || queryTokens.length === 0) return 0
+  if (!Array.isArray(candidateTokens) || candidateTokens.length === 0) return 0
+  const querySet = new Set(queryTokens)
+  const candidateSet = new Set(candidateTokens)
+  let hit = 0
+  for (const token of querySet) {
+    if (candidateSet.has(token)) hit += 1
+  }
+  return hit / querySet.size
+}
+
+function normalizeQuality(value) {
+  const n = toFiniteNumber(value, 0)
+  if (n <= 0) return 0
+  if (n <= 1) return Math.min(1, n)
+  return Math.min(1, n / 100)
+}
+
+function toFallbackCandidate(offer = {}, query = '') {
+  const metadata = offer?.metadata && typeof offer.metadata === 'object' ? offer.metadata : {}
+  const tags = Array.isArray(metadata.matchTags)
+    ? metadata.matchTags
+    : (Array.isArray(metadata.tags) ? metadata.tags : [])
+  const title = cleanText(offer.title)
+  const description = cleanText(offer.description)
+  const corpus = `${title} ${description} ${tags.join(' ')}`
+  const queryTokens = tokenize(query)
+  const candidateTokens = tokenize(corpus)
+  const lexicalScore = overlapScore(queryTokens, candidateTokens)
+  const quality = normalizeQuality(offer.qualityScore)
+  const bidHint = Math.max(0, toFiniteNumber(offer.bidValue, 0))
+  const bidBoost = bidHint > 0 ? Math.min(0.2, bidHint / 100) : 0
+  const vectorScore = Math.min(1, lexicalScore * 0.8 + quality * 0.2)
+  const fusedScore = Math.min(1, lexicalScore * 0.55 + vectorScore * 0.35 + bidBoost * 0.1)
+
+  return {
+    offerId: cleanText(offer.offerId),
+    network: cleanText(offer.sourceNetwork || metadata.sourceNetwork || ''),
+    upstreamOfferId: cleanText(offer.sourceId),
+    title,
+    description,
+    targetUrl: cleanText(offer.targetUrl || offer.trackingUrl),
+    market: cleanText(offer.market || 'US'),
+    language: cleanText(offer.locale || 'en-US'),
+    availability: cleanText(offer.availability || 'active') || 'active',
+    quality: toFiniteNumber(offer.qualityScore, 0),
+    bidHint,
+    policyWeight: toFiniteNumber(metadata.policyWeight, 0),
+    freshnessAt: cleanText(offer.updatedAt),
+    tags,
+    metadata,
+    updatedAt: cleanText(offer.updatedAt),
+    lexicalScore: toFiniteNumber(lexicalScore, 0),
+    vectorScore: toFiniteNumber(vectorScore, 0),
+    fusedScore: toFiniteNumber(fusedScore, 0),
+  }
+}
+
+function createFallbackCandidatesFromOffers(offers = [], input = {}) {
+  const normalized = normalizeUnifiedOffers(offers)
+  const query = cleanText(input.query)
+  const filters = normalizeFilters(input.filters)
+
+  const candidates = normalized
+    .map((offer) => toFallbackCandidate(offer, query))
+    .filter((item) => item.offerId && item.title && item.targetUrl)
+    .filter((item) => cleanText(item.availability || 'active').toLowerCase() === 'active')
+    .filter((item) => {
+      if (filters.networks.length > 0 && !filters.networks.includes(cleanText(item.network).toLowerCase())) return false
+      if (filters.market && cleanText(item.market).toUpperCase() !== filters.market) return false
+      if (filters.language && cleanText(item.language).toLowerCase() !== filters.language.toLowerCase()) return false
+      return true
+    })
+    .sort((a, b) => {
+      if (b.fusedScore !== a.fusedScore) return b.fusedScore - a.fusedScore
+      if (b.lexicalScore !== a.lexicalScore) return b.lexicalScore - a.lexicalScore
+      if (b.bidHint !== a.bidHint) return b.bidHint - a.bidHint
+      return a.offerId.localeCompare(b.offerId)
+    })
+    .map((candidate, index) => ({
+      ...candidate,
+      lexicalRank: index + 1,
+      vectorRank: index + 1,
+    }))
+
+  return candidates
 }
 
 async function fetchLexicalCandidates(pool, query, filters = {}, topK = DEFAULT_LEXICAL_TOP_K) {
@@ -208,24 +305,94 @@ function rrfFuse(lexicalRows = [], vectorRows = [], options = {}) {
 
 export async function retrieveOpportunityCandidates(input = {}, options = {}) {
   const startedAt = Date.now()
-  const pool = options.pool
-  if (!pool) {
-    return {
-      candidates: [],
-      debug: {
-        lexicalHitCount: 0,
-        vectorHitCount: 0,
-        mode: 'inventory_store_unavailable',
-        retrievalMs: 0,
-      },
-    }
-  }
-
   const query = cleanText(input.query)
   const filters = normalizeFilters(input.filters)
   const lexicalTopK = toPositiveInteger(input.lexicalTopK, DEFAULT_LEXICAL_TOP_K)
   const vectorTopK = toPositiveInteger(input.vectorTopK, DEFAULT_VECTOR_TOP_K)
   const finalTopK = toPositiveInteger(input.finalTopK, DEFAULT_FINAL_TOP_K)
+  const pool = options.pool
+  if (!pool) {
+    const fallbackEnabled = options.enableFallbackWhenInventoryUnavailable !== false
+    const fallbackProvider = typeof options.fallbackProvider === 'function'
+      ? options.fallbackProvider
+      : null
+    if (fallbackEnabled && fallbackProvider) {
+      try {
+        const fallbackResult = await fallbackProvider({
+          query,
+          filters,
+          lexicalTopK,
+          vectorTopK,
+          finalTopK,
+        })
+        const fallbackCandidates = Array.isArray(fallbackResult?.candidates)
+          ? fallbackResult.candidates
+          : createFallbackCandidatesFromOffers(
+            Array.isArray(fallbackResult?.offers) ? fallbackResult.offers : [],
+            { query, filters },
+          )
+        const sliced = fallbackCandidates.slice(0, finalTopK)
+        if (sliced.length > 0) {
+          return {
+            candidates: sliced,
+            debug: {
+              lexicalHitCount: sliced.filter((item) => toFiniteNumber(item?.lexicalScore, 0) > 0).length,
+              vectorHitCount: sliced.filter((item) => toFiniteNumber(item?.vectorScore, 0) > 0).length,
+              fusedHitCount: sliced.length,
+              filters,
+              query,
+              mode: String(fallbackResult?.debug?.mode || 'connector_live_fallback'),
+              fallbackMeta: fallbackResult?.debug && typeof fallbackResult.debug === 'object'
+                ? fallbackResult.debug
+                : {},
+              retrievalMs: Math.max(0, Date.now() - startedAt),
+            },
+          }
+        }
+        return {
+          candidates: [],
+          debug: {
+            lexicalHitCount: 0,
+            vectorHitCount: 0,
+            fusedHitCount: 0,
+            filters,
+            query,
+            mode: String(fallbackResult?.debug?.mode || 'connector_live_fallback_empty'),
+            fallbackMeta: fallbackResult?.debug && typeof fallbackResult.debug === 'object'
+              ? fallbackResult.debug
+              : {},
+            retrievalMs: Math.max(0, Date.now() - startedAt),
+          },
+        }
+      } catch (error) {
+        return {
+          candidates: [],
+          debug: {
+            lexicalHitCount: 0,
+            vectorHitCount: 0,
+            fusedHitCount: 0,
+            filters,
+            query,
+            mode: 'connector_live_fallback_error',
+            fallbackError: error instanceof Error ? error.message : 'fallback_failed',
+            retrievalMs: Math.max(0, Date.now() - startedAt),
+          },
+        }
+      }
+    }
+    return {
+      candidates: [],
+      debug: {
+        lexicalHitCount: 0,
+        vectorHitCount: 0,
+        fusedHitCount: 0,
+        filters,
+        query,
+        mode: 'inventory_store_unavailable',
+        retrievalMs: Math.max(0, Date.now() - startedAt),
+      },
+    }
+  }
 
   const [lexicalRows, vectorRows] = await Promise.all([
     fetchLexicalCandidates(pool, query, filters, lexicalTopK),

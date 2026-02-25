@@ -105,7 +105,7 @@ function evaluateConnectivity(regressionReport = {}) {
     servedCount: servedRows.length,
     servedVisibilityRatio,
     postbackIdempotencyPass,
-    pass: p0Count === 0 && servedVisibilityRatio === 100 && postbackIdempotencyPass,
+    pass: p0Count === 0 && servedRows.length > 0 && servedVisibilityRatio === 100 && postbackIdempotencyPass,
   }
 }
 
@@ -114,6 +114,7 @@ function evaluateCapacity(perfReport = {}) {
   const steady = phases.find((item) => String(item?.name || '') === 'steady')
   const burst = phases.find((item) => String(item?.name || '') === 'burst')
   const overallErrorRatePct = Number(perfReport?.overall?.errorRatePct || 0)
+  const overallServedRatePct = Number(perfReport?.overall?.servedRatePct || 0)
 
   const steadyActualRpm = Number(steady?.actualRpm || 0)
   const burstActualRpm = Number(burst?.actualRpm || 0)
@@ -124,12 +125,14 @@ function evaluateCapacity(perfReport = {}) {
     steadyActualRpm,
     burstActualRpm,
     overallErrorRatePct,
+    overallServedRatePct,
     steadyP95BidMs,
     burstP95BidMs,
     pass: (
       steadyActualRpm >= 114
       && burstActualRpm >= 270
       && overallErrorRatePct <= 2.5
+      && overallServedRatePct >= 20
       && steadyP95BidMs <= 5000
       && burstP95BidMs <= 8000
     ),
@@ -176,6 +179,10 @@ async function main() {
     scenarioSet,
     placements,
     withPostback,
+    settlementStorage: args.settlementStorage,
+    inventoryPrewarm: args.inventoryPrewarm,
+    fallbackWhenInventoryUnavailable: args.fallbackWhenInventoryUnavailable,
+    inventoryNetworks: args.inventoryNetworks,
     accountId: args.accountId,
     appId: args.appId,
     environment: args.environment,
@@ -263,6 +270,10 @@ async function main() {
       capacity,
       revenue,
       pass: suitePass,
+    },
+    diagnostics: {
+      regression: regressionReport?.diagnosticsSummary || null,
+      perf: perfReport?.diagnostics || null,
     },
   }
 

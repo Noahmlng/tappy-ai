@@ -6,7 +6,7 @@
     "surface": "CHAT_INLINE",
     "format": "NATIVE_BLOCK",
     "trigger": {
-      "intentThreshold": 0,
+      "intentThreshold": 0.2,
       "minExpectedRevenue": 0,
       "cooldownSeconds": 0,
       "blockedTopics": []
@@ -48,7 +48,7 @@
     "surface": "FOLLOW_UP",
     "format": "CARD",
     "trigger": {
-      "intentThreshold": 0,
+      "intentThreshold": 0.35,
       "minExpectedRevenue": 0,
       "cooldownSeconds": 0,
       "blockedTopics": []

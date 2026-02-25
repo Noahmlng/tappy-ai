@@ -2,9 +2,20 @@ import { inferIntentWithLlm } from '../providers/intent/index.js'
 
 const RULE_CLASS_KEYWORDS = {
   gifting: new Set(['gift', 'girlfriend', 'boyfriend', 'wife', 'husband', 'birthday', 'anniversary', 'present']),
-  shopping: new Set(['deal', 'deals', 'coupon', 'discount', 'sale', 'buy', 'order', 'shop', 'pricing', 'price']),
-  purchase_intent: new Set(['best', 'compare', 'recommend', 'top', 'review', 'reviews', 'cheap', 'affordable']),
-  product_exploration: new Set(['iphone', 'macbook', 'camera', 'backpack', 'shoe', 'shoes', 'vpn', 'hostinger', 'shopify', 'canva', 'protein']),
+  shopping: new Set([
+    'deal', 'deals', 'coupon', 'discount', 'sale', 'buy', 'order', 'shop', 'pricing', 'price',
+    'fee', 'fees', 'rate', 'rates', 'cost', 'costs', 'subscription', 'plan',
+  ]),
+  purchase_intent: new Set([
+    'best', 'compare', 'recommend', 'top', 'review', 'reviews', 'cheap', 'affordable',
+    'switch', 'alternative', 'stack', 'platform', 'broker', 'brokerage',
+  ]),
+  product_exploration: new Set([
+    'iphone', 'macbook', 'camera', 'backpack', 'shoe', 'shoes', 'vpn', 'hostinger', 'shopify', 'canva', 'protein',
+    'broker', 'brokerage', 'trading', 'trader', 'options', 'etf', 'stock', 'stocks', 'exchange',
+    'crypto', 'wallet', 'hardware', 'ledger', 'portfolio', 'backtest', 'earnings', 'analyst',
+    'tax', 'budget', 'budgeting', 'credit', 'monitoring', 'savings', 'yield', 'roboadvisor', 'robo', 'advisor',
+  ]),
 }
 
 const DEFAULT_OPTIONS = {
