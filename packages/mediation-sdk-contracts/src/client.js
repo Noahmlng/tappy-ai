@@ -1,13 +1,30 @@
 function normalizeBaseUrl(baseUrl) {
-  const normalized = String(baseUrl || '').trim().replace(/\/$/, '')
+  return String(baseUrl || '').trim().replace(/\/$/, '')
+}
+
+function ensureBaseUrl(baseUrl) {
+  const normalized = normalizeBaseUrl(baseUrl)
   if (!normalized) {
     throw new Error('[contracts] baseUrl is required')
   }
   return normalized
 }
 
+function appendQuery(path, query) {
+  const entries = Object.entries(query || {}).filter(([, value]) => (
+    value !== undefined && value !== null && value !== ''
+  ))
+  if (entries.length === 0) return path
+  const params = new URLSearchParams()
+  for (const [key, value] of entries) {
+    params.set(key, String(value))
+  }
+  const suffix = params.toString()
+  return suffix ? `${path}?${suffix}` : path
+}
+
 async function requestJson(baseUrl, path, options = {}) {
-  const url = `${normalizeBaseUrl(baseUrl)}${path}`
+  const url = `${ensureBaseUrl(baseUrl)}${appendQuery(path, options.query)}`
   const headers = {
     ...(options.headers || {}),
   }
@@ -37,7 +54,7 @@ async function requestJson(baseUrl, path, options = {}) {
 }
 
 export function createRuntimeClient(config) {
-  const baseUrl = normalizeBaseUrl(config?.baseUrl)
+  const baseUrl = ensureBaseUrl(config?.baseUrl)
   const runtimeKey = String(config?.runtimeKey || '').trim()
 
   function authHeaders(extra = {}) {
@@ -76,8 +93,8 @@ export function createRuntimeClient(config) {
 }
 
 export function createControlPlaneClient(config) {
-  const baseUrl = normalizeBaseUrl(config?.baseUrl)
-  const dashboardToken = String(config?.dashboardToken || '').trim()
+  const baseUrl = ensureBaseUrl(config?.baseUrl)
+  let dashboardToken = String(config?.dashboardToken || '').trim()
 
   function authHeaders(extra = {}) {
     return dashboardToken
@@ -85,31 +102,119 @@ export function createControlPlaneClient(config) {
       : extra
   }
 
+  function setAccessToken(token) {
+    dashboardToken = String(token || '').trim()
+  }
+
+  function request(path, options = {}) {
+    return requestJson(baseUrl, `/api${path}`, {
+      ...options,
+      headers: authHeaders(options.headers || {}),
+    })
+  }
+
   return {
-    getDashboardState(query = {}) {
-      const params = new URLSearchParams()
-      for (const [key, value] of Object.entries(query)) {
-        if (value === undefined || value === null || value === '') continue
-        params.set(key, String(value))
-      }
-      const suffix = params.toString() ? `?${params.toString()}` : ''
-      return requestJson(baseUrl, `/api/v1/dashboard/state${suffix}`, {
-        headers: authHeaders(),
-      })
+    setAccessToken,
+    health: {
+      ping() {
+        return request('/health')
+      },
     },
-    login(payload) {
-      return requestJson(baseUrl, '/api/v1/public/dashboard/login', {
-        method: 'POST',
-        headers: authHeaders(),
-        body: payload,
-      })
+    dashboard: {
+      getState(query = {}) {
+        return request('/v1/dashboard/state', { query })
+      },
+      getUsageRevenue(query = {}) {
+        return request('/v1/dashboard/usage-revenue', { query })
+      },
+      updatePlacement(placementId, patch) {
+        return request(`/v1/dashboard/placements/${encodeURIComponent(placementId)}`, {
+          method: 'PUT',
+          body: patch || {},
+        })
+      },
     },
-    createKey(payload) {
-      return requestJson(baseUrl, '/api/v1/public/credentials/keys', {
-        method: 'POST',
-        headers: authHeaders(),
-        body: payload,
-      })
+    credentials: {
+      listKeys(query = {}) {
+        return request('/v1/public/credentials/keys', { query })
+      },
+      createKey(payload = {}) {
+        return request('/v1/public/credentials/keys', {
+          method: 'POST',
+          body: payload,
+        })
+      },
+      rotateKey(keyId) {
+        return request(`/v1/public/credentials/keys/${encodeURIComponent(keyId)}/rotate`, {
+          method: 'POST',
+        })
+      },
+      revokeKey(keyId) {
+        return request(`/v1/public/credentials/keys/${encodeURIComponent(keyId)}/revoke`, {
+          method: 'POST',
+        })
+      },
+    },
+    quickStart: {
+      verify(payload = {}) {
+        return request('/v1/public/quick-start/verify', {
+          method: 'POST',
+          body: payload,
+        })
+      },
+    },
+    auth: {
+      register(payload = {}) {
+        return request('/v1/public/dashboard/register', {
+          method: 'POST',
+          body: payload,
+        })
+      },
+      login(payload = {}) {
+        return request('/v1/public/dashboard/login', {
+          method: 'POST',
+          body: payload,
+        })
+      },
+      me(query = {}) {
+        return request('/v1/public/dashboard/me', { query })
+      },
+      logout() {
+        return request('/v1/public/dashboard/logout', {
+          method: 'POST',
+        })
+      },
+    },
+    agent: {
+      issueIntegrationToken(payload = {}) {
+        return request('/v1/public/agent/integration-token', {
+          method: 'POST',
+          body: payload,
+        })
+      },
+      exchangeIntegrationToken(payload = {}) {
+        return request('/v1/public/agent/token-exchange', {
+          method: 'POST',
+          body: payload,
+        })
+      },
+    },
+    placements: {
+      list(query = {}) {
+        return request('/v1/dashboard/placements', { query })
+      },
+      create(payload = {}) {
+        return request('/v1/dashboard/placements', {
+          method: 'POST',
+          body: payload,
+        })
+      },
+      update(placementId, payload = {}) {
+        return request(`/v1/dashboard/placements/${encodeURIComponent(placementId)}`, {
+          method: 'PUT',
+          body: payload,
+        })
+      },
     },
   }
 }

@@ -22,6 +22,16 @@ npm install @ai-network/mediation-sdk-contracts
   - `createRuntimeClient(config)`
   - `createControlPlaneClient(config)`
 
+`createControlPlaneClient(config)` returns grouped clients:
+
+- `health`
+- `dashboard`
+- `credentials`
+- `quickStart`
+- `auth`
+- `agent`
+- `placements`
+
 ## Publish (GitHub Packages)
 
 Registry: `https://npm.pkg.github.com`
