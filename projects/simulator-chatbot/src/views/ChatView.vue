@@ -127,23 +127,19 @@
             <Menu :size="18" />
           </button>
           <div class="sim-title-wrap">
-            <p class="sim-kicker">Simulator Copilot</p>
-            <h1 class="sim-title">Campaign Intelligence Workspace</h1>
+            <p class="sim-kicker">ChatGPT 5.2</p>
           </div>
         </div>
         <button class="sim-pill-btn" @click="startNewChat">
-          <Plus :size="13" />
-          <span>New Thread</span>
+          <span>Share</span>
         </button>
       </header>
 
       <div ref="scrollRef" class="sim-scroll-region">
         <section class="sim-hero" :class="{ 'is-hidden': hasStarted }">
-          <p class="sim-hero-kicker">AI Native Ad Platform</p>
-          <h2>Design, simulate, and decide with clarity.</h2>
-          <p>
-            Ask questions, explore scenarios, inspect traces, and iterate strategy in one focused interface.
-          </p>
+          <p class="sim-hero-kicker">Simulator</p>
+          <h2>Ready when you are.</h2>
+          <p>Ask anything</p>
         </section>
 
         <section class="sim-thread" :class="{ 'is-visible': hasStarted }">
@@ -288,7 +284,7 @@
           ></textarea>
 
           <div class="sim-composer-footer">
-            <p class="sim-composer-note">Enter to send · AI output may be imperfect</p>
+            <p class="sim-composer-note">ChatGPT can make mistakes. Check important info.</p>
             <button
               @click="handleSend"
               :disabled="!input.trim() || isLoading"
@@ -1677,39 +1673,15 @@ async function handleSend(options = {}) {
 }
 
 .sim-shell::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    repeating-linear-gradient(
-      0deg,
-      color-mix(in srgb, var(--ink) 2.5%, transparent) 0px,
-      color-mix(in srgb, var(--ink) 2.5%, transparent) 1px,
-      transparent 1px,
-      transparent 3px
-    );
-  opacity: 0.08;
-  z-index: 0;
+  display: none;
 }
 
 .sim-backdrop {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(circle at 22% 14%, color-mix(in srgb, var(--accent-sea) 24%, transparent) 0%, transparent 42%),
-    radial-gradient(circle at 78% 10%, color-mix(in srgb, var(--accent-gold) 26%, transparent) 0%, transparent 44%),
-    radial-gradient(circle at 50% 110%, color-mix(in srgb, var(--accent-rust) 18%, transparent) 0%, transparent 54%);
-  z-index: 1;
+  display: none;
 }
 
 .sim-orb {
-  position: absolute;
-  border-radius: 999px;
-  filter: blur(36px);
-  opacity: 0.6;
-  animation: drift 14s ease-in-out infinite;
+  display: none;
 }
 
 .sim-orb-a {
@@ -1747,13 +1719,13 @@ async function handleSend(options = {}) {
   flex-direction: column;
   gap: 12px;
   border-right: 1px solid var(--sidebar-border);
-  background: linear-gradient(180deg, var(--sidebar-bg), color-mix(in srgb, var(--sidebar-bg) 90%, black));
+  background: var(--sidebar-bg);
   color: var(--sidebar-text);
   padding: var(--space-5) var(--space-4);
   transform: translateX(-110%);
   transition: transform var(--motion-slow) var(--ease-standard);
-  box-shadow: 18px 0 42px color-mix(in srgb, #000 26%, transparent);
-  backdrop-filter: blur(8px);
+  box-shadow: none;
+  backdrop-filter: none;
   will-change: transform;
 }
 
@@ -1779,9 +1751,9 @@ async function handleSend(options = {}) {
   width: 34px;
   place-items: center;
   border-radius: 11px;
-  border: 1px solid color-mix(in srgb, var(--accent-sea) 40%, white);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-sea) 82%, black), color-mix(in srgb, var(--accent-rust) 72%, black));
-  color: #f9f6f0;
+  border: 1px solid var(--sidebar-border);
+  background: #d8d8d8;
+  color: #303030;
   font-family: var(--font-display);
   font-size: 18px;
   font-weight: 700;
@@ -1790,8 +1762,8 @@ async function handleSend(options = {}) {
 
 .sim-brand-title {
   margin: 0;
-  font-size: 14px;
-  font-weight: 650;
+  font-size: 13px;
+  font-weight: 600;
   line-height: 1.1;
   letter-spacing: 0.01em;
 }
@@ -1800,7 +1772,7 @@ async function handleSend(options = {}) {
   margin: 2px 0 0;
   color: var(--sidebar-muted);
   font-size: 11px;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
 }
 
@@ -1850,11 +1822,11 @@ async function handleSend(options = {}) {
   gap: 12px;
   border: 1px solid var(--sidebar-border);
   border-radius: var(--radius-md);
-  background: linear-gradient(145deg, color-mix(in srgb, var(--sidebar-surface) 80%, #111), color-mix(in srgb, var(--sidebar-surface) 100%, #000));
+  background: var(--sidebar-surface);
   color: var(--sidebar-text);
   padding: 11px 12px;
   font-size: 13px;
-  font-weight: 580;
+  font-weight: 600;
   cursor: pointer;
   transition:
     transform var(--motion-base) var(--ease-standard),
@@ -1864,8 +1836,8 @@ async function handleSend(options = {}) {
 
 .sim-new-chat-btn:hover {
   transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent-sea) 36%, white);
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--accent-sea) 20%, transparent);
+  border-color: #cfcfcf;
+  box-shadow: none;
 }
 
 .sim-new-chat-btn:active {
@@ -1889,7 +1861,7 @@ async function handleSend(options = {}) {
   gap: 8px;
   border: 1px solid var(--sidebar-border);
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--sidebar-surface) 88%, #0f1110);
+  background: #efefef;
   color: var(--sidebar-muted);
   padding: var(--space-2) var(--space-3);
 }
@@ -1908,8 +1880,8 @@ async function handleSend(options = {}) {
 }
 
 .sim-search-field:focus-within {
-  border-color: color-mix(in srgb, var(--accent-sea) 44%, white);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-sea) 26%, transparent);
+  border-color: #c7c7c7;
+  box-shadow: none;
 }
 
 .sim-sidebar-section-label {
@@ -1931,16 +1903,10 @@ async function handleSend(options = {}) {
   gap: 6px;
   align-content: start;
   grid-auto-rows: max-content;
-  border: 1px solid color-mix(in srgb, var(--sidebar-border) 70%, transparent);
+  border: 1px solid #dbdbdb;
   border-radius: var(--radius-md);
-  background: linear-gradient(
-    160deg,
-    color-mix(in srgb, var(--sidebar-surface) 32%, #151a17),
-    color-mix(in srgb, var(--sidebar-bg) 88%, #090b0a)
-  );
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent),
-    inset 0 -1px 0 color-mix(in srgb, #000 10%, transparent);
+  background: #ebebeb;
+  box-shadow: none;
 }
 
 .sim-session-list::-webkit-scrollbar {
@@ -1963,13 +1929,13 @@ async function handleSend(options = {}) {
 }
 
 .sim-session-card:hover {
-  border-color: color-mix(in srgb, var(--sidebar-border) 40%, var(--accent-sea));
-  background: color-mix(in srgb, var(--sidebar-surface) 74%, #121312);
+  border-color: #d2d2d2;
+  background: #f2f2f2;
 }
 
 .sim-session-card.is-active {
-  border-color: color-mix(in srgb, var(--accent-sea) 40%, white);
-  background: color-mix(in srgb, var(--sidebar-surface) 84%, #0f1210);
+  border-color: #cfcfcf;
+  background: #f5f5f5;
 }
 
 .sim-session-card:focus-within .sim-session-delete {
@@ -2052,13 +2018,13 @@ async function handleSend(options = {}) {
   display: grid;
   gap: 10px;
   padding-top: 8px;
-  border-top: 1px solid var(--sidebar-border);
+  border-top: 1px solid #d9d9d9;
 }
 
 .sim-panel {
-  border: 1px solid var(--sidebar-border);
+  border: 1px solid #d9d9d9;
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--sidebar-surface) 90%, #111);
+  background: #ededed;
   padding: 10px;
 }
 
@@ -2106,9 +2072,9 @@ async function handleSend(options = {}) {
 
 .sim-panel-row button,
 .sim-clear-history-btn {
-  border: 1px solid var(--sidebar-border);
+  border: 1px solid #d3d3d3;
   border-radius: 9px;
-  background: color-mix(in srgb, var(--sidebar-surface) 88%, #0f0f0f);
+  background: #f2f2f2;
   color: var(--sidebar-muted);
   font-size: 11px;
   cursor: pointer;
@@ -2150,7 +2116,7 @@ async function handleSend(options = {}) {
   margin-top: 10px;
   border-radius: 10px;
   border: 1px solid var(--sidebar-border);
-  background: color-mix(in srgb, var(--sidebar-bg) 76%, black);
+  background: #f6f6f6;
   color: var(--sidebar-text);
   font-size: 12px;
   padding: 8px;
@@ -2180,9 +2146,9 @@ async function handleSend(options = {}) {
 }
 
 .sim-trace-card {
-  border: 1px solid var(--sidebar-border);
+  border: 1px solid #dadada;
   border-radius: 10px;
-  background: color-mix(in srgb, var(--sidebar-bg) 80%, black);
+  background: #f2f2f2;
   padding: 8px;
 }
 
@@ -2226,8 +2192,8 @@ async function handleSend(options = {}) {
 }
 
 .sim-trace-badge.is-tool {
-  color: #8ce5c8;
-  background: color-mix(in srgb, #2c7a61 45%, transparent);
+  color: #333;
+  background: #e4e4e4;
 }
 
 .sim-trace-body {
@@ -2267,7 +2233,7 @@ async function handleSend(options = {}) {
   inset: 0;
   z-index: 40;
   border: 0;
-  background: color-mix(in srgb, #000 42%, transparent);
+  background: color-mix(in srgb, #000 18%, transparent);
 }
 
 .sim-sidebar-overlay:focus-visible {
@@ -2293,12 +2259,10 @@ async function handleSend(options = {}) {
   justify-content: space-between;
   gap: var(--space-4);
   padding: 15px clamp(14px, 2vw, 22px) 14px;
-  border-bottom: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
-  background: color-mix(in srgb, var(--paper) 90%, white);
-  backdrop-filter: blur(14px);
-  box-shadow:
-    0 1px 0 color-mix(in srgb, #fff 66%, transparent),
-    0 10px 28px color-mix(in srgb, #19231d 5%, transparent);
+  border-bottom: 1px solid #e1e1e1;
+  background: var(--paper);
+  backdrop-filter: none;
+  box-shadow: none;
 }
 
 .sim-topbar-left {
@@ -2314,37 +2278,29 @@ async function handleSend(options = {}) {
 
 .sim-kicker {
   margin: 0;
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--graphite) 88%, transparent);
-  font-weight: 650;
+  font-size: clamp(30px, 3.1vw, 42px);
+  letter-spacing: 0;
+  text-transform: none;
+  color: #222;
+  font-weight: 560;
+  line-height: 1.05;
 }
 
 .sim-title {
-  margin: 2px 0 0;
-  font-size: clamp(16px, 1.4vw, 21px);
-  font-weight: 620;
-  line-height: 1.15;
-  letter-spacing: 0.01em;
-  font-family: var(--font-display);
-  color: color-mix(in srgb, var(--ink) 92%, #334a3f);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: none;
 }
 
 .sim-pill-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
+  border: 0;
   border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--paper) 86%, white);
-  color: var(--ink);
+  background: transparent;
+  color: #2f2f2f;
   font-size: 12px;
   font-weight: 600;
-  padding: 8px 13px;
+  padding: 6px 8px;
   cursor: pointer;
   transition:
     transform var(--motion-fast) var(--ease-standard),
@@ -2354,10 +2310,11 @@ async function handleSend(options = {}) {
 }
 
 .sim-pill-btn:hover {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent-sea) 34%, transparent);
-  background: color-mix(in srgb, var(--accent-sea) 15%, var(--paper));
-  box-shadow: 0 8px 16px color-mix(in srgb, var(--accent-sea) 10%, transparent);
+  transform: none;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  text-decoration: underline;
 }
 
 .sim-pill-btn:active {
@@ -2374,48 +2331,31 @@ async function handleSend(options = {}) {
   flex: 1;
   overflow-y: auto;
   padding: clamp(16px, 2vw, 28px) var(--sim-edge-padding) var(--space-6);
-  background:
-    radial-gradient(circle at 60% 100%, color-mix(in srgb, var(--accent-gold) 6%, transparent), transparent 40%),
-    radial-gradient(circle at 6% 0%, color-mix(in srgb, var(--accent-sea) 7%, transparent), transparent 42%);
+  background: transparent;
 }
 
 .sim-hero {
-  margin: clamp(14px, 3vh, 32px) auto 26px;
+  margin: clamp(90px, 20vh, 180px) auto 26px;
   width: var(--sim-content-width);
   position: relative;
-  isolation: isolate;
-  border: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
-  border-radius: var(--radius-2xl);
-  background: linear-gradient(152deg, color-mix(in srgb, var(--paper) 88%, white), color-mix(in srgb, var(--surface) 72%, white));
-  box-shadow:
-    0 28px 60px color-mix(in srgb, #111b17 16%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #fff 70%, transparent);
-  padding: clamp(22px, 3.5vw, 38px);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
   transition:
     opacity var(--motion-slow) var(--ease-standard),
     transform var(--motion-slow) var(--ease-standard),
     max-height var(--motion-slow) var(--ease-standard),
     margin var(--motion-slow) var(--ease-standard),
     padding var(--motion-slow) var(--ease-standard);
-  max-height: 420px;
+  max-height: 260px;
   overflow: hidden;
+  text-align: center;
 }
 
 .sim-hero::before {
-  content: '';
-  position: absolute;
-  inset: 0 auto auto 0;
-  width: 100%;
-  height: 8px;
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--accent-sea) 44%, transparent),
-    color-mix(in srgb, var(--accent-gold) 28%, transparent),
-    color-mix(in srgb, var(--accent-rust) 32%, transparent)
-  );
-  opacity: 0.72;
-  z-index: 0;
-  pointer-events: none;
+  display: none;
 }
 
 .sim-hero > * {
@@ -2434,29 +2374,25 @@ async function handleSend(options = {}) {
 }
 
 .sim-hero-kicker {
-  margin: 0;
-  color: var(--graphite);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  display: none;
 }
 
 .sim-hero h2 {
-  margin: 12px 0 0;
+  margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(29px, 4.2vw, 48px);
-  line-height: 1.05;
-  letter-spacing: -0.01em;
-  max-width: 19ch;
+  font-size: clamp(38px, 5.5vw, 56px);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  max-width: none;
+  color: #222;
 }
 
 .sim-hero p {
-  margin: 16px 0 0;
-  max-width: 54ch;
-  color: var(--graphite);
-  font-size: 15px;
-  line-height: 1.75;
+  margin: 14px 0 0;
+  max-width: none;
+  color: #8a8a8a;
+  font-size: 18px;
+  line-height: 1.4;
 }
 
 .sim-thread {
@@ -2492,44 +2428,29 @@ async function handleSend(options = {}) {
 }
 
 .sim-avatar {
-  margin-top: 2px;
-  display: grid;
-  place-items: center;
-  height: 30px;
-  width: 30px;
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--accent-sea) 35%, transparent);
-  background: color-mix(in srgb, var(--accent-sea) 25%, white);
-  color: color-mix(in srgb, var(--ink) 75%, var(--accent-sea));
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.1em;
+  display: none;
 }
 
 .sim-message {
   width: min(100%, 680px);
-  border-radius: var(--radius-xl);
+  border-radius: 18px;
   padding: 14px 16px 13px;
   font-size: 15px;
   line-height: 1.7;
-  backdrop-filter: blur(6px);
+  backdrop-filter: none;
 }
 
 .sim-message-user {
   max-width: min(76%, 640px);
-  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
-  background: linear-gradient(145deg, color-mix(in srgb, var(--accent-rust) 14%, white), color-mix(in srgb, var(--surface) 88%, white));
-  box-shadow:
-    0 10px 24px color-mix(in srgb, var(--accent-rust) 11%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #fff 54%, transparent);
+  border: 1px solid #dddddd;
+  background: #f3f3f3;
+  box-shadow: none;
 }
 
 .sim-message-assistant {
-  border: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
-  background: color-mix(in srgb, white 80%, var(--paper));
-  box-shadow:
-    0 10px 26px color-mix(in srgb, #182117 10%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #fff 70%, transparent);
+  border: 1px solid #e2e2e2;
+  background: #ececec;
+  box-shadow: none;
 }
 
 .sim-rewrite-input {
@@ -2636,7 +2557,7 @@ async function handleSend(options = {}) {
 .sim-tool-card {
   border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
   border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--paper) 82%, white);
+  background: #f0f0f0;
   padding: 12px;
 }
 
@@ -2754,23 +2675,21 @@ async function handleSend(options = {}) {
   bottom: 0;
   z-index: 24;
   padding: var(--space-3) var(--sim-edge-padding) 18px;
-  background: linear-gradient(0deg, color-mix(in srgb, var(--paper) 95%, white) 58%, transparent 100%);
-  backdrop-filter: blur(9px);
+  background: transparent;
+  backdrop-filter: none;
 }
 
 .sim-composer-zone.is-live {
-  background: linear-gradient(0deg, color-mix(in srgb, var(--paper) 97%, white) 52%, transparent 100%);
+  background: transparent;
 }
 
 .sim-composer-card {
   width: var(--sim-content-width);
   margin: 0 auto;
-  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
-  border-radius: var(--radius-2xl);
-  background: color-mix(in srgb, white 84%, var(--paper));
-  box-shadow:
-    0 18px 45px color-mix(in srgb, #111d18 14%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #fff 72%, transparent);
+  border: 1px solid #dadada;
+  border-radius: 999px;
+  background: #f4f4f4;
+  box-shadow: none;
   padding: 8px;
   transition:
     border-color var(--motion-base) var(--ease-standard),
@@ -2779,23 +2698,21 @@ async function handleSend(options = {}) {
 }
 
 .sim-composer-card:focus-within {
-  border-color: color-mix(in srgb, var(--accent-sea) 36%, transparent);
-  box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--accent-sea) 18%, transparent),
-    var(--elev-shadow);
+  border-color: #cfcfcf;
+  box-shadow: none;
 }
 
 .sim-composer-input {
   width: 100%;
-  min-height: 52px;
+  min-height: 50px;
   max-height: 180px;
   resize: none;
   border: 0;
   background: transparent;
   color: var(--ink);
   font-size: 16px;
-  line-height: 1.7;
-  padding: 10px 14px 4px;
+  line-height: 1.55;
+  padding: 10px 16px 6px;
   outline: none;
 }
 
@@ -2823,10 +2740,10 @@ async function handleSend(options = {}) {
   place-items: center;
   height: 36px;
   width: 36px;
-  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+  border: 1px solid #000;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--surface) 70%, white);
-  color: var(--pencil);
+  background: #000;
+  color: #fff;
   transition:
     transform var(--motion-fast) var(--ease-standard),
     background-color var(--motion-fast) var(--ease-standard),
@@ -2836,21 +2753,19 @@ async function handleSend(options = {}) {
 }
 
 .sim-send-btn.is-active {
-  background: linear-gradient(145deg, color-mix(in srgb, var(--accent-sea) 78%, black), color-mix(in srgb, var(--accent-rust) 58%, black));
-  border-color: color-mix(in srgb, var(--accent-sea) 60%, black);
-  color: #f6f6f2;
+  background: #000;
+  border-color: #000;
+  color: #fff;
   cursor: pointer;
-  box-shadow:
-    0 8px 16px color-mix(in srgb, var(--accent-sea) 22%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #fff 25%, transparent);
+  box-shadow: none;
 }
 
 .sim-send-btn.is-active:hover {
-  transform: translateY(-1px) scale(1.02);
+  transform: none;
 }
 
 .sim-send-btn.is-active:active {
-  transform: translateY(0) scale(0.99);
+  transform: none;
 }
 
 .sim-send-btn:focus-visible {
@@ -2860,6 +2775,7 @@ async function handleSend(options = {}) {
 
 .sim-send-btn:disabled {
   cursor: not-allowed;
+  opacity: 0.4;
 }
 
 @media (min-width: 1100px) {
@@ -2891,12 +2807,8 @@ async function handleSend(options = {}) {
     padding-inline: 14px;
   }
 
-  .sim-title {
-    font-size: 16px;
-  }
-
   .sim-kicker {
-    font-size: 9px;
+    font-size: clamp(22px, 7vw, 34px);
   }
 }
 

@@ -1,12 +1,11 @@
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650;9..144,700&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap");
 @import "tailwindcss";
 
 :root {
   color-scheme: light;
 
-  --font-body: "Manrope", "Avenir Next", "Segoe UI", sans-serif;
-  --font-display: "Fraunces", "Iowan Old Style", serif;
-  --font-mono: "IBM Plex Mono", "JetBrains Mono", "SF Mono", Menlo, monospace;
+  --font-body: "OpenAI Sans", "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font-body);
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 
   --content-max-width: 860px;
 
@@ -27,29 +26,29 @@
   --radius-2xl: 28px;
   --radius-pill: 999px;
 
-  --paper: #f5f1e7;
-  --surface: #ebe6da;
-  --surface-strong: #e0d8c6;
-  --ink: #1a221d;
-  --graphite: #49574f;
-  --pencil: #7c867f;
-  --border: #d2cbbd;
+  --paper: #f5f5f5;
+  --surface: #efefef;
+  --surface-strong: #e7e7e7;
+  --ink: #202123;
+  --graphite: #4b4b4b;
+  --pencil: #7a7a7a;
+  --border: #dddddd;
 
-  --accent-sea: #1d7a66;
-  --accent-gold: #bd8f35;
-  --accent-rust: #9a5a39;
+  --accent-sea: #202123;
+  --accent-gold: #323232;
+  --accent-rust: #414141;
   --indigo: var(--accent-sea);
   --indigo-soft: #dff2ec;
 
   --sidebar-width: 300px;
-  --sidebar-bg: #171d1a;
-  --sidebar-surface: #222b26;
-  --sidebar-border: #2f3a33;
-  --sidebar-text: #e9ece8;
-  --sidebar-muted: #95a29a;
+  --sidebar-bg: #ececec;
+  --sidebar-surface: #f1f1f1;
+  --sidebar-border: #dcdcdc;
+  --sidebar-text: #2c2c2c;
+  --sidebar-muted: #7f7f7f;
 
-  --soft-shadow: 0 10px 30px color-mix(in srgb, #182117 12%, transparent);
-  --elev-shadow: 0 14px 40px color-mix(in srgb, #182117 14%, transparent);
+  --soft-shadow: 0 1px 2px color-mix(in srgb, #111 8%, transparent);
+  --elev-shadow: 0 4px 20px color-mix(in srgb, #111 8%, transparent);
   --hairline: color-mix(in srgb, var(--ink) 8%, transparent);
 
   --motion-fast: 0.14s;
@@ -73,23 +72,19 @@ body,
 }
 
 body {
-  background:
-    radial-gradient(circle at 14% 0%, color-mix(in srgb, var(--accent-sea) 6%, transparent), transparent 34%),
-    radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--accent-gold) 8%, transparent), transparent 40%),
-    var(--paper);
+  background: var(--paper);
   color: var(--ink);
   font-family: var(--font-body);
   text-rendering: geometricPrecision;
   line-height: 1.65;
   -webkit-font-smoothing: antialiased;
   font-feature-settings: "liga", "kern";
-  background-attachment: fixed;
   letter-spacing: 0.002em;
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--accent-sea) 26%, white);
-  color: color-mix(in srgb, var(--ink) 92%, black);
+  background: #d9d9d9;
+  color: var(--ink);
 }
 
 button,

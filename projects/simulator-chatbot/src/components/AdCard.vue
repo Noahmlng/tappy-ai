@@ -32,9 +32,9 @@ defineEmits(['ad-click'])
 .ad-card {
   margin-top: 14px;
   border-radius: var(--radius-lg);
-  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
-  background: linear-gradient(145deg, color-mix(in srgb, var(--paper) 55%, white), color-mix(in srgb, var(--surface) 74%, white));
-  box-shadow: var(--soft-shadow);
+  border: 1px solid #dddddd;
+  background: #f3f3f3;
+  box-shadow: none;
   padding: 12px;
   transition:
     transform var(--motion-base) var(--ease-standard),
@@ -43,16 +43,14 @@ defineEmits(['ad-click'])
 }
 
 .ad-card:hover {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent-sea) 28%, transparent);
-  box-shadow: 0 14px 30px color-mix(in srgb, var(--accent-sea) 10%, transparent);
+  transform: none;
+  border-color: #d3d3d3;
+  box-shadow: none;
 }
 
 .ad-card:focus-within {
-  border-color: color-mix(in srgb, var(--accent-sea) 34%, transparent);
-  box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--accent-sea) 16%, transparent),
-    0 14px 30px color-mix(in srgb, var(--accent-sea) 10%, transparent);
+  border-color: #c9c9c9;
+  box-shadow: none;
 }
 
 .ad-card-meta {
@@ -65,8 +63,8 @@ defineEmits(['ad-click'])
 
 .ad-card-meta span:first-child {
   border-radius: var(--radius-pill);
-  border: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
-  background: color-mix(in srgb, var(--surface) 75%, white);
+  border: 1px solid #d4d4d4;
+  background: #ededed;
   color: var(--graphite);
   font-size: 10px;
   font-weight: 700;
@@ -90,7 +88,7 @@ defineEmits(['ad-click'])
 }
 
 .ad-card-link:hover {
-  transform: translateY(-1px);
+  transform: none;
 }
 
 .ad-card-link:focus-visible {
@@ -108,7 +106,7 @@ defineEmits(['ad-click'])
   height: 72px;
   object-fit: cover;
   border-radius: var(--radius-sm);
-  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+  border: 1px solid #d6d6d6;
   background: #fff;
 }
 
@@ -141,9 +139,9 @@ defineEmits(['ad-click'])
   display: inline-flex;
   align-items: center;
   border-radius: var(--radius-pill);
-  border: 1px solid color-mix(in srgb, var(--accent-sea) 48%, transparent);
-  background: color-mix(in srgb, var(--accent-sea) 12%, white);
-  color: color-mix(in srgb, var(--accent-sea) 88%, black);
+  border: 1px solid #000;
+  background: #000;
+  color: #fff;
   padding: 6px 11px;
   font-size: 11px;
   font-weight: 650;
@@ -153,8 +151,8 @@ defineEmits(['ad-click'])
 }
 
 .ad-card-link:hover .ad-card-cta {
-  transform: translateY(-1px);
-  background: color-mix(in srgb, var(--accent-sea) 18%, white);
+  transform: none;
+  background: #000;
 }
 
 @media (max-width: 560px) {

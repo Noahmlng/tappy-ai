@@ -46,8 +46,8 @@ defineEmits(['select'])
 }
 
 .followup-grid button {
-  border: 1px solid color-mix(in srgb, var(--ink) 14%, transparent);
-  background: color-mix(in srgb, white 86%, var(--paper));
+  border: 1px solid #dbdbdb;
+  background: #f1f1f1;
   color: var(--graphite);
   border-radius: var(--radius-pill);
   font-size: 12px;
@@ -55,7 +55,7 @@ defineEmits(['select'])
   text-align: left;
   padding: 7px 11px;
   cursor: pointer;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 65%, transparent);
+  box-shadow: none;
   transition:
     border-color var(--motion-fast) var(--ease-standard),
     background-color var(--motion-fast) var(--ease-standard),
@@ -65,17 +65,15 @@ defineEmits(['select'])
 }
 
 .followup-grid button:hover:not(:disabled) {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent-sea) 44%, transparent);
-  background: color-mix(in srgb, var(--indigo-soft) 70%, white);
-  color: color-mix(in srgb, var(--accent-sea) 90%, black);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, #fff 72%, transparent),
-    0 8px 18px color-mix(in srgb, var(--accent-sea) 10%, transparent);
+  transform: none;
+  border-color: #d2d2d2;
+  background: #ebebeb;
+  color: #202123;
+  box-shadow: none;
 }
 
 .followup-grid button:active:not(:disabled) {
-  transform: translateY(0);
+  transform: none;
 }
 
 .followup-grid button:focus-visible {
