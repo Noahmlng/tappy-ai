@@ -46,7 +46,7 @@ curl -sS -X POST "$MEDIATION_API_BASE_URL/v1/sdk/events" \
   -H "Content-Type: application/json" \
   -d '{
     "requestId": "adreq_xxx",
-    "appId": "simulator-chatbot",
+    "appId": "sample-client-app",
     "sessionId": "cb_session_001",
     "turnId": "cb_turn_001",
     "query": "Recommend waterproof running shoes",

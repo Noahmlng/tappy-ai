@@ -116,7 +116,7 @@ async function registerDashboardHeaders(baseUrl, input = {}) {
   const email = String(input.email || `owner_${now}@example.com`)
   const password = String(input.password || 'pass12345')
   const accountId = String(input.accountId || 'org_simulator')
-  const appId = String(input.appId || 'simulator-chatbot')
+  const appId = String(input.appId || 'sample-client-app')
   const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
     method: 'POST',
     body: {
@@ -136,7 +136,7 @@ async function registerDashboardHeaders(baseUrl, input = {}) {
 
 async function issueRuntimeApiKeyHeaders(baseUrl, input = {}, headers = {}) {
   const accountId = String(input.accountId || 'org_simulator')
-  const appId = String(input.appId || 'simulator-chatbot')
+  const appId = String(input.appId || 'sample-client-app')
   const environment = String(input.environment || 'prod')
   const created = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
     method: 'POST',
@@ -159,7 +159,7 @@ async function issueRuntimeApiKeyHeaders(baseUrl, input = {}, headers = {}) {
 function buildNextStepEventPayload(overrides = {}) {
   const base = {
     requestId: `adreq_next_step_event_${Date.now()}`,
-    appId: 'simulator-chatbot',
+    appId: 'sample-client-app',
     sessionId: `session_next_step_event_${Date.now()}`,
     turnId: `turn_next_step_event_${Date.now()}`,
     userId: 'next_step_event_user',
@@ -199,11 +199,11 @@ test('next-step sdk events: click/dismiss carry kind+adId and click updates dash
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'next-step-event-semantics@example.com',
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     })
     const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, {
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     }, dashboardHeaders)
 
     const beforeSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary', {

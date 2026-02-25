@@ -264,7 +264,7 @@ test('opportunity writer: state fallback records opportunity->delivery->event ch
 
   const opportunity = await writer.createOpportunityRecord({
     requestId: 'req_chain_001',
-    appId: 'simulator-chatbot',
+    appId: 'sample-client-app',
     placementId: 'chat_from_answer_v1',
     payload: { query: 'vpn deals' },
   })
@@ -272,7 +272,7 @@ test('opportunity writer: state fallback records opportunity->delivery->event ch
 
   const delivery = await writer.writeDeliveryRecord({
     requestId: 'req_chain_001',
-    appId: 'simulator-chatbot',
+    appId: 'sample-client-app',
     placementId: 'chat_from_answer_v1',
     opportunityKey: opportunity.opportunityKey,
     deliveryStatus: 'served',
@@ -282,7 +282,7 @@ test('opportunity writer: state fallback records opportunity->delivery->event ch
 
   const event = await writer.writeEventRecord({
     requestId: 'req_chain_001',
-    appId: 'simulator-chatbot',
+    appId: 'sample-client-app',
     placementId: 'chat_from_answer_v1',
     eventType: 'sdk_event',
     kind: 'click',

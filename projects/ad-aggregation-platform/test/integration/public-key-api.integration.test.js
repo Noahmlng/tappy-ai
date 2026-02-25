@@ -116,7 +116,7 @@ async function registerDashboardHeaders(baseUrl, input = {}) {
   const email = String(input.email || `owner_${now}@example.com`)
   const password = String(input.password || 'pass12345')
   const accountId = String(input.accountId || 'org_simulator')
-  const appId = String(input.appId || 'simulator-chatbot')
+  const appId = String(input.appId || 'sample-client-app')
   const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
     method: 'POST',
     body: {
@@ -152,7 +152,7 @@ test('public key api supports create/list/rotate/revoke lifecycle', async () => 
     const authHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'owner-acct-demo@example.com',
       accountId: 'acct_demo',
-      appId: 'simulator-chatbot-acct-demo',
+      appId: 'sample-client-app-acct-demo',
     })
 
     const listBefore = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
@@ -166,7 +166,7 @@ test('public key api supports create/list/rotate/revoke lifecycle', async () => 
       headers: authHeaders,
       body: {
         accountId: 'acct_demo',
-        appId: 'simulator-chatbot-acct-demo',
+        appId: 'sample-client-app-acct-demo',
         name: 'primary-prod',
         environment: 'prod',
       },
@@ -180,7 +180,7 @@ test('public key api supports create/list/rotate/revoke lifecycle', async () => 
     assert.equal(Boolean(keyId), true, 'create should return keyId')
     assert.equal(createdKey.name, 'primary-prod')
     assert.equal(createdKey.accountId, 'acct_demo')
-    assert.equal(createdKey.appId, 'simulator-chatbot-acct-demo')
+    assert.equal(createdKey.appId, 'sample-client-app-acct-demo')
     assert.equal(createdKey.environment, 'prod')
     assert.equal(createdKey.status, 'active')
     assert.equal(typeof createdKey.maskedKey, 'string')

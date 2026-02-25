@@ -121,7 +121,7 @@ async function registerDashboardHeaders(baseUrl, input = {}) {
   const email = String(input.email || `owner_${now}@example.com`)
   const password = String(input.password || 'pass12345')
   const accountId = String(input.accountId || 'org_simulator')
-  const appId = String(input.appId || 'simulator-chatbot')
+  const appId = String(input.appId || 'sample-client-app')
   const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
     method: 'POST',
     body: {
@@ -141,7 +141,7 @@ async function registerDashboardHeaders(baseUrl, input = {}) {
 
 async function issueRuntimeApiKeyHeaders(baseUrl, input = {}, headers = {}) {
   const accountId = String(input.accountId || 'org_simulator')
-  const appId = String(input.appId || 'simulator-chatbot')
+  const appId = String(input.appId || 'sample-client-app')
   const environment = String(input.environment || 'prod')
   const created = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
     method: 'POST',
@@ -179,11 +179,11 @@ test('CPA postback facts drive dashboard revenue metrics and replace serve estim
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'owner-cpa@example.com',
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     })
     const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, {
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     }, dashboardHeaders)
 
     const beforeSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary', {
@@ -194,7 +194,7 @@ test('CPA postback facts drive dashboard revenue metrics and replace serve estim
 
     const now = Date.now()
     const runtimePayload = {
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
       sessionId: `cpa_session_${now}`,
       turnId: `cpa_turn_${now}`,
       query: 'Recommend a budget friendly mechanical keyboard',
@@ -284,7 +284,7 @@ test('CPA postback facts drive dashboard revenue metrics and replace serve estim
 
     const scopedSummary = await requestJson(
       baseUrl,
-      '/api/v1/dashboard/metrics/summary?appId=simulator-chatbot&accountId=org_simulator',
+      '/api/v1/dashboard/metrics/summary?appId=sample-client-app&accountId=org_simulator',
       { headers: dashboardHeaders },
     )
     assert.equal(scopedSummary.ok, true)

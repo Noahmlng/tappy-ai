@@ -12,7 +12,7 @@
 - 面向 AI Native App 提供标准化广告拉取与配置能力。
 
 ## B. 模拟与测试模块（用户视角）
-路径：`projects/simulator-chatbot`
+路径：`/Users/zeming/Documents/simulator-chatbot`（外部独立仓库）
 
 包含：
 - Vue Chatbot 容器（首个 AI Native App）

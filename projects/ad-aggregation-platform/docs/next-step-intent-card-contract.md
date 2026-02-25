@@ -41,7 +41,7 @@ Request example:
 
 ```json
 {
-  "appId": "simulator-chatbot",
+  "appId": "sample-client-app",
   "sessionId": "session_123",
   "turnId": "turn_045",
   "event": "followup_generation",

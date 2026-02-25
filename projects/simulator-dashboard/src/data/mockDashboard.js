@@ -75,7 +75,7 @@ export const mockDashboardState = {
     byApp: [
       {
         accountId: 'org_simulator',
-        appId: 'simulator-chatbot',
+        appId: 'sample-client-app',
         placementId: '',
         layer: '',
         requests: 35120,
@@ -93,7 +93,7 @@ export const mockDashboardState = {
     byPlacement: [
       {
         accountId: 'org_simulator',
-        appId: 'simulator-chatbot',
+        appId: 'sample-client-app',
         placementId: 'chat_from_answer_v1',
         layer: 'attach',
         requests: 16220,
@@ -109,7 +109,7 @@ export const mockDashboardState = {
       },
       {
         accountId: 'org_simulator',
-        appId: 'simulator-chatbot',
+        appId: 'sample-client-app',
         placementId: 'chat_intent_recommendation_v1',
         layer: 'next_step',
         requests: 13240,
@@ -125,7 +125,7 @@ export const mockDashboardState = {
       },
       {
         accountId: 'org_simulator',
-        appId: 'simulator-chatbot',
+        appId: 'sample-client-app',
         placementId: 'search_parallel_v1',
         layer: 'intervention',
         requests: 5660,

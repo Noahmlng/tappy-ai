@@ -25,7 +25,7 @@ test.beforeEach(() => {
 test('relevance guard: finance intent blocks cloud-only ad matches', async () => {
   const runtimeConfig = createRuntimeConfig()
   const request = {
-    appId: 'simulator-chatbot',
+    appId: 'sample-client-app',
     sessionId: 'session_finance_relevance_guard',
     userId: 'user_finance_relevance_guard',
     placementId: 'attach.post_answer_render',

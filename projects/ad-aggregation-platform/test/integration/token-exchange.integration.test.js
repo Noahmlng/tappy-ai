@@ -116,7 +116,7 @@ async function registerDashboardHeaders(baseUrl, input = {}) {
   const email = String(input.email || `owner_${now}@example.com`)
   const password = String(input.password || 'pass12345')
   const accountId = String(input.accountId || 'org_simulator')
-  const appId = String(input.appId || 'simulator-chatbot')
+  const appId = String(input.appId || 'sample-client-app')
   const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
     method: 'POST',
     body: {
@@ -147,7 +147,7 @@ test('token exchange: exchanges one-time integration token into short-lived scop
     const authHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'exchange-owner@example.com',
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     })
 
     const issue = await requestJson(baseUrl, '/api/v1/public/agent/integration-token', {
@@ -157,7 +157,7 @@ test('token exchange: exchanges one-time integration token into short-lived scop
         'x-dashboard-actor': 'agent-admin',
       },
       body: {
-        appId: 'simulator-chatbot',
+        appId: 'sample-client-app',
         environment: 'prod',
         placementId: 'chat_from_answer_v1',
         ttlMinutes: 10,

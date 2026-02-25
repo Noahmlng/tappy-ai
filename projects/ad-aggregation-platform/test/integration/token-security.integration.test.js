@@ -110,7 +110,7 @@ async function registerDashboardHeaders(baseUrl, input = {}) {
   const email = String(input.email || `owner_${now}@example.com`)
   const password = String(input.password || 'pass12345')
   const accountId = String(input.accountId || 'org_simulator')
-  const appId = String(input.appId || 'simulator-chatbot')
+  const appId = String(input.appId || 'sample-client-app')
   const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
     method: 'POST',
     body: {
@@ -136,7 +136,7 @@ async function issueIntegrationToken(baseUrl, authHeaders = {}) {
       'x-dashboard-actor': 'security-admin',
     },
     body: {
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
       environment: 'prod',
       placementId: 'chat_from_answer_v1',
       ttlMinutes: 10,
@@ -170,7 +170,7 @@ test('token security: rejects ttl out of range and writes deny audit', async () 
     const authHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'token-security-ttl@example.com',
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     })
     const issued = await issueIntegrationToken(baseUrl, authHeaders)
 
@@ -216,7 +216,7 @@ test('token security: blocks privilege escalation fields and replay, both audite
     const authHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'token-security-scope@example.com',
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     })
     const issued = await issueIntegrationToken(baseUrl, authHeaders)
     const scopeEscalation = await requestJson(baseUrl, '/api/v1/public/agent/token-exchange', {
@@ -283,7 +283,7 @@ test('token security: agent access token enforces placement scope and audits den
     const authHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'token-security-placement@example.com',
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     })
     const issued = await issueIntegrationToken(baseUrl, authHeaders)
     const exchange = await requestJson(baseUrl, '/api/v1/public/agent/token-exchange', {
@@ -299,7 +299,7 @@ test('token security: agent access token enforces placement scope and audits den
 
     const allowedConfig = await requestJson(
       baseUrl,
-      '/api/v1/mediation/config?appId=simulator-chatbot&placementId=chat_from_answer_v1&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z',
+      '/api/v1/mediation/config?appId=sample-client-app&placementId=chat_from_answer_v1&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z',
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -310,7 +310,7 @@ test('token security: agent access token enforces placement scope and audits den
 
     const deniedConfig = await requestJson(
       baseUrl,
-      '/api/v1/mediation/config?appId=simulator-chatbot&placementId=chat_intent_recommendation_v1&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z',
+      '/api/v1/mediation/config?appId=sample-client-app&placementId=chat_intent_recommendation_v1&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z',
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,

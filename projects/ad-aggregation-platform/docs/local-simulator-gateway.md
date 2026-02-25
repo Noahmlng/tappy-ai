@@ -8,9 +8,9 @@
 Provide one local API surface for both:
 
 1. `simulator-dashboard` (read/write config, read metrics/logs)
-2. `simulator-chatbot` (future SDK bid/events)
+2. external client app (future SDK bid/events)
 
-This avoids hardcoding placement logic in Chatbot and keeps settings centralized.
+This avoids hardcoding placement logic in client and keeps settings centralized.
 
 ## Start
 
@@ -196,6 +196,6 @@ Behavior:
 
 ## Hardcode Policy
 
-1. Do not hardcode placement list/thresholds in Chatbot.
+1. Do not hardcode placement list/thresholds in client app.
 2. All placement and trigger policies must come from gateway config.
 3. Only development proxy target can have local default (`http://127.0.0.1:3100`), and it must be overridable by env.

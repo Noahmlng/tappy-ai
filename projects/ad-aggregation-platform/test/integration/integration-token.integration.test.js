@@ -116,7 +116,7 @@ async function registerDashboardHeaders(baseUrl, input = {}) {
   const email = String(input.email || `owner_${now}@example.com`)
   const password = String(input.password || 'pass12345')
   const accountId = String(input.accountId || 'org_simulator')
-  const appId = String(input.appId || 'simulator-chatbot')
+  const appId = String(input.appId || 'sample-client-app')
   const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
     method: 'POST',
     body: {
@@ -147,7 +147,7 @@ test('integration token: issues one-time token with short ttl and audit log', as
     const authHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'integration-admin@example.com',
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     })
 
     const issue = await requestJson(baseUrl, '/api/v1/public/agent/integration-token', {
@@ -157,7 +157,7 @@ test('integration token: issues one-time token with short ttl and audit log', as
         'x-dashboard-actor': 'agent-admin',
       },
       body: {
-        appId: 'simulator-chatbot',
+        appId: 'sample-client-app',
         environment: 'prod',
         placementId: 'chat_from_answer_v1',
         ttlMinutes: 12,
@@ -212,14 +212,14 @@ test('integration token: enforces ttl range and active-key precondition', async 
     const authHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'integration-policy@example.com',
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     })
 
     const invalidTtl = await requestJson(baseUrl, '/api/v1/public/agent/integration-token', {
       method: 'POST',
       headers: authHeaders,
       body: {
-        appId: 'simulator-chatbot',
+        appId: 'sample-client-app',
         environment: 'prod',
         ttlMinutes: 30,
       },
@@ -229,7 +229,7 @@ test('integration token: enforces ttl range and active-key precondition', async 
 
     const listKeys = await requestJson(
       baseUrl,
-      '/api/v1/public/credentials/keys?appId=simulator-chatbot&environment=prod',
+      '/api/v1/public/credentials/keys?appId=sample-client-app&environment=prod',
       { headers: authHeaders },
     )
     assert.equal(listKeys.ok, true, `list keys failed: ${JSON.stringify(listKeys.payload)}`)
@@ -248,7 +248,7 @@ test('integration token: enforces ttl range and active-key precondition', async 
       method: 'POST',
       headers: authHeaders,
       body: {
-        appId: 'simulator-chatbot',
+        appId: 'sample-client-app',
         environment: 'prod',
         ttlMinutes: 10,
       },

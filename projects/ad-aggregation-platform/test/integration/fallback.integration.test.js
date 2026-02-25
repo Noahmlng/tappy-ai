@@ -19,7 +19,7 @@ function createRuntimeConfig() {
 
 function buildRequest(suffix = '') {
   return {
-    appId: 'simulator-chatbot',
+    appId: 'sample-client-app',
     sessionId: `session_${suffix || Date.now()}`,
     userId: `user_${suffix || Date.now()}`,
     placementId: 'attach.post_answer_render',

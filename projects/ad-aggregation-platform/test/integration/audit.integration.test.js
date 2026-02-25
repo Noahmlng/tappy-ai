@@ -116,7 +116,7 @@ async function registerDashboardHeaders(baseUrl, input = {}) {
   const email = String(input.email || `owner_${now}@example.com`)
   const password = String(input.password || 'pass12345')
   const accountId = String(input.accountId || 'org_simulator')
-  const appId = String(input.appId || 'simulator-chatbot')
+  const appId = String(input.appId || 'sample-client-app')
   const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
     method: 'POST',
     body: {
@@ -147,7 +147,7 @@ test('control-plane audit records key lifecycle and config publish operations', 
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'audit-owner@example.com',
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     })
 
     const create = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
@@ -157,7 +157,7 @@ test('control-plane audit records key lifecycle and config publish operations', 
         'x-dashboard-actor': 'alice',
       },
       body: {
-        appId: 'simulator-chatbot',
+        appId: 'sample-client-app',
         environment: 'prod',
         name: 'ops-prod',
       },
@@ -261,7 +261,7 @@ test('config publish audit is only written when placement config changed', async
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'audit-no-change@example.com',
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     })
 
     const listPlacements = await requestJson(baseUrl, '/api/v1/dashboard/placements', {

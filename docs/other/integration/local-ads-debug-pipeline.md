@@ -2,7 +2,7 @@
 
 - Version: v1.0
 - Last Updated: 2026-02-24
-- Scope: Chatbot + Gateway + Dashboard 本地联调（重点排查 `No bid`）
+- Scope: External Client + Gateway + Dashboard 本地联调（重点排查 `No bid`）
 
 ## 1. 目标
 
@@ -46,13 +46,13 @@ node ./projects/ad-aggregation-platform/src/devtools/simulator/simulator-gateway
 ```bash
 cd /Users/zeming/Documents/chat-ads-main
 npm run dev:dashboard
-npm --prefix ./projects/simulator-chatbot run dev -- --port 3001
+npm --prefix /Users/zeming/Documents/simulator-chatbot run dev -- --port 3001
 # Gateway 按上面的 A/B 模式单独启动
 ```
 
 默认地址：
 - Gateway: `http://127.0.0.1:3100`
-- Chatbot: `http://127.0.0.1:3001`
+- External Client: `http://127.0.0.1:3001`
 - Dashboard: `http://127.0.0.1:3002`
 
 ### Step 2) 做链路前健康检查
@@ -66,7 +66,7 @@ curl -sS http://127.0.0.1:3100/api/v1/dashboard/network-health | jq .
 
 1. Dashboard 注册/登录拿 access token  
 2. 调 `POST /api/v1/public/credentials/keys` 创建 staging key  
-3. 把 key 注入 Chatbot：`VITE_ADS_API_KEY=...`
+3. 把 key 注入 External Client：`VITE_ADS_API_KEY=...`
 
 注意：
 - `POST /api/v1/dev/reset` 之后，旧 key 可能失效（本次联调踩坑点）。
@@ -94,9 +94,9 @@ curl -sS -X POST http://127.0.0.1:3100/api/v2/bid \
 - `message` 为 `Bid successful` 或 `No bid`
 - 有 `requestId`
 
-### Step 5) UI 实测（Chatbot -> Dashboard）
+### Step 5) UI 实测（External Client -> Dashboard）
 
-1. 在 Chatbot 发送商业意图 query。  
+1. 在 External Client 发送商业意图 query。  
 2. 观察是否出现 `Sponsored` 卡片。  
 3. 在 Dashboard Logs 确认同一 `requestId` 的 `decision`。  
 4. 在 Dashboard Events 确认 `sdk_event/impression`（点击后应出现 `click`）。
@@ -114,14 +114,14 @@ curl -sS http://127.0.0.1:3100/api/v1/dashboard/metrics/summary | jq .
 ### 类型 1：伪 no bid（实际是鉴权失败）
 
 现象：
-- Chatbot Turn Trace 是 `ads_bid_empty`
+- External Client Turn Trace 是 `ads_bid_empty`
 - 浏览器 console 有 `401 /api/v2/bid`
 
 根因：
 - API key 无效/过期/被 reset 后失效。
 
 处理：
-- 重新签发 key 并重启 Chatbot（带新 `VITE_ADS_API_KEY`）。
+- 重新签发 key 并重启 External Client（带新 `VITE_ADS_API_KEY`）。
 
 ### 类型 2：`placement_unavailable`（scope 丢失）
 
@@ -154,7 +154,7 @@ curl -sS http://127.0.0.1:3100/api/v1/dashboard/metrics/summary | jq .
 满足以下 4 条即可判定链路打通：
 
 1. `POST /api/v2/bid` 返回 `Bid successful` 且有 `requestId`。  
-2. Chatbot 页面出现 `Sponsored` 卡片。  
+2. External Client 页面出现 `Sponsored` 卡片。  
 3. `decisions` 有同 `requestId` 的 `result=served`。  
 4. `events` 有同 `requestId` 的 `sdk_event/impression`（点击后有 `click`）。
 

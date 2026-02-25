@@ -116,7 +116,7 @@ async function registerDashboardHeaders(baseUrl, input = {}) {
   const email = String(input.email || `owner_${now}@example.com`)
   const password = String(input.password || 'pass12345')
   const accountId = String(input.accountId || 'org_simulator')
-  const appId = String(input.appId || 'simulator-chatbot')
+  const appId = String(input.appId || 'sample-client-app')
   const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
     method: 'POST',
     body: {
@@ -136,7 +136,7 @@ async function registerDashboardHeaders(baseUrl, input = {}) {
 
 async function issueRuntimeApiKeyHeaders(baseUrl, input = {}, headers = {}) {
   const accountId = String(input.accountId || 'org_simulator')
-  const appId = String(input.appId || 'simulator-chatbot')
+  const appId = String(input.appId || 'sample-client-app')
   const environment = String(input.environment || 'prod')
   const created = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
     method: 'POST',
@@ -168,11 +168,11 @@ test('legacy evaluate endpoint is removed', async () => {
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'next-step-reason-priority@example.com',
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     })
     const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, {
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     }, dashboardHeaders)
 
     const evaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
@@ -215,11 +215,11 @@ test('next-step decision logs are recorded through v2 bid flow', async () => {
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'next-step-observability@example.com',
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     })
     const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, {
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     }, dashboardHeaders)
 
     const enablePlacement = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_intent_recommendation_v1', {

@@ -78,7 +78,7 @@ async function requestJson(baseUrl, pathname, options = {}) {
 function buildBasePayload(name) {
   const now = Date.now()
   return {
-    appId: 'simulator-chatbot',
+    appId: 'sample-client-app',
     sessionId: `e2e_${name}_${now}`,
     turnId: `turn_${name}_${now}`,
     userId: `user_${name}`,
@@ -220,7 +220,7 @@ async function runScenario(baseUrl, name) {
   const servedAdId = String(bidResponse?.data?.bid?.bidId || '')
   if (servedAdId) {
     const eventPayload = {
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
       sessionId: scenarioPayload.sessionId,
       turnId: scenarioPayload.turnId,
       query: String(scenarioPayload.context?.query || ''),

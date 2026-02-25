@@ -116,7 +116,7 @@ async function registerDashboardHeaders(baseUrl, input = {}) {
   const email = String(input.email || `owner_${now}@example.com`)
   const password = String(input.password || 'pass12345')
   const accountId = String(input.accountId || 'org_simulator')
-  const appId = String(input.appId || 'simulator-chatbot')
+  const appId = String(input.appId || 'sample-client-app')
   const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
     method: 'POST',
     body: {
@@ -147,14 +147,14 @@ test('quick start verifier runs config -> v2 bid -> events and returns evidence'
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'quickstart-owner@example.com',
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     })
     const createKey = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
       method: 'POST',
       headers: dashboardHeaders,
       body: {
         accountId: 'org_simulator',
-        appId: 'simulator-chatbot',
+        appId: 'sample-client-app',
         environment: 'prod',
         name: 'quickstart-active-key',
       },
@@ -165,7 +165,7 @@ test('quick start verifier runs config -> v2 bid -> events and returns evidence'
       method: 'POST',
       body: {
         accountId: 'org_simulator',
-        appId: 'simulator-chatbot',
+        appId: 'sample-client-app',
         environment: 'prod',
         placementId: 'chat_from_answer_v1',
       },
@@ -222,7 +222,7 @@ test('quick start verifier returns precondition failed when app has no active ke
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'quickstart-precondition@example.com',
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     })
 
     const createKey = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
@@ -230,14 +230,14 @@ test('quick start verifier returns precondition failed when app has no active ke
       headers: dashboardHeaders,
       body: {
         accountId: 'org_simulator',
-        appId: 'simulator-chatbot',
+        appId: 'sample-client-app',
         environment: 'prod',
         name: 'precondition-test-key',
       },
     })
     assert.equal(createKey.status, 201, `key create failed: ${JSON.stringify(createKey.payload)}`)
 
-    const listKeys = await requestJson(baseUrl, '/api/v1/public/credentials/keys?appId=simulator-chatbot&environment=prod', {
+    const listKeys = await requestJson(baseUrl, '/api/v1/public/credentials/keys?appId=sample-client-app&environment=prod', {
       headers: dashboardHeaders,
     })
     assert.equal(listKeys.ok, true, `key list failed: ${JSON.stringify(listKeys.payload)}`)
@@ -256,7 +256,7 @@ test('quick start verifier returns precondition failed when app has no active ke
       method: 'POST',
       body: {
         accountId: 'org_simulator',
-        appId: 'simulator-chatbot',
+        appId: 'sample-client-app',
         environment: 'prod',
         placementId: 'chat_from_answer_v1',
       },

@@ -44,7 +44,7 @@ Expected minimal response:
 
 ```json
 {
-  "appId": "simulator-chatbot",
+  "appId": "sample-client-app",
   "placementId": "chat_inline_v1",
   "configVersion": 3
 }

@@ -97,7 +97,7 @@ function createFetchMock({ decisionResult = 'no_fill', ads = [] } = {}) {
 
 function buildAttachInput() {
   return {
-    appId: 'simulator-chatbot',
+    appId: 'sample-client-app',
     sessionId: 'session_attach_001',
     turnId: 'turn_attach_001',
     query: 'Recent upgrade trend for Amazon stock?',
@@ -182,7 +182,7 @@ function createNextStepFetchMock({ decisionResult = 'served', ads = [] } = {}) {
 
 function buildNextStepInput() {
   return {
-    appId: 'simulator-chatbot',
+    appId: 'sample-client-app',
     sessionId: 'session_next_step_001',
     turnId: 'turn_next_step_001',
     userId: 'user_next_step_001',

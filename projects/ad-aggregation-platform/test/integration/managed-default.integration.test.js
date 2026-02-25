@@ -124,7 +124,7 @@ async function registerDashboardHeaders(baseUrl, input = {}) {
   const email = String(input.email || `owner_${now}@example.com`)
   const password = String(input.password || 'pass12345')
   const accountId = String(input.accountId || 'org_simulator')
-  const appId = String(input.appId || 'simulator-chatbot')
+  const appId = String(input.appId || 'sample-client-app')
   const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
     method: 'POST',
     body: {
@@ -154,7 +154,7 @@ test('managed default: placement routing mode is fixed to managed_mediation', as
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'managed-default-placement@example.com',
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     })
 
     const placements = await requestJson(baseUrl, '/api/v1/dashboard/placements', {
@@ -202,7 +202,7 @@ test('managed default: new app environment is initialized with managed_mediation
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'managed-default-env@example.com',
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     })
 
     const createKey = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {

@@ -117,7 +117,7 @@ async function stopGateway(handle) {
 
 async function issueRuntimeApiKey(baseUrl, input = {}, headers = {}) {
   const accountId = String(input.accountId || 'org_simulator')
-  const appId = String(input.appId || 'simulator-chatbot')
+  const appId = String(input.appId || 'sample-client-app')
   const environment = String(input.environment || 'prod')
   const created = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
     method: 'POST',
@@ -197,7 +197,7 @@ test('dashboard auth: login session enforces account scope for settlement aggreg
         email: 'owner-org@example.com',
         password: 'pass12345',
         accountId: 'org_simulator',
-        appId: 'simulator-chatbot',
+        appId: 'sample-client-app',
       },
     })
     assert.equal(registerOrg.status, 201, `register org failed: ${JSON.stringify(registerOrg.payload)}`)
@@ -208,26 +208,26 @@ test('dashboard auth: login session enforces account scope for settlement aggreg
         email: 'owner-other@example.com',
         password: 'pass12345',
         accountId: 'acct_other',
-        appId: 'simulator-chatbot-other',
+        appId: 'sample-client-app-other',
       },
     })
     assert.equal(registerOther.status, 201, `register other failed: ${JSON.stringify(registerOther.payload)}`)
 
     const runtimeOrgHeaders = await issueRuntimeApiKey(baseUrl, {
       accountId: 'org_simulator',
-      appId: 'simulator-chatbot',
+      appId: 'sample-client-app',
     }, registerOrg.payload?.session?.accessToken
       ? { Authorization: `Bearer ${String(registerOrg.payload.session.accessToken)}` }
       : {})
     const runtimeOtherHeaders = await issueRuntimeApiKey(baseUrl, {
       accountId: 'acct_other',
-      appId: 'simulator-chatbot-other',
+      appId: 'sample-client-app-other',
     }, registerOther.payload?.session?.accessToken
       ? { Authorization: `Bearer ${String(registerOther.payload.session.accessToken)}` }
       : {})
 
-    await seedScopedRevenue(baseUrl, { accountId: 'org_simulator', appId: 'simulator-chatbot', cpaUsd: 3.2 }, runtimeOrgHeaders)
-    await seedScopedRevenue(baseUrl, { accountId: 'acct_other', appId: 'simulator-chatbot-other', cpaUsd: 9.5 }, runtimeOtherHeaders)
+    await seedScopedRevenue(baseUrl, { accountId: 'org_simulator', appId: 'sample-client-app', cpaUsd: 3.2 }, runtimeOrgHeaders)
+    await seedScopedRevenue(baseUrl, { accountId: 'acct_other', appId: 'sample-client-app-other', cpaUsd: 9.5 }, runtimeOtherHeaders)
 
     const openUsage = await requestJson(baseUrl, '/api/v1/dashboard/usage-revenue')
     assert.equal(openUsage.status, 401)
@@ -265,7 +265,7 @@ test('dashboard auth: login session enforces account scope for settlement aggreg
 
     const tamperedScope = await requestJson(
       baseUrl,
-      '/api/v1/dashboard/usage-revenue?accountId=acct_other&appId=simulator-chatbot-other',
+      '/api/v1/dashboard/usage-revenue?accountId=acct_other&appId=sample-client-app-other',
       { headers: authHeaders },
     )
     assert.equal(tamperedScope.status, 403)
@@ -297,7 +297,7 @@ test('dashboard placement config is isolated per account app', async () => {
         email: 'placement-account-a@example.com',
         password: 'pass12345',
         accountId: 'acct_a',
-        appId: 'simulator-chatbot-a',
+        appId: 'sample-client-app-a',
       },
     })
     assert.equal(registerAccountA.status, 201, `register account A failed: ${JSON.stringify(registerAccountA.payload)}`)
@@ -311,7 +311,7 @@ test('dashboard placement config is isolated per account app', async () => {
         email: 'placement-account-b@example.com',
         password: 'pass12345',
         accountId: 'acct_b',
-        appId: 'simulator-chatbot-b',
+        appId: 'sample-client-app-b',
       },
     })
     assert.equal(registerAccountB.status, 201, `register account B failed: ${JSON.stringify(registerAccountB.payload)}`)
@@ -321,11 +321,11 @@ test('dashboard placement config is isolated per account app', async () => {
 
     const runtimeAHeaders = await issueRuntimeApiKey(baseUrl, {
       accountId: 'acct_a',
-      appId: 'simulator-chatbot-a',
+      appId: 'sample-client-app-a',
     }, dashboardAHeaders)
     const runtimeBHeaders = await issueRuntimeApiKey(baseUrl, {
       accountId: 'acct_b',
-      appId: 'simulator-chatbot-b',
+      appId: 'sample-client-app-b',
     }, dashboardBHeaders)
 
     const placementsA = await requestJson(baseUrl, '/api/v1/dashboard/placements', {
@@ -379,7 +379,7 @@ test('dashboard placement config is isolated per account app', async () => {
     assert.equal(Boolean(placementBInlineAfter), true)
     assert.equal(Boolean(placementBInlineAfter?.enabled), true, 'account B placement should remain enabled')
 
-    const sdkConfigA = await requestJson(baseUrl, '/api/v1/sdk/config?appId=simulator-chatbot-a')
+    const sdkConfigA = await requestJson(baseUrl, '/api/v1/sdk/config?appId=sample-client-app-a')
     assert.equal(sdkConfigA.ok, true, `sdk config A failed: ${JSON.stringify(sdkConfigA.payload)}`)
     const sdkAInline = Array.isArray(sdkConfigA.payload?.placements)
       ? sdkConfigA.payload.placements.find((row) => String(row?.placementId || '') === 'chat_from_answer_v1')
@@ -387,7 +387,7 @@ test('dashboard placement config is isolated per account app', async () => {
     assert.equal(Boolean(sdkAInline), true)
     assert.equal(Boolean(sdkAInline?.enabled), false, 'sdk config for account A app should be disabled')
 
-    const sdkConfigB = await requestJson(baseUrl, '/api/v1/sdk/config?appId=simulator-chatbot-b')
+    const sdkConfigB = await requestJson(baseUrl, '/api/v1/sdk/config?appId=sample-client-app-b')
     assert.equal(sdkConfigB.ok, true, `sdk config B failed: ${JSON.stringify(sdkConfigB.payload)}`)
     const sdkBInline = Array.isArray(sdkConfigB.payload?.placements)
       ? sdkConfigB.payload.placements.find((row) => String(row?.placementId || '') === 'chat_from_answer_v1')
@@ -469,7 +469,7 @@ test('dashboard placements create route is available and scoped by account app',
         email: 'placement-create-account-a@example.com',
         password: 'pass12345',
         accountId: 'acct_create_a',
-        appId: 'simulator-chatbot-create-a',
+        appId: 'sample-client-app-create-a',
       },
     })
     assert.equal(registerAccountA.status, 201, `register account A failed: ${JSON.stringify(registerAccountA.payload)}`)
@@ -483,7 +483,7 @@ test('dashboard placements create route is available and scoped by account app',
         email: 'placement-create-account-b@example.com',
         password: 'pass12345',
         accountId: 'acct_create_b',
-        appId: 'simulator-chatbot-create-b',
+        appId: 'sample-client-app-create-b',
       },
     })
     assert.equal(registerAccountB.status, 201, `register account B failed: ${JSON.stringify(registerAccountB.payload)}`)
@@ -502,7 +502,7 @@ test('dashboard placements create route is available and scoped by account app',
       },
     })
     assert.equal(createPlacement.status, 201, `create placement failed: ${JSON.stringify(createPlacement.payload)}`)
-    assert.equal(String(createPlacement.payload?.appId || ''), 'simulator-chatbot-create-a')
+    assert.equal(String(createPlacement.payload?.appId || ''), 'sample-client-app-create-a')
     assert.equal(String(createPlacement.payload?.placement?.placementId || ''), placementId)
     assert.equal(Boolean(createPlacement.payload?.placement?.enabled), false)
 
@@ -560,7 +560,7 @@ test('dashboard register enforces account ownership proof for claimed accounts',
         email: 'owner-claimed@example.com',
         password: 'pass12345',
         accountId: 'acct_claimed',
-        appId: 'simulator-chatbot-claimed',
+        appId: 'sample-client-app-claimed',
       },
     })
     assert.equal(registerOwner.status, 201, `register owner failed: ${JSON.stringify(registerOwner.payload)}`)
@@ -573,7 +573,7 @@ test('dashboard register enforces account ownership proof for claimed accounts',
         email: 'intruder-claimed@example.com',
         password: 'pass12345',
         accountId: 'acct_claimed',
-        appId: 'simulator-chatbot-claimed',
+        appId: 'sample-client-app-claimed',
       },
     })
     assert.equal(registerNoProof.status, 403)
@@ -588,7 +588,7 @@ test('dashboard register enforces account ownership proof for claimed accounts',
         email: 'member-claimed@example.com',
         password: 'pass12345',
         accountId: 'acct_claimed',
-        appId: 'simulator-chatbot-claimed',
+        appId: 'sample-client-app-claimed',
       },
     })
     assert.equal(registerWithProof.status, 201, `register with proof failed: ${JSON.stringify(registerWithProof.payload)}`)
