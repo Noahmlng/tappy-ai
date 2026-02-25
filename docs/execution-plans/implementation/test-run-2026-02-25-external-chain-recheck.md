@@ -173,13 +173,19 @@ vercel deploy /Users/zeming/Documents/chat-ads-main/projects/simulator-dashboard
 
 - Runtime API: `https://mediation-runtime-oc8x2epwz-noahs-projects-09088504.vercel.app`
 - Control Plane API: `https://mediation-control-plane-ixx3masf7-noahs-projects-09088504.vercel.app`
-- Dashboard: `https://simulator-dashboard-2cynxolno-noahs-projects-09088504.vercel.app`
+- Dashboard: `https://simulator-dashboard-cl5wzpxti-noahs-projects-09088504.vercel.app`
 
 别名：
 
 - `https://mediation-runtime-api.vercel.app`
 - `https://mediation-control-plane-api.vercel.app`
 - `https://simulator-dashboard.vercel.app`
+
+Dashboard 补充修复（同日）：
+
+- 问题: 直接访问 `https://simulator-dashboard.vercel.app/login` 等深链接会出现 404
+- 修复: 增加 `projects/simulator-dashboard/vercel.json`（`filesystem` + `index.html` fallback）
+- 复测: 深链接 `/login?redirect=/home` 已可直接打开并进入应用
 
 ### 6.2 在线链路验证步骤与结果
 
