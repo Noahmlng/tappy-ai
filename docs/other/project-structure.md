@@ -1,7 +1,7 @@
 # 项目结构梳理
 
 ## A. 广告侧：广告聚合平台
-路径：`projects/tappy-ai-mediation`
+路径：`mediation`
 
 包含：
 - `schemas/`：广告位配置、请求、响应协议

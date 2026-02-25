@@ -17,7 +17,7 @@ This contract is placement-specific and is separate from the current Attach-only
 ## 2. Request Contract
 
 Schema:
-- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/schemas/next-step-intent-card-request.schema.json`
+- `/Users/zeming/Documents/mediation-main/mediation/schemas/next-step-intent-card-request.schema.json`
 
 Required top-level fields:
 
@@ -68,7 +68,7 @@ Request example:
 ## 3. Response Contract
 
 Schema:
-- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/schemas/next-step-intent-card-response.schema.json`
+- `/Users/zeming/Documents/mediation-main/mediation/schemas/next-step-intent-card-response.schema.json`
 
 Required top-level fields:
 

@@ -1,4 +1,4 @@
-# AI Native Ad Network Workspace（内部协同版）
+# Tappy AI Mediation Workspace（内部协同版）
 
 本 README 面向内部协作，帮助团队快速定位当前可用链路、关键文档和本地联调入口。
 
@@ -18,11 +18,11 @@
 <a id="readme-overview"></a>
 ## 项目概览
 
-这是一个多项目工作区，目标是完成 AI Native App 场景的广告聚合、策略验证与可观测闭环。
+这是 Mediation Core 仓库，目标是完成 AI Native App 场景下的广告聚合、策略验证与可观测闭环。
 
-当前仓库聚焦 Core 平台（协议、runtime、gateway、control plane）：
+当前仓库仅承载 Core 平台（协议、runtime、gateway、control plane）：
 
-1. `projects/tappy-ai-mediation`
+1. `mediation`
 - 广告聚合平台核心（协议、runtime、gateway、control plane）。
 
 2. `mediation-dashboard`（外部独立仓库）
@@ -54,7 +54,7 @@
 <a id="readme-placements"></a>
 ## 广告位配置与接入方式
 
-配置来源：`projects/tappy-ai-mediation/config/default-placements.json`
+配置来源：`mediation/config/default-placements.json`
 
 ### 已接入广告位（默认）
 
@@ -84,13 +84,13 @@
 
 ### 契约与配置入口
 
-- Placement schema：`projects/tappy-ai-mediation/schemas/placement.schema.json`
+- Placement schema：`mediation/schemas/placement.schema.json`
 - V2 Bid schema：
-  - `projects/tappy-ai-mediation/schemas/v2-bid-request.schema.json`
-  - `projects/tappy-ai-mediation/schemas/v2-bid-response.schema.json`
+  - `mediation/schemas/v2-bid-request.schema.json`
+  - `mediation/schemas/v2-bid-response.schema.json`
 - Next-Step schema：
-  - `projects/tappy-ai-mediation/schemas/next-step-intent-card-request.schema.json`
-  - `projects/tappy-ai-mediation/schemas/next-step-intent-card-response.schema.json`
+  - `mediation/schemas/next-step-intent-card-request.schema.json`
+  - `mediation/schemas/next-step-intent-card-response.schema.json`
 
 <a id="readme-output-modes"></a>
 ## 输出方式（按形态）
@@ -100,7 +100,7 @@
 - 触发点：`answer_completed`
 - 渲染位置：assistant 消息下方 Sponsored 区块
 - 关键代码：
-  - `projects/tappy-ai-mediation/src/devtools/mediation/mediation-gateway.js`
+  - `mediation/src/devtools/mediation/mediation-gateway.js`
   - 外部客户端：`/Users/zeming/Documents/mediation-chatbot`
 
 ### Next-Step 输出：Intent Card
@@ -108,7 +108,7 @@
 - 触发点：`followup_generation` / `follow_up_generation`
 - 渲染位置：回答下方 Next-Step 卡片区
 - 契约文档：
-  - `projects/tappy-ai-mediation/docs/next-step-intent-card-contract.md`
+  - `mediation/docs/next-step-intent-card-contract.md`
 
 <a id="readme-architecture"></a>
 ## 框架设计（控制面/决策面/检索面/体验面）
@@ -129,10 +129,10 @@
 ## SDK 文档入口（重点）
 
 1. 平台 Quick Start（对外主文档）：
-- `projects/tappy-ai-mediation/docs/sdk-quick-start-v2.md`
+- `mediation/docs/sdk-quick-start-v2.md`
 
 2. SDK 文档规范（编写标准）：
-- `projects/tappy-ai-mediation/docs/sdk-integration-document-spec.md`
+- `mediation/docs/sdk-integration-document-spec.md`
 
 3. Integration Pack 索引：
 - `docs/other/integration/developer-integration-pack/README.md`
@@ -156,7 +156,7 @@
 
 ### 核心代码目录
 
-- `projects/tappy-ai-mediation`
+- `mediation`
 - `apps/runtime-api`
 - `apps/control-plane-api`
 - `packages/mediation-sdk-contracts`
@@ -168,9 +168,9 @@
 - 文档分类索引：`docs/README.md`
 - 路线图：`docs/ai-network-development-plan.md`
 - Placement 框架：`docs/design/ai-assistant-placement-framework.md`
-- Gateway 设计：`projects/tappy-ai-mediation/docs/local-mediation-gateway.md`
-- SDK Quick Start：`projects/tappy-ai-mediation/docs/sdk-quick-start-v2.md`
-- SDK 文档规范：`projects/tappy-ai-mediation/docs/sdk-integration-document-spec.md`
+- Gateway 设计：`mediation/docs/local-mediation-gateway.md`
+- SDK Quick Start：`mediation/docs/sdk-quick-start-v2.md`
+- SDK 文档规范：`mediation/docs/sdk-integration-document-spec.md`
 - 集成文档包：`docs/other/integration/developer-integration-pack/README.md`
 
 <a id="readme-run"></a>
@@ -189,7 +189,7 @@ npm run dev:local
 ### 单独启动
 
 ```bash
-npm --prefix ./projects/tappy-ai-mediation run dev:gateway
+npm --prefix ./mediation run dev:gateway
 npm --prefix /Users/zeming/Documents/mediation-dashboard run dev
 ```
 

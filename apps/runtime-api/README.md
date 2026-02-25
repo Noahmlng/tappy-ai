@@ -10,5 +10,5 @@ This app exposes runtime-only endpoints:
 
 Handler source:
 
-- `projects/tappy-ai-mediation/src/devtools/mediation/mediation-gateway.js`
+- `mediation/src/devtools/mediation/mediation-gateway.js`
 - export: `handleRuntimeRequest`

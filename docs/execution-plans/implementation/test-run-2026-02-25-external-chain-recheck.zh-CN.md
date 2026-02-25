@@ -47,14 +47,14 @@ Run ID：`external_chain_1771961461644`
 
 产物：
 
-- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/external_chain_1771961461644/summary.json`
-- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/external_chain_1771961461644/snapshots.json`
+- `/Users/zeming/Documents/mediation-main/mediation/.local/external_chain_1771961461644/summary.json`
+- `/Users/zeming/Documents/mediation-main/mediation/.local/external_chain_1771961461644/snapshots.json`
 
 ### 3.3 已应用修复
 
 变更文件：
 
-- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/src/devtools/mediation/mediation-gateway.js`
+- `/Users/zeming/Documents/mediation-main/mediation/src/devtools/mediation/mediation-gateway.js`
 
 修复内容：
 
@@ -82,9 +82,9 @@ Run ID：`external_chain_1771961602184`
 
 产物：
 
-- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/external_chain_1771961602184/summary.json`
-- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/external_chain_1771961602184/snapshots.json`
-- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/external_chain_1771961602184/gateway-stdout.log`
+- `/Users/zeming/Documents/mediation-main/mediation/.local/external_chain_1771961602184/summary.json`
+- `/Users/zeming/Documents/mediation-main/mediation/.local/external_chain_1771961602184/snapshots.json`
+- `/Users/zeming/Documents/mediation-main/mediation/.local/external_chain_1771961602184/gateway-stdout.log`
 
 ## 4. 结论
 
@@ -118,9 +118,9 @@ Run ID：`external_chain_1771961602184`
 执行目录：`/Users/zeming/Documents/mediation-main`
 
 ```bash
-npm --prefix projects/tappy-ai-mediation run test:integration
-npm --prefix projects/tappy-ai-mediation run test:functional:p0
-npm --prefix projects/mediation-dashboard run build
+npm --prefix mediation run test:integration
+npm --prefix mediation run test:functional:p0
+npm --prefix /Users/zeming/Documents/mediation-dashboard run build
 ```
 
 结果：

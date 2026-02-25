@@ -47,14 +47,14 @@ Evidence summary:
 
 Artifacts:
 
-- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/external_chain_1771961461644/summary.json`
-- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/external_chain_1771961461644/snapshots.json`
+- `/Users/zeming/Documents/mediation-main/mediation/.local/external_chain_1771961461644/summary.json`
+- `/Users/zeming/Documents/mediation-main/mediation/.local/external_chain_1771961461644/snapshots.json`
 
 ### 3.3 Fix applied
 
 File changed:
 
-- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/src/devtools/mediation/mediation-gateway.js`
+- `/Users/zeming/Documents/mediation-main/mediation/src/devtools/mediation/mediation-gateway.js`
 
 Change:
 
@@ -82,9 +82,9 @@ Key results:
 
 Artifacts:
 
-- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/external_chain_1771961602184/summary.json`
-- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/external_chain_1771961602184/snapshots.json`
-- `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/.local/external_chain_1771961602184/gateway-stdout.log`
+- `/Users/zeming/Documents/mediation-main/mediation/.local/external_chain_1771961602184/summary.json`
+- `/Users/zeming/Documents/mediation-main/mediation/.local/external_chain_1771961602184/snapshots.json`
+- `/Users/zeming/Documents/mediation-main/mediation/.local/external_chain_1771961602184/gateway-stdout.log`
 
 ## 4. Conclusion
 
@@ -118,9 +118,9 @@ Additional confirmed behavior:
 Executed from workspace `/Users/zeming/Documents/mediation-main`:
 
 ```bash
-npm --prefix projects/tappy-ai-mediation run test:integration
-npm --prefix projects/tappy-ai-mediation run test:functional:p0
-npm --prefix projects/mediation-dashboard run build
+npm --prefix mediation run test:integration
+npm --prefix mediation run test:functional:p0
+npm --prefix /Users/zeming/Documents/mediation-dashboard run build
 ```
 
 Results:
@@ -164,9 +164,9 @@ Final Check gate is **PASS** for the V2-only / Fast-first + prod-only strategy:
 执行（prod）：
 
 ```bash
-vercel deploy /Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation --prod -y --local-config /tmp/vercel.runtime.prod.json
-vercel deploy /Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation --prod -y --local-config /tmp/vercel.control-plane.prod.json
-vercel deploy /Users/zeming/Documents/mediation-main/projects/mediation-dashboard --prod -y
+vercel deploy /Users/zeming/Documents/mediation-main/mediation --prod -y --local-config /tmp/vercel.runtime.prod.json
+vercel deploy /Users/zeming/Documents/mediation-main/mediation --prod -y --local-config /tmp/vercel.control-plane.prod.json
+vercel deploy /Users/zeming/Documents/mediation-dashboard --prod -y
 ```
 
 对应生产部署（Ready）：
@@ -184,7 +184,7 @@ vercel deploy /Users/zeming/Documents/mediation-main/projects/mediation-dashboar
 Dashboard 补充修复（同日）：
 
 - 问题: 直接访问 `https://mediation-dashboard.vercel.app/login` 等深链接会出现 404
-- 修复: 增加 `projects/mediation-dashboard/vercel.json`（`filesystem` + `index.html` fallback）
+- 修复: 增加 `/Users/zeming/Documents/mediation-dashboard/vercel.json`（`filesystem` + `index.html` fallback）
 - 复测: 深链接 `/login?redirect=/home` 已可直接打开并进入应用
 
 ### 6.2 在线链路验证步骤与结果

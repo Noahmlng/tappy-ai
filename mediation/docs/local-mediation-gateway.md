@@ -15,7 +15,7 @@ This avoids hardcoding placement logic in client and keeps settings centralized.
 ## Start
 
 ```bash
-npm --prefix ./projects/tappy-ai-mediation run dev:gateway
+npm --prefix ./mediation run dev:gateway
 ```
 
 Default address:
@@ -170,7 +170,7 @@ Response contains:
 
 Gateway state is persisted to:
 
-- `projects/tappy-ai-mediation/.local/mediation-gateway-state.json`
+- `mediation/.local/mediation-gateway-state.json`
 
 This file is local-only and ignored by git.
 

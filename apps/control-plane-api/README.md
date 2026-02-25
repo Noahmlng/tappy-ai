@@ -9,5 +9,5 @@ This app exposes control-plane-only endpoints:
 
 Handler source:
 
-- `projects/tappy-ai-mediation/src/devtools/mediation/mediation-gateway.js`
+- `mediation/src/devtools/mediation/mediation-gateway.js`
 - export: `handleControlPlaneRequest`

@@ -38,7 +38,7 @@
 
 ## 3. 历史版本审计：哪些不是 Mediation 层
 
-分析对象：`/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation`
+分析对象：`/Users/zeming/Documents/mediation-main/mediation`
 
 ### 3.1 明确属于“非 Mediation 临时替代层”
 

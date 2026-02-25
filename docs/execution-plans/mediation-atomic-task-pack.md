@@ -23,10 +23,10 @@
 
 1. Batch-0（INFRA-001~INFRA-010）状态：`已完成`。
 2. 前置外部依赖连通状态：
-   - `npm --prefix ./projects/tappy-ai-mediation run check:managed-services` 通过。
+   - `npm --prefix ./mediation run check:managed-services` 通过。
    - Doppler/Grafana/Synadia 均已通过授权与连通校验。
 3. 基础质量门禁状态：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration` 通过（13/13）。
+   - `npm --prefix ./mediation run test:integration` 通过（13/13）。
 4. 数据库基线状态：
    - Supabase 项目 `bkqjenmznafkqqwvwrad` 已完成 `0001_mediation_core_baseline.sql` 执行并记录 `schema_migrations`。
 5. 允许进入正式开发：
@@ -85,7 +85,7 @@
 3. 必读 context：
    - `/Users/zeming/Documents/mediation-main/docs/design/mediation/operations/06-production-readiness-and-infra.md`
 4. 允许改动：
-   - 新增 `projects/tappy-ai-mediation/migrations/*`
+   - 新增 `mediation/migrations/*`
    - 新增 migration runner 脚本
 5. 执行步骤：
    - 创建核心表与索引。
@@ -93,7 +93,7 @@
 6. 验收标准：
    - 新库可一键迁移到最新版本。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run db:migrate`
+   - `npm --prefix ./mediation run db:migrate`
 8. 输出物：
    - migration baseline
 
@@ -154,7 +154,7 @@
 6. 验收标准：
    - 未授权请求可稳定拒绝并审计。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- auth`
+   - `npm --prefix ./mediation run test:integration -- auth`
 8. 输出物：
    - security baseline
 
@@ -175,7 +175,7 @@
 6. 验收标准：
    - 核心链路指标可被查询且有告警策略。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- observability`
+   - `npm --prefix ./mediation run test:integration -- observability`
 8. 输出物：
    - observability baseline
 
@@ -217,7 +217,7 @@
 6. 验收标准：
    - 差异可定位到 `recordKey` 与版本锚点。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- reconcile`
+   - `npm --prefix ./mediation run test:integration -- reconcile`
 8. 输出物：
    - reconciliation baseline
 
@@ -273,7 +273,7 @@
 2. 前置依赖：
    - FND-001
 3. 必读 context：
-   - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/src/`
+   - `/Users/zeming/Documents/mediation-main/mediation/src/`
    - `/Users/zeming/Documents/mediation-main/docs/execution-plans/mediation-development-plan.md`
 4. 允许改动：
    - 新增 `/Users/zeming/Documents/mediation-main/docs/execution-plans/implementation/legacy-to-mediation-mapping.md`
@@ -318,17 +318,17 @@
    - FND-001
 3. 必读 context：
    - `/Users/zeming/Documents/mediation-main/package.json`
-   - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/package.json`
+   - `/Users/zeming/Documents/mediation-main/mediation/package.json`
 4. 允许改动：
-   - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/package.json`
+   - `/Users/zeming/Documents/mediation-main/mediation/package.json`
    - 新增 `tests/contracts/`, `tests/integration/`, `tests/e2e/`（在 tappy-ai-mediation 内）
 5. 执行步骤：
    - 增加脚本：`test:contracts`, `test:integration`, `test:e2e`, `test:functional:p0`。
    - 每个目录放置占位测试，先可执行通过。
 6. 验收标准：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:functional:p0` 可运行。
+   - `npm --prefix ./mediation run test:functional:p0` 可运行。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:functional:p0`
+   - `npm --prefix ./mediation run test:functional:p0`
 8. 输出物：
    - 测试命令基线
 
@@ -339,16 +339,16 @@
 2. 前置依赖：
    - FND-004
 3. 必读 context：
-   - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/schemas/`
+   - `/Users/zeming/Documents/mediation-main/mediation/schemas/`
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/tests/utils/contract-runner.*`
-   - 新增 `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/tests/contracts/base-contract.spec.*`
+   - 新增 `/Users/zeming/Documents/mediation-main/mediation/tests/utils/contract-runner.*`
+   - 新增 `/Users/zeming/Documents/mediation-main/mediation/tests/contracts/base-contract.spec.*`
 5. 执行步骤：
    - 支持 JSON schema 校验、required 字段断言、错误码断言。
 6. 验收标准：
    - 基础合同测试可复用到 A-H。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:contracts`
+   - `npm --prefix ./mediation run test:contracts`
 8. 输出物：
    - contract-runner
 
@@ -360,15 +360,15 @@
    - FND-004
 3. 必读 context：
    - `/Users/zeming/Documents/mediation-main/docs/design/mediation/operations/01-closed-loop-model.md`
-   - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/scripts/e2e-next-step-scenarios.js`
+   - `/Users/zeming/Documents/mediation-main/mediation/scripts/e2e-next-step-scenarios.js`
 4. 允许改动：
-   - 新增 `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/tests/e2e/minimal-closed-loop.spec.*`
+   - 新增 `/Users/zeming/Documents/mediation-main/mediation/tests/e2e/minimal-closed-loop.spec.*`
 5. 执行步骤：
    - 构建 `request -> delivery -> event -> archive` 最小场景。
 6. 验收标准：
    - E2E 套件可运行并有明确 fail 条件。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:e2e`
+   - `npm --prefix ./mediation run test:e2e`
 8. 输出物：
    - minimal e2e baseline
 
@@ -394,7 +394,7 @@
 6. 验收标准：
    - 缺失/非法值有稳定动作与原因码。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- h-config-resolution`
+   - `npm --prefix ./mediation run test:integration -- h-config-resolution`
 8. 输出物：
    - 配置解析模块
 
@@ -416,7 +416,7 @@
 6. 验收标准：
    - 304 命中和过期失败路径均可测试。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- h-get-config`
+   - `npm --prefix ./mediation run test:integration -- h-get-config`
 8. 输出物：
    - GET /config API
 
@@ -438,7 +438,7 @@
 6. 验收标准：
    - duplicate 与 payload conflict 可区分。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- h-publish`
+   - `npm --prefix ./mediation run test:integration -- h-publish`
 8. 输出物：
    - publish API + 状态机
 
@@ -461,7 +461,7 @@
 6. 验收标准：
    - 同请求同版本下门禁动作确定性一致。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- h-version-gate`
+   - `npm --prefix ./mediation run test:integration -- h-version-gate`
 8. 输出物：
    - version gate + anchor injector
 
@@ -483,7 +483,7 @@
 6. 验收标准：
    - `force_fallback` 语义、原因码、审计快照齐全。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- h-rollout`
+   - `npm --prefix ./mediation run test:integration -- h-rollout`
 8. 输出物：
    - 灰度与失效治理模块
 
@@ -509,7 +509,7 @@
 6. 验收标准：
    - 合同校验失败返回稳定 reason code。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:contracts -- a-trigger`
+   - `npm --prefix ./mediation run test:contracts -- a-trigger`
 8. 输出物：
    - trigger handler
 
@@ -530,7 +530,7 @@
 6. 验收标准：
    - trace 初始化与继承一致。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- a-create-opportunity`
+   - `npm --prefix ./mediation run test:integration -- a-create-opportunity`
 8. 输出物：
    - createOpportunity service
 
@@ -551,7 +551,7 @@
 6. 验收标准：
    - duplicate 不重复发送；重发复用同键。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- a-opportunity-event`
+   - `npm --prefix ./mediation run test:integration -- a-opportunity-event`
 8. 输出物：
    - A event emitter
 
@@ -577,7 +577,7 @@
 6. 验收标准：
    - 字段缺失/非法有稳定动作与原因码。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:contracts -- b-input`
+   - `npm --prefix ./mediation run test:contracts -- b-input`
 8. 输出物：
    - B input normalizer
 
@@ -599,7 +599,7 @@
 6. 验收标准：
    - 同输入多次运行结果一致。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- b-conflict`
+   - `npm --prefix ./mediation run test:integration -- b-conflict`
 8. 输出物：
    - conflict resolver
 
@@ -622,7 +622,7 @@
 6. 验收标准：
    - 三个快照：projection/redaction/bucket 均可输出。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- b-projection`
+   - `npm --prefix ./mediation run test:integration -- b-projection`
 8. 输出物：
    - B advanced pipeline
 
@@ -643,7 +643,7 @@
 6. 验收标准：
    - sampled_out 不发送；sampled_in 可追踪 ACK。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- b-signal-event`
+   - `npm --prefix ./mediation run test:integration -- b-signal-event`
 8. 输出物：
    - B signal event emitter
 
@@ -668,7 +668,7 @@
 6. 验收标准：
    - `short_circuit_block/allow` 行为稳定。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- c-short-circuit`
+   - `npm --prefix ./mediation run test:integration -- c-short-circuit`
 8. 输出物：
    - policy engine core
 
@@ -690,7 +690,7 @@
 6. 验收标准：
    - C->D/E 出口字段完整可消费。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:contracts -- c-output`
+   - `npm --prefix ./mediation run test:contracts -- c-output`
 8. 输出物：
    - C output + audit module
 
@@ -707,7 +707,7 @@
 3. 必读 context：
    - `/Users/zeming/Documents/mediation-main/docs/design/mediation/modules/module-d-supply-orchestrator-adapter-layer.md`
    - 小节：`3.6.9` 到 `3.6.15`
-   - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/src/connectors/`
+   - `/Users/zeming/Documents/mediation-main/mediation/src/connectors/`
 4. 允许改动：
    - `src/mediation/supply-routing/adapter-registry.*`
    - `src/adapters/*`（对接 cj/partnerstack）
@@ -718,7 +718,7 @@
 6. 验收标准：
    - adapter 启停与能力声明可测试。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- d-adapter-registry`
+   - `npm --prefix ./mediation run test:integration -- d-adapter-registry`
 8. 输出物：
    - adapter registry
 
@@ -739,7 +739,7 @@
 6. 验收标准：
    - `routePlan` 可确定性复现。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- d-route-plan`
+   - `npm --prefix ./mediation run test:integration -- d-route-plan`
 8. 输出物：
    - route planner
 
@@ -761,7 +761,7 @@
 6. 验收标准：
    - E 可以无推断消费 D 输出。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:contracts -- d-output`
+   - `npm --prefix ./mediation run test:contracts -- d-output`
 8. 输出物：
    - D output + route audit
 
@@ -787,7 +787,7 @@
 6. 验收标准：
    - 合同错误返回稳定 reason code。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:contracts -- e-compose`
+   - `npm --prefix ./mediation run test:contracts -- e-compose`
 8. 输出物：
    - compose module
 
@@ -809,7 +809,7 @@
 6. 验收标准：
    - no_fill/error 判定一致且可审计。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- e-gate`
+   - `npm --prefix ./mediation run test:integration -- e-gate`
 8. 输出物：
    - render gate + degrade engine
 
@@ -831,7 +831,7 @@
 6. 验收标准：
    - `routed -> served/no_fill/error` 一致。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- e-output`
+   - `npm --prefix ./mediation run test:integration -- e-output`
 8. 输出物：
    - final delivery/output module
 
@@ -857,7 +857,7 @@
 6. 验收标准：
    - 错误事件不影响合法事件 ACK 返回。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- f-events-api`
+   - `npm --prefix ./mediation run test:integration -- f-events-api`
 8. 输出物：
    - events API
 
@@ -880,7 +880,7 @@
 6. 验收标准：
    - 闭环状态可重放验证。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- f-closure`
+   - `npm --prefix ./mediation run test:integration -- f-closure`
 8. 输出物：
    - dedup + closure engine
 
@@ -902,7 +902,7 @@
 6. 验收标准：
    - 单尝试唯一计费、recordKey 幂等语义成立。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- f-output`
+   - `npm --prefix ./mediation run test:integration -- f-output`
 8. 输出物：
    - F output contract module
 
@@ -929,7 +929,7 @@
 6. 验收标准：
    - duplicate no-op 与 payload conflict 可区分。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:integration -- g-append`
+   - `npm --prefix ./mediation run test:integration -- g-append`
 8. 输出物：
    - append API
 
@@ -951,7 +951,7 @@
 6. 验收标准：
    - 同锚点回放 diff 为 0。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:e2e -- g-replay-determinism`
+   - `npm --prefix ./mediation run test:e2e -- g-replay-determinism`
 8. 输出物：
    - replay API + engine
 
@@ -975,7 +975,7 @@
 6. 验收标准：
    - 所有矩阵 case 明确 PASS/FAIL。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:functional:p0`
+   - `npm --prefix ./mediation run test:functional:p0`
 8. 输出物：
    - `tests/p0-matrix-report.json`
 
@@ -994,7 +994,7 @@
 6. 验收标准：
    - 8 场景全部可复现执行。
 7. 验证命令：
-   - `npm --prefix ./projects/tappy-ai-mediation run test:e2e`
+   - `npm --prefix ./mediation run test:e2e`
 8. 输出物：
    - `tests/e2e-report.json`
 
@@ -1049,7 +1049,7 @@
    - QA-004
 3. 必读 context：
    - `/Users/zeming/Documents/mediation-main/docs/design/mediation/operations/02-sdk-integration-guide-and-minimal-checklist.md`
-   - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/docs/sdk-integration-document-spec.md`
+   - `/Users/zeming/Documents/mediation-main/mediation/docs/sdk-integration-document-spec.md`
 4. 允许改动：
    - 新增 `/Users/zeming/Documents/mediation-main/docs/other/integration/quickstart.md`
 5. 执行步骤：

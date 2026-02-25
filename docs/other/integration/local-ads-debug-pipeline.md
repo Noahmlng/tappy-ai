@@ -28,7 +28,7 @@
 
 ```bash
 cd /Users/zeming/Documents/mediation-main
-set -a; source ./projects/tappy-ai-mediation/.env; set +a
+set -a; source ./mediation/.env; set +a
 MEDIATION_RUNTIME_AUTH_REQUIRED=false \
 MEDIATION_DASHBOARD_AUTH_REQUIRED=false \
 MEDIATION_STRICT_MANUAL_INTEGRATION=false \
@@ -36,7 +36,7 @@ MEDIATION_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE=false \
 MEDIATION_REQUIRE_DURABLE_SETTLEMENT=false \
 MEDIATION_SETTLEMENT_STORAGE=state_file \
 HOUSE_ADS_SOURCE=file \
-node ./projects/tappy-ai-mediation/src/devtools/mediation/mediation-gateway.js
+node ./mediation/src/devtools/mediation/mediation-gateway.js
 ```
 
 ## 3. 标准联调 Pipeline（可复用）

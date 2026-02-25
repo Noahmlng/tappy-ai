@@ -38,7 +38,7 @@
 
 ## 环境变量（Production Ready：API + Dashboard）
 
-可复制 `projects/tappy-ai-mediation/.env.example` 作为模板。当前上线模式下：
+可复制 `mediation/.env.example` 作为模板。当前上线模式下：
 
 - 生产必需（MVP 首发）：
   - `SUPABASE_DB_URL`
@@ -67,7 +67,7 @@ House Ads（Supabase）相关可调参数：
 校验命令：
 
 ```bash
-npm --prefix ./projects/tappy-ai-mediation run check:env
+npm --prefix ./mediation run check:env
 ```
 
 ## House Ads Brand/Offer 库（Supabase）
@@ -79,7 +79,7 @@ npm --prefix ./projects/tappy-ai-mediation run check:env
 执行迁移：
 
 ```bash
-npm --prefix ./projects/tappy-ai-mediation run db:migrate
+npm --prefix ./mediation run db:migrate
 ```
 
 ## 联调与 Smoke Test
@@ -87,7 +87,7 @@ npm --prefix ./projects/tappy-ai-mediation run db:migrate
 本地联调脚本：
 
 ```bash
-npm --prefix ./projects/tappy-ai-mediation run smoke:ads
+npm --prefix ./mediation run smoke:ads
 ```
 
 - 默认 `mock` 模式，不依赖真实网络和密钥，验证一条 query 能返回 `ads[]`。
@@ -95,23 +95,23 @@ npm --prefix ./projects/tappy-ai-mediation run smoke:ads
 真实链路 smoke test（会调用 OpenRouter + 联盟接口）：
 
 ```bash
-npm --prefix ./projects/tappy-ai-mediation run smoke:ads:live -- --query="best iphone deals" --answerText="iPhone offers"
+npm --prefix ./mediation run smoke:ads:live -- --query="best iphone deals" --answerText="iPhone offers"
 ```
 
 Next-Step E2E 场景集（购物 / 送礼偏好 / 无商业意图 / 敏感话题）：
 
 ```bash
-npm --prefix ./projects/tappy-ai-mediation run e2e:next-step
+npm --prefix ./mediation run e2e:next-step
 ```
 
 Meyka 金融场景三段测试（连通性 / 百级 RPM / 收益合理性）：
 
 ```bash
 # local
-npm --prefix ./projects/tappy-ai-mediation run meyka:suite -- --env=local
+npm --prefix ./mediation run meyka:suite -- --env=local
 
 # deployed API (preview/prod)
-npm --prefix ./projects/tappy-ai-mediation run meyka:suite -- \
+npm --prefix ./mediation run meyka:suite -- \
   --env=prod \
   --gatewayUrl=https://<api-domain>/api \
   --accountId=<account_id> \
@@ -125,7 +125,7 @@ npm --prefix ./projects/tappy-ai-mediation run meyka:suite -- \
 用于本地联调 Dashboard 与 Mediation 的配置/决策/指标接口：
 
 ```bash
-npm --prefix ./projects/tappy-ai-mediation run dev:gateway
+npm --prefix ./mediation run dev:gateway
 ```
 
 默认监听：`http://127.0.0.1:3100`

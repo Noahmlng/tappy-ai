@@ -2,10 +2,10 @@
 
 ## Scope And Evidence
 
-- P0 matrix source: `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/tests/p0-matrix-report.json`
+- P0 matrix source: `/Users/zeming/Documents/mediation-main/mediation/tests/p0-matrix-report.json`
   - generatedAt: `2026-02-21T15:39:17.850Z`
   - summary: total `24`, passed `24`, failed `0`
-- E2E source: `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/tests/e2e-report.json`
+- E2E source: `/Users/zeming/Documents/mediation-main/mediation/tests/e2e-report.json`
   - generatedAt: `2026-02-21T15:39:23.129Z`
   - summary: total `8`, passed `8`, failed `0`
 - CI gate workflow: `/Users/zeming/Documents/mediation-main/.github/workflows/mediation-release-gate.yml`

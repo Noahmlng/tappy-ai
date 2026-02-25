@@ -2,7 +2,7 @@
 
 - 更新时间：2026-02-25 17:37:16 CST
 - 适用范围：`/Users/zeming/Documents/mediation-main` 当前主仓
-- 部署范围：仅 `projects/tappy-ai-mediation` 与 `projects/mediation-dashboard`
+- 部署范围：仅 `mediation` 与 `/Users/zeming/Documents/mediation-dashboard`
 
 ## 1. 目标与结论
 
@@ -85,38 +85,38 @@ VITE_MEDIATION_RUNTIME_API_BASE_URL=https://runtime.<your-domain>/api
 ### 5.1 项目创建
 
 1. `mediation-runtime-api`
-   - Root Directory: `projects/tappy-ai-mediation`
+   - Root Directory: `mediation`
    - Local Config: `vercel.runtime.json`
 2. `mediation-control-plane-api`
-   - Root Directory: `projects/tappy-ai-mediation`
+   - Root Directory: `mediation`
    - Local Config: `vercel.control-plane.json`
 3. `mediation-dashboard`
-   - Root Directory: `projects/mediation-dashboard`
+   - Root Directory: `/Users/zeming/Documents/mediation-dashboard`
 
 ### 5.2 预览部署顺序
 
 ```bash
 # Runtime API preview
-vercel deploy /Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation --local-config /Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/vercel.runtime.json -y
+vercel deploy /Users/zeming/Documents/mediation-main/mediation --local-config /Users/zeming/Documents/mediation-main/mediation/vercel.runtime.json -y
 
 # Control-plane API preview
-vercel deploy /Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation --local-config /Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/vercel.control-plane.json -y
+vercel deploy /Users/zeming/Documents/mediation-main/mediation --local-config /Users/zeming/Documents/mediation-main/mediation/vercel.control-plane.json -y
 
 # Dashboard preview
-vercel deploy /Users/zeming/Documents/mediation-main/projects/mediation-dashboard -y
+vercel deploy /Users/zeming/Documents/mediation-dashboard -y
 ```
 
 ### 5.3 生产部署顺序（烟测通过后）
 
 ```bash
 # Runtime API production
-vercel deploy /Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation --local-config /Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/vercel.runtime.json --prod -y
+vercel deploy /Users/zeming/Documents/mediation-main/mediation --local-config /Users/zeming/Documents/mediation-main/mediation/vercel.runtime.json --prod -y
 
 # Control-plane API production
-vercel deploy /Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation --local-config /Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/vercel.control-plane.json --prod -y
+vercel deploy /Users/zeming/Documents/mediation-main/mediation --local-config /Users/zeming/Documents/mediation-main/mediation/vercel.control-plane.json --prod -y
 
 # Dashboard production
-vercel deploy /Users/zeming/Documents/mediation-main/projects/mediation-dashboard --prod -y
+vercel deploy /Users/zeming/Documents/mediation-dashboard --prod -y
 ```
 
 说明：先部署 runtime 与 control-plane API，拿到两个生产域名后回填 Dashboard 的 `VITE_MEDIATION_CONTROL_PLANE_API_BASE_URL` 与 `VITE_MEDIATION_RUNTIME_API_BASE_URL`，再重新部署 Dashboard。
@@ -126,9 +126,9 @@ vercel deploy /Users/zeming/Documents/mediation-main/projects/mediation-dashboar
 预部署执行：
 
 ```bash
-npm --prefix projects/tappy-ai-mediation run test:integration
-npm --prefix projects/tappy-ai-mediation run test:functional:p0
-npm --prefix projects/mediation-dashboard run build
+npm --prefix mediation run test:integration
+npm --prefix mediation run test:functional:p0
+npm --prefix /Users/zeming/Documents/mediation-dashboard run build
 ```
 
 通过标准：

@@ -110,11 +110,11 @@ Quickstart 通过条件：
 ## 9. 仓库对齐（当前文件）
 
 当前应优先维护：
-1. `projects/tappy-ai-mediation/docs/sdk-quick-start-v2.md`
+1. `mediation/docs/sdk-quick-start-v2.md`
 2. `docs/other/integration/developer-integration-pack/02-quickstart.md`
 3. `docs/other/integration/developer-integration-pack/03-api-sdk-reference.md`
 
 契约来源：
-1. `projects/tappy-ai-mediation/schemas/v2-bid-request.schema.json`
-2. `projects/tappy-ai-mediation/schemas/v2-bid-response.schema.json`
-3. `projects/tappy-ai-mediation/src/devtools/mediation/mediation-gateway.js`
+1. `mediation/schemas/v2-bid-request.schema.json`
+2. `mediation/schemas/v2-bid-response.schema.json`
+3. `mediation/src/devtools/mediation/mediation-gateway.js`

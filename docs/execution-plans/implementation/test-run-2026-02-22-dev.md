@@ -10,9 +10,9 @@
 1. `npm run infra:status`
    - Result: failed
    - Detail: missing required binary `docker`
-2. `npm --prefix ./projects/tappy-ai-mediation run check:env`
+2. `npm --prefix ./mediation run check:env`
    - Result: passed
-3. `npm --prefix ./projects/tappy-ai-mediation run check:managed-services`
+3. `npm --prefix ./mediation run check:managed-services`
    - Result: passed (`doppler`, `grafana`, `synadia` reachable and authorized)
 
 ## 2. Functional Gate
@@ -20,7 +20,7 @@
 Command:
 
 ```bash
-npm --prefix ./projects/tappy-ai-mediation run test:functional:p0
+npm --prefix ./mediation run test:functional:p0
 ```
 
 Results:

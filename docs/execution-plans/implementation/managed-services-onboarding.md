@@ -5,7 +5,7 @@
 
 ## 1. Required Runtime Variables
 
-Put these in `projects/tappy-ai-mediation/.env` (local) and secret manager (staging/prod):
+Put these in `mediation/.env` (local) and secret manager (staging/prod):
 
 1. `NATS_URL`
 2. `SYNADIA_CLOUD_USER_PUBLIC_KEY`
@@ -52,7 +52,7 @@ Do not grant `>` wildcard full access.
 Run:
 
 ```bash
-npm --prefix ./projects/tappy-ai-mediation run check:managed-services
+npm --prefix ./mediation run check:managed-services
 ```
 
 This validates:

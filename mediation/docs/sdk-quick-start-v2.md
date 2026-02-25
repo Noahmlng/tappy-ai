@@ -278,10 +278,10 @@ For regression/performance/revenue simulation with Meyka finance conversations:
 
 ```bash
 # local validation
-npm --prefix ./projects/tappy-ai-mediation run meyka:suite -- --env=local
+npm --prefix ./mediation run meyka:suite -- --env=local
 
 # staging validation
-npm --prefix ./projects/tappy-ai-mediation run meyka:suite -- \
+npm --prefix ./mediation run meyka:suite -- \
   --env=staging \
   --gatewayUrl=https://<staging-gateway>/api \
   --accountId=<account_id> \

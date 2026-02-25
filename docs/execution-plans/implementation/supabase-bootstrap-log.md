@@ -3,7 +3,7 @@
 - Date (UTC): 2026-02-21
 - Project ref: `bkqjenmznafkqqwvwrad`
 - Execution channel: Supabase MCP (`supabase.execute_sql`)
-- Migration file: `projects/tappy-ai-mediation/migrations/0001_mediation_core_baseline.sql`
+- Migration file: `mediation/migrations/0001_mediation_core_baseline.sql`
 - Migration checksum: `48c885ae205e0f45b4c7f23d6ee07a1e414e1687926b78791933bc7891474b23`
 
 ## Executed Steps

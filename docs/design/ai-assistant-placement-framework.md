@@ -519,9 +519,9 @@ Use this template when expanding any single placement product:
 ## 12) Implementation Specs Index
 
 1. Attach Layer affiliate-link aggregator:
-`/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/docs/attach-affiliate-aggregator-design.md`
+`/Users/zeming/Documents/mediation-main/mediation/docs/attach-affiliate-aggregator-design.md`
 2. Next-Step Intent Card request/response contract:
-`/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/docs/next-step-intent-card-contract.md`
+`/Users/zeming/Documents/mediation-main/mediation/docs/next-step-intent-card-contract.md`
 
 ## 13) Revision Notes
 

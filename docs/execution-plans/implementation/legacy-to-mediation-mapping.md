@@ -5,7 +5,7 @@
 - 依赖任务: FND-001
 - 设计依据:
   - `/Users/zeming/Documents/mediation-main/docs/execution-plans/mediation-development-plan.md`
-  - `/Users/zeming/Documents/mediation-main/projects/tappy-ai-mediation/src/`
+  - `/Users/zeming/Documents/mediation-main/mediation/src/`
 
 ## 1. 分类口径
 

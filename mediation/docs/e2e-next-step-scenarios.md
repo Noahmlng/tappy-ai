@@ -6,7 +6,7 @@
 ## Run
 
 ```bash
-npm --prefix ./projects/tappy-ai-mediation run e2e:next-step
+npm --prefix ./mediation run e2e:next-step
 ```
 
 The script will:

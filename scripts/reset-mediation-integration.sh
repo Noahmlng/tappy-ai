@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-STATE_FILE="${ROOT_DIR}/projects/tappy-ai-mediation/.local/mediation-gateway-state.json"
+STATE_FILE="${ROOT_DIR}/mediation/.local/mediation-gateway-state.json"
 HOST="${MEDIATION_GATEWAY_HOST:-127.0.0.1}"
 PORT="${MEDIATION_GATEWAY_PORT:-3100}"
 BASE_URL="http://${HOST}:${PORT}"

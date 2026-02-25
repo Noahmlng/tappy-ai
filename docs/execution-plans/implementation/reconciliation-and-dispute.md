@@ -30,9 +30,9 @@
 ## 4. Tooling
 
 1. generate daily report:
-   - `node ./projects/tappy-ai-mediation/scripts/reconcile-daily.js --archive-file=<archive.json> --billing-file=<billing.json> --output-file=<report.json> --fail-on-diff=true`
+   - `node ./mediation/scripts/reconcile-daily.js --archive-file=<archive.json> --billing-file=<billing.json> --output-file=<report.json> --fail-on-diff=true`
 2. generate replay jobs from diff report:
-   - `node ./projects/tappy-ai-mediation/scripts/reconcile-replay.js --diff-file=<report.json> --output-file=<jobs.json>`
+   - `node ./mediation/scripts/reconcile-replay.js --diff-file=<report.json> --output-file=<jobs.json>`
 
 ## 5. Dispute Replay Policy
 
@@ -42,5 +42,5 @@
 
 ## 6. Operational Gate
 
-1. `npm --prefix ./projects/tappy-ai-mediation run test:integration -- reconcile`
+1. `npm --prefix ./mediation run test:integration -- reconcile`
 2. Any unresolved high-severity diff -> `No-Go` for release.

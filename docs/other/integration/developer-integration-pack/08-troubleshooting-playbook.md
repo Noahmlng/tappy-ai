@@ -47,7 +47,7 @@ curl -sS "$MEDIATION_API_BASE_URL/v1/dashboard/usage-revenue?accountId=$ACCOUNT_
 Local gateway log query:
 
 ```bash
-tail -n 200 projects/tappy-ai-mediation/.local/gateway-stdout.log
+tail -n 200 mediation/.local/gateway-stdout.log
 ```
 
 If running durable checks, inspect DB-side conversion fact uniqueness by `idempotency_key`.

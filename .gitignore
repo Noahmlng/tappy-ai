@@ -16,9 +16,9 @@ dist
 dist-ssr
 coverage
 *.local
-/projects/tappy-ai-mediation/.local/
-/projects/tappy-ai-mediation/.secrets/
-/projects/tappy-ai-mediation/tests/reports/meyka-regression/
+/mediation/.local/
+/mediation/.secrets/
+/mediation/tests/reports/meyka-regression/
 
 # Editor directories and files
 .vscode/*

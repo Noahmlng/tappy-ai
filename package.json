@@ -1,9 +1,9 @@
 {
-  "name": "ai-native-network-workspace",
+  "name": "tappy-ai-mediation-workspace",
   "private": true,
   "version": "0.1.0",
   "workspaces": [
-    "projects/tappy-ai-mediation",
+    "mediation",
     "apps/runtime-api",
     "apps/control-plane-api",
     "packages/mediation-sdk-contracts"
