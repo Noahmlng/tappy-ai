@@ -1,7 +1,7 @@
 # Developer Integration Pack
 
 - Version: v1.0
-- Last Updated: 2026-02-24
+- Last Updated: 2026-02-25
 - Audience: SDK integrators, product reviewers, release managers
 
 This folder tracks external integration docs for the V2 baseline:
@@ -11,15 +11,15 @@ This folder tracks external integration docs for the V2 baseline:
 
 ## Document Index
 
-1. `01-one-pager.md` - product/system one pager (draft)
+1. `01-one-pager.md` - product/system one pager (ready)
 2. `02-quickstart.md` - first integration quickstart (ready)
 3. `03-api-sdk-reference.md` - API and SDK contract reference (ready)
-4. `04-environment-and-credentials.md` - environment and credentials guide (draft)
-5. `05-network-adapter-support-matrix.md` - adapter capability matrix (draft)
-6. `06-callback-signature-guide.md` - callback/signature guidance (draft)
-7. `07-test-plan-and-checklist.md` - integration test checklist (draft)
-8. `08-troubleshooting-playbook.md` - troubleshooting playbook (draft)
-9. `09-version-and-compatibility-policy.md` - compatibility policy (draft)
+4. `04-environment-and-credentials.md` - environment and credentials guide (ready)
+5. `05-network-adapter-support-matrix.md` - adapter capability matrix (ready)
+6. `06-callback-signature-guide.md` - callback/signature guidance (ready)
+7. `07-test-plan-and-checklist.md` - integration test checklist (ready)
+8. `08-troubleshooting-playbook.md` - troubleshooting playbook (ready)
+9. `09-version-and-compatibility-policy.md` - compatibility policy (ready)
 10. `10-release-and-rollback-runbook.md` - release/rollback runbook (draft)
 
 ## Publishing Order
