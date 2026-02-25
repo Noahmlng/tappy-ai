@@ -36,7 +36,8 @@ function normalizeInput(input = {}) {
 
 function buildEnvBlock(input) {
   return [
-    'MEDIATION_API_BASE_URL=https://api.example.com',
+    'MEDIATION_CONTROL_PLANE_API_BASE_URL=https://control-plane.example.com',
+    'MEDIATION_RUNTIME_API_BASE_URL=https://runtime.example.com',
     `APP_ID=${input.appId}`,
     `PLACEMENT_ID=${input.placementId}`,
     `INTEGRATION_TOKEN=${input.integrationToken}`,
@@ -50,18 +51,18 @@ function buildSmokeRunbook(input) {
     '2. Run config -> v2/bid -> events with access token.',
     '3. Print evidence JSON.',
     '',
-    "EXCHANGE_JSON=$(curl -sS -X POST \"$MEDIATION_API_BASE_URL/api/v1/public/agent/token-exchange\" \\",
+    "EXCHANGE_JSON=$(curl -sS -X POST \"$MEDIATION_CONTROL_PLANE_API_BASE_URL/api/v1/public/agent/token-exchange\" \\",
     '  -H "Content-Type: application/json" \\',
     `  -d "{\"integrationToken\":\"$INTEGRATION_TOKEN\",\"ttlSeconds\":${input.exchangeTtlSeconds}}")`,
     '',
     "ACCESS_TOKEN=$(echo \"$EXCHANGE_JSON\" | node -e 'let d=\"\";process.stdin.on(\"data\",c=>d+=c);process.stdin.on(\"end\",()=>{const j=JSON.parse(d||\"{}\");process.stdout.write(j.accessToken||\"\")})')",
     'test -n "$ACCESS_TOKEN" || (echo "token exchange failed"; exit 1)',
     '',
-    "curl -sS \"$MEDIATION_API_BASE_URL/api/v1/mediation/config?appId=$APP_ID&placementId=$PLACEMENT_ID&environment="
+    "curl -sS \"$MEDIATION_RUNTIME_API_BASE_URL/api/v1/mediation/config?appId=$APP_ID&placementId=$PLACEMENT_ID&environment="
       + `${input.environment}&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z\" \\`,
     '  -H "Authorization: Bearer $ACCESS_TOKEN" >/tmp/agent-config.json',
     '',
-    "BID_JSON=$(curl -sS -X POST \"$MEDIATION_API_BASE_URL/api/v2/bid\" \\",
+    "BID_JSON=$(curl -sS -X POST \"$MEDIATION_RUNTIME_API_BASE_URL/api/v2/bid\" \\",
     '  -H "Authorization: Bearer $ACCESS_TOKEN" \\',
     '  -H "Content-Type: application/json" \\',
     "  -d \"{\\\"userId\\\":\\\"agent_smoke_session_001\\\",\\\"chatId\\\":\\\"agent_smoke_session_001\\\",\\\"placementId\\\":\\\"$PLACEMENT_ID\\\",\\\"messages\\\":[{\\\"role\\\":\\\"user\\\",\\\"content\\\":\\\"Recommend waterproof running shoes\\\"},{\\\"role\\\":\\\"assistant\\\",\\\"content\\\":\\\"Prioritize grip and breathable waterproof upper.\\\"}]}\")",
@@ -69,7 +70,7 @@ function buildSmokeRunbook(input) {
     "REQUEST_ID=$(echo \"$BID_JSON\" | node -e 'let d=\"\";process.stdin.on(\"data\",c=>d+=c);process.stdin.on(\"end\",()=>{const j=JSON.parse(d||\"{}\");process.stdout.write(j.requestId||\"\")})')",
     'test -n "$REQUEST_ID" || (echo "v2/bid failed"; exit 1)',
     '',
-    "EVENTS_JSON=$(curl -sS -X POST \"$MEDIATION_API_BASE_URL/api/v1/sdk/events\" \\",
+    "EVENTS_JSON=$(curl -sS -X POST \"$MEDIATION_RUNTIME_API_BASE_URL/api/v1/sdk/events\" \\",
     '  -H "Authorization: Bearer $ACCESS_TOKEN" \\',
     '  -H "Content-Type: application/json" \\',
     "  -d \"{\\\"requestId\\\":\\\"$REQUEST_ID\\\",\\\"appId\\\":\\\"$APP_ID\\\",\\\"sessionId\\\":\\\"agent_smoke_session_001\\\",\\\"turnId\\\":\\\"agent_smoke_turn_001\\\",\\\"query\\\":\\\"Recommend waterproof running shoes\\\",\\\"answerText\\\":\\\"Prioritize grip and breathable waterproof upper.\\\",\\\"intentScore\\\":0.91,\\\"locale\\\":\\\"en-US\\\",\\\"kind\\\":\\\"impression\\\",\\\"placementId\\\":\\\"$PLACEMENT_ID\\\"}\")",

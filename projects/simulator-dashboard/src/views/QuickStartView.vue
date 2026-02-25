@@ -9,13 +9,13 @@ const verifyLoading = ref(false)
 const verifyError = ref('')
 const verifyResult = ref(null)
 
-const envSnippet = `MEDIATION_API_BASE_URL=https://api.example.com
+const envSnippet = `MEDIATION_RUNTIME_API_BASE_URL=https://runtime.example.com
 MEDIATION_API_KEY=<issued_api_key>
 APP_ID=<your_app_id>
 PLACEMENT_ID=chat_from_answer_v1`
 
 const examples = {
-  javascript: `const baseUrl = process.env.MEDIATION_API_BASE_URL;
+  javascript: `const baseUrl = process.env.MEDIATION_RUNTIME_API_BASE_URL;
 const apiKey = process.env.MEDIATION_API_KEY;
 const appId = process.env.APP_ID;
 const placementId = process.env.PLACEMENT_ID || 'chat_from_answer_v1';
@@ -106,7 +106,7 @@ runQuickStart().catch((error) => {
   python: `import os
 import requests
 
-base_url = os.environ["MEDIATION_API_BASE_URL"]
+base_url = os.environ["MEDIATION_RUNTIME_API_BASE_URL"]
 api_key = os.environ["MEDIATION_API_KEY"]
 app_id = os.environ["APP_ID"]
 placement_id = os.environ.get("PLACEMENT_ID", "chat_from_answer_v1")
@@ -174,10 +174,10 @@ events = requests.post(f"{base_url}/api/v1/sdk/events", headers=headers, json=ev
 events.raise_for_status()
 
 print({"requestId": request_id, "bidMessage": bid_json.get("message", ""), "hasBid": bool((bid_json.get("data") or {}).get("bid"))})`,
-  curl: `curl -sS "$MEDIATION_API_BASE_URL/api/v1/mediation/config?appId=$APP_ID&placementId=\${PLACEMENT_ID:-chat_from_answer_v1}&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z" \\
+  curl: `curl -sS "$MEDIATION_RUNTIME_API_BASE_URL/api/v1/mediation/config?appId=$APP_ID&placementId=\${PLACEMENT_ID:-chat_from_answer_v1}&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z" \\
   -H "Authorization: Bearer $MEDIATION_API_KEY"
 
-curl -sS -X POST "$MEDIATION_API_BASE_URL/api/v2/bid" \\
+curl -sS -X POST "$MEDIATION_RUNTIME_API_BASE_URL/api/v2/bid" \\
   -H "Authorization: Bearer $MEDIATION_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d "{
@@ -192,7 +192,7 @@ curl -sS -X POST "$MEDIATION_API_BASE_URL/api/v2/bid" \\
 
 REQUEST_ID=$(cat /tmp/mediation-bid.json | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{const j=JSON.parse(d||"{}");process.stdout.write(j.requestId||"")})')
 
-curl -sS -X POST "$MEDIATION_API_BASE_URL/api/v1/sdk/events" \\
+curl -sS -X POST "$MEDIATION_RUNTIME_API_BASE_URL/api/v1/sdk/events" \\
   -H "Authorization: Bearer $MEDIATION_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d "{

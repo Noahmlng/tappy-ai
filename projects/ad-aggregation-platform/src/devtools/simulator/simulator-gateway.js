@@ -9999,18 +9999,32 @@ export async function ensureReady() {
   await readyPromise
 }
 
-export async function handleGatewayRequest(req, res) {
+export async function handleGatewayRequest(req, res, options = {}) {
   try {
     applyCorsOrigin(req, res)
     await ensureReady()
-    await requestHandler(req, res)
+    await requestHandler(req, res, options)
   } catch (error) {
     sendInternalError(res, error)
   }
 }
 
+export async function handleRuntimeRequest(req, res) {
+  await handleGatewayRequest(req, res, {
+    apiServiceRole: 'runtime',
+  })
+}
+
+export async function handleControlPlaneRequest(req, res) {
+  await handleGatewayRequest(req, res, {
+    apiServiceRole: 'control_plane',
+  })
+}
+
 const server = http.createServer((req, res) => {
-  void handleGatewayRequest(req, res)
+  void handleGatewayRequest(req, res, {
+    apiServiceRole: API_SERVICE_ROLE,
+  })
 })
 
 function isDirectExecution() {
@@ -10042,6 +10056,7 @@ async function startServer() {
     console.log(`[simulator-gateway] settlement store mode: ${settlementStore.mode}`)
     console.log(`[simulator-gateway] strict manual integration: ${STRICT_MANUAL_INTEGRATION}`)
     console.log(`[simulator-gateway] runtime log db persistence required: ${REQUIRE_RUNTIME_LOG_DB_PERSISTENCE}`)
+    console.log(`[simulator-gateway] api service role: ${API_SERVICE_ROLE}`)
   })
 }
 

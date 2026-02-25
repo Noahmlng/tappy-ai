@@ -10,7 +10,7 @@
 
 当前结论：
 
-1. API 已具备 Vercel Function 入口（`api/index.js`），外部 API 契约保持不变。
+1. API 已具备 Vercel Function 拆分入口（`api/runtime.js`、`api/control-plane.js`），外部 API 契约保持不变。
 2. 鉴权关键链路已改为 DB-first read-through，跨实例 key/session 漂移风险已收敛。
 3. CORS 与 reset 路由已做生产默认收口（allowlist + reset 默认关闭）。
 4. Final Check 主门禁已按无 Chatbot 范围复核通过（API integration、API functional p0、Dashboard build）。
@@ -58,6 +58,7 @@ MEDIATION_RUNTIME_AUTH_REQUIRED=true
 MEDIATION_STRICT_MANUAL_INTEGRATION=true
 MEDIATION_DEV_RESET_ENABLED=false
 MEDIATION_ALLOWED_ORIGINS=https://dashboard.<your-domain>
+MEDIATION_API_SERVICE_ROLE=all
 ```
 
 ### 4.2 Mediation API（可选）
@@ -79,20 +80,27 @@ VITE_MEDIATION_CONTROL_PLANE_API_BASE_URL=https://control-plane.<your-domain>/ap
 VITE_MEDIATION_RUNTIME_API_BASE_URL=https://runtime.<your-domain>/api
 ```
 
-## 5. Vercel 双项目部署方案（not now）
+## 5. Vercel 三项目部署方案（not now）
 
 ### 5.1 项目创建
 
-1. `mediation-api`
+1. `mediation-runtime-api`
    - Root Directory: `projects/ad-aggregation-platform`
-2. `simulator-dashboard`
+   - Local Config: `vercel.runtime.json`
+2. `mediation-control-plane-api`
+   - Root Directory: `projects/ad-aggregation-platform`
+   - Local Config: `vercel.control-plane.json`
+3. `simulator-dashboard`
    - Root Directory: `projects/simulator-dashboard`
 
 ### 5.2 预览部署顺序
 
 ```bash
-# API preview
-vercel deploy /Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform -y
+# Runtime API preview
+vercel deploy /Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform --local-config /Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/vercel.runtime.json -y
+
+# Control-plane API preview
+vercel deploy /Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform --local-config /Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/vercel.control-plane.json -y
 
 # Dashboard preview
 vercel deploy /Users/zeming/Documents/chat-ads-main/projects/simulator-dashboard -y
@@ -101,14 +109,17 @@ vercel deploy /Users/zeming/Documents/chat-ads-main/projects/simulator-dashboard
 ### 5.3 生产部署顺序（烟测通过后）
 
 ```bash
-# API production
-vercel deploy /Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform --prod -y
+# Runtime API production
+vercel deploy /Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform --local-config /Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/vercel.runtime.json --prod -y
+
+# Control-plane API production
+vercel deploy /Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform --local-config /Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform/vercel.control-plane.json --prod -y
 
 # Dashboard production
 vercel deploy /Users/zeming/Documents/chat-ads-main/projects/simulator-dashboard --prod -y
 ```
 
-说明：先部署 control-plane 与 runtime API，拿到生产域名后回填 Dashboard 的 `VITE_MEDIATION_CONTROL_PLANE_API_BASE_URL`（可选再回填 `VITE_MEDIATION_RUNTIME_API_BASE_URL`）并重新部署 Dashboard。
+说明：先部署 runtime 与 control-plane API，拿到两个生产域名后回填 Dashboard 的 `VITE_MEDIATION_CONTROL_PLANE_API_BASE_URL` 与 `VITE_MEDIATION_RUNTIME_API_BASE_URL`，再重新部署 Dashboard。
 
 ## 6. Final Check 门禁（无 Chatbot）
 
@@ -128,10 +139,11 @@ npm --prefix projects/simulator-dashboard run build
 
 ## 7. 部署后烟测清单（Preview/Prod 均执行）
 
-1. API 健康检查：
+1. API 健康检查（两个域名都验证）：
 
 ```bash
-curl -sS https://api.<your-domain>/api/health
+curl -sS https://runtime.<your-domain>/api/health
+curl -sS https://control-plane.<your-domain>/api/health
 ```
 
 预期：`ok=true`。

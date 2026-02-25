@@ -53,6 +53,8 @@
   - `MEDIATION_ALLOWED_ORIGINS=<dashboard domain>`
 - 供应侧 provider key 为可选：
   - `OPENROUTER_API_KEY` / `CJ_TOKEN` / `PARTNERSTACK_API_KEY` 缺省时允许降级到 no-bid/house ads，不阻断 API 启动。
+- 服务边界控制：
+  - `MEDIATION_API_SERVICE_ROLE`：`all`（默认）/ `runtime` / `control_plane`
 - 本地开发专用：
   - `MEDIATION_GATEWAY_HOST`、`MEDIATION_GATEWAY_PORT` 只用于本地 `dev:gateway`，Vercel 不需要。
   - 旧 `SIMULATOR_*` 变量仍兼容读取，用于迁移窗口。
@@ -131,5 +133,9 @@ npm --prefix ./projects/ad-aggregation-platform run dev:gateway
 
 ## Vercel 部署入口
 
-- API 入口：`projects/ad-aggregation-platform/api/index.js`
+- Runtime API 入口：`projects/ad-aggregation-platform/api/runtime.js`
+- Control-plane API 入口：`projects/ad-aggregation-platform/api/control-plane.js`
+- 兼容入口（全路由）：`projects/ad-aggregation-platform/api/index.js`
+- Runtime Vercel config：`projects/ad-aggregation-platform/vercel.runtime.json`
+- Control-plane Vercel config：`projects/ad-aggregation-platform/vercel.control-plane.json`
 - 本地 CLI 入口：`src/devtools/simulator/simulator-gateway.js`（直接执行时才会 `listen`）
