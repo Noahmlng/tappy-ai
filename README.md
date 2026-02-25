@@ -204,3 +204,14 @@ npm --prefix /Users/zeming/Documents/simulator-chatbot run dev
 ```bash
 npm run sim:reset
 ```
+
+## Vercel 重建入口（双仓）
+
+1. `mediation-runtime-api`
+- Root Directory: `/Users/zeming/Documents/chat-ads-main/apps/runtime-api`
+
+2. `mediation-control-plane-api`
+- Root Directory: `/Users/zeming/Documents/chat-ads-main/apps/control-plane-api`
+
+3. `simulator-dashboard`
+- Root Directory: `/Users/zeming/Documents/chat-ads-dashboard`
