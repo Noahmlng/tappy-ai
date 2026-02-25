@@ -8,13 +8,13 @@
 Global format:
 
 1. `med:{env}:{module}:{category}:{key}`
-2. `env` values: `dev|staging|preprod|prod`
+2. `env` values: `dev|prod`
 3. `module` values: `a|b|c|d|e|f|g|h|shared`
 
 Examples:
 
 1. `med:prod:f:idem:event:{idempotencyKey}`
-2. `med:staging:d:circuit:source:{sourceId}`
+2. `med:prod:d:circuit:source:{sourceId}`
 3. `med:prod:h:cfg:etag:{configKeyHash}`
 
 ## 2. Key Categories and TTL
@@ -86,4 +86,3 @@ Required periodic checks:
 
 1. Key cardinality drift by module
 2. TTL compliance by key class
-

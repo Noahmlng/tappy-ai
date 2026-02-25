@@ -101,7 +101,7 @@ Additional confirmed behavior:
 
 ## 5. Final Check Closure (V2-only / Fast-first)
 
-- Date: 2026-02-25 14:37:17 CST
+- Date: 2026-02-25 16:02:16 CST
 - Scope: external developer onboarding consistency + dashboard visibility + test gate stability
 
 ### 5.1 Root Cause and Fix Summary
@@ -109,6 +109,7 @@ Additional confirmed behavior:
 | Area | Before | Fix | After |
 | --- | --- | --- | --- |
 | External onboarding content | Mixed old/new flow (`config -> evaluate -> events`) in docs/templates | Unified to V2-only (`config -> v2/bid -> events`) across integration pack + dashboard onboarding views/templates | No `/api/v1/sdk/evaluate` reference remains in developer-facing docs/views |
+| Runtime environment model | `sandbox/staging/prod` defaults coexisted in gateway/UI/SDK; chatbot had built-in staging key fallback | Enforced `prod` as the only runtime environment in gateway defaults/checks, dashboard forms, SDK defaults, chatbot key loading, and integration docs | External onboarding is prod-only; staging key dependency removed |
 | E2E stability (`test:functional:p0`) | 3 flaky failures due gateway startup timeout under local `.env` durable settings | E2E gateway startup now forces fast-first env (`state_file`, durable flags disabled), removes implicit `.env` dependency, extends health timeout window | E2E suite stable and fully passing |
 | Chatbot unit gate | `vitest` config merge failed on callback-form Vite config | Resolve Vite config callback before `mergeConfig`, add `passWithNoTests` for current repo state | `npm run test:unit -- --run` exits 0 and is gate-compatible |
 
@@ -128,10 +129,10 @@ Results:
 
 1. `test:integration`: **PASS**
    - 44 files
-   - 184 tests, 184 pass, 0 fail
+   - 185 tests, 185 pass, 0 fail
 2. `test:functional:p0`: **PASS**
    - contracts: 38 pass, 0 fail
-   - integration: 184 pass, 0 fail
+   - integration: 185 pass, 0 fail
    - e2e: 7 pass, 0 fail
 3. `simulator-dashboard build`: **PASS**
 4. `simulator-chatbot build`: **PASS**
@@ -144,12 +145,15 @@ Verified expectations are now aligned:
 1. Onboarding path is explicitly `config -> v2/bid -> events`.
 2. Dashboard navigation exposes `Home + Usage + Quick Start`.
 3. Revenue remains fact-driven (`simulator_settlement_conversion_facts`) and visible in dashboard settlement aggregates.
-4. Developer-facing integration docs are no longer placeholder templates.
+4. Runtime scope is fixed to `environment=prod`; user-facing staging/sandbox selection is removed.
+5. Chatbot no longer ships with built-in staging key fallback.
+6. Developer-facing integration docs are no longer placeholder templates.
 
 ### 5.4 Final Verdict
 
-Final Check gate is **PASS** for the V2-only / Fast-first strategy:
+Final Check gate is **PASS** for the V2-only / Fast-first + prod-only strategy:
 
 1. External integration path is consistent and executable.
 2. Revenue visibility + archival for future analysis is intact.
 3. Primary release gate commands are reproducible and passing.
+4. System is production-ready for the current MVP scope (in-product revenue visibility + archival, no staging dependency in user-facing flow).

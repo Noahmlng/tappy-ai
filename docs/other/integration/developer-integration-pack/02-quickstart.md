@@ -2,7 +2,7 @@
 
 - Owner: Integrations Team
 - Last Updated: 2026-02-24
-- Scope: external developer / staging -> prod
+- Scope: external developer / prod-only
 
 ## 1. Objective
 
@@ -13,8 +13,7 @@
 1. `MEDIATION_API_BASE_URL` (example: `http://127.0.0.1:3100/api`)
 2. `MEDIATION_API_KEY`
 3. `APP_ID`
-4. `ENVIRONMENT` (`sandbox` | `staging` | `prod`)
-5. `PLACEMENT_ID` (`chat_inline_v1` or `chat_followup_v1`)
+4. `PLACEMENT_ID` (`chat_inline_v1` or `chat_followup_v1`)
 
 ## 3. Step 1: Read Placement Config
 
@@ -23,7 +22,7 @@ curl -sS -G "$MEDIATION_API_BASE_URL/v1/mediation/config" \
   -H "Authorization: Bearer $MEDIATION_API_KEY" \
   --data-urlencode "appId=$APP_ID" \
   --data-urlencode "placementId=$PLACEMENT_ID" \
-  --data-urlencode "environment=$ENVIRONMENT" \
+  --data-urlencode "environment=prod" \
   --data-urlencode "schemaVersion=schema_v1" \
   --data-urlencode "sdkVersion=1.0.0" \
   --data-urlencode "requestAt=2026-02-24T12:00:00Z"

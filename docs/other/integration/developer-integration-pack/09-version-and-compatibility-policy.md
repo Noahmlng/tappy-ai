@@ -37,7 +37,7 @@ Notice period:
 | Phase | Duration | Requirements |
 | --- | --- | --- |
 | announce | >= 14 days | changelog entry + migration steps + owner contact |
-| transition | 14~30 days | compatibility tests in staging + customer sign-off |
+| transition | 14~30 days | compatibility tests in production-like dry-run + customer sign-off |
 | removal | scheduled window | release note + rollback plan + post-check evidence |
 
 V2-only decision record:
@@ -47,7 +47,7 @@ V2-only decision record:
 
 ## 4. Upgrade Path
 
-1. Validate compatibility in staging.
+1. Validate compatibility with production-scope credentials and dry-run traffic.
 2. Deploy with canary.
 3. Monitor key SLIs.
 4. Roll back if thresholds breach.

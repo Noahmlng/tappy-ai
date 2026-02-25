@@ -8,7 +8,6 @@
 | Environment | Base URL | Purpose | Data Policy |
 | --- | --- | --- | --- |
 | local | `http://127.0.0.1:3100/api` | local development and deterministic testing | local-only data; resettable state |
-| staging | `https://api.staging.example.com/api` | partner integration testing and release validation | sanitized/non-production data |
 | prod | `https://api.example.com/api` | production traffic | production policy, strict access control |
 
 ## 2. Credentials Required
@@ -23,12 +22,12 @@
 
 ## 3. Bootstrap Steps
 
-1. Request access and confirm `accountId/appId/environment`.
+1. Request access and confirm `accountId/appId` (runtime is fixed to `environment=prod`).
 2. Create or obtain runtime API key from dashboard.
 3. Load env vars:
 
 ```bash
-export MEDIATION_API_BASE_URL=https://api.staging.example.com/api
+export MEDIATION_API_BASE_URL=https://api.example.com/api
 export MEDIATION_API_KEY=<issued_runtime_key>
 export APP_ID=<your_app_id>
 export PLACEMENT_ID=chat_inline_v1
@@ -37,7 +36,7 @@ export PLACEMENT_ID=chat_inline_v1
 4. Validate health + config:
 
 ```bash
-curl -sS "$MEDIATION_API_BASE_URL/v1/mediation/config?appId=$APP_ID&placementId=$PLACEMENT_ID&environment=staging&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-25T00:00:00.000Z" \
+curl -sS "$MEDIATION_API_BASE_URL/v1/mediation/config?appId=$APP_ID&placementId=$PLACEMENT_ID&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-25T00:00:00.000Z" \
   -H "Authorization: Bearer $MEDIATION_API_KEY"
 ```
 
@@ -110,7 +109,7 @@ Expected response:
 | --- | --- | --- |
 | `401 RUNTIME_AUTH_REQUIRED` | missing/empty bearer token | ensure `Authorization` header is set with active key |
 | `401 INVALID_API_KEY` | revoked/expired key | rotate key from dashboard and retry |
-| `403 API_KEY_SCOPE_VIOLATION` | key scope doesn't match `appId/environment/placementId` | issue key under correct scope |
+| `403 API_KEY_SCOPE_VIOLATION` | key scope doesn't match `appId/placementId` | issue key under correct scope |
 | `400 INVALID_REQUEST` on `v2/bid` | payload not in V2 schema | keep only `userId/chatId/placementId/messages` |
 | `message=No bid` | no eligible bidder under current context | treat as valid no-fill, do not blind retry |
 

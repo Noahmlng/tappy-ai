@@ -34,7 +34,7 @@ This folder tracks external integration docs for the V2 baseline:
 
 ## Completion Rule
 
-- [ ] All files include `Owner`, `Last Updated`, and environment scope.
+- [ ] All files include `Owner`, `Last Updated`, and production scope notes.
 - [ ] Quickstart can produce first requestId in <= 15 minutes.
 - [ ] API examples are copy-paste runnable and aligned with current gateway behavior.
 - [ ] Troubleshooting includes no-bid, auth, scope mismatch, and payload validation failures.

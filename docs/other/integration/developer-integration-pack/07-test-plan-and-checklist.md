@@ -35,7 +35,7 @@
 
 ```bash
 # health / config
-curl -sS "$MEDIATION_API_BASE_URL/api/v1/mediation/config?appId=<app_id>&placementId=<placement_id>&environment=staging&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z" \
+curl -sS "$MEDIATION_API_BASE_URL/api/v1/mediation/config?appId=<app_id>&placementId=<placement_id>&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z" \
   -H "Authorization: Bearer $MEDIATION_API_KEY"
 
 # v2 bid

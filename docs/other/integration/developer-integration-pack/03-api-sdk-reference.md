@@ -33,10 +33,12 @@ Common auth failures:
 Required query params:
 1. `appId`
 2. `placementId`
-3. `environment`
-4. `schemaVersion`
-5. `sdkVersion`
-6. `requestAt` (ISO-8601)
+3. `schemaVersion`
+4. `sdkVersion`
+5. `requestAt` (ISO-8601)
+
+Optional query params:
+1. `environment` (defaults to `prod`; only `prod` is accepted)
 
 Sample request:
 
@@ -45,7 +47,7 @@ curl -sS -G "$BASE_URL/api/v1/mediation/config" \
   -H "Authorization: Bearer $API_KEY" \
   --data-urlencode "appId=$APP_ID" \
   --data-urlencode "placementId=chat_inline_v1" \
-  --data-urlencode "environment=staging" \
+  --data-urlencode "environment=prod" \
   --data-urlencode "schemaVersion=schema_v1" \
   --data-urlencode "sdkVersion=1.0.0" \
   --data-urlencode "requestAt=2026-02-24T12:00:00Z"
@@ -57,7 +59,7 @@ Sample response (`200`):
 {
   "appId": "app_demo",
   "accountId": "org_demo",
-  "environment": "staging",
+  "environment": "prod",
   "placementId": "chat_inline_v1",
   "placementKey": "attach.post_answer_render",
   "schemaVersion": "schema_v1",
@@ -222,7 +224,7 @@ Sample response:
 | --- | --- | --- | --- |
 | 400 | `INVALID_REQUEST`, `SDK_EVENTS_INVALID_PAYLOAD` | No | Fix payload/schema mismatch |
 | 401 | `RUNTIME_AUTH_REQUIRED`, `INVALID_API_KEY`, `ACCESS_TOKEN_EXPIRED` | No | Refresh/replace credential |
-| 403 | `API_KEY_SCOPE_VIOLATION`, `ACCESS_TOKEN_SCOPE_VIOLATION` | No | Use token with correct scope/app/env/placement |
+| 403 | `API_KEY_SCOPE_VIOLATION`, `ACCESS_TOKEN_SCOPE_VIOLATION` | No | Use token with correct scope/app/placement |
 | 404 | `PLACEMENT_NOT_FOUND` (config) | No | Check appId + placementId mapping |
 | 5xx | runtime/upstream transient failure | Yes (limited) | Backoff retry + fail-open |
 

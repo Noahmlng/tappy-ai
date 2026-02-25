@@ -101,7 +101,7 @@ Run ID：`external_chain_1771961602184`
 
 ## 5. Final Check 收口（V2-only / Fast-first）
 
-- 时间：2026-02-25 14:37:17 CST
+- 时间：2026-02-25 16:02:16 CST
 - 范围：外部开发者接入一致性 + Dashboard 可见性 + 测试门禁稳定性
 
 ### 5.1 根因与修复摘要
@@ -109,6 +109,7 @@ Run ID：`external_chain_1771961602184`
 | 领域 | 修复前 | 修复动作 | 修复后 |
 | --- | --- | --- | --- |
 | 对外接入内容 | 文档/模板混用旧新链路（`config -> evaluate -> events`） | 集成包 + Dashboard onboarding 统一到 V2-only（`config -> v2/bid -> events`） | 对外资料中不再有 `/api/v1/sdk/evaluate` |
+| 运行环境模型 | 网关/UI/SDK 同时存在 `sandbox/staging/prod` 默认；chatbot 内置 staging key 回退 | 网关默认值与校验、Dashboard 表单、SDK 默认值、chatbot key 读取、集成文档统一改为 `prod` | 对外接入改为 prod-only，移除 staging key 依赖 |
 | E2E 稳定性（`test:functional:p0`） | 本地 `.env` durable 设置导致网关启动超时，出现 3 个假失败 | E2E 启动强制 fast-first 环境（`state_file` + 关闭 durable 强制项），移除对 `.env` 的隐式依赖，增加健康检查窗口 | E2E 稳定全绿 |
 | Chatbot unit 门禁 | callback 形式的 Vite 配置与 vitest merge 冲突 | 先解析 Vite callback，再 `mergeConfig`；并加入 `passWithNoTests` | `npm run test:unit -- --run` 可稳定 exit 0 |
 
@@ -128,10 +129,10 @@ npm --prefix projects/simulator-chatbot run test:unit -- --run
 
 1. `test:integration`：**PASS**
    - 44 个文件
-   - 184 tests，184 pass，0 fail
+   - 185 tests，185 pass，0 fail
 2. `test:functional:p0`：**PASS**
    - contracts：38 pass，0 fail
-   - integration：184 pass，0 fail
+   - integration：185 pass，0 fail
    - e2e：7 pass，0 fail
 3. `simulator-dashboard build`：**PASS**
 4. `simulator-chatbot build`：**PASS**
@@ -144,12 +145,15 @@ npm --prefix projects/simulator-chatbot run test:unit -- --run
 1. Onboarding 主链路明确为 `config -> v2/bid -> events`
 2. Dashboard 导航开放 `Home + Usage + Quick Start`
 3. 收益继续由 fact 驱动（`simulator_settlement_conversion_facts`），并在 Dashboard 结算聚合中可见
-4. 对外接入文档已从占位模板补齐为可执行版本
+4. 运行时环境固定为 `environment=prod`，用户侧不再暴露 staging/sandbox 选择
+5. chatbot 不再内置 staging key 回退
+6. 对外接入文档已从占位模板补齐为可执行版本
 
 ### 5.4 最终判定
 
-在 V2-only / Fast-first 策略下，Final Check 门禁结论为 **PASS**：
+在 V2-only / Fast-first + prod-only 策略下，Final Check 门禁结论为 **PASS**：
 
 1. 外部接入链路一致且可执行
 2. 收益站内可见与可落档分析能力完整
 3. 上线门禁命令可重复执行且全部通过
+4. 就当前 MVP 范围（站内收益可见与落档分析）已达到 production 可用，用户侧不再依赖 staging

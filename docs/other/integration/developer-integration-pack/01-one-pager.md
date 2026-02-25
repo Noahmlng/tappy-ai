@@ -2,7 +2,7 @@
 
 - Owner: Integrations Team + Runtime Platform
 - Last Updated: 2026-02-25
-- Scope: sandbox | staging | prod
+- Scope: prod-only runtime path
 
 ## 1. Problem and Value
 
@@ -65,7 +65,7 @@ Event attribution path:
 3. Conversion facts dedupe on `idempotency_key` and roll into settlement aggregates.
 
 Config governance path:
-1. Placement config is versioned (`configVersion`) and scoped by `appId/accountId/environment`.
+1. Placement config is versioned (`configVersion`) and scoped by `appId/accountId` under fixed `environment=prod`.
 2. Dashboard/config APIs update placement settings with auth/scope checks.
 3. Runtime reads config snapshot via versioned query parameters.
 
