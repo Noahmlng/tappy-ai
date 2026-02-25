@@ -26,12 +26,28 @@ import {
 } from '../../providers/intent-card/index.js'
 import { normalizeUnifiedOffers } from '../../offers/index.js'
 
+function readCompatEnvValue(keys, fallback = '') {
+  if (!Array.isArray(keys) || keys.length === 0) {
+    return String(fallback || '').trim()
+  }
+  for (const key of keys) {
+    const value = process.env[key]
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim()
+    }
+  }
+  return String(fallback || '').trim()
+}
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const PROJECT_ROOT = path.resolve(__dirname, '../../..')
 const STATE_DIR = path.join(PROJECT_ROOT, '.local')
 const DEFAULT_STATE_FILE_NAME = 'simulator-gateway-state.json'
-const RAW_SETTLEMENT_STORAGE_MODE = String(process.env.SIMULATOR_SETTLEMENT_STORAGE || 'auto').trim().toLowerCase()
+const RAW_SETTLEMENT_STORAGE_MODE = readCompatEnvValue(
+  ['MEDIATION_SETTLEMENT_STORAGE', 'SIMULATOR_SETTLEMENT_STORAGE'],
+  'auto',
+).toLowerCase()
 const SETTLEMENT_STORAGE_MODE = RAW_SETTLEMENT_STORAGE_MODE === 'postgres'
   ? 'supabase'
   : RAW_SETTLEMENT_STORAGE_MODE
@@ -48,49 +64,57 @@ const CONTROL_PLANE_DASHBOARD_SESSIONS_TABLE = 'control_plane_dashboard_sessions
 const CONTROL_PLANE_INTEGRATION_TOKENS_TABLE = 'control_plane_integration_tokens'
 const CONTROL_PLANE_AGENT_ACCESS_TOKENS_TABLE = 'control_plane_agent_access_tokens'
 
-const PORT = Number(process.env.SIMULATOR_GATEWAY_PORT || 3100)
-const HOST = process.env.SIMULATOR_GATEWAY_HOST || '127.0.0.1'
-const STATE_FILE = String(process.env.SIMULATOR_STATE_FILE || '').trim()
+const PORT = Number(readCompatEnvValue(['MEDIATION_GATEWAY_PORT', 'SIMULATOR_GATEWAY_PORT'], '3100'))
+const HOST = readCompatEnvValue(['MEDIATION_GATEWAY_HOST', 'SIMULATOR_GATEWAY_HOST'], '127.0.0.1')
+const STATE_FILE = readCompatEnvValue(['MEDIATION_STATE_FILE', 'SIMULATOR_STATE_FILE'], '')
   || path.join(
     STATE_DIR,
     PORT === 3100 ? DEFAULT_STATE_FILE_NAME : `simulator-gateway-state-${PORT}.json`,
   )
 const PRODUCTION_RUNTIME = (
-  String(process.env.SIMULATOR_PRODUCTION_MODE || '').trim().toLowerCase() === 'true'
+  readCompatEnvValue(['MEDIATION_PRODUCTION_MODE', 'SIMULATOR_PRODUCTION_MODE'], '').toLowerCase() === 'true'
   || String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production'
 )
 const REQUIRE_DURABLE_SETTLEMENT = String(
-  process.env.SIMULATOR_REQUIRE_DURABLE_SETTLEMENT || (PRODUCTION_RUNTIME ? 'true' : 'false'),
+  readCompatEnvValue(
+    ['MEDIATION_REQUIRE_DURABLE_SETTLEMENT', 'SIMULATOR_REQUIRE_DURABLE_SETTLEMENT'],
+    PRODUCTION_RUNTIME ? 'true' : 'false',
+  ),
 ).trim().toLowerCase() !== 'false'
 const STRICT_MANUAL_INTEGRATION = String(
-  process.env.SIMULATOR_STRICT_MANUAL_INTEGRATION || 'false',
+  readCompatEnvValue(['MEDIATION_STRICT_MANUAL_INTEGRATION', 'SIMULATOR_STRICT_MANUAL_INTEGRATION'], 'false'),
 ).trim().toLowerCase() === 'true'
 const REQUIRE_RUNTIME_LOG_DB_PERSISTENCE = String(
-  process.env.SIMULATOR_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE
-    || (REQUIRE_DURABLE_SETTLEMENT ? 'true' : 'false'),
+  readCompatEnvValue(
+    ['MEDIATION_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE', 'SIMULATOR_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE'],
+    REQUIRE_DURABLE_SETTLEMENT ? 'true' : 'false',
+  ),
 ).trim().toLowerCase() !== 'false'
 const DEV_RESET_ENABLED = String(
-  process.env.SIMULATOR_DEV_RESET_ENABLED || (PRODUCTION_RUNTIME ? 'false' : 'true'),
+  readCompatEnvValue(
+    ['MEDIATION_DEV_RESET_ENABLED', 'SIMULATOR_DEV_RESET_ENABLED'],
+    PRODUCTION_RUNTIME ? 'false' : 'true',
+  ),
 ).trim().toLowerCase() !== 'false'
-const DEV_RESET_TOKEN = String(process.env.SIMULATOR_DEV_RESET_TOKEN || '').trim()
+const DEV_RESET_TOKEN = readCompatEnvValue(['MEDIATION_DEV_RESET_TOKEN', 'SIMULATOR_DEV_RESET_TOKEN'], '')
 const MAX_DECISION_LOGS = parseCollectionLimit(
-  process.env.SIMULATOR_MAX_DECISION_LOGS,
+  readCompatEnvValue(['MEDIATION_MAX_DECISION_LOGS', 'SIMULATOR_MAX_DECISION_LOGS'], ''),
   PRODUCTION_RUNTIME ? 0 : 500,
 )
 const MAX_EVENT_LOGS = parseCollectionLimit(
-  process.env.SIMULATOR_MAX_EVENT_LOGS,
+  readCompatEnvValue(['MEDIATION_MAX_EVENT_LOGS', 'SIMULATOR_MAX_EVENT_LOGS'], ''),
   PRODUCTION_RUNTIME ? 0 : 500,
 )
 const MAX_PLACEMENT_AUDIT_LOGS = parseCollectionLimit(
-  process.env.SIMULATOR_MAX_PLACEMENT_AUDIT_LOGS,
+  readCompatEnvValue(['MEDIATION_MAX_PLACEMENT_AUDIT_LOGS', 'SIMULATOR_MAX_PLACEMENT_AUDIT_LOGS'], ''),
   PRODUCTION_RUNTIME ? 0 : 500,
 )
 const MAX_NETWORK_FLOW_LOGS = parseCollectionLimit(
-  process.env.SIMULATOR_MAX_NETWORK_FLOW_LOGS,
+  readCompatEnvValue(['MEDIATION_MAX_NETWORK_FLOW_LOGS', 'SIMULATOR_MAX_NETWORK_FLOW_LOGS'], ''),
   PRODUCTION_RUNTIME ? 0 : 300,
 )
 const MAX_CONTROL_PLANE_AUDIT_LOGS = parseCollectionLimit(
-  process.env.SIMULATOR_MAX_CONTROL_PLANE_AUDIT_LOGS,
+  readCompatEnvValue(['MEDIATION_MAX_CONTROL_PLANE_AUDIT_LOGS', 'SIMULATOR_MAX_CONTROL_PLANE_AUDIT_LOGS'], ''),
   PRODUCTION_RUNTIME ? 0 : 800,
 )
 const MAX_INTEGRATION_TOKENS = 500
@@ -98,7 +122,10 @@ const MAX_AGENT_ACCESS_TOKENS = 1200
 const MAX_DASHBOARD_USERS = 500
 const MAX_DASHBOARD_SESSIONS = 1500
 const CONTROL_PLANE_REFRESH_THROTTLE_MS = toPositiveInteger(
-  process.env.SIMULATOR_CONTROL_PLANE_REFRESH_THROTTLE_MS,
+  readCompatEnvValue(
+    ['MEDIATION_CONTROL_PLANE_REFRESH_THROTTLE_MS', 'SIMULATOR_CONTROL_PLANE_REFRESH_THROTTLE_MS'],
+    '',
+  ),
   1000,
 )
 const DECISION_REASON_ENUM = new Set(['served', 'no_fill', 'blocked', 'error'])
@@ -108,11 +135,18 @@ const DEFAULT_CONTROL_PLANE_APP_ID = ''
 const DEFAULT_CONTROL_PLANE_ORG_ID = ''
 const TRACKING_ACCOUNT_QUERY_PARAM = 'aid'
 const DASHBOARD_SESSION_PREFIX = 'dsh_'
-const DASHBOARD_SESSION_TTL_SECONDS = toPositiveInteger(process.env.SIMULATOR_DASHBOARD_SESSION_TTL_SECONDS, 86400 * 7)
-const DASHBOARD_AUTH_REQUIRED = String(process.env.SIMULATOR_DASHBOARD_AUTH_REQUIRED || 'true').trim().toLowerCase() !== 'false'
-const RUNTIME_AUTH_REQUIRED = String(process.env.SIMULATOR_RUNTIME_AUTH_REQUIRED || 'true').trim().toLowerCase() !== 'false'
+const DASHBOARD_SESSION_TTL_SECONDS = toPositiveInteger(
+  readCompatEnvValue(['MEDIATION_DASHBOARD_SESSION_TTL_SECONDS', 'SIMULATOR_DASHBOARD_SESSION_TTL_SECONDS'], ''),
+  86400 * 7,
+)
+const DASHBOARD_AUTH_REQUIRED = String(
+  readCompatEnvValue(['MEDIATION_DASHBOARD_AUTH_REQUIRED', 'SIMULATOR_DASHBOARD_AUTH_REQUIRED'], 'true'),
+).trim().toLowerCase() !== 'false'
+const RUNTIME_AUTH_REQUIRED = String(
+  readCompatEnvValue(['MEDIATION_RUNTIME_AUTH_REQUIRED', 'SIMULATOR_RUNTIME_AUTH_REQUIRED'], 'true'),
+).trim().toLowerCase() !== 'false'
 const INVENTORY_FALLBACK_WHEN_UNAVAILABLE = String(
-  process.env.SIMULATOR_V2_INVENTORY_FALLBACK || 'true',
+  readCompatEnvValue(['MEDIATION_V2_INVENTORY_FALLBACK', 'SIMULATOR_V2_INVENTORY_FALLBACK'], 'true'),
 ).trim().toLowerCase() !== 'false'
 const MIN_AGENT_ACCESS_TTL_SECONDS = 60
 const MAX_AGENT_ACCESS_TTL_SECONDS = 900
@@ -131,14 +165,23 @@ const TOKEN_EXCHANGE_FORBIDDEN_FIELDS = new Set([
 ])
 const ALLOWED_CORS_ORIGINS = Array.from(
   new Set(
-    String(process.env.SIMULATOR_ALLOWED_ORIGINS || '')
+    readCompatEnvValue(['MEDIATION_ALLOWED_ORIGINS', 'SIMULATOR_ALLOWED_ORIGINS'], '')
       .split(',')
       .map((item) => String(item || '').trim())
       .filter(Boolean),
   ),
 )
 
+const PLACEMENT_ID_FROM_ANSWER = 'chat_from_answer_v1'
+const PLACEMENT_ID_INTENT_RECOMMENDATION = 'chat_intent_recommendation_v1'
+const LEGACY_PLACEMENT_ID_RENAMES = Object.freeze({
+  chat_inline_v1: PLACEMENT_ID_FROM_ANSWER,
+  chat_followup_v1: PLACEMENT_ID_INTENT_RECOMMENDATION,
+})
+
 const PLACEMENT_KEY_BY_ID = {
+  [PLACEMENT_ID_FROM_ANSWER]: 'attach.post_answer_render',
+  [PLACEMENT_ID_INTENT_RECOMMENDATION]: 'next_step.intent_card',
   chat_inline_v1: 'attach.post_answer_render',
   chat_followup_v1: 'next_step.intent_card',
   search_parallel_v1: 'intervention.search_parallel',
@@ -421,7 +464,9 @@ function createOpportunityChainWriter() {
 }
 
 function isLlmIntentFallbackEnabled() {
-  return String(process.env.SIMULATOR_INTENT_LLM_FALLBACK || 'true').trim().toLowerCase() !== 'false'
+  return String(
+    readCompatEnvValue(['MEDIATION_INTENT_LLM_FALLBACK', 'SIMULATOR_INTENT_LLM_FALLBACK'], 'true'),
+  ).trim().toLowerCase() !== 'false'
 }
 
 function deriveInventoryNetworksFromPlacement(placement = {}) {
@@ -847,7 +892,10 @@ function createIntegrationTokenRecord(input = {}) {
     throw new Error('accountId is required.')
   }
   const environment = normalizeControlPlaneEnvironment(input.environment)
-  const placementId = String(input.placementId || '').trim() || 'chat_inline_v1'
+  const placementId = normalizePlacementIdWithMigration(
+    assertPlacementIdNotRenamed(String(input.placementId || '').trim() || PLACEMENT_ID_FROM_ANSWER, 'placementId'),
+    PLACEMENT_ID_FROM_ANSWER,
+  )
   const ttlMinutes = toPositiveInteger(input.ttlMinutes, 10)
   const ttlSeconds = ttlMinutes * 60
   const issuedAt = typeof input.issuedAt === 'string' ? input.issuedAt : nowIso()
@@ -893,7 +941,10 @@ function normalizeIntegrationTokenRecord(raw) {
     '',
   )
   const environment = normalizeControlPlaneEnvironment(raw.environment)
-  const placementId = String(raw.placementId || raw.placement_id || '').trim() || 'chat_inline_v1'
+  const placementId = normalizePlacementIdWithMigration(
+    String(raw.placementId || raw.placement_id || '').trim(),
+    PLACEMENT_ID_FROM_ANSWER,
+  )
   const status = String(raw.status || '').trim().toLowerCase() || 'active'
 
   return {
@@ -956,7 +1007,10 @@ function createAgentAccessTokenRecord(input = {}) {
     throw new Error('accountId is required.')
   }
   const environment = normalizeControlPlaneEnvironment(input.environment)
-  const placementId = String(input.placementId || '').trim() || 'chat_inline_v1'
+  const placementId = normalizePlacementIdWithMigration(
+    assertPlacementIdNotRenamed(String(input.placementId || '').trim() || PLACEMENT_ID_FROM_ANSWER, 'placementId'),
+    PLACEMENT_ID_FROM_ANSWER,
+  )
   const ttlSeconds = toPositiveInteger(input.ttlSeconds, 300)
   const issuedAt = typeof input.issuedAt === 'string' ? input.issuedAt : nowIso()
   const updatedAt = typeof input.updatedAt === 'string' ? input.updatedAt : issuedAt
@@ -1001,7 +1055,10 @@ function normalizeAgentAccessTokenRecord(raw) {
     '',
   )
   const environment = normalizeControlPlaneEnvironment(raw.environment)
-  const placementId = String(raw.placementId || raw.placement_id || '').trim() || 'chat_inline_v1'
+  const placementId = normalizePlacementIdWithMigration(
+    String(raw.placementId || raw.placement_id || '').trim(),
+    PLACEMENT_ID_FROM_ANSWER,
+  )
   const status = String(raw.status || '').trim().toLowerCase() || 'active'
 
   return {
@@ -2084,6 +2141,43 @@ function requiredNonEmptyString(value, fieldName) {
   return text
 }
 
+function resolveRenamedPlacementId(value) {
+  const placementId = String(value || '').trim()
+  if (!placementId) return ''
+  return String(LEGACY_PLACEMENT_ID_RENAMES[placementId] || '').trim()
+}
+
+function normalizePlacementIdWithMigration(value, fallback = '') {
+  const placementId = String(value || '').trim() || String(fallback || '').trim()
+  if (!placementId) return ''
+  return resolveRenamedPlacementId(placementId) || placementId
+}
+
+function createPlacementRenamedError(legacyPlacementId, fieldName = 'placementId') {
+  const oldPlacementId = String(legacyPlacementId || '').trim()
+  const newPlacementId = resolveRenamedPlacementId(oldPlacementId)
+  const error = new Error(
+    `${fieldName} ${oldPlacementId} was renamed to ${newPlacementId}. Please use the new placement ID.`,
+  )
+  error.code = 'PLACEMENT_ID_RENAMED'
+  error.status = 400
+  error.details = {
+    oldPlacementId,
+    newPlacementId,
+  }
+  return error
+}
+
+function assertPlacementIdNotRenamed(value, fieldName = 'placementId') {
+  const placementId = String(value || '').trim()
+  if (!placementId) return placementId
+  const renamedTo = resolveRenamedPlacementId(placementId)
+  if (renamedTo) {
+    throw createPlacementRenamedError(placementId, fieldName)
+  }
+  return placementId
+}
+
 function normalizeV2BidMessages(value) {
   if (!Array.isArray(value)) {
     throw new Error('messages must be an array.')
@@ -2125,7 +2219,10 @@ function normalizeV2BidPayload(payload, routeName) {
 
   const userId = requiredNonEmptyString(input.userId, 'userId')
   const chatId = requiredNonEmptyString(input.chatId, 'chatId')
-  const placementId = requiredNonEmptyString(input.placementId, 'placementId')
+  const placementId = assertPlacementIdNotRenamed(
+    requiredNonEmptyString(input.placementId, 'placementId'),
+    'placementId',
+  )
   const messages = normalizeV2BidMessages(input.messages)
 
   return {
@@ -2214,6 +2311,11 @@ function normalizePostbackConversionPayload(payload, routeName) {
     throw new Error('currency must be USD for CPA MVP.')
   }
 
+  const rawPlacementId = String(input.placementId || '').trim()
+  if (rawPlacementId) {
+    assertPlacementIdNotRenamed(rawPlacementId, 'placementId')
+  }
+
   return {
     eventType: 'postback',
     requestId,
@@ -2222,7 +2324,7 @@ function normalizePostbackConversionPayload(payload, routeName) {
     sessionId: String(input.sessionId || '').trim(),
     turnId: String(input.turnId || '').trim(),
     userId: String(input.userId || '').trim(),
-    placementId: String(input.placementId || '').trim(),
+    placementId: normalizePlacementIdWithMigration(rawPlacementId),
     placementKey: String(input.placementKey || '').trim(),
     adId: String(input.adId || '').trim(),
     postbackType,
@@ -2287,7 +2389,10 @@ function normalizeAttachMvpPayload(payload, routeName) {
   const intentScore = clampNumber(input.intentScore, 0, 1, NaN)
   const kind = normalizeAttachEventKind(input.kind)
   const adId = String(input.adId || '').trim()
-  const placementId = String(input.placementId || '').trim() || 'chat_inline_v1'
+  const placementId = assertPlacementIdNotRenamed(
+    String(input.placementId || '').trim() || PLACEMENT_ID_FROM_ANSWER,
+    'placementId',
+  )
 
   if (!Number.isFinite(intentScore)) {
     throw new Error('intentScore is required and must be a number between 0 and 1.')
@@ -2393,7 +2498,10 @@ function normalizeNextStepIntentCardPayload(payload, routeName) {
   )
   const sessionId = requiredNonEmptyString(input.sessionId, 'sessionId')
   const turnId = requiredNonEmptyString(input.turnId, 'turnId')
-  const placementId = requiredNonEmptyString(input.placementId, 'placementId')
+  const placementId = assertPlacementIdNotRenamed(
+    requiredNonEmptyString(input.placementId, 'placementId'),
+    'placementId',
+  )
   const placementKey = requiredNonEmptyString(input.placementKey, 'placementKey')
   const event = String(input.event || '').trim().toLowerCase()
   const userId = String(input.userId || '').trim()
@@ -2787,7 +2895,7 @@ function normalizePlacementFallback(value) {
 }
 
 function normalizePlacement(raw) {
-  const placementId = String(raw?.placementId || '').trim()
+  const placementId = normalizePlacementIdWithMigration(String(raw?.placementId || '').trim())
   const placementKey = String(raw?.placementKey || PLACEMENT_KEY_BY_ID[placementId] || '').trim()
 
   return {
@@ -2907,6 +3015,40 @@ function initialPlacementStats(placements) {
   return stats
 }
 
+function normalizePlacementStatsSnapshot(rawStats = {}, placements = []) {
+  const source = rawStats && typeof rawStats === 'object' ? rawStats : {}
+  const stats = {}
+  for (const [rawPlacementId, row] of Object.entries(source)) {
+    const placementId = normalizePlacementIdWithMigration(rawPlacementId)
+    if (!placementId) continue
+    const target = stats[placementId] || {
+      requests: 0,
+      served: 0,
+      impressions: 0,
+      clicks: 0,
+      revenueUsd: 0,
+    }
+    target.requests += toPositiveInteger(row?.requests, 0)
+    target.served += toPositiveInteger(row?.served, 0)
+    target.impressions += toPositiveInteger(row?.impressions, 0)
+    target.clicks += toPositiveInteger(row?.clicks, 0)
+    target.revenueUsd = round(target.revenueUsd + clampNumber(row?.revenueUsd, 0, Number.MAX_SAFE_INTEGER, 0), 4)
+    stats[placementId] = target
+  }
+  for (const placement of Array.isArray(placements) ? placements : []) {
+    const placementId = String(placement?.placementId || '').trim()
+    if (!placementId || stats[placementId]) continue
+    stats[placementId] = {
+      requests: 0,
+      served: 0,
+      impressions: 0,
+      clicks: 0,
+      revenueUsd: 0,
+    }
+  }
+  return stats
+}
+
 function normalizeConversionFact(raw) {
   const item = raw && typeof raw === 'object' ? raw : {}
   const appId = String(item.appId || '').trim()
@@ -2922,6 +3064,9 @@ function normalizeConversionFact(raw) {
   const cpaUsd = round(clampNumber(item.cpaUsd ?? item.revenueUsd, 0, Number.MAX_SAFE_INTEGER, 0), 4)
   const fallbackFactId = `fact_${createHash('sha1').update(`${appId}|${requestId}|${conversionId}|${createdAt}`).digest('hex').slice(0, 16)}`
 
+  const placementId = normalizePlacementIdWithMigration(String(item.placementId || '').trim())
+  const placementKey = String(item.placementKey || '').trim() || resolvePlacementKeyById(placementId, appId)
+
   return {
     factId: String(item.factId || '').trim() || fallbackFactId,
     factType: 'cpa_conversion',
@@ -2931,8 +3076,8 @@ function normalizeConversionFact(raw) {
     sessionId: String(item.sessionId || '').trim(),
     turnId: String(item.turnId || '').trim(),
     userId: String(item.userId || '').trim(),
-    placementId: String(item.placementId || '').trim(),
-    placementKey: String(item.placementKey || '').trim(),
+    placementId,
+    placementKey,
     adId: String(item.adId || '').trim(),
     postbackType,
     postbackStatus,
@@ -4278,21 +4423,12 @@ function loadState() {
       ? defaultPlacementConfig.placements.map((item) => normalizePlacement(item))
       : legacyPlacements
 
-    const placementStats = parsed.placementStats && typeof parsed.placementStats === 'object'
-      ? parsed.placementStats
-      : initialPlacementStats(placements)
-
-    for (const placement of placements) {
-      if (!placementStats[placement.placementId]) {
-        placementStats[placement.placementId] = {
-          requests: 0,
-          served: 0,
-          impressions: 0,
-          clicks: 0,
-          revenueUsd: 0,
-        }
-      }
-    }
+    const placementStats = normalizePlacementStatsSnapshot(
+      parsed.placementStats && typeof parsed.placementStats === 'object'
+        ? parsed.placementStats
+        : initialPlacementStats(placements),
+      placements,
+    )
 
     return {
       version: toPositiveInteger(parsed?.version, 6),
@@ -4310,8 +4446,18 @@ function loadState() {
       networkFlowLogs: Array.isArray(parsed.networkFlowLogs)
         ? applyCollectionLimit(parsed.networkFlowLogs, MAX_NETWORK_FLOW_LOGS)
         : [],
-      decisionLogs: Array.isArray(parsed.decisionLogs) ? applyCollectionLimit(parsed.decisionLogs, MAX_DECISION_LOGS) : [],
-      eventLogs: Array.isArray(parsed.eventLogs) ? applyCollectionLimit(parsed.eventLogs, MAX_EVENT_LOGS) : [],
+      decisionLogs: Array.isArray(parsed.decisionLogs)
+        ? applyCollectionLimit(
+          parsed.decisionLogs.map((item) => normalizeRuntimeDecisionLogRecord(item)).filter(Boolean),
+          MAX_DECISION_LOGS,
+        )
+        : [],
+      eventLogs: Array.isArray(parsed.eventLogs)
+        ? applyCollectionLimit(
+          parsed.eventLogs.map((item) => normalizeRuntimeEventLogRecord(item)).filter(Boolean),
+          MAX_EVENT_LOGS,
+        )
+        : [],
       conversionFacts: Array.isArray(parsed.conversionFacts)
         ? parsed.conversionFacts.map((item) => normalizeConversionFact(item))
         : [],
@@ -4597,8 +4743,12 @@ function appendDailyMetric({ impressions = 0, clicks = 0 }) {
 }
 
 function ensurePlacementStats(placementId) {
-  if (!state.placementStats[placementId]) {
-    state.placementStats[placementId] = {
+  const normalizedPlacementId = normalizePlacementIdWithMigration(
+    String(placementId || '').trim(),
+    PLACEMENT_ID_FROM_ANSWER,
+  )
+  if (!normalizedPlacementId) {
+    return {
       requests: 0,
       served: 0,
       impressions: 0,
@@ -4606,7 +4756,16 @@ function ensurePlacementStats(placementId) {
       revenueUsd: 0,
     }
   }
-  return state.placementStats[placementId]
+  if (!state.placementStats[normalizedPlacementId]) {
+    state.placementStats[normalizedPlacementId] = {
+      requests: 0,
+      served: 0,
+      impressions: 0,
+      clicks: 0,
+      revenueUsd: 0,
+    }
+  }
+  return state.placementStats[normalizedPlacementId]
 }
 
 function readJsonObject(value) {
@@ -4628,6 +4787,12 @@ function normalizeRuntimeDecisionLogRecord(payload = {}) {
   const reason = DECISION_REASON_ENUM.has(String(source.reason || '')) ? String(source.reason) : result
   const intentScore = clampNumber(source.intentScore, 0, 1, 0)
 
+  const placementId = normalizePlacementIdWithMigration(
+    String(source.placementId || source.placement_id || '').trim(),
+  )
+  const placementKey = String(source.placementKey || source.placement_key || '').trim()
+    || resolvePlacementKeyById(placementId, appId)
+
   return {
     ...(source && typeof source === 'object' ? source : {}),
     id: String(source.id || '').trim() || createId('decision'),
@@ -4638,8 +4803,8 @@ function normalizeRuntimeDecisionLogRecord(payload = {}) {
     sessionId: String(source.sessionId || source.session_id || '').trim(),
     turnId: String(source.turnId || source.turn_id || '').trim(),
     event: String(source.event || '').trim(),
-    placementId: String(source.placementId || source.placement_id || '').trim(),
-    placementKey: String(source.placementKey || source.placement_key || '').trim(),
+    placementId,
+    placementKey,
     result,
     reason,
     reasonDetail: String(source.reasonDetail || source.reason_detail || '').trim() || reason,
@@ -4651,6 +4816,12 @@ function normalizeRuntimeEventLogRecord(payload = {}) {
   const source = payload && typeof payload === 'object' ? payload : {}
   const appId = String(source.appId || '').trim()
   const accountId = normalizeControlPlaneAccountId(source.accountId || resolveAccountIdForApp(appId), '')
+  const placementId = normalizePlacementIdWithMigration(
+    String(source.placementId || source.placement_id || '').trim(),
+  )
+  const placementKey = String(source.placementKey || source.placement_key || '').trim()
+    || resolvePlacementKeyById(placementId, appId)
+
   return {
     ...(source && typeof source === 'object' ? source : {}),
     id: String(source.id || '').trim() || createId('event'),
@@ -4660,8 +4831,8 @@ function normalizeRuntimeEventLogRecord(payload = {}) {
     requestId: String(source.requestId || source.request_id || '').trim(),
     sessionId: String(source.sessionId || source.session_id || '').trim(),
     turnId: String(source.turnId || source.turn_id || '').trim(),
-    placementId: String(source.placementId || source.placement_id || '').trim(),
-    placementKey: String(source.placementKey || source.placement_key || '').trim(),
+    placementId,
+    placementKey,
     eventType: String(source.eventType || source.event_type || '').trim(),
     event: String(source.event || '').trim(),
     kind: String(source.kind || '').trim(),
@@ -4915,7 +5086,7 @@ async function findPlacementIdByRequestId(requestId) {
   if (!targetRequestId) return ''
   for (const row of state.decisionLogs) {
     if (String(row?.requestId || '').trim() !== targetRequestId) continue
-    return String(row?.placementId || '').trim()
+    return normalizePlacementIdWithMigration(String(row?.placementId || '').trim())
   }
   if (!isPostgresSettlementStore()) return ''
   try {
@@ -4932,7 +5103,7 @@ async function findPlacementIdByRequestId(requestId) {
       [targetRequestId],
     )
     const row = Array.isArray(result.rows) ? result.rows[0] : null
-    return String(row?.placement_id || '').trim()
+    return normalizePlacementIdWithMigration(String(row?.placement_id || '').trim())
   } catch (error) {
     console.error(
       '[simulator-gateway] failed to resolve placementId by requestId from runtime decision logs:',
@@ -4943,7 +5114,7 @@ async function findPlacementIdByRequestId(requestId) {
 }
 
 function resolvePlacementKeyById(placementId, appId = '') {
-  const normalizedPlacementId = String(placementId || '').trim()
+  const normalizedPlacementId = normalizePlacementIdWithMigration(String(placementId || '').trim())
   if (!normalizedPlacementId) return ''
   const placements = getPlacementsForApp(appId, '', { createIfMissing: false })
   const placement = placements.find((item) => item.placementId === normalizedPlacementId)
@@ -4952,6 +5123,60 @@ function resolvePlacementKeyById(placementId, appId = '') {
     return String(placement.placementKey || '').trim()
   }
   return String(PLACEMENT_KEY_BY_ID[normalizedPlacementId] || '').trim()
+}
+
+function normalizeBidPricingSnapshot(raw = {}) {
+  if (!raw || typeof raw !== 'object') return null
+  const modelVersion = String(raw.modelVersion || '').trim()
+  const triggerType = String(raw.triggerType || '').trim()
+  const targetRpmUsd = clampNumber(raw.targetRpmUsd, 0, Number.MAX_SAFE_INTEGER, NaN)
+  const ecpmUsd = clampNumber(raw.ecpmUsd, 0, Number.MAX_SAFE_INTEGER, NaN)
+  const cpaUsd = clampNumber(raw.cpaUsd, 0, Number.MAX_SAFE_INTEGER, NaN)
+  const pClick = clampNumber(raw.pClick, 0, 1, NaN)
+  const pConv = clampNumber(raw.pConv, 0, 1, NaN)
+  const network = String(raw.network || '').trim().toLowerCase()
+  const rawSignal = raw.rawSignal && typeof raw.rawSignal === 'object'
+    ? {
+        rawBidValue: clampNumber(raw.rawSignal.rawBidValue, 0, Number.MAX_SAFE_INTEGER, 0),
+        rawUnit: String(raw.rawSignal.rawUnit || '').trim(),
+        normalizedFactor: clampNumber(raw.rawSignal.normalizedFactor, 0, Number.MAX_SAFE_INTEGER, 1),
+      }
+    : null
+
+  if (!modelVersion && !Number.isFinite(cpaUsd) && !Number.isFinite(ecpmUsd)) return null
+  return {
+    modelVersion,
+    triggerType,
+    targetRpmUsd: Number.isFinite(targetRpmUsd) ? round(targetRpmUsd, 4) : 0,
+    ecpmUsd: Number.isFinite(ecpmUsd) ? round(ecpmUsd, 4) : 0,
+    cpaUsd: Number.isFinite(cpaUsd) ? round(cpaUsd, 4) : 0,
+    pClick: Number.isFinite(pClick) ? round(pClick, 6) : 0,
+    pConv: Number.isFinite(pConv) ? round(pConv, 6) : 0,
+    network,
+    rawSignal,
+  }
+}
+
+function findPricingSnapshotByRequestId(requestId = '') {
+  const targetRequestId = String(requestId || '').trim()
+  if (!targetRequestId) return null
+
+  for (const row of state.decisionLogs) {
+    if (String(row?.requestId || '').trim() !== targetRequestId) continue
+    const runtime = row?.runtime && typeof row.runtime === 'object' ? row.runtime : {}
+    const winnerPricing = normalizeBidPricingSnapshot(runtime?.winnerBid?.pricing)
+    if (winnerPricing) return winnerPricing
+  }
+
+  const deliveryRows = Array.isArray(state.deliveryRecords) ? state.deliveryRecords : []
+  for (const row of deliveryRows) {
+    if (String(row?.requestId || row?.responseReference || '').trim() !== targetRequestId) continue
+    const payload = row?.payload && typeof row.payload === 'object' ? row.payload : {}
+    const winnerPricing = normalizeBidPricingSnapshot(payload?.winnerBid?.pricing || payload?.pricingSnapshot)
+    if (winnerPricing) return winnerPricing
+  }
+
+  return null
 }
 
 function buildConversionFactIdempotencyKey(payload = {}) {
@@ -4974,7 +5199,9 @@ async function recordConversionFact(payload) {
     state.conversionFacts = []
   }
 
-  const placementId = String(request.placementId || '').trim() || await findPlacementIdByRequestId(request.requestId)
+  const placementId = normalizePlacementIdWithMigration(
+    String(request.placementId || '').trim() || await findPlacementIdByRequestId(request.requestId),
+  )
   const placementKey = String(request.placementKey || '').trim() || resolvePlacementKeyById(placementId, request.appId)
   const idempotencyKey = buildConversionFactIdempotencyKey({
     ...request,
@@ -5035,7 +5262,7 @@ function authorizeDevReset(req) {
       status: 403,
       error: {
         code: 'RESET_DISABLED',
-        message: 'Reset endpoint is disabled by simulator policy.',
+        message: 'Reset endpoint is disabled by mediation policy.',
       },
     }
   }
@@ -5044,7 +5271,11 @@ function authorizeDevReset(req) {
     return { ok: true, mode: 'loopback_bind' }
   }
 
-  const providedToken = String(req?.headers?.['x-simulator-reset-token'] || '').trim()
+  const providedToken = String(
+    req?.headers?.['x-mediation-reset-token']
+      || req?.headers?.['x-simulator-reset-token']
+      || '',
+  ).trim()
   if (DEV_RESET_TOKEN && providedToken && providedToken === DEV_RESET_TOKEN) {
     return { ok: true, mode: 'token' }
   }
@@ -5055,8 +5286,8 @@ function authorizeDevReset(req) {
     error: {
       code: 'RESET_FORBIDDEN',
       message: DEV_RESET_TOKEN
-        ? 'Reset endpoint requires x-simulator-reset-token when gateway is publicly bound.'
-        : 'Reset endpoint is blocked on non-loopback bind. Configure SIMULATOR_DEV_RESET_TOKEN to allow internal reset.',
+        ? 'Reset endpoint requires x-mediation-reset-token when gateway is publicly bound.'
+        : 'Reset endpoint is blocked on non-loopback bind. Configure MEDIATION_DEV_RESET_TOKEN to allow internal reset.',
     },
   }
 }
@@ -5389,7 +5620,10 @@ function recordServeCounters(placement, request) {
 }
 
 function recordClickCounters(placementId) {
-  const normalizedPlacementId = String(placementId || '').trim() || 'chat_inline_v1'
+  const normalizedPlacementId = normalizePlacementIdWithMigration(
+    String(placementId || '').trim(),
+    PLACEMENT_ID_FROM_ANSWER,
+  )
   const placementStats = ensurePlacementStats(normalizedPlacementId)
   state.globalStats.clicks += 1
   placementStats.clicks += 1
@@ -5529,6 +5763,14 @@ function toDecisionAdFromBid(bid) {
   }
 }
 
+function resolveTriggerTypeByPlacementId(placementId = '') {
+  const normalizedPlacementId = normalizePlacementIdWithMigration(placementId, PLACEMENT_ID_FROM_ANSWER)
+  if (normalizedPlacementId === PLACEMENT_ID_INTENT_RECOMMENDATION) {
+    return 'intent_recommendation'
+  }
+  return 'from_answer'
+}
+
 async function evaluateV2BidOpportunityFirst(payload) {
   const request = payload && typeof payload === 'object' ? payload : {}
   request.appId = String(request.appId || DEFAULT_CONTROL_PLANE_APP_ID).trim()
@@ -5545,8 +5787,12 @@ async function evaluateV2BidOpportunityFirst(payload) {
     accountId: request.accountId,
     placementId: request.placementId,
   })
-  const placementId = String(placement?.placementId || request.placementId || 'chat_inline_v1').trim()
+  const placementId = normalizePlacementIdWithMigration(
+    String(placement?.placementId || request.placementId || '').trim(),
+    PLACEMENT_ID_FROM_ANSWER,
+  )
   const placementKey = String(placement?.placementKey || PLACEMENT_KEY_BY_ID[placementId] || '').trim()
+  const triggerType = resolveTriggerTypeByPlacementId(placementId)
   const messageContext = deriveBidMessageContext(request.messages)
   const writer = createOpportunityChainWriter()
 
@@ -5698,6 +5944,7 @@ async function evaluateV2BidOpportunityFirst(payload) {
         intentScore: intent.score,
         scoreFloor: 0.32,
         placementId,
+        triggerType,
         placement: 'block',
       })
 
@@ -5716,6 +5963,10 @@ async function evaluateV2BidOpportunityFirst(payload) {
   }
 
   const deliveryStatus = winnerBid ? 'served' : 'no_fill'
+  const pricingSnapshot = winnerBid?.pricing && typeof winnerBid.pricing === 'object'
+    ? winnerBid.pricing
+    : null
+  const pricingVersion = String(pricingSnapshot?.modelVersion || rankingDebug?.pricingModel || 'cpa_mock_v2').trim()
   await writer.writeDeliveryRecord({
     requestId,
     opportunityKey: opportunityRecord.opportunityKey,
@@ -5730,6 +5981,9 @@ async function evaluateV2BidOpportunityFirst(payload) {
       rankingDebug,
       intent,
       winnerBid: winnerBid || null,
+      pricingSnapshot,
+      triggerType,
+      pricingVersion,
     },
   })
   await writer.updateOpportunityState(
@@ -5757,6 +6011,9 @@ async function evaluateV2BidOpportunityFirst(payload) {
     retrievalDebug,
     rankingDebug,
     intent,
+    triggerType,
+    pricingVersion,
+    pricingSnapshot,
     networkErrors: [],
     snapshotUsage: {},
     networkHealth: getAllNetworkHealth(),
@@ -5823,6 +6080,8 @@ async function evaluateV2BidOpportunityFirst(payload) {
     },
     diagnostics: {
       reasonCode,
+      triggerType,
+      pricingVersion,
       intentThreshold,
       retrievalMode: String(retrievalDebug?.mode || '').trim(),
       retrievalHitCount: toPositiveInteger(retrievalDebug?.fusedHitCount, 0),
@@ -6877,7 +7136,10 @@ async function getDashboardStatePayload(scopeInput = {}) {
 
 function resolveMediationConfigSnapshot(query = {}) {
   const appId = requiredNonEmptyString(query.appId, 'appId')
-  const placementId = requiredNonEmptyString(query.placementId, 'placementId')
+  const placementId = assertPlacementIdNotRenamed(
+    requiredNonEmptyString(query.placementId, 'placementId'),
+    'placementId',
+  )
   const environment = normalizeControlPlaneEnvironment(query.environment || 'prod', 'prod')
   const schemaVersion = requiredNonEmptyString(query.schemaVersion, 'schemaVersion')
   const sdkVersion = requiredNonEmptyString(query.sdkVersion, 'sdkVersion')
@@ -6930,7 +7192,13 @@ function buildQuickStartVerifyRequest(input = {}) {
     '',
   )
   const environment = normalizeControlPlaneEnvironment(input.environment || 'prod')
-  const placementId = String(input.placementId || '').trim() || 'chat_inline_v1'
+  const placementId = normalizePlacementIdWithMigration(
+    assertPlacementIdNotRenamed(
+      String(input.placementId || '').trim() || PLACEMENT_ID_FROM_ANSWER,
+      'placementId',
+    ),
+    PLACEMENT_ID_FROM_ANSWER,
+  )
   return {
     appId,
     accountId,
@@ -7554,10 +7822,14 @@ export async function requestHandler(req, res) {
 
   if (pathname === '/api/v1/mediation/config' && req.method === 'GET') {
     try {
+      const requestedPlacementId = assertPlacementIdNotRenamed(
+        String(requestUrl.searchParams.get('placementId') || '').trim(),
+        'placementId',
+      )
       const auth = await authorizeRuntimeCredential(req, {
         operation: 'mediation_config_read',
         requiredScope: 'mediationConfigRead',
-        placementId: String(requestUrl.searchParams.get('placementId') || '').trim(),
+        placementId: requestedPlacementId,
       })
       if (!auth.ok) {
         sendJson(res, auth.status, {
@@ -7573,7 +7845,7 @@ export async function requestHandler(req, res) {
 
       const resolved = resolveMediationConfigSnapshot({
         appId: runtimeScope.appId,
-        placementId: requestUrl.searchParams.get('placementId'),
+        placementId: requestedPlacementId,
         environment: runtimeScope.environment || requestUrl.searchParams.get('environment'),
         schemaVersion: requestUrl.searchParams.get('schemaVersion'),
         sdkVersion: requestUrl.searchParams.get('sdkVersion'),
@@ -7593,13 +7865,17 @@ export async function requestHandler(req, res) {
       sendJson(res, 200, resolved.payload)
       return
     } catch (error) {
-      const code = error instanceof Error && error.code === 'PLACEMENT_NOT_FOUND'
-        ? 'PLACEMENT_NOT_FOUND'
-        : 'INVALID_REQUEST'
-      sendJson(res, code === 'PLACEMENT_NOT_FOUND' ? 404 : 400, {
+      const isPlacementNotFound = error instanceof Error && error.code === 'PLACEMENT_NOT_FOUND'
+      const isPlacementRenamed = error instanceof Error && error.code === 'PLACEMENT_ID_RENAMED'
+      sendJson(res, isPlacementNotFound ? 404 : 400, {
         error: {
-          code,
+          code: isPlacementNotFound
+            ? 'PLACEMENT_NOT_FOUND'
+            : (isPlacementRenamed ? 'PLACEMENT_ID_RENAMED' : 'INVALID_REQUEST'),
           message: error instanceof Error ? error.message : 'Invalid request',
+          ...(isPlacementRenamed && error?.details && typeof error.details === 'object'
+            ? error.details
+            : {}),
         },
       })
       return
@@ -7712,9 +7988,14 @@ export async function requestHandler(req, res) {
       const message = error instanceof Error ? error.message : 'Invalid request'
       sendJson(res, 400, {
         error: {
-          code: 'SDK_EVENTS_INVALID_PAYLOAD',
+          code: error instanceof Error && error.code === 'PLACEMENT_ID_RENAMED'
+            ? 'PLACEMENT_ID_RENAMED'
+            : 'QUICKSTART_INVALID_PAYLOAD',
           message,
-          route: '/api/v1/sdk/events',
+          route: '/api/v1/public/quick-start/verify',
+          ...(error instanceof Error && error.code === 'PLACEMENT_ID_RENAMED' && error?.details && typeof error.details === 'object'
+            ? error.details
+            : {}),
         },
       })
       return
@@ -7883,10 +8164,16 @@ export async function requestHandler(req, res) {
       })
       return
     } catch (error) {
+      const errorCode = error instanceof Error && error.code === 'PLACEMENT_ID_RENAMED'
+        ? 'PLACEMENT_ID_RENAMED'
+        : 'INVALID_REQUEST'
       sendJson(res, 400, {
         error: {
-          code: 'INVALID_REQUEST',
+          code: errorCode,
           message: error instanceof Error ? error.message : 'Invalid request',
+          ...(errorCode === 'PLACEMENT_ID_RENAMED' && error?.details && typeof error.details === 'object'
+            ? error.details
+            : {}),
         },
       })
       return
@@ -7987,7 +8274,10 @@ export async function requestHandler(req, res) {
         throw new Error('ttlMinutes must be between 10 and 15.')
       }
 
-      const placementId = String(payload?.placementId || payload?.placement_id || '').trim() || 'chat_inline_v1'
+      const placementId = normalizePlacementIdWithMigration(
+        String(payload?.placementId || payload?.placement_id || '').trim(),
+        PLACEMENT_ID_FROM_ANSWER,
+      )
       const ensured = await ensureControlPlaneAppAndEnvironment(appId, environment, scopedAccountId)
       let activeKey = await findActiveApiKey({
         appId: ensured.appId,
@@ -8040,10 +8330,16 @@ export async function requestHandler(req, res) {
       sendJson(res, 201, toPublicIntegrationTokenRecord(tokenRecord, token))
       return
     } catch (error) {
+      const errorCode = error instanceof Error && error.code === 'PLACEMENT_ID_RENAMED'
+        ? 'PLACEMENT_ID_RENAMED'
+        : 'INVALID_REQUEST'
       sendJson(res, 400, {
         error: {
-          code: 'INVALID_REQUEST',
+          code: errorCode,
           message: error instanceof Error ? error.message : 'Invalid request',
+          ...(errorCode === 'PLACEMENT_ID_RENAMED' && error?.details && typeof error.details === 'object'
+            ? error.details
+            : {}),
         },
       })
       return
@@ -8809,7 +9105,10 @@ export async function requestHandler(req, res) {
       }
 
       const payload = await readJsonBody(req)
-      const placementId = String(payload?.placementId || payload?.placement_id || '').trim()
+      const placementId = assertPlacementIdNotRenamed(
+        String(payload?.placementId || payload?.placement_id || '').trim(),
+        'placementId',
+      )
       if (!placementId) {
         sendJson(res, 400, {
           error: {
@@ -8927,6 +9226,7 @@ export async function requestHandler(req, res) {
       }
       const placementConfig = getPlacementConfigForApp(scopedAppId, scope.accountId, { createIfMissing: true })
       const placementId = decodeURIComponent(pathname.replace('/api/v1/dashboard/placements/', ''))
+      assertPlacementIdNotRenamed(placementId, 'placementId')
       const target = placementConfig?.placements?.find((item) => item.placementId === placementId)
 
       if (!target) {
@@ -9364,10 +9664,16 @@ export async function requestHandler(req, res) {
       })
       return
     } catch (error) {
+      const errorCode = error instanceof Error && error.code === 'PLACEMENT_ID_RENAMED'
+        ? 'PLACEMENT_ID_RENAMED'
+        : 'INVALID_REQUEST'
       sendJson(res, 400, {
         error: {
-          code: 'INVALID_REQUEST',
+          code: errorCode,
           message: error instanceof Error ? error.message : 'Invalid request',
+          ...(errorCode === 'PLACEMENT_ID_RENAMED' && error?.details && typeof error.details === 'object'
+            ? error.details
+            : {}),
         },
       })
       return
@@ -9384,7 +9690,10 @@ export async function requestHandler(req, res) {
         const auth = await authorizeRuntimeCredential(req, {
           operation: 'sdk_events',
           requiredScope: 'sdkEvents',
-          placementId: request.placementId || (await findPlacementIdByRequestId(request.requestId)) || 'chat_inline_v1',
+          placementId: normalizePlacementIdWithMigration(
+            request.placementId || (await findPlacementIdByRequestId(request.requestId)),
+            PLACEMENT_ID_FROM_ANSWER,
+          ),
         })
         if (!auth.ok) {
           sendJson(res, auth.status, {
@@ -9395,6 +9704,7 @@ export async function requestHandler(req, res) {
         applyRuntimeCredentialScope(request, auth)
 
         const { duplicate, fact } = await recordConversionFact(request)
+        const pricingSnapshot = findPricingSnapshotByRequestId(request.requestId)
         await recordEvent({
           eventType: request.eventType,
           event: 'postback',
@@ -9419,6 +9729,7 @@ export async function requestHandler(req, res) {
           idempotencyKey: fact.idempotencyKey,
           revenueUsd: fact.revenueUsd,
           duplicate,
+          pricingSnapshot,
         })
         await opportunityWriter.writeEventRecord({
           requestId: request.requestId,
@@ -9438,6 +9749,7 @@ export async function requestHandler(req, res) {
             duplicate,
             cpaUsd: request.cpaUsd,
             currency: request.currency,
+            pricingSnapshot,
           },
         })
 
@@ -9461,13 +9773,17 @@ export async function requestHandler(req, res) {
           return
         }
         applyRuntimeCredentialScope(request, auth)
+        const pricingSnapshot = findPricingSnapshotByRequestId(request.requestId)
 
         const inferredIntentClass = String(request.context.intentHints?.intent_class || '').trim().toLowerCase()
         const inferredIntentScore = clampNumber(request.context.intentHints?.intent_score, 0, 1, NaN)
         const inferredPreferenceFacets = normalizeNextStepPreferenceFacets(
           request.context.intentHints?.preference_facets,
         )
-        const normalizedPlacementId = request.placementId || 'chat_followup_v1'
+        const normalizedPlacementId = normalizePlacementIdWithMigration(
+          request.placementId,
+          PLACEMENT_ID_INTENT_RECOMMENDATION,
+        )
         if (request.kind === 'click') {
           recordClickCounters(normalizedPlacementId)
         }
@@ -9491,6 +9807,7 @@ export async function requestHandler(req, res) {
           adId: request.adId || '',
           placementId: normalizedPlacementId,
           placementKey: request.placementKey,
+          pricingSnapshot,
         })
         await opportunityWriter.writeEventRecord({
           requestId: request.requestId || '',
@@ -9506,6 +9823,7 @@ export async function requestHandler(req, res) {
             placementKey: request.placementKey,
             intentClass: inferredIntentClass || '',
             intentScore: Number.isFinite(inferredIntentScore) ? inferredIntentScore : 0,
+            pricingSnapshot,
           },
         })
       } else {
@@ -9513,7 +9831,7 @@ export async function requestHandler(req, res) {
         const auth = await authorizeRuntimeCredential(req, {
           operation: 'sdk_events',
           requiredScope: 'sdkEvents',
-          placementId: request.placementId || 'chat_inline_v1',
+          placementId: normalizePlacementIdWithMigration(request.placementId, PLACEMENT_ID_FROM_ANSWER),
         })
         if (!auth.ok) {
           sendJson(res, auth.status, {
@@ -9522,9 +9840,10 @@ export async function requestHandler(req, res) {
           return
         }
         applyRuntimeCredentialScope(request, auth)
+        const pricingSnapshot = findPricingSnapshotByRequestId(request.requestId)
 
         if (request.kind === 'click') {
-          recordClickCounters(request.placementId || 'chat_inline_v1')
+          recordClickCounters(request.placementId || PLACEMENT_ID_FROM_ANSWER)
         }
 
         await recordEvent({
@@ -9541,13 +9860,14 @@ export async function requestHandler(req, res) {
           event: request.kind === 'click' ? 'click' : ATTACH_MVP_EVENT,
           kind: request.kind,
           adId: request.adId || '',
-          placementId: request.placementId || 'chat_inline_v1',
+          placementId: normalizePlacementIdWithMigration(request.placementId, PLACEMENT_ID_FROM_ANSWER),
           placementKey: ATTACH_MVP_PLACEMENT_KEY,
+          pricingSnapshot,
         })
         await opportunityWriter.writeEventRecord({
           requestId: request.requestId || '',
           appId: request.appId,
-          placementId: request.placementId || 'chat_inline_v1',
+          placementId: normalizePlacementIdWithMigration(request.placementId, PLACEMENT_ID_FROM_ANSWER),
           eventType: 'sdk_event',
           eventLayer: 'sdk',
           eventStatus: 'recorded',
@@ -9558,6 +9878,7 @@ export async function requestHandler(req, res) {
             intentScore: request.intentScore,
             locale: request.locale,
             adId: request.adId || '',
+            pricingSnapshot,
           },
         })
       }
@@ -9567,10 +9888,16 @@ export async function requestHandler(req, res) {
       sendJson(res, 200, responsePayload)
       return
     } catch (error) {
+      const errorCode = error instanceof Error && error.code === 'PLACEMENT_ID_RENAMED'
+        ? 'PLACEMENT_ID_RENAMED'
+        : 'INVALID_REQUEST'
       sendJson(res, 400, {
         error: {
-          code: 'INVALID_REQUEST',
+          code: errorCode,
           message: error instanceof Error ? error.message : 'Invalid request',
+          ...(errorCode === 'PLACEMENT_ID_RENAMED' && error?.details && typeof error.details === 'object'
+            ? error.details
+            : {}),
         },
       })
       return
@@ -9651,7 +9978,9 @@ async function startServer() {
     console.log(`[simulator-gateway] listening on http://${HOST}:${PORT}`)
     console.log(`[simulator-gateway] state file: ${STATE_FILE}`)
     if (SETTLEMENT_STORAGE_COMPAT_POSTGRES) {
-      console.warn('[simulator-gateway] SIMULATOR_SETTLEMENT_STORAGE=postgres is deprecated, treating as supabase.')
+      console.warn(
+        '[simulator-gateway] MEDIATION_SETTLEMENT_STORAGE=postgres is deprecated, treating as supabase (legacy SIMULATOR_SETTLEMENT_STORAGE is also supported).',
+      )
     }
     console.log(`[simulator-gateway] settlement store mode: ${settlementStore.mode}`)
     console.log(`[simulator-gateway] strict manual integration: ${STRICT_MANUAL_INTEGRATION}`)

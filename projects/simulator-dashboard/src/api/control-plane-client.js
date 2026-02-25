@@ -1,4 +1,8 @@
-const API_BASE_URL = (import.meta.env.VITE_SIMULATOR_API_BASE_URL || '/api').replace(/\/$/, '')
+const API_BASE_URL = (
+  import.meta.env.VITE_MEDIATION_CONTROL_PLANE_API_BASE_URL
+  || import.meta.env.VITE_SIMULATOR_API_BASE_URL
+  || '/api'
+).replace(/\/$/, '')
 let dashboardAccessToken = ''
 
 export function setDashboardAccessToken(token) {

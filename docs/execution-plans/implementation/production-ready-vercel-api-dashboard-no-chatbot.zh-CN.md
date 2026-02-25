@@ -25,7 +25,7 @@
 
 ### 2.2 假耦合（文档/变量心智）
 
-1. Dashboard 实际生产必需变量只有 `VITE_SIMULATOR_API_BASE_URL`。
+1. Dashboard 实际生产必需变量只有 `VITE_MEDIATION_CONTROL_PLANE_API_BASE_URL`。
 2. 过去“变量很多”的主因来自 API 历史开发变量，不是 Chatbot 依赖。
 3. Chatbot 不部署时，门禁与部署流程可完全剥离，不影响 API + Dashboard 闭环。
 
@@ -49,23 +49,23 @@
 
 ```bash
 SUPABASE_DB_URL=<supabase-postgres-url>
-SIMULATOR_SETTLEMENT_STORAGE=supabase
-SIMULATOR_PRODUCTION_MODE=true
-SIMULATOR_REQUIRE_DURABLE_SETTLEMENT=true
-SIMULATOR_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE=true
-SIMULATOR_DASHBOARD_AUTH_REQUIRED=true
-SIMULATOR_RUNTIME_AUTH_REQUIRED=true
-SIMULATOR_STRICT_MANUAL_INTEGRATION=true
-SIMULATOR_DEV_RESET_ENABLED=false
-SIMULATOR_ALLOWED_ORIGINS=https://dashboard.<your-domain>
+MEDIATION_SETTLEMENT_STORAGE=supabase
+MEDIATION_PRODUCTION_MODE=true
+MEDIATION_REQUIRE_DURABLE_SETTLEMENT=true
+MEDIATION_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE=true
+MEDIATION_DASHBOARD_AUTH_REQUIRED=true
+MEDIATION_RUNTIME_AUTH_REQUIRED=true
+MEDIATION_STRICT_MANUAL_INTEGRATION=true
+MEDIATION_DEV_RESET_ENABLED=false
+MEDIATION_ALLOWED_ORIGINS=https://dashboard.<your-domain>
 ```
 
 ### 4.2 Mediation API（可选）
 
 ```bash
-SIMULATOR_DASHBOARD_SESSION_TTL_SECONDS=2592000
-SIMULATOR_CONTROL_PLANE_REFRESH_THROTTLE_MS=1000
-SIMULATOR_V2_INVENTORY_FALLBACK=true
+MEDIATION_DASHBOARD_SESSION_TTL_SECONDS=2592000
+MEDIATION_CONTROL_PLANE_REFRESH_THROTTLE_MS=1000
+MEDIATION_V2_INVENTORY_FALLBACK=true
 OPENROUTER_API_KEY=
 OPENROUTER_MODEL=stepfun/step-3.5-flash:free
 CJ_TOKEN=
@@ -75,7 +75,8 @@ PARTNERSTACK_API_KEY=
 ### 4.3 Dashboard（生产必需）
 
 ```bash
-VITE_SIMULATOR_API_BASE_URL=https://api.<your-domain>/api
+VITE_MEDIATION_CONTROL_PLANE_API_BASE_URL=https://control-plane.<your-domain>/api
+VITE_MEDIATION_RUNTIME_API_BASE_URL=https://runtime.<your-domain>/api
 ```
 
 ## 5. Vercel 双项目部署方案（not now）
@@ -107,7 +108,7 @@ vercel deploy /Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-plat
 vercel deploy /Users/zeming/Documents/chat-ads-main/projects/simulator-dashboard --prod -y
 ```
 
-说明：API 先部署，拿到生产域名后回填 Dashboard 的 `VITE_SIMULATOR_API_BASE_URL` 并重新部署 Dashboard。
+说明：先部署 control-plane 与 runtime API，拿到生产域名后回填 Dashboard 的 `VITE_MEDIATION_CONTROL_PLANE_API_BASE_URL`（可选再回填 `VITE_MEDIATION_RUNTIME_API_BASE_URL`）并重新部署 Dashboard。
 
 ## 6. Final Check 门禁（无 Chatbot）
 
