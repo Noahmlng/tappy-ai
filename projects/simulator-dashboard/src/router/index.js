@@ -6,7 +6,9 @@ import DecisionLogsView from '../views/DecisionLogsView.vue'
 import HomeView from '../views/HomeView.vue'
 import LoginView from '../views/LoginView.vue'
 import PlacementsView from '../views/PlacementsView.vue'
+import QuickStartView from '../views/QuickStartView.vue'
 import RegisterView from '../views/RegisterView.vue'
+import UsageView from '../views/UsageView.vue'
 
 const routes = [
   {
@@ -30,6 +32,18 @@ const routes = [
     name: 'home',
     component: HomeView,
     meta: { navLabel: 'Revenue', requiresAuth: true },
+  },
+  {
+    path: '/usage',
+    name: 'usage',
+    component: UsageView,
+    meta: { navLabel: 'Usage', requiresAuth: true },
+  },
+  {
+    path: '/quick-start',
+    name: 'quickStart',
+    component: QuickStartView,
+    meta: { navLabel: 'Quick Start', requiresAuth: true },
   },
   {
     path: '/api-keys',

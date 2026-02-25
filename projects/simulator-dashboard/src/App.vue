@@ -14,6 +14,8 @@ const navItems = computed(() => {
   if (!authState.authenticated) return []
   return [
     { to: '/home', label: 'Revenue', icon: 'home' },
+    { to: '/usage', label: 'Usage', icon: 'chart' },
+    { to: '/quick-start', label: 'Quick Start', icon: 'flash' },
     { to: '/api-keys', label: 'Key', icon: 'key' },
     { to: '/config', label: 'Placement', icon: 'sliders' },
     { to: '/logs', label: 'Logs', icon: 'list' },
@@ -164,6 +166,15 @@ watch(
             <svg v-if="item.icon === 'home'" viewBox="0 0 24 24">
               <path d="M3 10.5L12 3l9 7.5" />
               <path d="M5.5 9.5V20h13V9.5" />
+            </svg>
+            <svg v-else-if="item.icon === 'chart'" viewBox="0 0 24 24">
+              <path d="M4 19.5h16" />
+              <path d="M7 17V11" />
+              <path d="M12 17V7" />
+              <path d="M17 17V13" />
+            </svg>
+            <svg v-else-if="item.icon === 'flash'" viewBox="0 0 24 24">
+              <path d="M13 2L5 13h6l-1 9 8-11h-6z" />
             </svg>
             <svg v-else-if="item.icon === 'key'" viewBox="0 0 24 24">
               <circle cx="8" cy="12" r="3.5" />

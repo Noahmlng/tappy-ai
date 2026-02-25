@@ -29,9 +29,9 @@ const revenueCards = computed(() => {
 })
 
 const coreActions = [
+  { to: '/usage', title: 'Usage & Revenue' },
+  { to: '/quick-start', title: 'Quick Start' },
   { to: '/api-keys', title: 'Get Key' },
-  { to: '/config', title: 'Placement' },
-  { to: '/logs', title: 'Logs' },
 ]
 
 function refreshRevenue() {
