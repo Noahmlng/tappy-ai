@@ -11,7 +11,7 @@ const processes = [
     name: 'dashboard',
     color: '\x1b[35m',
     cmd: 'npm',
-    args: ['run', 'dev', '--workspace', '@ai-network/simulator-dashboard'],
+    args: ['run', 'dev', '--workspace', '@ai-network/dashboard'],
   },
 ]
 
