@@ -3,6 +3,8 @@ name: Mediation Release Gate
 on:
   pull_request:
     paths:
+      - 'apps/**'
+      - 'packages/mediation-sdk-contracts/**'
       - 'projects/ad-aggregation-platform/**'
       - 'docs/implementation/**'
       - '.github/workflows/mediation-release-gate.yml'
@@ -10,6 +12,8 @@ on:
     branches:
       - main
     paths:
+      - 'apps/**'
+      - 'packages/mediation-sdk-contracts/**'
       - 'projects/ad-aggregation-platform/**'
       - '.github/workflows/mediation-release-gate.yml'
   workflow_dispatch:
@@ -43,6 +47,16 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Validate deploy handlers
+        run: |
+          node -e "import('./apps/runtime-api/api/[...path].js').then(()=>console.log('runtime handler ok'))"
+          node -e "import('./apps/control-plane-api/api/[...path].js').then(()=>console.log('control handler ok'))"
+
+      - name: Validate contracts package
+        run: |
+          node -e "import('./packages/mediation-sdk-contracts/src/index.js').then((m)=>console.log(m.listSchemaKeys().length))"
+          npm pack --workspace @ai-network/mediation-sdk-contracts --dry-run
 
       - name: Migration dry run
         run: npm --prefix ./projects/ad-aggregation-platform run db:migrate:dry-run
