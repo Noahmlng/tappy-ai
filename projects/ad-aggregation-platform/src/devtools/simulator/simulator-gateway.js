@@ -69,7 +69,9 @@ const REQUIRE_RUNTIME_LOG_DB_PERSISTENCE = String(
   process.env.SIMULATOR_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE
     || (REQUIRE_DURABLE_SETTLEMENT ? 'true' : 'false'),
 ).trim().toLowerCase() !== 'false'
-const DEV_RESET_ENABLED = String(process.env.SIMULATOR_DEV_RESET_ENABLED || 'true').trim().toLowerCase() !== 'false'
+const DEV_RESET_ENABLED = String(
+  process.env.SIMULATOR_DEV_RESET_ENABLED || (PRODUCTION_RUNTIME ? 'false' : 'true'),
+).trim().toLowerCase() !== 'false'
 const DEV_RESET_TOKEN = String(process.env.SIMULATOR_DEV_RESET_TOKEN || '').trim()
 const MAX_DECISION_LOGS = parseCollectionLimit(
   process.env.SIMULATOR_MAX_DECISION_LOGS,
@@ -127,6 +129,14 @@ const TOKEN_EXCHANGE_FORBIDDEN_FIELDS = new Set([
   'tokenType',
   'token_type',
 ])
+const ALLOWED_CORS_ORIGINS = Array.from(
+  new Set(
+    String(process.env.SIMULATOR_ALLOWED_ORIGINS || '')
+      .split(',')
+      .map((item) => String(item || '').trim())
+      .filter(Boolean),
+  ),
+)
 
 const PLACEMENT_KEY_BY_ID = {
   chat_inline_v1: 'attach.post_answer_render',
@@ -4517,8 +4527,20 @@ function resetGatewayState() {
   return state
 }
 
+function applyCorsOrigin(req, res) {
+  const requestOrigin = String(req?.headers?.origin || '').trim()
+  if (ALLOWED_CORS_ORIGINS.length === 0) {
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    return
+  }
+
+  if (requestOrigin && ALLOWED_CORS_ORIGINS.includes(requestOrigin)) {
+    res.setHeader('Access-Control-Allow-Origin', requestOrigin)
+    res.setHeader('Vary', 'Origin')
+  }
+}
+
 function withCors(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,x-dashboard-actor,x-user-id')
 }
@@ -7477,6 +7499,7 @@ async function recordAttachSdkEvent(request) {
 export async function requestHandler(req, res) {
   const requestUrl = new URL(req.url || '/', `http://${req.headers.host || `${HOST}:${PORT}`}`)
   const pathname = requestUrl.pathname
+  applyCorsOrigin(req, res)
 
   if (req.method === 'OPTIONS') {
     withCors(res)
@@ -9594,6 +9617,7 @@ export async function ensureReady() {
 
 export async function handleGatewayRequest(req, res) {
   try {
+    applyCorsOrigin(req, res)
     await ensureReady()
     await requestHandler(req, res)
   } catch (error) {
