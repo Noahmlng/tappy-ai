@@ -13,9 +13,9 @@ const HOST = '127.0.0.1'
 const HEALTH_TIMEOUT_MS = 20000
 const REQUEST_TIMEOUT_MS = 8000
 const FAST_FIRST_GATEWAY_ENV = Object.freeze({
-  SIMULATOR_SETTLEMENT_STORAGE: 'state_file',
-  SIMULATOR_REQUIRE_DURABLE_SETTLEMENT: 'false',
-  SIMULATOR_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE: 'false',
+  MEDIATION_SETTLEMENT_STORAGE: 'state_file',
+  MEDIATION_REQUIRE_DURABLE_SETTLEMENT: 'false',
+  MEDIATION_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE: 'false',
 })
 
 function sleep(ms) {
@@ -88,8 +88,8 @@ function startGateway(port) {
     env: {
       ...process.env,
       ...FAST_FIRST_GATEWAY_ENV,
-      SIMULATOR_GATEWAY_HOST: HOST,
-      SIMULATOR_GATEWAY_PORT: String(port),
+      MEDIATION_GATEWAY_HOST: HOST,
+      MEDIATION_GATEWAY_PORT: String(port),
       OPENROUTER_API_KEY: '',
       OPENROUTER_MODEL: 'glm-5',
       CJ_TOKEN: 'mock-cj-token',

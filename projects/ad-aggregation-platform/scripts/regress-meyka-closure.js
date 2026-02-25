@@ -641,12 +641,12 @@ async function main() {
   try {
     if (!useExternalGateway) {
       gatewayHandle = startGatewayProcess(port, {
-        SIMULATOR_STRICT_MANUAL_INTEGRATION: 'false',
-        SIMULATOR_SETTLEMENT_STORAGE: effectiveSettlementStorage,
-        SIMULATOR_REQUIRE_DURABLE_SETTLEMENT: 'false',
-        SIMULATOR_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE: 'false',
-        SIMULATOR_RUNTIME_AUTH_REQUIRED: 'true',
-        SIMULATOR_V2_INVENTORY_FALLBACK: fallbackWhenInventoryUnavailable ? 'true' : 'false',
+        MEDIATION_STRICT_MANUAL_INTEGRATION: 'false',
+        MEDIATION_SETTLEMENT_STORAGE: effectiveSettlementStorage,
+        MEDIATION_REQUIRE_DURABLE_SETTLEMENT: 'false',
+        MEDIATION_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE: 'false',
+        MEDIATION_RUNTIME_AUTH_REQUIRED: 'true',
+        MEDIATION_V2_INVENTORY_FALLBACK: fallbackWhenInventoryUnavailable ? 'true' : 'false',
       })
     }
 
@@ -657,12 +657,12 @@ async function main() {
         await stopGatewayProcess(gatewayHandle)
         effectiveSettlementStorage = 'state_file'
         gatewayHandle = startGatewayProcess(port, {
-          SIMULATOR_STRICT_MANUAL_INTEGRATION: 'false',
-          SIMULATOR_SETTLEMENT_STORAGE: effectiveSettlementStorage,
-          SIMULATOR_REQUIRE_DURABLE_SETTLEMENT: 'false',
-          SIMULATOR_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE: 'false',
-          SIMULATOR_RUNTIME_AUTH_REQUIRED: 'true',
-          SIMULATOR_V2_INVENTORY_FALLBACK: fallbackWhenInventoryUnavailable ? 'true' : 'false',
+          MEDIATION_STRICT_MANUAL_INTEGRATION: 'false',
+          MEDIATION_SETTLEMENT_STORAGE: effectiveSettlementStorage,
+          MEDIATION_REQUIRE_DURABLE_SETTLEMENT: 'false',
+          MEDIATION_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE: 'false',
+          MEDIATION_RUNTIME_AUTH_REQUIRED: 'true',
+          MEDIATION_V2_INVENTORY_FALLBACK: fallbackWhenInventoryUnavailable ? 'true' : 'false',
         })
         await waitForGateway(baseUrl)
       } else {

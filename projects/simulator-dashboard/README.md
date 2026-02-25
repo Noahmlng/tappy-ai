@@ -37,8 +37,8 @@ npm --prefix ./projects/simulator-dashboard run build
   - `VITE_DASHBOARD_V1_MINIMAL`
   - `VITE_ENABLE_INTERNAL_RESET`
 - Legacy aliases (temporary compatibility):
-  - `VITE_SIMULATOR_API_BASE_URL`
-  - `SIMULATOR_API_PROXY_TARGET`
+  - `VITE_MEDIATION_API_BASE_URL`
+  - `MEDIATION_API_PROXY_TARGET`
 
 ## Production Deploy (Vercel)
 

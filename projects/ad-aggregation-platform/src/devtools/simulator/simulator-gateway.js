@@ -45,7 +45,7 @@ const PROJECT_ROOT = path.resolve(__dirname, '../../..')
 const STATE_DIR = path.join(PROJECT_ROOT, '.local')
 const DEFAULT_STATE_FILE_NAME = 'simulator-gateway-state.json'
 const RAW_SETTLEMENT_STORAGE_MODE = readCompatEnvValue(
-  ['MEDIATION_SETTLEMENT_STORAGE', 'SIMULATOR_SETTLEMENT_STORAGE'],
+  ['MEDIATION_SETTLEMENT_STORAGE'],
   'auto',
 ).toLowerCase()
 const SETTLEMENT_STORAGE_MODE = RAW_SETTLEMENT_STORAGE_MODE === 'postgres'
@@ -64,57 +64,57 @@ const CONTROL_PLANE_DASHBOARD_SESSIONS_TABLE = 'control_plane_dashboard_sessions
 const CONTROL_PLANE_INTEGRATION_TOKENS_TABLE = 'control_plane_integration_tokens'
 const CONTROL_PLANE_AGENT_ACCESS_TOKENS_TABLE = 'control_plane_agent_access_tokens'
 
-const PORT = Number(readCompatEnvValue(['MEDIATION_GATEWAY_PORT', 'SIMULATOR_GATEWAY_PORT'], '3100'))
-const HOST = readCompatEnvValue(['MEDIATION_GATEWAY_HOST', 'SIMULATOR_GATEWAY_HOST'], '127.0.0.1')
-const STATE_FILE = readCompatEnvValue(['MEDIATION_STATE_FILE', 'SIMULATOR_STATE_FILE'], '')
+const PORT = Number(readCompatEnvValue(['MEDIATION_GATEWAY_PORT'], '3100'))
+const HOST = readCompatEnvValue(['MEDIATION_GATEWAY_HOST'], '127.0.0.1')
+const STATE_FILE = readCompatEnvValue(['MEDIATION_STATE_FILE'], '')
   || path.join(
     STATE_DIR,
     PORT === 3100 ? DEFAULT_STATE_FILE_NAME : `simulator-gateway-state-${PORT}.json`,
   )
 const PRODUCTION_RUNTIME = (
-  readCompatEnvValue(['MEDIATION_PRODUCTION_MODE', 'SIMULATOR_PRODUCTION_MODE'], '').toLowerCase() === 'true'
+  readCompatEnvValue(['MEDIATION_PRODUCTION_MODE'], '').toLowerCase() === 'true'
   || String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production'
 )
 const REQUIRE_DURABLE_SETTLEMENT = String(
   readCompatEnvValue(
-    ['MEDIATION_REQUIRE_DURABLE_SETTLEMENT', 'SIMULATOR_REQUIRE_DURABLE_SETTLEMENT'],
+    ['MEDIATION_REQUIRE_DURABLE_SETTLEMENT'],
     PRODUCTION_RUNTIME ? 'true' : 'false',
   ),
 ).trim().toLowerCase() !== 'false'
 const STRICT_MANUAL_INTEGRATION = String(
-  readCompatEnvValue(['MEDIATION_STRICT_MANUAL_INTEGRATION', 'SIMULATOR_STRICT_MANUAL_INTEGRATION'], 'false'),
+  readCompatEnvValue(['MEDIATION_STRICT_MANUAL_INTEGRATION'], 'false'),
 ).trim().toLowerCase() === 'true'
 const REQUIRE_RUNTIME_LOG_DB_PERSISTENCE = String(
   readCompatEnvValue(
-    ['MEDIATION_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE', 'SIMULATOR_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE'],
+    ['MEDIATION_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE'],
     REQUIRE_DURABLE_SETTLEMENT ? 'true' : 'false',
   ),
 ).trim().toLowerCase() !== 'false'
 const DEV_RESET_ENABLED = String(
   readCompatEnvValue(
-    ['MEDIATION_DEV_RESET_ENABLED', 'SIMULATOR_DEV_RESET_ENABLED'],
+    ['MEDIATION_DEV_RESET_ENABLED'],
     PRODUCTION_RUNTIME ? 'false' : 'true',
   ),
 ).trim().toLowerCase() !== 'false'
-const DEV_RESET_TOKEN = readCompatEnvValue(['MEDIATION_DEV_RESET_TOKEN', 'SIMULATOR_DEV_RESET_TOKEN'], '')
+const DEV_RESET_TOKEN = readCompatEnvValue(['MEDIATION_DEV_RESET_TOKEN'], '')
 const MAX_DECISION_LOGS = parseCollectionLimit(
-  readCompatEnvValue(['MEDIATION_MAX_DECISION_LOGS', 'SIMULATOR_MAX_DECISION_LOGS'], ''),
+  readCompatEnvValue(['MEDIATION_MAX_DECISION_LOGS'], ''),
   PRODUCTION_RUNTIME ? 0 : 500,
 )
 const MAX_EVENT_LOGS = parseCollectionLimit(
-  readCompatEnvValue(['MEDIATION_MAX_EVENT_LOGS', 'SIMULATOR_MAX_EVENT_LOGS'], ''),
+  readCompatEnvValue(['MEDIATION_MAX_EVENT_LOGS'], ''),
   PRODUCTION_RUNTIME ? 0 : 500,
 )
 const MAX_PLACEMENT_AUDIT_LOGS = parseCollectionLimit(
-  readCompatEnvValue(['MEDIATION_MAX_PLACEMENT_AUDIT_LOGS', 'SIMULATOR_MAX_PLACEMENT_AUDIT_LOGS'], ''),
+  readCompatEnvValue(['MEDIATION_MAX_PLACEMENT_AUDIT_LOGS'], ''),
   PRODUCTION_RUNTIME ? 0 : 500,
 )
 const MAX_NETWORK_FLOW_LOGS = parseCollectionLimit(
-  readCompatEnvValue(['MEDIATION_MAX_NETWORK_FLOW_LOGS', 'SIMULATOR_MAX_NETWORK_FLOW_LOGS'], ''),
+  readCompatEnvValue(['MEDIATION_MAX_NETWORK_FLOW_LOGS'], ''),
   PRODUCTION_RUNTIME ? 0 : 300,
 )
 const MAX_CONTROL_PLANE_AUDIT_LOGS = parseCollectionLimit(
-  readCompatEnvValue(['MEDIATION_MAX_CONTROL_PLANE_AUDIT_LOGS', 'SIMULATOR_MAX_CONTROL_PLANE_AUDIT_LOGS'], ''),
+  readCompatEnvValue(['MEDIATION_MAX_CONTROL_PLANE_AUDIT_LOGS'], ''),
   PRODUCTION_RUNTIME ? 0 : 800,
 )
 const MAX_INTEGRATION_TOKENS = 500
@@ -123,7 +123,7 @@ const MAX_DASHBOARD_USERS = 500
 const MAX_DASHBOARD_SESSIONS = 1500
 const CONTROL_PLANE_REFRESH_THROTTLE_MS = toPositiveInteger(
   readCompatEnvValue(
-    ['MEDIATION_CONTROL_PLANE_REFRESH_THROTTLE_MS', 'SIMULATOR_CONTROL_PLANE_REFRESH_THROTTLE_MS'],
+    ['MEDIATION_CONTROL_PLANE_REFRESH_THROTTLE_MS'],
     '',
   ),
   1000,
@@ -136,17 +136,17 @@ const DEFAULT_CONTROL_PLANE_ORG_ID = ''
 const TRACKING_ACCOUNT_QUERY_PARAM = 'aid'
 const DASHBOARD_SESSION_PREFIX = 'dsh_'
 const DASHBOARD_SESSION_TTL_SECONDS = toPositiveInteger(
-  readCompatEnvValue(['MEDIATION_DASHBOARD_SESSION_TTL_SECONDS', 'SIMULATOR_DASHBOARD_SESSION_TTL_SECONDS'], ''),
+  readCompatEnvValue(['MEDIATION_DASHBOARD_SESSION_TTL_SECONDS'], ''),
   86400 * 7,
 )
 const DASHBOARD_AUTH_REQUIRED = String(
-  readCompatEnvValue(['MEDIATION_DASHBOARD_AUTH_REQUIRED', 'SIMULATOR_DASHBOARD_AUTH_REQUIRED'], 'true'),
+  readCompatEnvValue(['MEDIATION_DASHBOARD_AUTH_REQUIRED'], 'true'),
 ).trim().toLowerCase() !== 'false'
 const RUNTIME_AUTH_REQUIRED = String(
-  readCompatEnvValue(['MEDIATION_RUNTIME_AUTH_REQUIRED', 'SIMULATOR_RUNTIME_AUTH_REQUIRED'], 'true'),
+  readCompatEnvValue(['MEDIATION_RUNTIME_AUTH_REQUIRED'], 'true'),
 ).trim().toLowerCase() !== 'false'
 const INVENTORY_FALLBACK_WHEN_UNAVAILABLE = String(
-  readCompatEnvValue(['MEDIATION_V2_INVENTORY_FALLBACK', 'SIMULATOR_V2_INVENTORY_FALLBACK'], 'true'),
+  readCompatEnvValue(['MEDIATION_V2_INVENTORY_FALLBACK'], 'true'),
 ).trim().toLowerCase() !== 'false'
 const MIN_AGENT_ACCESS_TTL_SECONDS = 60
 const MAX_AGENT_ACCESS_TTL_SECONDS = 900
@@ -165,14 +165,14 @@ const TOKEN_EXCHANGE_FORBIDDEN_FIELDS = new Set([
 ])
 const ALLOWED_CORS_ORIGINS = Array.from(
   new Set(
-    readCompatEnvValue(['MEDIATION_ALLOWED_ORIGINS', 'SIMULATOR_ALLOWED_ORIGINS'], '')
+    readCompatEnvValue(['MEDIATION_ALLOWED_ORIGINS'], '')
       .split(',')
       .map((item) => String(item || '').trim())
       .filter(Boolean),
   ),
 )
 const API_SERVICE_ROLE = normalizeApiServiceRole(
-  readCompatEnvValue(['MEDIATION_API_SERVICE_ROLE', 'MEDIATION_API_ROLE', 'SIMULATOR_API_ROLE'], 'all'),
+  readCompatEnvValue(['MEDIATION_API_SERVICE_ROLE', 'MEDIATION_API_ROLE'], 'all'),
 )
 const RUNTIME_ROUTE_MATCHERS = Object.freeze([
   { type: 'prefix', value: '/api/v1/mediation/' },
@@ -515,7 +515,7 @@ function createOpportunityChainWriter() {
 
 function isLlmIntentFallbackEnabled() {
   return String(
-    readCompatEnvValue(['MEDIATION_INTENT_LLM_FALLBACK', 'SIMULATOR_INTENT_LLM_FALLBACK'], 'true'),
+    readCompatEnvValue(['MEDIATION_INTENT_LLM_FALLBACK'], 'true'),
   ).trim().toLowerCase() !== 'false'
 }
 
@@ -10050,7 +10050,7 @@ async function startServer() {
     console.log(`[simulator-gateway] state file: ${STATE_FILE}`)
     if (SETTLEMENT_STORAGE_COMPAT_POSTGRES) {
       console.warn(
-        '[simulator-gateway] MEDIATION_SETTLEMENT_STORAGE=postgres is deprecated, treating as supabase (legacy SIMULATOR_SETTLEMENT_STORAGE is also supported).',
+        '[simulator-gateway] MEDIATION_SETTLEMENT_STORAGE=postgres is deprecated, treating as supabase.',
       )
     }
     console.log(`[simulator-gateway] settlement store mode: ${settlementStore.mode}`)

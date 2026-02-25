@@ -57,7 +57,6 @@
   - `MEDIATION_API_SERVICE_ROLE`：`all`（默认）/ `runtime` / `control_plane`
 - 本地开发专用：
   - `MEDIATION_GATEWAY_HOST`、`MEDIATION_GATEWAY_PORT` 只用于本地 `dev:gateway`，Vercel 不需要。
-  - 旧 `SIMULATOR_*` 变量仍兼容读取，用于迁移窗口。
 
 House Ads（Supabase）相关可调参数：
 

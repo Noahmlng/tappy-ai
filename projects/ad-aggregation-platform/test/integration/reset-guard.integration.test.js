@@ -73,8 +73,8 @@ function startGateway(port, env = {}) {
     cwd: PROJECT_ROOT,
     env: {
       ...process.env,
-      SIMULATOR_GATEWAY_HOST: CLIENT_HOST,
-      SIMULATOR_GATEWAY_PORT: String(port),
+      MEDIATION_GATEWAY_HOST: CLIENT_HOST,
+      MEDIATION_GATEWAY_PORT: String(port),
       OPENROUTER_API_KEY: '',
       OPENROUTER_MODEL: 'glm-5',
       CJ_TOKEN: 'mock-cj-token',
@@ -116,7 +116,7 @@ test('reset guard: non-loopback bind rejects unauthenticated reset', async () =>
   const port = 6650 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${CLIENT_HOST}:${port}`
   const gateway = startGateway(port, {
-    SIMULATOR_GATEWAY_HOST: '0.0.0.0',
+    MEDIATION_GATEWAY_HOST: '0.0.0.0',
   })
 
   try {
@@ -141,8 +141,8 @@ test('reset guard: non-loopback bind accepts reset with valid internal token', a
   const port = 6850 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${CLIENT_HOST}:${port}`
   const gateway = startGateway(port, {
-    SIMULATOR_GATEWAY_HOST: '0.0.0.0',
-    SIMULATOR_DEV_RESET_TOKEN: 'internal-reset-token',
+    MEDIATION_GATEWAY_HOST: '0.0.0.0',
+    MEDIATION_DEV_RESET_TOKEN: 'internal-reset-token',
   })
 
   try {
@@ -172,7 +172,7 @@ test('reset guard: reset can be globally disabled by env flag', async () => {
   const port = 7050 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${CLIENT_HOST}:${port}`
   const gateway = startGateway(port, {
-    SIMULATOR_DEV_RESET_ENABLED: 'false',
+    MEDIATION_DEV_RESET_ENABLED: 'false',
   })
 
   try {

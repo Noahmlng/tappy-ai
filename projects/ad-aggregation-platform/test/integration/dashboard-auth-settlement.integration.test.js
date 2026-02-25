@@ -78,8 +78,8 @@ function startGateway(port) {
     cwd: PROJECT_ROOT,
     env: {
       ...process.env,
-      SIMULATOR_GATEWAY_HOST: HOST,
-      SIMULATOR_GATEWAY_PORT: String(port),
+      MEDIATION_GATEWAY_HOST: HOST,
+      MEDIATION_GATEWAY_PORT: String(port),
       OPENROUTER_API_KEY: '',
       OPENROUTER_MODEL: 'glm-5',
       CJ_TOKEN: 'mock-cj-token',

@@ -177,8 +177,8 @@ function startGatewayProcess(port) {
     cwd: PROJECT_ROOT,
     env: {
       ...process.env,
-      SIMULATOR_GATEWAY_HOST: DEFAULT_HOST,
-      SIMULATOR_GATEWAY_PORT: String(port),
+      MEDIATION_GATEWAY_HOST: DEFAULT_HOST,
+      MEDIATION_GATEWAY_PORT: String(port),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })

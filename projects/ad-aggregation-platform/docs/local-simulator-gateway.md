@@ -191,8 +191,8 @@ Behavior:
 
 ## Environment Variables
 
-- `SIMULATOR_GATEWAY_PORT` (default `3100`)
-- `SIMULATOR_GATEWAY_HOST` (default `127.0.0.1`)
+- `MEDIATION_GATEWAY_PORT` (default `3100`)
+- `MEDIATION_GATEWAY_HOST` (default `127.0.0.1`)
 
 ## Hardcode Policy
 

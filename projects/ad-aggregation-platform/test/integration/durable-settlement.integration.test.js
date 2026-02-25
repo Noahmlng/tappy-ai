@@ -70,8 +70,8 @@ function startGateway(port, envOverrides = {}) {
     cwd: PROJECT_ROOT,
     env: {
       ...process.env,
-      SIMULATOR_GATEWAY_HOST: HOST,
-      SIMULATOR_GATEWAY_PORT: String(port),
+      MEDIATION_GATEWAY_HOST: HOST,
+      MEDIATION_GATEWAY_PORT: String(port),
       OPENROUTER_API_KEY: '',
       OPENROUTER_MODEL: 'glm-5',
       CJ_TOKEN: 'mock-cj-token',
@@ -153,9 +153,9 @@ async function issueRuntimeApiKeyHeaders(baseUrl, input = {}, headers = {}) {
 test('settlement durability: production mode fails fast without SUPABASE_DB_URL', async () => {
   const port = 7250 + Math.floor(Math.random() * 100)
   const gateway = startGateway(port, {
-    SIMULATOR_PRODUCTION_MODE: 'true',
-    SIMULATOR_REQUIRE_DURABLE_SETTLEMENT: 'true',
-    SIMULATOR_SETTLEMENT_STORAGE: 'supabase',
+    MEDIATION_PRODUCTION_MODE: 'true',
+    MEDIATION_REQUIRE_DURABLE_SETTLEMENT: 'true',
+    MEDIATION_SETTLEMENT_STORAGE: 'supabase',
     SUPABASE_DB_URL: '',
   })
 
@@ -185,7 +185,7 @@ test('history retention: event logs are not hard-truncated when max limit is dis
   const port = 7350 + Math.floor(Math.random() * 100)
   const baseUrl = `http://${HOST}:${port}`
   const gateway = startGateway(port, {
-    SIMULATOR_MAX_EVENT_LOGS: '0',
+    MEDIATION_MAX_EVENT_LOGS: '0',
   })
 
   try {
