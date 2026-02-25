@@ -36,23 +36,31 @@
 3. 建立 trigger engine（触发策略）
 4. 建立 delivery API（统一广告输出）
 
-## 环境变量（运行时密钥）
+## 环境变量（Production Ready：API + Dashboard）
 
-本项目的密钥读取统一在 `src/config/runtime-config.js`，当前要求以下变量全部存在：
+可复制 `projects/ad-aggregation-platform/.env.example` 作为模板。当前上线模式下：
 
-- `OPENROUTER_API_KEY`
-- `OPENROUTER_MODEL`
-- `CJ_TOKEN`
-- `PARTNERSTACK_API_KEY`
+- 生产必需（MVP 首发）：
+  - `SUPABASE_DB_URL`
+  - `SIMULATOR_SETTLEMENT_STORAGE=supabase`
+  - `SIMULATOR_PRODUCTION_MODE=true`
+  - `SIMULATOR_REQUIRE_DURABLE_SETTLEMENT=true`
+  - `SIMULATOR_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE=true`
+  - `SIMULATOR_DASHBOARD_AUTH_REQUIRED=true`
+  - `SIMULATOR_RUNTIME_AUTH_REQUIRED=true`
+  - `SIMULATOR_STRICT_MANUAL_INTEGRATION=true`
+  - `SIMULATOR_DEV_RESET_ENABLED=false`
+  - `SIMULATOR_ALLOWED_ORIGINS=<dashboard domain>`
+- 供应侧 provider key 为可选：
+  - `OPENROUTER_API_KEY` / `CJ_TOKEN` / `PARTNERSTACK_API_KEY` 缺省时允许降级到 no-bid/house ads，不阻断 API 启动。
+- 本地开发专用：
+  - `SIMULATOR_GATEWAY_HOST`、`SIMULATOR_GATEWAY_PORT` 只用于本地 `dev:gateway`，Vercel 不需要。
 
-可复制 `projects/ad-aggregation-platform/.env.example` 作为本地配置模板。
-
-House Ads（Supabase 库）相关变量：
+House Ads（Supabase）相关可调参数：
 
 - `HOUSE_ADS_SOURCE`：`supabase`（默认）或 `file`
 - `HOUSE_ADS_DB_CACHE_TTL_MS`：House offers DB 读取缓存时间（毫秒）
 - `HOUSE_ADS_DB_FETCH_LIMIT`：House offers 单次抓取上限
-- `SUPABASE_DB_URL`：用于迁移、导入以及 runtime 读取
 
 校验命令：
 
@@ -100,10 +108,10 @@ Meyka 金融场景三段测试（连通性 / 百级 RPM / 收益合理性）：
 # local
 npm --prefix ./projects/ad-aggregation-platform run meyka:suite -- --env=local
 
-# staging
+# deployed API (preview/prod)
 npm --prefix ./projects/ad-aggregation-platform run meyka:suite -- \
-  --env=staging \
-  --gatewayUrl=https://<staging-gateway>/api \
+  --env=prod \
+  --gatewayUrl=https://<api-domain>/api \
   --accountId=<account_id> \
   --appId=<app_id> \
   --runtimeKey=<runtime_api_key> \
@@ -119,3 +127,8 @@ npm --prefix ./projects/ad-aggregation-platform run dev:gateway
 ```
 
 默认监听：`http://127.0.0.1:3100`
+
+## Vercel 部署入口
+
+- API 入口：`projects/ad-aggregation-platform/api/index.js`
+- 本地 CLI 入口：`src/devtools/simulator/simulator-gateway.js`（直接执行时才会 `listen`）

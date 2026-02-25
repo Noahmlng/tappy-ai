@@ -3,7 +3,7 @@
 当前已包含两个基础模块：
 
 1. `config/`
-- 运行时环境变量读取与校验（`OPENROUTER_API_KEY`、`OPENROUTER_MODEL`、`CJ_TOKEN`、`PARTNERSTACK_API_KEY`）。
+- 运行时环境变量读取与校验（provider key 在 `strict=false` 模式下可选，缺省时允许降级）。
 
 2. `ner/`
 - 基于 LLM 的 NER 服务封装，输出结构化 JSON。
