@@ -271,3 +271,25 @@ curl -sS -X POST "$ADS_BASE_URL/v1/sdk/events" \
 
 Legacy `POST /api/v1/sdk/evaluate` is no longer the primary integration path.
 Use `GET /api/v1/mediation/config` + `POST /api/v2/bid` + `POST /api/v1/sdk/events`.
+
+## 11. Meyka Finance Validation Suite (Optional)
+
+For regression/performance/revenue simulation with Meyka finance conversations:
+
+```bash
+# local validation
+npm --prefix ./projects/ad-aggregation-platform run meyka:suite -- --env=local
+
+# staging validation
+npm --prefix ./projects/ad-aggregation-platform run meyka:suite -- \
+  --env=staging \
+  --gatewayUrl=https://<staging-gateway>/api \
+  --accountId=<account_id> \
+  --appId=<app_id> \
+  --runtimeKey=<runtime_api_key> \
+  --dashboardToken=<dashboard_access_token>
+```
+
+Revenue checks in this suite use simulator settlement rules:
+1. only `postback` with `postbackStatus=success` writes revenue
+2. `cpaUsd` must come from `bid.pricing.cpaUsd` (simulator model value), not random values

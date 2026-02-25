@@ -1,227 +1,50 @@
-import fs from 'node:fs/promises'
 import path from 'node:path'
-import { spawn } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-const PROJECT_ROOT = path.resolve(__dirname, '..')
-const GATEWAY_ENTRY = path.join(PROJECT_ROOT, 'src/devtools/simulator/simulator-gateway.js')
-
-const DEFAULT_HOST = '127.0.0.1'
-const DEFAULT_PORT = 3213
-const HEALTH_CHECK_TIMEOUT_MS = 15000
-const REQUEST_TIMEOUT_MS = 30000
+import {
+  PROJECT_ROOT,
+  DEFAULT_HOST,
+  DEFAULT_PORT,
+  DEFAULT_SCENARIO_SET_PATH,
+  parseArgs,
+  parsePlacements,
+  toBoolean,
+  toInteger,
+  toNumber,
+  clamp01,
+  round,
+  nowIso,
+  nowTag,
+  requestJson,
+  waitForGateway,
+  startGatewayProcess,
+  stopGatewayProcess,
+  loadScenarioSet,
+  createSdkEventPayload,
+  shouldSamplePostback,
+  buildStableConversionId,
+  resolveAuthContext,
+  ensurePlacementsEnabled,
+  summarizeIssues,
+  computeIssueDiff,
+  readJsonIfExists,
+  writeJson,
+} from './lib/meyka-suite-utils.js'
 
 const REPORT_DIR = path.join(PROJECT_ROOT, 'tests', 'reports', 'meyka-regression')
 const REPORT_RUNS_DIR = path.join(REPORT_DIR, 'runs')
 const LATEST_REPORT_PATH = path.join(REPORT_DIR, 'latest.json')
 const DIFF_REPORT_PATH = path.join(REPORT_DIR, 'issue-diff-latest.json')
 
-const MEYKA_SCENARIOS = [
-  {
-    key: 'stocks',
-    query: 'Recent upgrade trend for Amazon stock? Also compare broker tools for tracking analyst upgrades.',
-    answerText: 'Track upgrade trend changes, compare broker scanners, and set alerts for analyst actions.',
-    intentClass: 'product_exploration',
-    intentScore: 0.82,
-  },
-  {
-    key: 'grades',
-    query: 'I need to improve my calculus grades quickly. What tutoring platforms and study products should I compare?',
-    answerText: 'Compare tutoring platforms by teacher quality, speed, and practice depth before choosing.',
-    intentClass: 'product_exploration',
-    intentScore: 0.7,
-  },
-  {
-    key: 'forecasts',
-    query: 'What are good platforms for stock forecasts and portfolio projections for retail investors?',
-    answerText: 'Compare forecast reliability, portfolio simulation, and backtesting support for retail workflows.',
-    intentClass: 'product_exploration',
-    intentScore: 0.9,
-  },
-  {
-    key: 'market_news',
-    query: 'Where can I get real-time market news alerts and earnings calendar updates with actionable tools?',
-    answerText: 'Prioritize providers with low-latency alerts, earnings calendars, and execution-ready watchlists.',
-    intentClass: 'product_exploration',
-    intentScore: 0.82,
-  },
-]
-
-function parseArgs(argv) {
-  const options = {}
-  for (const arg of argv) {
-    if (!arg.startsWith('--')) continue
-    const index = arg.indexOf('=')
-    if (index < 0) {
-      options[arg.slice(2)] = 'true'
-      continue
-    }
-    options[arg.slice(2, index)] = arg.slice(index + 1)
-  }
-  return options
-}
-
-function toBoolean(value, fallback = false) {
-  if (value === undefined) return fallback
-  const normalized = String(value).trim().toLowerCase()
-  if (normalized === 'true' || normalized === '1' || normalized === 'yes') return true
-  if (normalized === 'false' || normalized === '0' || normalized === 'no') return false
-  return fallback
-}
-
-function toInteger(value, fallback) {
-  const num = Number(value)
-  if (Number.isFinite(num)) return Math.floor(num)
-  return fallback
-}
-
-function nowIso() {
-  return new Date().toISOString()
-}
-
-function nowTag(date = new Date()) {
-  const yyyy = String(date.getFullYear())
-  const mm = String(date.getMonth() + 1).padStart(2, '0')
-  const dd = String(date.getDate()).padStart(2, '0')
-  const hh = String(date.getHours()).padStart(2, '0')
-  const min = String(date.getMinutes()).padStart(2, '0')
-  const sec = String(date.getSeconds()).padStart(2, '0')
-  return `${yyyy}${mm}${dd}-${hh}${min}${sec}`
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function withTimeoutSignal(timeoutMs) {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  return {
-    signal: controller.signal,
-    clear: () => clearTimeout(timer),
-  }
-}
-
-async function requestJson(baseUrl, pathname, options = {}) {
-  const timeout = withTimeoutSignal(options.timeoutMs || REQUEST_TIMEOUT_MS)
-  try {
-    try {
-      const response = await fetch(`${baseUrl}${pathname}`, {
-        method: options.method || 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(options.headers || {}),
-        },
-        body: options.body ? JSON.stringify(options.body) : undefined,
-        signal: timeout.signal,
-      })
-
-      const payload = await response.json().catch(() => ({}))
-      return {
-        ok: response.ok,
-        status: response.status,
-        payload,
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'request_failed'
-      return {
-        ok: false,
-        status: 0,
-        payload: {
-          error: {
-            code: 'REQUEST_FAILED',
-            message,
-          },
-        },
-      }
-    }
-  } finally {
-    timeout.clear()
-  }
-}
-
-async function waitForGateway(baseUrl) {
-  const startedAt = Date.now()
-  while (Date.now() - startedAt < HEALTH_CHECK_TIMEOUT_MS) {
-    try {
-      const response = await requestJson(baseUrl, '/api/health', { timeoutMs: 1200 })
-      if (response.ok && response.payload?.ok === true) return
-    } catch {
-      // retry
-    }
-    await sleep(250)
-  }
-  throw new Error(`Gateway health check timeout after ${HEALTH_CHECK_TIMEOUT_MS}ms`)
-}
-
-function startGatewayProcess(port) {
-  const child = spawn(process.execPath, ['--env-file-if-exists=.env', GATEWAY_ENTRY], {
-    cwd: PROJECT_ROOT,
-    env: {
-      ...process.env,
-      SIMULATOR_GATEWAY_HOST: DEFAULT_HOST,
-      SIMULATOR_GATEWAY_PORT: String(port),
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-
-  let stdout = ''
-  let stderr = ''
-
-  child.stdout.on('data', (chunk) => {
-    stdout += String(chunk)
-  })
-  child.stderr.on('data', (chunk) => {
-    stderr += String(chunk)
-  })
-
-  return {
-    child,
-    logs: () => ({ stdout, stderr }),
-  }
-}
-
-async function stopGatewayProcess(handle) {
-  if (!handle?.child) return
-  handle.child.kill('SIGTERM')
-  await sleep(200)
-  if (!handle.child.killed) {
-    handle.child.kill('SIGKILL')
-  }
-}
-
-function createScenarioPayload(scenario) {
-  const now = Date.now()
-  return {
-    appId: 'simulator-chatbot',
-    sessionId: `meyka_${scenario.key}_${now}`,
-    turnId: `turn_${scenario.key}_${now}`,
-    userId: `meyka_user_${scenario.key}`,
-    event: 'followup_generation',
-    placementId: 'chat_followup_v1',
-    placementKey: 'next_step.intent_card',
-    context: {
-      query: scenario.query,
-      answerText: scenario.answerText,
-      locale: 'en-US',
-      intent_class: scenario.intentClass,
-      intent_score: scenario.intentScore,
-      preference_facets: [],
-    },
-  }
-}
-
-function createIssue(severity, code, scenarioKey, message, evidence = {}) {
-  const scope = scenarioKey || 'global'
-  const fingerprint = `${severity}|${code}|${scope}|${String(message || '').trim()}`
+function createIssue(severity, code, scope, message, evidence = {}) {
+  const normalizedScope = String(scope || 'global').trim() || 'global'
+  const normalizedMessage = String(message || '').trim()
+  const fingerprint = `${String(severity || '').toUpperCase()}|${code}|${normalizedScope}|${normalizedMessage}`
   return {
     fingerprint,
-    severity,
+    severity: String(severity || 'P2').toUpperCase(),
     code,
-    scope,
-    message,
+    scope: normalizedScope,
+    message: normalizedMessage,
     evidence,
   }
 }
@@ -260,90 +83,127 @@ async function checkUrlHealth(url) {
   }
 }
 
-async function ensureNextStepPlacementEnabled(baseUrl) {
-  const placementsRes = await requestJson(baseUrl, '/api/v1/dashboard/placements')
-  if (!placementsRes.ok) {
-    throw new Error(`load placements failed: HTTP_${placementsRes.status}`)
-  }
-
-  const placements = Array.isArray(placementsRes.payload?.placements)
-    ? placementsRes.payload.placements
-    : []
-
-  const placement = placements.find((item) => {
-    const placementKey = String(item?.placementKey || '').trim()
-    const placementId = String(item?.placementId || '').trim()
-    return placementKey === 'next_step.intent_card' || placementId === 'chat_followup_v1'
-  })
-
-  if (!placement || !placement.placementId) {
-    throw new Error('next_step placement not found')
-  }
-
-  if (placement.enabled === true) return
-
-  const updateRes = await requestJson(
-    baseUrl,
-    `/api/v1/dashboard/placements/${encodeURIComponent(String(placement.placementId))}`,
-    {
-      method: 'PUT',
-      body: { enabled: true },
-    },
-  )
-
-  if (!updateRes.ok) {
-    throw new Error(`enable placement failed: HTTP_${updateRes.status}`)
+function buildBidPayload({ scenario, placementId, sessionId, userId }) {
+  return {
+    userId,
+    chatId: sessionId,
+    placementId,
+    messages: [
+      { role: 'user', content: scenario.query },
+      { role: 'assistant', content: scenario.answerText },
+    ],
   }
 }
 
-async function runOneScenario(baseUrl, scenario, options = {}) {
-  const issues = []
-  const payload = createScenarioPayload(scenario)
+function toAdIdentity(bid = {}) {
+  const adId = String(bid?.bidId || bid?.item_id || bid?.itemId || bid?.adId || '').trim()
+  const adUrl = String(bid?.url || bid?.target_url || bid?.targetUrl || '').trim()
+  return { adId, adUrl }
+}
 
-  const beforeSummaryRes = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary')
-  if (!beforeSummaryRes.ok) {
-    issues.push(createIssue('P0', 'DASHBOARD_SUMMARY_UNAVAILABLE', scenario.key, 'dashboard summary unavailable', {
-      status: beforeSummaryRes.status,
-    }))
+async function runAuthPrecheck(baseUrl, runtimeHeaders, sampleBidPayload) {
+  const issues = []
+
+  const withoutKey = await requestJson(baseUrl, '/api/v2/bid', {
+    method: 'POST',
+    body: sampleBidPayload,
+  })
+
+  if (withoutKey.status !== 401) {
+    issues.push(createIssue(
+      'P0',
+      'RUNTIME_AUTH_PRECHECK_NO_KEY_FAILED',
+      'global',
+      'request without key must return 401',
+      { status: withoutKey.status, payload: withoutKey.payload },
+    ))
+  }
+
+  if (!runtimeHeaders?.Authorization) {
+    issues.push(createIssue(
+      'P0',
+      'RUNTIME_AUTH_PRECHECK_KEY_MISSING',
+      'global',
+      'runtime key is missing for authenticated precheck',
+      {},
+    ))
     return {
-      key: scenario.key,
-      ok: false,
-      payload,
       issues,
       evidence: {
-        stage: 'before_summary',
+        noKeyStatus: withoutKey.status,
+        withKeyStatus: 0,
       },
     }
   }
 
-  const beforeClicks = Number(beforeSummaryRes.payload?.clicks || 0)
+  const withKey = await requestJson(baseUrl, '/api/v2/bid', {
+    method: 'POST',
+    headers: runtimeHeaders,
+    body: sampleBidPayload,
+  })
+
+  if (!withKey.ok || withKey.status !== 200) {
+    issues.push(createIssue(
+      'P0',
+      'RUNTIME_AUTH_PRECHECK_WITH_KEY_FAILED',
+      'global',
+      'request with valid key must return 200',
+      { status: withKey.status, payload: withKey.payload },
+    ))
+  }
+
+  return {
+    issues,
+    evidence: {
+      noKeyStatus: withoutKey.status,
+      withKeyStatus: withKey.status,
+      withKeyMessage: String(withKey.payload?.message || '').trim(),
+    },
+  }
+}
+
+async function runOneScenarioPlacement(baseUrl, scenario, placementId, options = {}) {
+  const scope = `${scenario.key}:${placementId}`
+  const issues = []
+
+  const now = Date.now()
+  const sessionId = `meyka_${scenario.key}_${placementId}_${now}`
+  const turnId = `turn_${scenario.key}_${placementId}_${now}`
+  const userId = `meyka_user_${scenario.key}`
+
+  const bidPayload = buildBidPayload({ scenario, placementId, sessionId, userId })
+
+  const beforeSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary', {
+    headers: options.dashboardHeaders,
+  })
+  if (!beforeSummary.ok) {
+    issues.push(createIssue('P0', 'DASHBOARD_SUMMARY_UNAVAILABLE', scope, 'dashboard summary unavailable', {
+      status: beforeSummary.status,
+    }))
+  }
+
+  const beforeClicks = toNumber(beforeSummary.payload?.clicks, 0)
+  const beforeRevenue = toNumber(beforeSummary.payload?.revenueUsd, 0)
 
   const bidRes = await requestJson(baseUrl, '/api/v2/bid', {
     method: 'POST',
-    body: {
-      userId: payload.userId,
-      chatId: payload.sessionId,
-      placementId: payload.placementId,
-      messages: [
-        { role: 'user', content: String(payload?.context?.query || '') },
-        { role: 'assistant', content: String(payload?.context?.answerText || '') },
-      ],
-    },
+    headers: options.runtimeHeaders,
+    body: bidPayload,
   })
 
   if (!bidRes.ok) {
-    issues.push(createIssue('P0', 'BID_FAILED', scenario.key, 'v2 bid failed', {
+    issues.push(createIssue('P0', 'BID_FAILED', scope, 'v2 bid failed', {
       status: bidRes.status,
       payload: bidRes.payload,
     }))
     return {
       key: scenario.key,
+      placementId,
       ok: false,
-      payload,
       issues,
       evidence: {
         stage: 'v2_bid',
-        beforeClicks,
+        bidStatus: bidRes.status,
       },
     }
   }
@@ -354,176 +214,273 @@ async function runOneScenario(baseUrl, scenario, options = {}) {
     : null
   const decisionResult = winnerBid ? 'served' : 'no_fill'
   const decisionReasonDetail = String(bidRes.payload?.message || '').trim()
-  const ads = winnerBid ? [winnerBid] : []
-  const firstAd = ads[0] || null
-  const firstAdId = String(firstAd?.bidId || firstAd?.item_id || firstAd?.itemId || firstAd?.adId || '').trim()
-  const firstAdUrl = String(firstAd?.url || firstAd?.target_url || firstAd?.targetUrl || '').trim()
 
   if (!requestId) {
-    issues.push(createIssue('P0', 'MISSING_REQUEST_ID', scenario.key, 'v2 bid response missing requestId', {
+    issues.push(createIssue('P0', 'MISSING_REQUEST_ID', scope, 'v2 bid response missing requestId', {
       bid: bidRes.payload,
     }))
   }
 
-  if (decisionResult !== 'served' || ads.length === 0) {
-    issues.push(createIssue('P0', 'NO_AD_SERVED', scenario.key, 'next-step did not serve ads for scenario', {
-      decisionResult,
-      decisionReasonDetail,
-      adCount: ads.length,
+  if (!winnerBid) {
+    issues.push(createIssue('P0', 'NO_AD_SERVED', scope, 'scenario returned no fill', {
       requestId,
+      message: decisionReasonDetail,
     }))
   }
 
+  const { adId, adUrl } = toAdIdentity(winnerBid || {})
   const decisionsRes = requestId
-    ? await requestJson(baseUrl, `/api/v1/dashboard/decisions?requestId=${encodeURIComponent(requestId)}`)
+    ? await requestJson(baseUrl, `/api/v1/dashboard/decisions?requestId=${encodeURIComponent(requestId)}`, {
+      headers: options.dashboardHeaders,
+    })
     : { ok: false, status: 0, payload: {} }
 
   const decisionRows = decisionsRes.ok && Array.isArray(decisionsRes.payload?.items)
     ? decisionsRes.payload.items
     : []
-  const decisionRow = decisionRows.find((row) => String(row?.requestId || '') === requestId)
+  const decisionRow = decisionRows.find((item) => String(item?.requestId || '') === requestId)
 
   if (!decisionRow) {
-    issues.push(createIssue('P0', 'DECISION_NOT_VISIBLE', scenario.key, 'dashboard decision row not found', {
+    issues.push(createIssue('P0', 'DECISION_NOT_VISIBLE', scope, 'dashboard decision row not found', {
       requestId,
       status: decisionsRes.status,
     }))
   }
 
-  const impressionPayload = {
-    ...payload,
-    requestId,
-    kind: 'impression',
-    adId: firstAdId,
-  }
-  const clickPayload = {
-    ...payload,
-    requestId,
-    kind: 'click',
-    adId: firstAdId,
-  }
-  const dismissPayload = {
-    ...payload,
-    requestId,
-    kind: 'dismiss',
-    adId: firstAdId,
-  }
+  let impressionRes = null
+  let clickRes = null
+  let postbackRes = null
+  let duplicatePostbackRes = null
+  let postbackPayload = null
 
-  let eventImpressionRes = null
-  let eventClickRes = null
-  let eventDismissRes = null
+  if (requestId && adId && winnerBid) {
+    const impressionPayload = createSdkEventPayload({
+      appId: options.appId,
+      scenario,
+      query: scenario.query,
+      answerText: scenario.answerText,
+      intentClass: scenario.intentClass,
+      intentScore: scenario.intentScore,
+      preferenceFacets: scenario.preferenceFacets,
+      locale: scenario.locale,
+      requestId,
+      adId,
+      sessionId,
+      turnId,
+      userId,
+      placementId,
+      kind: 'impression',
+    })
 
-  if (requestId && firstAdId && decisionResult === 'served') {
-    eventImpressionRes = await requestJson(baseUrl, '/api/v1/sdk/events', {
+    const clickPayload = createSdkEventPayload({
+      appId: options.appId,
+      scenario,
+      query: scenario.query,
+      answerText: scenario.answerText,
+      intentClass: scenario.intentClass,
+      intentScore: scenario.intentScore,
+      preferenceFacets: scenario.preferenceFacets,
+      locale: scenario.locale,
+      requestId,
+      adId,
+      sessionId,
+      turnId,
+      userId,
+      placementId,
+      kind: 'click',
+    })
+
+    impressionRes = await requestJson(baseUrl, '/api/v1/sdk/events', {
       method: 'POST',
+      headers: options.runtimeHeaders,
       body: impressionPayload,
     })
-    eventClickRes = await requestJson(baseUrl, '/api/v1/sdk/events', {
+
+    clickRes = await requestJson(baseUrl, '/api/v1/sdk/events', {
       method: 'POST',
+      headers: options.runtimeHeaders,
       body: clickPayload,
     })
-    eventDismissRes = await requestJson(baseUrl, '/api/v1/sdk/events', {
-      method: 'POST',
-      body: dismissPayload,
-    })
 
-    if (!eventImpressionRes.ok) {
-      issues.push(createIssue('P0', 'IMPRESSION_EVENT_FAILED', scenario.key, 'impression event report failed', {
+    if (!impressionRes.ok) {
+      issues.push(createIssue('P0', 'IMPRESSION_EVENT_FAILED', scope, 'impression event failed', {
         requestId,
-        status: eventImpressionRes.status,
+        status: impressionRes.status,
       }))
     }
-    if (!eventClickRes.ok) {
-      issues.push(createIssue('P0', 'CLICK_EVENT_FAILED', scenario.key, 'click event report failed', {
+    if (!clickRes.ok) {
+      issues.push(createIssue('P0', 'CLICK_EVENT_FAILED', scope, 'click event failed', {
         requestId,
-        status: eventClickRes.status,
+        status: clickRes.status,
       }))
     }
-    if (!eventDismissRes.ok) {
-      issues.push(createIssue('P0', 'DISMISS_EVENT_FAILED', scenario.key, 'dismiss event report failed', {
-        requestId,
-        status: eventDismissRes.status,
-      }))
+
+    if (options.withPostback) {
+      const pricing = winnerBid?.pricing && typeof winnerBid.pricing === 'object' ? winnerBid.pricing : {}
+      const cpaUsd = toNumber(pricing.cpaUsd, NaN)
+      const pConv = clamp01(pricing.pConv)
+      const sampled = shouldSamplePostback(requestId, adId, turnId, pConv)
+
+      if (sampled && Number.isFinite(cpaUsd) && cpaUsd > 0) {
+        postbackPayload = {
+          eventType: 'postback',
+          appId: options.appId,
+          accountId: options.accountId,
+          requestId,
+          sessionId,
+          turnId,
+          userId,
+          placementId,
+          adId,
+          postbackType: 'conversion',
+          postbackStatus: 'success',
+          conversionId: buildStableConversionId(requestId, adId, turnId),
+          cpaUsd: round(cpaUsd, 4),
+          currency: 'USD',
+        }
+
+        postbackRes = await requestJson(baseUrl, '/api/v1/sdk/events', {
+          method: 'POST',
+          headers: options.runtimeHeaders,
+          body: postbackPayload,
+        })
+
+        if (!postbackRes.ok || postbackRes.payload?.ok !== true) {
+          issues.push(createIssue('P0', 'POSTBACK_EVENT_FAILED', scope, 'postback event failed', {
+            requestId,
+            status: postbackRes.status,
+            payload: postbackRes.payload,
+          }))
+        }
+
+        duplicatePostbackRes = await requestJson(baseUrl, '/api/v1/sdk/events', {
+          method: 'POST',
+          headers: options.runtimeHeaders,
+          body: postbackPayload,
+        })
+
+        if (!duplicatePostbackRes.ok || duplicatePostbackRes.payload?.duplicate !== true) {
+          issues.push(createIssue('P0', 'POSTBACK_IDEMPOTENCY_FAILED', scope, 'duplicate postback should be idempotent', {
+            requestId,
+            status: duplicatePostbackRes.status,
+            payload: duplicatePostbackRes.payload,
+          }))
+        }
+      }
     }
   }
 
   const eventsRes = requestId
-    ? await requestJson(baseUrl, `/api/v1/dashboard/events?requestId=${encodeURIComponent(requestId)}&eventType=sdk_event`)
+    ? await requestJson(baseUrl, `/api/v1/dashboard/events?requestId=${encodeURIComponent(requestId)}`, {
+      headers: options.dashboardHeaders,
+    })
     : { ok: false, status: 0, payload: {} }
+
   const eventRows = eventsRes.ok && Array.isArray(eventsRes.payload?.items)
     ? eventsRes.payload.items
     : []
 
-  const impressionRow = eventRows.find((row) => String(row?.kind || '') === 'impression')
-  const clickRow = eventRows.find((row) => String(row?.kind || '') === 'click')
-  const dismissRow = eventRows.find((row) => String(row?.kind || '') === 'dismiss')
+  if (winnerBid) {
+    const sdkRows = eventRows.filter((row) => String(row?.eventType || '') === 'sdk_event')
+    const impressionRow = sdkRows.find((row) => String(row?.kind || row?.event || '').toLowerCase() === 'impression')
+    const clickRow = sdkRows.find((row) => String(row?.kind || row?.event || '').toLowerCase() === 'click')
 
-  if (decisionResult === 'served') {
     if (!impressionRow) {
-      issues.push(createIssue('P0', 'IMPRESSION_NOT_VISIBLE', scenario.key, 'impression event missing in dashboard', {
-        requestId,
-      }))
+      issues.push(createIssue('P0', 'IMPRESSION_NOT_VISIBLE', scope, 'impression event missing in dashboard', { requestId }))
     }
     if (!clickRow) {
-      issues.push(createIssue('P0', 'CLICK_NOT_VISIBLE', scenario.key, 'click event missing in dashboard', {
-        requestId,
-      }))
+      issues.push(createIssue('P0', 'CLICK_NOT_VISIBLE', scope, 'click event missing in dashboard', { requestId }))
     }
-    if (!dismissRow) {
-      issues.push(createIssue('P0', 'DISMISS_NOT_VISIBLE', scenario.key, 'dismiss event missing in dashboard', {
-        requestId,
-      }))
-    }
-    if (eventRows.some((row) => String(row?.event || '') === 'answer_completed')) {
-      issues.push(createIssue('P1', 'EVENT_SEMANTIC_POLLUTION', scenario.key, 'sdk_event should not reuse answer_completed', {
-        requestId,
-      }))
+
+    if (postbackPayload) {
+      const postbackRows = eventRows.filter((row) => String(row?.eventType || '') === 'postback')
+      const conversionRow = postbackRows.find((row) => String(row?.conversionId || '') === postbackPayload.conversionId)
+      if (!conversionRow) {
+        issues.push(createIssue('P0', 'POSTBACK_NOT_VISIBLE', scope, 'postback event missing in dashboard', {
+          requestId,
+          conversionId: postbackPayload.conversionId,
+        }))
+      }
     }
   }
 
-  const afterSummaryRes = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary')
-  const afterClicks = Number(afterSummaryRes.payload?.clicks || 0)
+  const afterSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary', {
+    headers: options.dashboardHeaders,
+  })
+  const afterClicks = toNumber(afterSummary.payload?.clicks, 0)
+  const afterRevenue = toNumber(afterSummary.payload?.revenueUsd, 0)
 
-  if (decisionResult === 'served' && afterClicks <= beforeClicks) {
-    issues.push(createIssue('P0', 'CLICK_COUNTER_NOT_UPDATED', scenario.key, 'dashboard clicks did not increase after click event', {
+  if (winnerBid && afterClicks <= beforeClicks) {
+    issues.push(createIssue('P0', 'CLICK_COUNTER_NOT_UPDATED', scope, 'dashboard clicks did not increase after click', {
       requestId,
       beforeClicks,
       afterClicks,
     }))
   }
 
-  let landingHealth = null
-  if (decisionResult === 'served' && firstAdUrl && !toBoolean(options.skipLandingCheck, false)) {
-    landingHealth = await checkUrlHealth(firstAdUrl)
-    if (!landingHealth.ok) {
-      issues.push(createIssue('P1', 'LANDING_PAGE_UNHEALTHY', scenario.key, 'first ad landing page is unreachable or non-2xx/3xx', {
+  if (postbackPayload) {
+    const expectedRevenue = beforeRevenue + toNumber(postbackPayload.cpaUsd, 0)
+    if (afterRevenue + 0.01 < expectedRevenue) {
+      issues.push(createIssue('P0', 'POSTBACK_REVENUE_NOT_SETTLED', scope, 'postback revenue not reflected in summary', {
         requestId,
-        adId: firstAdId,
-        targetUrl: firstAdUrl,
+        expectedRevenue: round(expectedRevenue, 4),
+        actualRevenue: round(afterRevenue, 4),
+      }))
+    }
+  }
+
+  let landingHealth = null
+  if (winnerBid && adUrl && !options.skipLandingCheck) {
+    landingHealth = await checkUrlHealth(adUrl)
+    if (!landingHealth.ok) {
+      issues.push(createIssue('P1', 'LANDING_PAGE_UNHEALTHY', scope, 'first ad landing page is unreachable or non-2xx/3xx', {
+        requestId,
+        adId,
+        targetUrl: adUrl,
         urlHealth: landingHealth,
       }))
     }
   }
 
-  const blockingIssueCount = issues.filter((item) => String(item?.severity || '').toUpperCase() === 'P0').length
-
+  const blockingIssueCount = issues.filter((item) => item.severity === 'P0').length
   return {
     key: scenario.key,
+    placementId,
     ok: blockingIssueCount === 0,
-    payload,
     issues,
+    payload: {
+      sessionId,
+      turnId,
+      userId,
+      query: scenario.query,
+      answerText: scenario.answerText,
+      intentClass: scenario.intentClass,
+      intentScore: scenario.intentScore,
+    },
     evidence: {
       requestId,
       decisionResult,
       decisionReasonDetail,
-      adCount: ads.length,
-      firstAdId,
-      firstAdUrl,
+      adId,
+      adUrl,
+      eventCount: eventRows.length,
       beforeClicks,
       afterClicks,
-      decisionVisible: Boolean(decisionRow),
-      eventKinds: eventRows.map((row) => String(row?.kind || '')).filter(Boolean),
-      eventNames: eventRows.map((row) => String(row?.event || '')).filter(Boolean),
+      beforeRevenue: round(beforeRevenue, 4),
+      afterRevenue: round(afterRevenue, 4),
+      postback: postbackPayload
+        ? {
+            conversionId: postbackPayload.conversionId,
+            cpaUsd: postbackPayload.cpaUsd,
+            sampled: true,
+            postbackStatus: postbackRes?.status || 0,
+            duplicateStatus: duplicatePostbackRes?.status || 0,
+            duplicate: Boolean(duplicatePostbackRes?.payload?.duplicate),
+          }
+        : {
+            sampled: false,
+          },
+      pricing: winnerBid?.pricing || null,
       landingHealth,
       blockingIssueCount,
       warningIssueCount: Math.max(0, issues.length - blockingIssueCount),
@@ -531,12 +488,13 @@ async function runOneScenario(baseUrl, scenario, options = {}) {
   }
 }
 
-async function collectGlobalIssues(baseUrl) {
+async function collectGlobalIssues(baseUrl, dashboardHeaders) {
   const issues = []
-
-  const networkRes = await requestJson(baseUrl, '/api/v1/dashboard/network-health')
+  const networkRes = await requestJson(baseUrl, '/api/v1/dashboard/network-health', {
+    headers: dashboardHeaders,
+  })
   if (!networkRes.ok) {
-    issues.push(createIssue('P2', 'NETWORK_HEALTH_UNAVAILABLE', '', 'network health endpoint unavailable', {
+    issues.push(createIssue('P2', 'NETWORK_HEALTH_UNAVAILABLE', 'global', 'network health endpoint unavailable', {
       status: networkRes.status,
     }))
     return { issues, evidence: { networkHealth: null } }
@@ -549,10 +507,10 @@ async function collectGlobalIssues(baseUrl) {
   for (const [network, state] of Object.entries(networkHealth)) {
     const status = String(state?.status || '').trim().toLowerCase()
     if (!status || status === 'healthy') continue
-    issues.push(createIssue('P2', 'NETWORK_DEGRADED', '', `network ${network} is ${status}`, {
+    issues.push(createIssue('P2', 'NETWORK_DEGRADED', 'global', `network ${network} is ${status}`, {
       network,
       status,
-      consecutiveFailures: Number(state?.consecutiveFailures || 0),
+      consecutiveFailures: toInteger(state?.consecutiveFailures, 0),
       lastErrorCode: String(state?.lastErrorCode || ''),
       lastErrorMessage: String(state?.lastErrorMessage || ''),
     }))
@@ -568,126 +526,105 @@ async function collectGlobalIssues(baseUrl) {
   }
 }
 
-function computeIssueDiff(previousIssues, currentIssues) {
-  const prev = Array.isArray(previousIssues) ? previousIssues : []
-  const curr = Array.isArray(currentIssues) ? currentIssues : []
-
-  const prevMap = new Map(prev.map((item) => [String(item?.fingerprint || ''), item]).filter(([key]) => key))
-  const currMap = new Map(curr.map((item) => [String(item?.fingerprint || ''), item]).filter(([key]) => key))
-
-  const newIssues = []
-  const resolvedIssues = []
-
-  for (const [fingerprint, item] of currMap.entries()) {
-    if (!prevMap.has(fingerprint)) newIssues.push(item)
-  }
-
-  for (const [fingerprint, item] of prevMap.entries()) {
-    if (!currMap.has(fingerprint)) resolvedIssues.push(item)
-  }
-
-  return {
-    newIssues,
-    resolvedIssues,
-  }
-}
-
-function summarizeIssues(issues) {
-  const rows = Array.isArray(issues) ? issues : []
-  const bySeverity = {
-    P0: 0,
-    P1: 0,
-    P2: 0,
-  }
-
-  for (const item of rows) {
-    const severity = String(item?.severity || '').toUpperCase()
-    if (Object.prototype.hasOwnProperty.call(bySeverity, severity)) {
-      bySeverity[severity] += 1
-    }
-  }
-
-  return {
-    total: rows.length,
-    bySeverity,
-  }
-}
-
-async function readJsonIfExists(filePath) {
-  try {
-    const raw = await fs.readFile(filePath, 'utf8')
-    return JSON.parse(raw)
-  } catch {
-    return null
-  }
-}
-
-async function writeJson(filePath, payload) {
-  await fs.mkdir(path.dirname(filePath), { recursive: true })
-  await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8')
-}
-
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   const externalGatewayUrl = String(args.gatewayUrl || '').trim()
   const port = toInteger(args.port, DEFAULT_PORT)
   const failOnNew = toBoolean(args.failOnNew, true)
   const failOnCurrent = toBoolean(args.failOnCurrent, false)
+  const skipLandingCheck = toBoolean(args.skipLandingCheck, false)
+  const skipReset = toBoolean(args.skipReset, false)
+  const withPostback = toBoolean(args.withPostback, false)
+  const placements = parsePlacements(args.placements)
+  const scenarioSetPath = String(args.scenarioSet || DEFAULT_SCENARIO_SET_PATH).trim()
 
   const startedAt = nowIso()
   const baseUrl = externalGatewayUrl || `http://${DEFAULT_HOST}:${port}`
   const useExternalGateway = Boolean(externalGatewayUrl)
 
   let gatewayHandle = null
-
   try {
     if (!useExternalGateway) {
-      gatewayHandle = startGatewayProcess(port)
+      gatewayHandle = startGatewayProcess(port, {
+        SIMULATOR_STRICT_MANUAL_INTEGRATION: 'false',
+        SIMULATOR_SETTLEMENT_STORAGE: 'state_file',
+        SIMULATOR_REQUIRE_DURABLE_SETTLEMENT: 'false',
+        SIMULATOR_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE: 'false',
+        SIMULATOR_RUNTIME_AUTH_REQUIRED: 'true',
+      })
     }
 
     await waitForGateway(baseUrl)
 
-    const resetRes = await requestJson(baseUrl, '/api/v1/dev/reset', {
-      method: 'POST',
-    })
-    if (!resetRes.ok) {
-      throw new Error(`gateway reset failed: HTTP_${resetRes.status}`)
-    }
-
-    await ensureNextStepPlacementEnabled(baseUrl)
-
-    const scenarioResults = []
-    const currentIssues = []
-
-    for (const scenario of MEYKA_SCENARIOS) {
-      try {
-        const scenarioResult = await runOneScenario(baseUrl, scenario, args)
-        scenarioResults.push(scenarioResult)
-        currentIssues.push(...scenarioResult.issues)
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'scenario_runtime_failed'
-        const fallbackIssue = createIssue(
-          'P0',
-          'SCENARIO_RUNTIME_EXCEPTION',
-          scenario.key,
-          `scenario execution crashed: ${message}`,
-          { scenario: scenario.key },
-        )
-        scenarioResults.push({
-          key: scenario.key,
-          ok: false,
-          payload: createScenarioPayload(scenario),
-          issues: [fallbackIssue],
-          evidence: {
-            stage: 'scenario_exception',
-            error: message,
-          },
-        })
-        currentIssues.push(fallbackIssue)
+    if (!skipReset) {
+      const resetRes = await requestJson(baseUrl, '/api/v1/dev/reset', {
+        method: 'POST',
+      })
+      if (!resetRes.ok) {
+        throw new Error(`gateway reset failed: HTTP_${resetRes.status}`)
       }
     }
 
-    const globalCheck = await collectGlobalIssues(baseUrl)
+    const auth = await resolveAuthContext(baseUrl, args, { useExternalGateway })
+
+    await ensurePlacementsEnabled(baseUrl, placements, auth.dashboardHeaders)
+
+    const scenarioSet = await loadScenarioSet(scenarioSetPath)
+    const sampleScenario = scenarioSet.scenarios[0]
+    const precheck = await runAuthPrecheck(
+      baseUrl,
+      auth.runtimeHeaders,
+      buildBidPayload({
+        scenario: sampleScenario,
+        placementId: placements[0],
+        sessionId: `meyka_precheck_${Date.now()}`,
+        userId: 'meyka_precheck_user',
+      }),
+    )
+
+    const scenarioResults = []
+    const currentIssues = [...precheck.issues]
+
+    for (const scenario of scenarioSet.scenarios) {
+      for (const placementId of placements) {
+        try {
+          const result = await runOneScenarioPlacement(baseUrl, scenario, placementId, {
+            runtimeHeaders: auth.runtimeHeaders,
+            dashboardHeaders: auth.dashboardHeaders,
+            appId: auth.appId,
+            accountId: auth.accountId,
+            withPostback,
+            skipLandingCheck,
+          })
+          scenarioResults.push(result)
+          currentIssues.push(...result.issues)
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'scenario_runtime_failed'
+          const scope = `${scenario.key}:${placementId}`
+          const issue = createIssue('P0', 'SCENARIO_RUNTIME_EXCEPTION', scope, `scenario execution crashed: ${message}`, {
+            scenario: scenario.key,
+            placementId,
+          })
+          scenarioResults.push({
+            key: scenario.key,
+            placementId,
+            ok: false,
+            issues: [issue],
+            payload: {
+              query: scenario.query,
+              answerText: scenario.answerText,
+            },
+            evidence: {
+              stage: 'scenario_exception',
+              error: message,
+            },
+          })
+          currentIssues.push(issue)
+        }
+      }
+    }
+
+    const globalCheck = await collectGlobalIssues(baseUrl, auth.dashboardHeaders)
     currentIssues.push(...globalCheck.issues)
 
     const previousReport = await readJsonIfExists(LATEST_REPORT_PATH)
@@ -696,6 +633,7 @@ async function main() {
 
     const finishedAt = nowIso()
     const runId = `meyka_regression_${nowTag(new Date())}`
+    const runReportPath = path.join(REPORT_RUNS_DIR, `${runId}.json`)
 
     const report = {
       runId,
@@ -703,6 +641,20 @@ async function main() {
       startedAt,
       finishedAt,
       gateway: baseUrl,
+      placements,
+      scenarioSet: {
+        id: scenarioSet.scenarioSet,
+        sourcePath: path.relative(PROJECT_ROOT, scenarioSet.sourcePath),
+        scenarioCount: scenarioSet.scenarios.length,
+      },
+      auth: {
+        accountId: auth.accountId,
+        appId: auth.appId,
+        environment: auth.environment,
+        hasRuntimeKey: Boolean(auth.runtimeKey),
+        hasDashboardToken: Boolean(auth.dashboardToken),
+      },
+      precheck: precheck.evidence,
       scenarios: scenarioResults,
       globalEvidence: globalCheck.evidence,
       issues: currentIssues,
@@ -717,6 +669,9 @@ async function main() {
         useExternalGateway,
         failOnNew,
         failOnCurrent,
+        skipLandingCheck,
+        skipReset,
+        withPostback,
         reportPaths: {
           latest: path.relative(PROJECT_ROOT, LATEST_REPORT_PATH),
           diffLatest: path.relative(PROJECT_ROOT, DIFF_REPORT_PATH),
@@ -724,24 +679,17 @@ async function main() {
       },
     }
 
-    const runReportPath = path.join(REPORT_RUNS_DIR, `${runId}.json`)
-
     await writeJson(runReportPath, report)
     await writeJson(LATEST_REPORT_PATH, report)
-    await writeJson(
-      DIFF_REPORT_PATH,
-      {
-        generatedAt: finishedAt,
-        runId,
-        newIssues: diff.newIssues,
-        resolvedIssues: diff.resolvedIssues,
-        newIssueSummary: summarizeIssues(diff.newIssues),
-        resolvedIssueSummary: summarizeIssues(diff.resolvedIssues),
-        currentIssueSummary: summarizeIssues(currentIssues),
-      },
-    )
-
-    const blockingCurrent = currentIssues.filter((item) => String(item?.severity || '').toUpperCase() === 'P0')
+    await writeJson(DIFF_REPORT_PATH, {
+      generatedAt: finishedAt,
+      runId,
+      newIssues: diff.newIssues,
+      resolvedIssues: diff.resolvedIssues,
+      newIssueSummary: summarizeIssues(diff.newIssues),
+      resolvedIssueSummary: summarizeIssues(diff.resolvedIssues),
+      currentIssueSummary: summarizeIssues(currentIssues),
+    })
 
     const output = {
       ok: currentIssues.length === 0,
@@ -764,6 +712,7 @@ async function main() {
 
     console.log(JSON.stringify(output, null, 2))
 
+    const blockingCurrent = currentIssues.filter((item) => item.severity === 'P0')
     if ((failOnNew && diff.newIssues.length > 0) || (failOnCurrent && blockingCurrent.length > 0)) {
       process.exitCode = 1
     }

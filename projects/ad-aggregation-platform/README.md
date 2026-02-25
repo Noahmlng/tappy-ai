@@ -94,6 +94,22 @@ Next-Step E2E 场景集（购物 / 送礼偏好 / 无商业意图 / 敏感话题
 npm --prefix ./projects/ad-aggregation-platform run e2e:next-step
 ```
 
+Meyka 金融场景三段测试（连通性 / 百级 RPM / 收益合理性）：
+
+```bash
+# local
+npm --prefix ./projects/ad-aggregation-platform run meyka:suite -- --env=local
+
+# staging
+npm --prefix ./projects/ad-aggregation-platform run meyka:suite -- \
+  --env=staging \
+  --gatewayUrl=https://<staging-gateway>/api \
+  --accountId=<account_id> \
+  --appId=<app_id> \
+  --runtimeKey=<runtime_api_key> \
+  --dashboardToken=<dashboard_access_token>
+```
+
 ## 本地 Simulator Gateway
 
 用于本地联调 Dashboard 与 Simulator 的配置/决策/指标接口：

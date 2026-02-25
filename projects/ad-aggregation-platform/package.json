@@ -15,6 +15,7 @@
     "test:e2e": "node --test ./tests/e2e/**/*.spec.js",
     "test:functional:p0": "npm run test:contracts && npm run test:integration && npm run test:e2e",
     "perf:sdk-batch": "node --env-file-if-exists=.env ./scripts/perf-sdk-batch.js",
+    "meyka:suite": "node --env-file-if-exists=.env ./scripts/run-meyka-suite.js",
     "regress:meyka": "node --env-file-if-exists=.env ./scripts/regress-meyka-closure.js",
     "smoke:ads": "node ./scripts/smoke-ads-runtime.js --mode=mock",
     "smoke:ads:live": "node --env-file-if-exists=.env ./scripts/smoke-ads-runtime.js --mode=live",
