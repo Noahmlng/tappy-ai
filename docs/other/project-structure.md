@@ -23,7 +23,7 @@
 - 作为 SDK 接入前后的验证容器，观察参数变化与用户体验。
 
 ## C. 模拟与测试模块（开发者视角）
-路径：`projects/simulator-dashboard`
+路径：`/Users/zeming/Documents/chat-ads-dashboard`（外部独立仓库）
 
 包含：
 - Vue Developer Dashboard 容器（接入方管理后台）

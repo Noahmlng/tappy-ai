@@ -1,5 +1,0 @@
-category_key,brand_count,product_offers,link_offers,total_offers,current_product_density,target_product_density,target_total_product_offers,gap_product_offers,brands_below_target,p1_status
-finance::digital_banking,166,1328,16,1344,8,8,1328,0,0,met
-education::online_learning,136,1088,4,1092,8,8,1088,0,0,met
-saas::productivity,123,984,6,990,8,8,984,0,0,met
-developer_tools::dev_platform,126,1008,2,1010,8,8,1008,0,0,met

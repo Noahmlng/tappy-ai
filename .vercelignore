@@ -1,0 +1,7 @@
+node_modules
+dist
+**/.DS_Store
+**/.playwright-cli
+projects/ad-aggregation-platform/.local
+projects/ad-aggregation-platform/data
+projects/ad-aggregation-platform/tests/reports

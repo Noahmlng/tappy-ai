@@ -132,9 +132,8 @@ npm --prefix ./projects/ad-aggregation-platform run dev:gateway
 
 ## Vercel 部署入口
 
-- Runtime API 入口：`projects/ad-aggregation-platform/api/runtime.js`
-- Control-plane API 入口：`projects/ad-aggregation-platform/api/control-plane.js`
-- 兼容入口（全路由）：`projects/ad-aggregation-platform/api/index.js`
-- Runtime Vercel config：`projects/ad-aggregation-platform/vercel.runtime.json`
-- Control-plane Vercel config：`projects/ad-aggregation-platform/vercel.control-plane.json`
+- Runtime API 入口：`apps/runtime-api/api/[...path].js`
+- Control-plane API 入口：`apps/control-plane-api/api/[...path].js`
+- Runtime Vercel config：`apps/runtime-api/vercel.json`
+- Control-plane Vercel config：`apps/control-plane-api/vercel.json`
 - 本地 CLI 入口：`src/devtools/simulator/simulator-gateway.js`（直接执行时才会 `listen`）

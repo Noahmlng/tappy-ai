@@ -3,7 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "workspaces": [
-    "projects/ad-aggregation-platform"
+    "projects/ad-aggregation-platform",
+    "apps/runtime-api",
+    "apps/control-plane-api"
   ],
   "scripts": {
     "dev": "npm run dev:gateway",

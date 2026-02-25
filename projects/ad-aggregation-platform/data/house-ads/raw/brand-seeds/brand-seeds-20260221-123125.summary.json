@@ -1,9 +1,0 @@
-{
-  "generatedAt": "2026-02-21T12:32:23.210Z",
-  "sourceJobs": 180,
-  "rawRecords": 1730,
-  "mergedSeeds": 1200,
-  "minSeeds": 1200,
-  "enableMajesticFallback": true,
-  "output": "data/house-ads/raw/brand-seeds/brand-seeds-20260221-123125.jsonl"
-}

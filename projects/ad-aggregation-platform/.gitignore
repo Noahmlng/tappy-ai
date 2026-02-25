@@ -1,0 +1,21 @@
+.vercel
+
+# Keep only lightweight placeholders in git.
+data/*
+!data/README.md
+!data/house-ads/
+data/house-ads/*
+!data/house-ads/curated/
+!data/house-ads/offers/
+!data/house-ads/reports/
+data/house-ads/curated/*
+!data/house-ads/curated/.gitkeep
+data/house-ads/reports/*
+!data/house-ads/reports/.gitkeep
+data/house-ads/offers/*
+!data/house-ads/offers/curated/
+!data/house-ads/offers/reports/
+data/house-ads/offers/curated/*
+!data/house-ads/offers/curated/.gitkeep
+data/house-ads/offers/reports/*
+!data/house-ads/offers/reports/.gitkeep
