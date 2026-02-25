@@ -401,7 +401,13 @@ import {
 } from 'lucide-vue-next'
 import { sendMessageStream } from '../api/deepseek'
 import { shouldUseWebSearchTool, runWebSearchTool, buildWebSearchContext } from '../api/webSearchTool'
-import { getAdsPlacementIds, getAdsIntentScore, requestAdBid, reportInlineAdEvent } from '../api/adsSdk'
+import {
+  getAdsPlacementIds,
+  getAdsIntentScore,
+  requestAdBid,
+  reportInlineAdEvent,
+  reportAdPostbackEvent,
+} from '../api/adsSdk'
 import CitationSources from '../components/CitationSources.vue'
 import FollowUpSuggestions from '../components/FollowUpSuggestions.vue'
 import MarkdownRenderer from '../components/MarkdownRenderer.vue'
@@ -519,6 +525,25 @@ function normalizeAdCard(raw) {
   const url = typeof raw.url === 'string' ? raw.url.trim() : ''
   if (!requestId || !adId || !url) return null
 
+  const pricing = raw.pricing && typeof raw.pricing === 'object'
+    ? {
+        modelVersion: typeof raw.pricing.modelVersion === 'string' ? raw.pricing.modelVersion : 'rpm_v1',
+        targetRpmUsd: Number.isFinite(Number(raw.pricing.targetRpmUsd)) ? Number(raw.pricing.targetRpmUsd) : 0,
+        ecpmUsd: Number.isFinite(Number(raw.pricing.ecpmUsd)) ? Number(raw.pricing.ecpmUsd) : 0,
+        cpaUsd: Number.isFinite(Number(raw.pricing.cpaUsd)) ? Number(raw.pricing.cpaUsd) : 0,
+        pClick: Number.isFinite(Number(raw.pricing.pClick)) ? Number(raw.pricing.pClick) : 0,
+        pConv: Number.isFinite(Number(raw.pricing.pConv)) ? Number(raw.pricing.pConv) : 0,
+        network: typeof raw.pricing.network === 'string' ? raw.pricing.network : '',
+        rawSignal: raw.pricing.rawSignal && typeof raw.pricing.rawSignal === 'object'
+          ? {
+              rawBidValue: Number.isFinite(Number(raw.pricing.rawSignal.rawBidValue)) ? Number(raw.pricing.rawSignal.rawBidValue) : 0,
+              rawUnit: typeof raw.pricing.rawSignal.rawUnit === 'string' ? raw.pricing.rawSignal.rawUnit : 'bid_value',
+              normalizedFactor: Number.isFinite(Number(raw.pricing.rawSignal.normalizedFactor)) ? Number(raw.pricing.rawSignal.normalizedFactor) : 1,
+            }
+          : null,
+      }
+    : null
+
   return {
     requestId,
     placementId: typeof raw.placementId === 'string' && raw.placementId.trim() ? raw.placementId.trim() : 'chat_inline_v1',
@@ -532,8 +557,11 @@ function normalizeAdCard(raw) {
     dsp: typeof raw.dsp === 'string' ? raw.dsp : '',
     variant: typeof raw.variant === 'string' ? raw.variant : 'base',
     price: Number.isFinite(Number(raw.price)) ? Number(raw.price) : null,
+    pricing,
     impressionReported: Boolean(raw.impressionReported),
     clickReported: Boolean(raw.clickReported),
+    postbackReported: Boolean(raw.postbackReported),
+    lastPostbackConversionId: typeof raw.lastPostbackConversionId === 'string' ? raw.lastPostbackConversionId : '',
   }
 }
 
@@ -1069,6 +1097,61 @@ function getBrowserLocale() {
     : 'en-US'
 }
 
+function clamp01(value) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 0
+  if (numeric <= 0) return 0
+  if (numeric >= 1) return 1
+  return numeric
+}
+
+function hashToUnitInterval(seed = '') {
+  let hash = 2166136261
+  const text = String(seed || '')
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0) / 4294967295
+}
+
+function buildStableConversionId(requestId, adId, turnId) {
+  const seed = `${requestId}|${adId}|${turnId}`
+  const unit = hashToUnitInterval(seed)
+  const numeric = Math.floor(unit * 0xffffffff)
+  return `conv_${numeric.toString(16).padStart(8, '0')}`
+}
+
+function shouldSimulateSuccessfulPostback(message, adCard) {
+  const pConv = clamp01(adCard?.pricing?.pConv)
+  if (pConv <= 0) return false
+  const turnId = typeof message?.sourceTurnId === 'string' ? message.sourceTurnId : ''
+  const sample = hashToUnitInterval(`${adCard?.requestId || ''}|${adCard?.adId || ''}|${turnId}`)
+  return sample < pConv
+}
+
+function buildPostbackEventPayload(message, adCard, sessionId = activeSessionId.value) {
+  if (!message || !adCard || !adCard.pricing) return null
+  const cpaUsd = Number(adCard.pricing.cpaUsd)
+  if (!Number.isFinite(cpaUsd) || cpaUsd <= 0) return null
+
+  const turnId = typeof message.sourceTurnId === 'string' ? message.sourceTurnId : ''
+  if (!turnId) return null
+
+  return {
+    requestId: adCard.requestId,
+    sessionId,
+    turnId,
+    userId: getOrCreateAdsUserId(),
+    placementId: adCard.placementId,
+    adId: adCard.adId,
+    conversionId: buildStableConversionId(adCard.requestId, adCard.adId, turnId),
+    cpaUsd,
+    postbackStatus: 'success',
+    currency: 'USD',
+  }
+}
+
 function buildInlineAdEventPayload(message, adCard, kind, sessionId = activeSessionId.value) {
   if (!adCard) return null
 
@@ -1191,11 +1274,25 @@ async function handleAdClick(message, adCard) {
     })
   }
 
-  const clickPayload = buildInlineAdEventPayload(message, adCard, 'click', resolveSessionIdForMessage(message))
+  const resolvedSessionId = resolveSessionIdForMessage(message)
+  const clickPayload = buildInlineAdEventPayload(message, adCard, 'click', resolvedSessionId)
   const clickReported = clickPayload ? await reportInlineAdEvent(clickPayload) : false
+  const conversionSampleHit = clickReported
+    && !adCard.postbackReported
+    && shouldSimulateSuccessfulPostback(message, adCard)
+  const postbackPayload = conversionSampleHit
+    ? buildPostbackEventPayload(message, adCard, resolvedSessionId)
+    : null
+  const postbackReported = postbackPayload ? await reportAdPostbackEvent(postbackPayload) : false
 
   if (clickReported) {
     adCard.clickReported = true
+  }
+  if (postbackReported && postbackPayload) {
+    adCard.postbackReported = true
+    adCard.lastPostbackConversionId = postbackPayload.conversionId
+  }
+  if (clickReported || postbackReported) {
     touchActiveSession()
     scheduleSaveSessions()
   }
@@ -1213,6 +1310,51 @@ async function handleAdClick(message, adCard) {
             requestId: adCard.requestId,
             adId: adCard.adId,
             placementId: adCard.placementId,
+          },
+        },
+      ]
+      return nextTrace
+    })
+  }
+
+  if (message.sourceTurnId) {
+    updateTurnTrace(message.sourceTurnId, (trace) => {
+      const nextTrace = { ...trace }
+      nextTrace.events = [
+        ...trace.events,
+        {
+          id: createId('event'),
+          type: postbackPayload ? 'ads_postback_triggered' : 'ads_postback_skipped',
+          at: Date.now(),
+          payload: {
+            requestId: adCard.requestId,
+            adId: adCard.adId,
+            placementId: adCard.placementId,
+            reason: postbackPayload
+              ? 'conversion_sample_hit'
+              : (conversionSampleHit ? 'payload_invalid' : 'conversion_sample_miss'),
+          },
+        },
+      ]
+      return nextTrace
+    })
+  }
+
+  if (postbackPayload && message.sourceTurnId) {
+    updateTurnTrace(message.sourceTurnId, (trace) => {
+      const nextTrace = { ...trace }
+      nextTrace.events = [
+        ...trace.events,
+        {
+          id: createId('event'),
+          type: postbackReported ? 'ads_postback_reported' : 'ads_postback_report_skipped',
+          at: Date.now(),
+          payload: {
+            requestId: adCard.requestId,
+            adId: adCard.adId,
+            placementId: adCard.placementId,
+            conversionId: postbackPayload.conversionId,
+            cpaUsd: postbackPayload.cpaUsd,
           },
         },
       ]

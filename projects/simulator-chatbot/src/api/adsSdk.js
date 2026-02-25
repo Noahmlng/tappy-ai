@@ -41,6 +41,16 @@ function sanitizeText(value, fallback = '') {
   return trimmed || fallback
 }
 
+function toFiniteNumber(value, fallback = 0) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return fallback
+  return parsed
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value))
+}
+
 function toIntentScore(query = '') {
   const tokenCount = String(query || '')
     .trim()
@@ -54,6 +64,36 @@ function toIntentScore(query = '') {
   return 0.6
 }
 
+function normalizeBidPricing(raw) {
+  if (!raw || typeof raw !== 'object') return null
+
+  const cpaUsd = toFiniteNumber(raw.cpaUsd, NaN)
+  const ecpmUsd = toFiniteNumber(raw.ecpmUsd, NaN)
+  const pClick = toFiniteNumber(raw.pClick, NaN)
+  const pConv = toFiniteNumber(raw.pConv, NaN)
+
+  if (!Number.isFinite(cpaUsd) && !Number.isFinite(ecpmUsd) && !Number.isFinite(pConv)) {
+    return null
+  }
+
+  return {
+    modelVersion: sanitizeText(raw.modelVersion, 'rpm_v1'),
+    targetRpmUsd: toFiniteNumber(raw.targetRpmUsd, 0),
+    ecpmUsd: Number.isFinite(ecpmUsd) ? ecpmUsd : 0,
+    cpaUsd: Number.isFinite(cpaUsd) ? cpaUsd : 0,
+    pClick: clamp(Number.isFinite(pClick) ? pClick : 0, 0, 1),
+    pConv: clamp(Number.isFinite(pConv) ? pConv : 0, 0, 1),
+    network: sanitizeText(raw.network),
+    rawSignal: raw.rawSignal && typeof raw.rawSignal === 'object'
+      ? {
+          rawBidValue: toFiniteNumber(raw.rawSignal.rawBidValue, 0),
+          rawUnit: sanitizeText(raw.rawSignal.rawUnit, 'bid_value'),
+          normalizedFactor: toFiniteNumber(raw.rawSignal.normalizedFactor, 1),
+        }
+      : null,
+  }
+}
+
 function mapBidToAdCard(bidResponse, placementId) {
   const requestId = sanitizeText(bidResponse?.requestId)
   const bid = bidResponse?.data?.bid
@@ -64,6 +104,7 @@ function mapBidToAdCard(bidResponse, placementId) {
   if (!requestId || !adId || !url) return null
 
   const advertiser = sanitizeText(bid.advertiser, 'Sponsored')
+  const pricing = normalizeBidPricing(bid.pricing)
 
   return {
     requestId,
@@ -78,8 +119,10 @@ function mapBidToAdCard(bidResponse, placementId) {
     dsp: sanitizeText(bid.dsp),
     variant: sanitizeText(bid.variant, 'base'),
     price: Number.isFinite(Number(bid.price)) ? Number(bid.price) : null,
+    pricing,
     impressionReported: false,
     clickReported: false,
+    postbackReported: false,
   }
 }
 
@@ -200,6 +243,72 @@ export async function reportInlineAdEvent({
     return response.ok
   } catch (error) {
     console.warn(`[ads] fail-open ${eventKind} event:`, error)
+    return false
+  }
+}
+
+export async function reportAdPostbackEvent({
+  requestId,
+  sessionId,
+  turnId,
+  userId,
+  placementId,
+  adId,
+  conversionId,
+  cpaUsd,
+  postbackStatus = 'success',
+  currency = 'USD',
+}) {
+  if (!ADS_API_KEY || !ADS_BASE_URL) return false
+
+  const normalizedStatus = postbackStatus === 'pending' || postbackStatus === 'failed'
+    ? postbackStatus
+    : 'success'
+  const payout = toFiniteNumber(cpaUsd, NaN)
+  const payload = {
+    eventType: 'postback',
+    requestId: sanitizeText(requestId),
+    sessionId: sanitizeText(sessionId),
+    turnId: sanitizeText(turnId),
+    userId: sanitizeText(userId),
+    placementId: sanitizeText(placementId, INLINE_PLACEMENT_ID),
+    adId: sanitizeText(adId),
+    postbackType: 'conversion',
+    postbackStatus: normalizedStatus,
+    conversionId: sanitizeText(conversionId),
+    cpaUsd: Number.isFinite(payout) ? payout : undefined,
+    currency: sanitizeText(currency, 'USD').toUpperCase(),
+  }
+
+  if (
+    !payload.requestId
+    || !payload.sessionId
+    || !payload.turnId
+    || !payload.placementId
+    || !payload.adId
+    || !payload.conversionId
+  ) {
+    return false
+  }
+  if (payload.postbackStatus === 'success' && !Number.isFinite(payload.cpaUsd)) {
+    return false
+  }
+  if (payload.currency !== 'USD') return false
+
+  try {
+    const response = await fetch(`${ADS_BASE_URL}/v1/sdk/events`, {
+      method: 'POST',
+      keepalive: true,
+      headers: {
+        Authorization: `Bearer ${ADS_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+
+    return response.ok
+  } catch (error) {
+    console.warn('[ads] fail-open postback event:', error)
     return false
   }
 }

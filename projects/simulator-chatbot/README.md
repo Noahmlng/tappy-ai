@@ -30,7 +30,7 @@ npm run dev
 - `VITE_SIMULATOR_API_BASE_URL`（可选，浏览器 API base，默认：`/api`）
 - `VITE_ADS_API_KEY`（可选，不填时使用内置 staging key）
 - `VITE_ADS_BASE_URL`（可选，默认继承 `VITE_SIMULATOR_API_BASE_URL`）
-- `VITE_ADS_PLACEMENT_ID`（可选，默认：`chat_inline_v1`）
+- `VITE_ADS_PLACEMENT_IDS`（可选，默认：`chat_inline_v1,chat_followup_v1`；兼容 `VITE_ADS_PLACEMENT_ID`）
 - `VITE_ADS_BID_TIMEOUT_MS`（可选，默认：`5000`）
 
 ## Tool Call 说明
@@ -41,5 +41,6 @@ npm run dev
 - Assistant 回复下方会显示 Sources 区块（自然来源）。
 - Assistant 回复完成后会展示可点击追问项。
 - Assistant 回复完成后会异步拉取广告，若有 bid 则在回答下方展示广告卡片，并上报曝光/点击事件（fail-open）。
+- 点击后会基于 `hash(requestId|adId|turnId)` 与 `bid.pricing.pConv` 做可复现采样，命中则上报 `postback`，`cpaUsd` 取 `bid.pricing.cpaUsd`。
 - Sidebar 内置 Turn Trace 面板，可按轮查看链路事件。
 - Sidebar 内置 System Prompt 面板，可实时编辑当前会话提示词。

@@ -80,7 +80,7 @@ curl -sS -X POST "$ADS_BASE_URL/v2/bid" \
   "message": "Bid successful",
   "data": {
     "bid": {
-      "price": 12.34,
+      "price": 7.86,
       "advertiser": "DJI",
       "headline": "DJI",
       "description": "Explore DJI's lineup for creators.",
@@ -90,7 +90,21 @@ curl -sS -X POST "$ADS_BASE_URL/v2/bid" \
       "dsp": "partnerstack",
       "bidId": "v2_bid_xxx",
       "placement": "block",
-      "variant": "base"
+      "variant": "base",
+      "pricing": {
+        "modelVersion": "rpm_v1",
+        "targetRpmUsd": 8,
+        "ecpmUsd": 7.86,
+        "cpaUsd": 3.21,
+        "pClick": 0.026,
+        "pConv": 0.0014,
+        "network": "partnerstack",
+        "rawSignal": {
+          "rawBidValue": 3.5,
+          "rawUnit": "base_rate_or_bid_value",
+          "normalizedFactor": 0.91
+        }
+      }
     }
   }
 }
@@ -170,7 +184,31 @@ curl -sS -X POST "$ADS_BASE_URL/v1/sdk/events" \
 
 Use the same payload and set `kind` to `click`.
 
-### 6.3 Next-step event (`chat_followup_v1`, optional)
+### 6.3 Attach postback conversion (`chat_inline_v1`)
+
+For simulator mode, use `bid.pricing.cpaUsd` from `/api/v2/bid` as `cpaUsd`.
+
+```bash
+curl -sS -X POST "$ADS_BASE_URL/v1/sdk/events" \
+  -H "Authorization: Bearer $ADS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventType": "postback",
+    "requestId": "adreq_xxx",
+    "sessionId": "chat_8b5d9f5a",
+    "turnId": "turn_001",
+    "userId": "user_12139050",
+    "placementId": "chat_inline_v1",
+    "adId": "v2_bid_xxx",
+    "postbackType": "conversion",
+    "postbackStatus": "success",
+    "conversionId": "conv_adreq_xxx_v2_bid_xxx_turn_001",
+    "cpaUsd": 3.21,
+    "currency": "USD"
+  }'
+```
+
+### 6.4 Next-step event (`chat_followup_v1`, optional)
 
 ```bash
 curl -sS -X POST "$ADS_BASE_URL/v1/sdk/events" \
@@ -226,7 +264,8 @@ curl -sS -X POST "$ADS_BASE_URL/v1/sdk/events" \
 2. request timeout configured (`bid <= 1200ms` recommended)
 3. `requestId` persisted in app logs
 4. impression/click events use same `requestId`
-5. no-bid path validated
+5. postback success payload uses `bid.pricing.cpaUsd` (simulator mode)
+6. no-bid path validated
 
 ## 10. Migration Note
 
