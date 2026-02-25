@@ -152,3 +152,81 @@ Final Check gate is **PASS** for the V2-only / Fast-first + prod-only strategy:
 2. Revenue visibility + archival for future analysis is intact.
 3. Primary release gate commands are reproducible and passing.
 4. System is production-ready for the current MVP scope (in-product revenue visibility + archival, no staging dependency in user-facing flow, and chatbot excluded from deployment scope).
+
+## 6. 生产部署后在线全链路复核（2026-02-25 CST）
+
+- 时间: 2026-02-25 18:31-18:44 CST
+- 目标: 在真实生产域名完成 `注册 -> 创建 key -> config/bid/events -> conversion postback -> Usage 收益可见` 全流程
+- 范围: `mediation-runtime-api` + `mediation-control-plane-api` + `simulator-dashboard`（Chatbot 不在部署范围）
+
+### 6.1 生产部署结果
+
+执行（prod）：
+
+```bash
+vercel deploy /Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform --prod -y --local-config /tmp/vercel.runtime.prod.json
+vercel deploy /Users/zeming/Documents/chat-ads-main/projects/ad-aggregation-platform --prod -y --local-config /tmp/vercel.control-plane.prod.json
+vercel deploy /Users/zeming/Documents/chat-ads-main/projects/simulator-dashboard --prod -y
+```
+
+对应生产部署（Ready）：
+
+- Runtime API: `https://mediation-runtime-oc8x2epwz-noahs-projects-09088504.vercel.app`
+- Control Plane API: `https://mediation-control-plane-ixx3masf7-noahs-projects-09088504.vercel.app`
+- Dashboard: `https://simulator-dashboard-2cynxolno-noahs-projects-09088504.vercel.app`
+
+别名：
+
+- `https://mediation-runtime-api.vercel.app`
+- `https://mediation-control-plane-api.vercel.app`
+- `https://simulator-dashboard.vercel.app`
+
+### 6.2 在线链路验证步骤与结果
+
+1. Dashboard 注册成功（生产）
+- 账户: `org_prod_1772015842`
+- 应用: `app_prod_1772015842`
+- 结果: 跳转 `/home` 成功（登录态建立）
+
+2. 创建 API Key 成功（生产）
+- 新 key: `sk_prod_q294txwjbgc42xc9vs59clk8`（一次性展示）
+- 列表状态: `active`
+
+3. Quick Start `Run verify` 成功（`config -> v2/bid -> events`）
+- `requestId`: `adreq_1772015930532_za97bn`
+- `status`: `served`
+- 证据摘要:
+  - config: `status=200`
+  - bid: `status=200`, `message=Bid successful`, `hasBid=true`
+  - events: `status=200`, `ok=true`
+
+4. Conversion postback 成功 + 幂等验证成功（生产 runtime API）
+- 第一次 postback:
+  - `status=200`
+  - body: `{ ok: true, duplicate: false, factId: "fact_1772016144097_l7pvkc", revenueUsd: 6.66 }`
+- 第二次同 `idempotency` 语义重复提交:
+  - `status=200`
+  - body: `{ ok: true, duplicate: true, factId: "fact_1772016144097_l7pvkc", revenueUsd: 6.66 }`
+- 结论: 重复 postback 未重复入账（幂等生效）
+
+5. Usage 页面收益可见（站内落档分析）
+- Requests: `1`
+- Settled Conversions: `1`
+- Settled Revenue: `$6.66`
+- By App / By Placement 聚合均显示 `1 conversion`、`$6.66`
+
+### 6.3 服务健康检查（生产）
+
+从 Dashboard 生产页跨域调用得到：
+
+- `https://mediation-control-plane-api.vercel.app/api/health`: `200`，`apiServiceRole=control_plane`
+- `https://mediation-runtime-api.vercel.app/api/health`: `200`，`apiServiceRole=runtime`
+
+### 6.4 结论（生产上线口径）
+
+本次“部署后在线复核”结论为 **PASS**：
+
+1. 生产三服务已部署并 Ready。
+2. 外部开发者主路径已跑通（注册/建 key/Quick Start）。
+3. 收益链路已跑通并在 Usage 中可见（含落档聚合）。
+4. conversion postback 幂等行为正确，无重复入账。
