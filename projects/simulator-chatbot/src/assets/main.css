@@ -7,7 +7,7 @@
   --font-display: var(--font-body);
   --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 
-  --content-max-width: 860px;
+  --content-max-width: 768px;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -40,7 +40,7 @@
   --indigo: var(--accent-sea);
   --indigo-soft: #dff2ec;
 
-  --sidebar-width: 300px;
+  --sidebar-width: 260px;
   --sidebar-bg: #ececec;
   --sidebar-surface: #f1f1f1;
   --sidebar-border: #dcdcdc;

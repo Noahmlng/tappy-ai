@@ -2258,7 +2258,7 @@ async function handleSend(options = {}) {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  padding: 15px clamp(14px, 2vw, 22px) 14px;
+  padding: 8px clamp(8px, 1.4vw, 18px);
   border-bottom: 1px solid #e1e1e1;
   background: var(--paper);
   backdrop-filter: none;
@@ -2273,17 +2273,22 @@ async function handleSend(options = {}) {
 }
 
 .sim-title-wrap {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
   min-width: 0;
+  border-radius: 8px;
+  padding: 0 10px;
 }
 
 .sim-kicker {
   margin: 0;
-  font-size: clamp(30px, 3.1vw, 42px);
+  font-size: 18px;
   letter-spacing: 0;
   text-transform: none;
   color: #222;
   font-weight: 560;
-  line-height: 1.05;
+  line-height: 28px;
 }
 
 .sim-title {
@@ -2298,9 +2303,10 @@ async function handleSend(options = {}) {
   border-radius: var(--radius-pill);
   background: transparent;
   color: #2f2f2f;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
-  padding: 6px 8px;
+  min-height: 36px;
+  padding: 0 10px;
   cursor: pointer;
   transition:
     transform var(--motion-fast) var(--ease-standard),
@@ -2674,7 +2680,7 @@ async function handleSend(options = {}) {
   position: sticky;
   bottom: 0;
   z-index: 24;
-  padding: var(--space-3) var(--sim-edge-padding) 18px;
+  padding: var(--space-2) var(--sim-edge-padding) 32px;
   background: transparent;
   backdrop-filter: none;
 }
@@ -2684,13 +2690,17 @@ async function handleSend(options = {}) {
 }
 
 .sim-composer-card {
+  position: relative;
   width: var(--sim-content-width);
   margin: 0 auto;
   border: 1px solid #dadada;
-  border-radius: 999px;
-  background: #f4f4f4;
+  border-radius: 28px;
+  background: #fff;
   box-shadow: none;
-  padding: 8px;
+  min-height: 56px;
+  height: 56px;
+  padding: 10px 56px 10px 16px;
+  overflow: visible;
   transition:
     border-color var(--motion-base) var(--ease-standard),
     box-shadow var(--motion-base) var(--ease-standard),
@@ -2704,15 +2714,16 @@ async function handleSend(options = {}) {
 
 .sim-composer-input {
   width: 100%;
-  min-height: 50px;
+  min-height: 24px;
+  height: 24px;
   max-height: 180px;
   resize: none;
   border: 0;
   background: transparent;
   color: var(--ink);
   font-size: 16px;
-  line-height: 1.55;
-  padding: 10px 16px 6px;
+  line-height: 24px;
+  padding: 0;
   outline: none;
 }
 
@@ -2721,21 +2732,28 @@ async function handleSend(options = {}) {
 }
 
 .sim-composer-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 6px 2px 6px;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
 .sim-composer-note {
   margin: 0;
+  position: absolute;
+  left: 50%;
+  bottom: -24px;
+  transform: translateX(-50%);
+  white-space: nowrap;
   color: var(--pencil);
-  font-size: 11px;
-  line-height: 1.35;
+  font-size: 12px;
+  line-height: 16px;
 }
 
 .sim-send-btn {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  pointer-events: auto;
   display: grid;
   place-items: center;
   height: 36px;
@@ -2800,7 +2818,7 @@ async function handleSend(options = {}) {
 
 @media (max-width: 1099px) {
   .sim-sidebar {
-    width: min(84vw, 320px);
+    width: min(92vw, 360px);
   }
 
   .sim-topbar {
@@ -2808,7 +2826,8 @@ async function handleSend(options = {}) {
   }
 
   .sim-kicker {
-    font-size: clamp(22px, 7vw, 34px);
+    font-size: 18px;
+    line-height: 28px;
   }
 }
 
@@ -2828,7 +2847,7 @@ async function handleSend(options = {}) {
 
 @media (max-width: 720px) {
   .sim-scroll-region {
-    padding-inline: 10px;
+    padding-inline: 16px;
   }
 
   .sim-hero {
@@ -2851,8 +2870,8 @@ async function handleSend(options = {}) {
   }
 
   .sim-composer-zone {
-    padding-inline: 10px;
-    padding-bottom: 12px;
+    padding-inline: 16px;
+    padding-bottom: 16px;
   }
 
   .sim-pill-btn {
