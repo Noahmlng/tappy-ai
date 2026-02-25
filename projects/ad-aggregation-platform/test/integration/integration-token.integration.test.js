@@ -159,7 +159,7 @@ test('integration token: issues one-time token with short ttl and audit log', as
       body: {
         appId: 'simulator-chatbot',
         environment: 'prod',
-        placementId: 'chat_inline_v1',
+        placementId: 'chat_from_answer_v1',
         ttlMinutes: 12,
       },
     })

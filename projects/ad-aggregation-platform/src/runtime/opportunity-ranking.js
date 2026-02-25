@@ -89,6 +89,7 @@ function toBid(candidate = {}, context = {}) {
           cpaUsd: toFiniteNumber(pricing.cpaUsd, 0),
           pClick: toFiniteNumber(pricing.pClick, 0),
           pConv: toFiniteNumber(pricing.pConv, 0),
+          triggerType: cleanText(pricing.triggerType),
           network: cleanText(pricing.network || candidate.network || ''),
           rawSignal: pricing.rawSignal && typeof pricing.rawSignal === 'object'
             ? {
@@ -125,6 +126,7 @@ function scoreCandidate(candidate = {}, input = {}) {
   const pricing = computeCandidateEconomicPricing({
     candidate,
     placementId: input.placementId,
+    triggerType: input.triggerType,
   })
   const weights = getPricingModelWeights()
   const auctionScore = Number((
@@ -204,11 +206,13 @@ export function rankOpportunityCandidates(input = {}) {
     }
   }
 
-  const ranked = eligible
+  const scored = eligible
     .map((candidate) => scoreCandidate(candidate, {
-        intentScore: input.intentScore,
-        placementId: input.placementId,
-      }))
+      intentScore: input.intentScore,
+      placementId: input.placementId,
+      triggerType: input.triggerType,
+    }))
+  const ranked = [...scored]
     .sort((a, b) => {
       if (b.auctionScore !== a.auctionScore) return b.auctionScore - a.auctionScore
       if (b.rankScore !== a.rankScore) return b.rankScore - a.rankScore
@@ -217,7 +221,24 @@ export function rankOpportunityCandidates(input = {}) {
     })
 
   const scoreFloor = clamp01(input.scoreFloor ?? DEFAULT_SCORE_FLOOR)
-  const winner = ranked[0] || null
+  const auctionWinner = ranked[0] || null
+  const topRankCandidate = [...scored].sort((a, b) => {
+    if (b.rankScore !== a.rankScore) return b.rankScore - a.rankScore
+    if (b.auctionScore !== a.auctionScore) return b.auctionScore - a.auctionScore
+    return String(a.offerId || '').localeCompare(String(b.offerId || ''))
+  })[0] || null
+  const rankDominanceFloor = clamp01(pricingDefaults.rankDominanceFloor ?? 0.5)
+  const rankDominanceMargin = clamp01(pricingDefaults.rankDominanceMargin ?? 0.1)
+  const scoreFloorOrGuard = Math.max(scoreFloor, rankDominanceFloor)
+  const shouldProtectRankWinner = Boolean(
+    auctionWinner
+    && topRankCandidate
+    && auctionWinner.offerId !== topRankCandidate.offerId
+    && topRankCandidate.rankScore >= scoreFloorOrGuard
+    && (topRankCandidate.rankScore - auctionWinner.rankScore) >= rankDominanceMargin,
+  )
+  const winner = shouldProtectRankWinner ? topRankCandidate : auctionWinner
+
   if (!winner || winner.rankScore < scoreFloor) {
     return {
       winner: null,
@@ -229,6 +250,7 @@ export function rankOpportunityCandidates(input = {}) {
         topRankScore: winner ? winner.rankScore : 0,
         topAuctionScore: winner ? winner.auctionScore : 0,
         topEconomicScore: winner?.pricing ? winner.pricing.economicScore : 0,
+        rankDominanceApplied: false,
         scoreFloor,
         pricingModel: pricingDefaults.modelVersion,
         pricingWeights: weights,
@@ -251,6 +273,9 @@ export function rankOpportunityCandidates(input = {}) {
       topRankScore: winner.rankScore,
       topAuctionScore: winner.auctionScore,
       topEconomicScore: winner?.pricing ? winner.pricing.economicScore : 0,
+      rankDominanceApplied: shouldProtectRankWinner,
+      rankDominanceFloor,
+      rankDominanceMargin,
       scoreFloor,
       pricingModel: pricingDefaults.modelVersion,
       pricingWeights: weights,

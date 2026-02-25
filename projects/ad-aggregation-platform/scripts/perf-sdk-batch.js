@@ -35,6 +35,20 @@ import {
 } from './lib/meyka-suite-utils.js'
 
 const REPORT_DIR = path.join(PROJECT_ROOT, 'tests', 'performance-reports')
+const PLACEMENT_TRIGGER_TYPE_MAP = Object.freeze({
+  chat_from_answer_v1: 'from_answer',
+  chat_intent_recommendation_v1: 'intent_recommendation',
+})
+const TARGET_RPM_BY_PLACEMENT = Object.freeze({
+  chat_from_answer_v1: 10,
+  chat_intent_recommendation_v1: 10,
+})
+
+function resolveTriggerType(placementId = '', rawTriggerType = '') {
+  const triggerType = String(rawTriggerType || '').trim().toLowerCase()
+  if (triggerType === 'from_answer' || triggerType === 'intent_recommendation') return triggerType
+  return String(PLACEMENT_TRIGGER_TYPE_MAP[String(placementId || '').trim()] || 'from_answer')
+}
 
 const PHASE_PROFILES = Object.freeze({
   local: [
@@ -184,6 +198,9 @@ async function runClosedLoopRequest(context = {}, sequence = 0) {
       ok: false,
       served: false,
       noFill: false,
+      placementId,
+      triggerType: resolveTriggerType(placementId, ''),
+      pricingVersion: '',
       requestId: String(bidRes.payload?.requestId || '').trim(),
       status: bidRes.status,
       reason: 'bid_failed',
@@ -198,6 +215,7 @@ async function runClosedLoopRequest(context = {}, sequence = 0) {
       postbackLatencyMs: 0,
       postbackAttempted: false,
       postbackReported: false,
+      conversionRevenueUsd: 0,
       winner: null,
     }
   }
@@ -223,6 +241,8 @@ async function runClosedLoopRequest(context = {}, sequence = 0) {
   )
   const intentThreshold = toNumber(bidDiagnostics.intentThreshold, NaN)
   const intentScoreObserved = toNumber(bidRes.payload?.intent?.score, NaN)
+  const triggerType = resolveTriggerType(placementId, bidDiagnostics.triggerType)
+  const pricingVersion = String(bidDiagnostics.pricingVersion || '').trim()
   const winnerBid = bidRes.payload?.data?.bid && typeof bidRes.payload.data.bid === 'object'
     ? bidRes.payload.data.bid
     : null
@@ -232,6 +252,9 @@ async function runClosedLoopRequest(context = {}, sequence = 0) {
       ok: true,
       served: false,
       noFill: true,
+      placementId,
+      triggerType,
+      pricingVersion,
       requestId,
       status: bidRes.status,
       reason: reasonCode,
@@ -246,6 +269,7 @@ async function runClosedLoopRequest(context = {}, sequence = 0) {
       postbackLatencyMs: 0,
       postbackAttempted: false,
       postbackReported: false,
+      conversionRevenueUsd: 0,
       winner: null,
     }
   }
@@ -256,6 +280,9 @@ async function runClosedLoopRequest(context = {}, sequence = 0) {
       ok: false,
       served: true,
       noFill: false,
+      placementId,
+      triggerType,
+      pricingVersion,
       requestId,
       status: bidRes.status,
       reason: 'missing_request_or_ad_id',
@@ -270,6 +297,7 @@ async function runClosedLoopRequest(context = {}, sequence = 0) {
       postbackLatencyMs: 0,
       postbackAttempted: false,
       postbackReported: false,
+      conversionRevenueUsd: 0,
       winner: null,
     }
   }
@@ -327,6 +355,7 @@ async function runClosedLoopRequest(context = {}, sequence = 0) {
   let postbackAttempted = false
   let postbackReported = false
   let postbackLatencyMs = 0
+  let conversionRevenueUsd = 0
 
   const pricing = winnerBid?.pricing && typeof winnerBid.pricing === 'object' ? winnerBid.pricing : {}
   const cpaUsd = toNumber(pricing?.cpaUsd, NaN)
@@ -361,6 +390,9 @@ async function runClosedLoopRequest(context = {}, sequence = 0) {
       })
       postbackLatencyMs = postbackRes.elapsedMs
       postbackReported = postbackRes.ok && postbackRes.payload?.ok === true
+      if (postbackReported) {
+        conversionRevenueUsd = round(cpaUsd, 4)
+      }
     }
   }
 
@@ -370,6 +402,9 @@ async function runClosedLoopRequest(context = {}, sequence = 0) {
     ok,
     served: true,
     noFill: false,
+    placementId,
+    triggerType,
+    pricingVersion: String(pricing?.modelVersion || pricingVersion || '').trim(),
     requestId,
     status: 200,
     reason: ok ? 'closed_loop_ok' : 'event_failed',
@@ -384,13 +419,54 @@ async function runClosedLoopRequest(context = {}, sequence = 0) {
     postbackLatencyMs,
     postbackAttempted,
     postbackReported,
+    conversionRevenueUsd,
     winner: {
       network: String(pricing?.network || winnerBid?.dsp || '').trim().toLowerCase(),
       priceUsd: toNumber(winnerBid?.price, NaN),
       ecpmUsd: toNumber(pricing?.ecpmUsd, NaN),
       cpaUsd: toNumber(pricing?.cpaUsd, NaN),
       pConv,
+      triggerType: String(pricing?.triggerType || triggerType || '').trim(),
     },
+  }
+}
+
+function createRevenueAggregate(seed = {}) {
+  return {
+    ...seed,
+    impressions: 0,
+    settledConversions: 0,
+    expectedRevenueUsd: 0,
+    realizedRevenueUsd: 0,
+    targetRpmUsd: Number.isFinite(toNumber(seed.targetRpmUsd, NaN)) ? toNumber(seed.targetRpmUsd, 0) : 0,
+  }
+}
+
+function finalizeRevenueAggregate(row = {}) {
+  const impressions = toNumber(row.impressions, 0)
+  const expectedRevenueUsd = toNumber(row.expectedRevenueUsd, 0)
+  const realizedRevenueUsd = toNumber(row.realizedRevenueUsd, 0)
+  return {
+    ...row,
+    impressions,
+    settledConversions: toNumber(row.settledConversions, 0),
+    expectedRevenueUsd: round(expectedRevenueUsd, 4),
+    realizedRevenueUsd: round(realizedRevenueUsd, 4),
+    expectedEcpmUsd: impressions > 0 ? round((expectedRevenueUsd / impressions) * 1000, 4) : 0,
+    realizedEcpmUsd: impressions > 0 ? round((realizedRevenueUsd / impressions) * 1000, 4) : 0,
+  }
+}
+
+function applyRevenueObservation(target, row = {}) {
+  if (!target) return
+  const winner = row?.winner && typeof row.winner === 'object' ? row.winner : {}
+  const expectedEcpm = toNumber(winner.ecpmUsd, 0)
+  const realizedRevenueUsd = toNumber(row.conversionRevenueUsd, 0)
+  target.impressions += 1
+  target.expectedRevenueUsd += Math.max(0, expectedEcpm) / 1000
+  target.realizedRevenueUsd += Math.max(0, realizedRevenueUsd)
+  if (toBoolean(row.postbackReported, false)) {
+    target.settledConversions += 1
   }
 }
 
@@ -442,6 +518,11 @@ function summarizePhaseResults(results = [], phaseConfig = {}, durationActualSec
   const retrievalMode = {}
   const intentThresholdSamples = []
   const intentScoreSamples = []
+  const placementAggregates = new Map()
+  const triggerAggregates = new Map()
+  const overallAggregate = createRevenueAggregate({
+    targetRpmUsd: round(average(Object.values(TARGET_RPM_BY_PLACEMENT)), 4),
+  })
 
   for (const row of rows) {
     const reason = String(row?.reasonCode || row?.reason || '').trim()
@@ -452,6 +533,30 @@ function summarizePhaseResults(results = [], phaseConfig = {}, durationActualSec
     if (Number.isFinite(threshold)) intentThresholdSamples.push(threshold)
     const score = toNumber(row?.intentScore, NaN)
     if (Number.isFinite(score)) intentScoreSamples.push(score)
+  }
+
+  for (const row of servedRows) {
+    const placementId = String(row?.placementId || '').trim()
+    const triggerType = resolveTriggerType(placementId, row?.triggerType || row?.winner?.triggerType)
+    const targetRpmUsd = toNumber(TARGET_RPM_BY_PLACEMENT[placementId], 10)
+    if (placementId) {
+      if (!placementAggregates.has(placementId)) {
+        placementAggregates.set(placementId, createRevenueAggregate({
+          placementId,
+          triggerType,
+          targetRpmUsd,
+        }))
+      }
+      applyRevenueObservation(placementAggregates.get(placementId), row)
+    }
+    if (!triggerAggregates.has(triggerType)) {
+      triggerAggregates.set(triggerType, createRevenueAggregate({
+        triggerType,
+        targetRpmUsd: 10,
+      }))
+    }
+    applyRevenueObservation(triggerAggregates.get(triggerType), row)
+    applyRevenueObservation(overallAggregate, row)
   }
 
   const summarizeList = (list = []) => ({
@@ -542,6 +647,11 @@ function summarizePhaseResults(results = [], phaseConfig = {}, durationActualSec
       reason: row.reason,
       bidLatencyMs: row.bidLatencyMs,
     })),
+    runAggregates: {
+      byPlacement: Array.from(placementAggregates.values()).map((row) => finalizeRevenueAggregate(row)),
+      byTriggerType: Array.from(triggerAggregates.values()).map((row) => finalizeRevenueAggregate(row)),
+      overall: finalizeRevenueAggregate(overallAggregate),
+    },
   }
 }
 
@@ -594,6 +704,9 @@ async function runPhase(input = {}) {
             ok: false,
             served: false,
             noFill: false,
+            placementId: selectedPlacement,
+            triggerType: resolveTriggerType(selectedPlacement, ''),
+            pricingVersion: '',
             requestId: '',
             status: 0,
             reason: error instanceof Error ? error.message : 'closed_loop_exception',
@@ -608,6 +721,7 @@ async function runPhase(input = {}) {
             postbackLatencyMs: 0,
             postbackAttempted: false,
             postbackReported: false,
+            conversionRevenueUsd: 0,
             winner: null,
           })
         })
@@ -682,6 +796,59 @@ function summarizeDiagnosticsByPhase(phases = []) {
   return {
     reasonCode,
     retrievalMode,
+  }
+}
+
+function mergeRevenueAggregateRows(rows = []) {
+  const map = new Map()
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const placementId = String(row?.placementId || '').trim()
+    const triggerType = String(row?.triggerType || '').trim()
+    const key = placementId || triggerType
+    if (!key) continue
+    if (!map.has(key)) {
+      map.set(key, createRevenueAggregate({
+        placementId,
+        triggerType,
+        targetRpmUsd: toNumber(row?.targetRpmUsd, 0),
+      }))
+    }
+    const target = map.get(key)
+    target.impressions += toNumber(row?.impressions, 0)
+    target.settledConversions += toNumber(row?.settledConversions, 0)
+    target.expectedRevenueUsd += toNumber(row?.expectedRevenueUsd, 0)
+    target.realizedRevenueUsd += toNumber(row?.realizedRevenueUsd, 0)
+  }
+  return Array.from(map.values()).map((row) => finalizeRevenueAggregate(row))
+}
+
+function mergeRunAggregatesFromPhases(phases = []) {
+  const phaseRows = Array.isArray(phases) ? phases : []
+  const byPlacement = mergeRevenueAggregateRows(
+    phaseRows.flatMap((phase) => Array.isArray(phase?.runAggregates?.byPlacement) ? phase.runAggregates.byPlacement : []),
+  )
+  const byTriggerType = mergeRevenueAggregateRows(
+    phaseRows.flatMap((phase) => Array.isArray(phase?.runAggregates?.byTriggerType) ? phase.runAggregates.byTriggerType : []),
+  )
+
+  const overallSeed = createRevenueAggregate({
+    targetRpmUsd: round(average(Object.values(TARGET_RPM_BY_PLACEMENT)), 4),
+  })
+  for (const phase of phaseRows) {
+    const row = phase?.runAggregates?.overall && typeof phase.runAggregates.overall === 'object'
+      ? phase.runAggregates.overall
+      : null
+    if (!row) continue
+    overallSeed.impressions += toNumber(row.impressions, 0)
+    overallSeed.settledConversions += toNumber(row.settledConversions, 0)
+    overallSeed.expectedRevenueUsd += toNumber(row.expectedRevenueUsd, 0)
+    overallSeed.realizedRevenueUsd += toNumber(row.realizedRevenueUsd, 0)
+  }
+
+  return {
+    byPlacement,
+    byTriggerType,
+    overall: finalizeRevenueAggregate(overallSeed),
   }
 }
 
@@ -895,6 +1062,7 @@ async function main() {
     const servedClosedLoop = phaseResults.reduce((sum, item) => sum + toNumber(item.servedClosedLoop, 0), 0)
     const failedClosedLoop = phaseResults.reduce((sum, item) => sum + toNumber(item.failedClosedLoop, 0), 0)
     const diagnosticsSummary = summarizeDiagnosticsByPhase(phaseResults)
+    const runAggregates = mergeRunAggregatesFromPhases(phaseResults)
 
     const dashboardAfter = await fetchDashboardSnapshot(baseUrl, auth.dashboardHeaders)
     const dashboardDelta = {
@@ -953,6 +1121,7 @@ async function main() {
         errorRatePct: round(totalClosedLoop > 0 ? (failedClosedLoop / totalClosedLoop) * 100 : 0, 4),
       },
       diagnostics: diagnosticsSummary,
+      runAggregates,
       pricing: {
         bidPriceSamples,
         cpaSamplesByNetwork,
@@ -986,6 +1155,7 @@ async function main() {
       reportPath: path.relative(PROJECT_ROOT, reportPath),
       overall: report.overall,
       bidPriceP90: report.pricing.bidPriceDistribution.p90,
+      runAggregates: report.runAggregates,
     }, null, 2))
   } catch (error) {
     const details = gatewayHandle?.logs ? gatewayHandle.logs() : { stdout: '', stderr: '' }

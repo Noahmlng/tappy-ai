@@ -44,9 +44,9 @@ test('v2 bid runtime: picks highest priced bid as winner', async () => {
 
   const result = await runBidAggregationPipeline({
     requestId: 'req_highest_price',
-    placementId: 'chat_inline_v1',
+    placementId: 'chat_from_answer_v1',
     placement: {
-      placementId: 'chat_inline_v1',
+      placementId: 'chat_from_answer_v1',
       bidders: [
         { networkId: 'partnerstack', timeoutMs: 800, enabled: true, policyWeight: 0 },
         { networkId: 'cj', timeoutMs: 800, enabled: true, policyWeight: 0 },
@@ -90,9 +90,9 @@ test('v2 bid runtime: tie breaks by policy weight then networkId', async () => {
 
   const weighted = await runBidAggregationPipeline({
     requestId: 'req_tie_policy_weight',
-    placementId: 'chat_inline_v1',
+    placementId: 'chat_from_answer_v1',
     placement: {
-      placementId: 'chat_inline_v1',
+      placementId: 'chat_from_answer_v1',
       bidders: [
         { networkId: 'partnerstack', timeoutMs: 800, enabled: true, policyWeight: 0.3 },
         { networkId: 'cj', timeoutMs: 800, enabled: true, policyWeight: 0.1 },
@@ -110,9 +110,9 @@ test('v2 bid runtime: tie breaks by policy weight then networkId', async () => {
 
   const lexical = await runBidAggregationPipeline({
     requestId: 'req_tie_lexical',
-    placementId: 'chat_inline_v1',
+    placementId: 'chat_from_answer_v1',
     placement: {
-      placementId: 'chat_inline_v1',
+      placementId: 'chat_from_answer_v1',
       bidders: [
         { networkId: 'partnerstack', timeoutMs: 800, enabled: true, policyWeight: 0 },
         { networkId: 'cj', timeoutMs: 800, enabled: true, policyWeight: 0 },

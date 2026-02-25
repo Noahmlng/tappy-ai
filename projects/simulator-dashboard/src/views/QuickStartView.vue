@@ -12,13 +12,13 @@ const verifyResult = ref(null)
 const envSnippet = `MEDIATION_API_BASE_URL=https://api.example.com
 MEDIATION_API_KEY=<issued_api_key>
 APP_ID=<your_app_id>
-PLACEMENT_ID=chat_inline_v1`
+PLACEMENT_ID=chat_from_answer_v1`
 
 const examples = {
   javascript: `const baseUrl = process.env.MEDIATION_API_BASE_URL;
 const apiKey = process.env.MEDIATION_API_KEY;
 const appId = process.env.APP_ID;
-const placementId = process.env.PLACEMENT_ID || 'chat_inline_v1';
+const placementId = process.env.PLACEMENT_ID || 'chat_from_answer_v1';
 
 async function runQuickStart() {
   const sessionId = 'quickstart_session_001';
@@ -109,7 +109,7 @@ import requests
 base_url = os.environ["MEDIATION_API_BASE_URL"]
 api_key = os.environ["MEDIATION_API_KEY"]
 app_id = os.environ["APP_ID"]
-placement_id = os.environ.get("PLACEMENT_ID", "chat_inline_v1")
+placement_id = os.environ.get("PLACEMENT_ID", "chat_from_answer_v1")
 
 headers = {
     "Authorization": f"Bearer {api_key}",
@@ -174,7 +174,7 @@ events = requests.post(f"{base_url}/api/v1/sdk/events", headers=headers, json=ev
 events.raise_for_status()
 
 print({"requestId": request_id, "bidMessage": bid_json.get("message", ""), "hasBid": bool((bid_json.get("data") or {}).get("bid"))})`,
-  curl: `curl -sS "$MEDIATION_API_BASE_URL/api/v1/mediation/config?appId=$APP_ID&placementId=\${PLACEMENT_ID:-chat_inline_v1}&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z" \\
+  curl: `curl -sS "$MEDIATION_API_BASE_URL/api/v1/mediation/config?appId=$APP_ID&placementId=\${PLACEMENT_ID:-chat_from_answer_v1}&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z" \\
   -H "Authorization: Bearer $MEDIATION_API_KEY"
 
 curl -sS -X POST "$MEDIATION_API_BASE_URL/api/v2/bid" \\
@@ -183,7 +183,7 @@ curl -sS -X POST "$MEDIATION_API_BASE_URL/api/v2/bid" \\
   -d "{
     \\"userId\\": \\"quickstart_session_001\\",
     \\"chatId\\": \\"quickstart_session_001\\",
-    \\"placementId\\": \\"chat_inline_v1\\",
+    \\"placementId\\": \\"chat_from_answer_v1\\",
     \\"messages\\": [
       { \\"role\\": \\"user\\", \\"content\\": \\"Recommend waterproof running shoes\\" },
       { \\"role\\": \\"assistant\\", \\"content\\": \\"Prioritize grip and breathable waterproof upper.\\" }
@@ -205,7 +205,7 @@ curl -sS -X POST "$MEDIATION_API_BASE_URL/api/v1/sdk/events" \\
     \\"intentScore\\": 0.91,
     \\"locale\\": \\"en-US\\",
     \\"kind\\": \\"impression\\",
-    \\"placementId\\": \\"chat_inline_v1\\"
+    \\"placementId\\": \\"chat_from_answer_v1\\"
   }"`
 }
 
@@ -250,7 +250,7 @@ async function runQuickStartVerifier() {
       appId: scope.appId,
       accountId: scope.accountId,
       environment: 'prod',
-      placementId: 'chat_inline_v1',
+      placementId: 'chat_from_answer_v1',
     })
     verifyResult.value = payload
   } catch (error) {

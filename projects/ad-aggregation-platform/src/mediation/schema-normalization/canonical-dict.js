@@ -90,6 +90,9 @@ const SLOT_DEFINITIONS = Object.freeze({
     canonicalValues: PLACEMENT_TYPE_VALUES,
     aliases: Object.freeze({
       chat_inline_v1: 'chat_inline',
+      chat_from_answer_v1: 'chat_inline',
+      chat_followup_v1: 'next_step',
+      chat_intent_recommendation_v1: 'next_step',
       chat_inline_slot: 'chat_inline',
       chat_inline_message: 'chat_inline',
       chat_inline_card: 'chat_inline',

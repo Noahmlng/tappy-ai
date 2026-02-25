@@ -182,7 +182,7 @@ test('legacy evaluate endpoint is removed', async () => {
         sessionId: `reason_priority_session_${Date.now()}`,
         turnId: `reason_priority_turn_${Date.now()}`,
         userId: 'reason_priority_user',
-        placementId: 'chat_followup_v1',
+        placementId: 'chat_intent_recommendation_v1',
         query: 'Explain why the sky is blue in simple physics terms.',
         answerText: 'Rayleigh scattering causes shorter wavelengths to scatter more.',
         intentScore: 0.1,
@@ -222,14 +222,14 @@ test('next-step decision logs are recorded through v2 bid flow', async () => {
       appId: 'simulator-chatbot',
     }, dashboardHeaders)
 
-    const enablePlacement = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_followup_v1', {
+    const enablePlacement = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_intent_recommendation_v1', {
       method: 'PUT',
       headers: dashboardHeaders,
       body: {
         enabled: true,
       },
     })
-    assert.equal(enablePlacement.ok, true, 'chat_followup_v1 should be enabled for next-step checks')
+    assert.equal(enablePlacement.ok, true, 'chat_intent_recommendation_v1 should be enabled for next-step checks')
 
     const bid = await requestJson(baseUrl, '/api/v2/bid', {
       method: 'POST',
@@ -237,7 +237,7 @@ test('next-step decision logs are recorded through v2 bid flow', async () => {
       body: {
         userId: `inference_observe_user_${Date.now()}`,
         chatId: `inference_observe_chat_${Date.now()}`,
-        placementId: 'chat_followup_v1',
+        placementId: 'chat_intent_recommendation_v1',
         messages: [
           { role: 'user', content: 'I want to buy a running shoe for daily gym training' },
           { role: 'assistant', content: 'You can compare running shoes by cushioning and durability.' },
@@ -260,7 +260,7 @@ test('next-step decision logs are recorded through v2 bid flow', async () => {
 
     assert.equal(['served', 'blocked', 'no_fill', 'error'].includes(String(row?.result || '')), true)
     assert.equal(String(row?.requestId || '').trim(), requestId)
-    assert.equal(String(row?.placementId || '').trim(), 'chat_followup_v1')
+    assert.equal(String(row?.placementId || '').trim(), 'chat_intent_recommendation_v1')
     assert.equal(Boolean(row?.runtime && typeof row.runtime === 'object'), true)
     assert.equal(Boolean(row?.runtime?.bidV2), true)
   } catch (error) {

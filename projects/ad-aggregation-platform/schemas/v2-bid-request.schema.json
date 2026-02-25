@@ -9,7 +9,7 @@
     "chatId": { "type": "string", "minLength": 1 },
     "placementId": {
       "type": "string",
-      "enum": ["chat_inline_v1", "chat_followup_v1"]
+      "enum": ["chat_from_answer_v1", "chat_intent_recommendation_v1"]
     },
     "messages": {
       "type": "array",

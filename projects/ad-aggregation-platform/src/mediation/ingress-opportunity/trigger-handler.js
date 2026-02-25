@@ -41,8 +41,8 @@ const CANONICAL_TRIGGER_TYPES = new Set([
 ])
 
 const DEFAULT_PLACEMENTS = new Set([
-  'chat_inline_v1',
-  'chat_followup_v1',
+  'chat_from_answer_v1',
+  'chat_intent_recommendation_v1',
   'search_parallel_v1'
 ])
 

@@ -1,39 +1,45 @@
 {
-  "modelVersion": "rpm_v1",
-  "rankWeight": 0.8,
-  "economicWeight": 0.2,
+  "modelVersion": "cpa_mock_v2",
+  "rankWeight": 0.65,
+  "economicWeight": 0.35,
+  "rankDominanceFloor": 0.5,
+  "rankDominanceMargin": 0.1,
+  "triggerTypeByPlacement": {
+    "chat_from_answer_v1": "from_answer",
+    "chat_intent_recommendation_v1": "intent_recommendation"
+  },
+  "defaultTriggerType": "from_answer",
+  "targetRpmUsdByTriggerType": {
+    "from_answer": 10,
+    "intent_recommendation": 10
+  },
   "targetRpmUsdByPlacement": {
-    "chat_inline_v1": 8,
-    "chat_followup_v1": 12
+    "chat_from_answer_v1": 10,
+    "chat_intent_recommendation_v1": 10
   },
-  "networkRevenueShareByPlacement": {
-    "chat_inline_v1": {
-      "house": 0.5,
-      "partnerstack": 0.3,
-      "cj": 0.2
-    },
-    "chat_followup_v1": {
-      "house": 0.5,
-      "partnerstack": 0.3,
-      "cj": 0.2
-    }
-  },
-  "networkRevenueShareDefault": {
-    "house": 0.5,
-    "partnerstack": 0.3,
-    "cj": 0.2
+  "baseCtrByTriggerType": {
+    "from_answer": 0.05,
+    "intent_recommendation": 0.05
   },
   "baseCtrByPlacement": {
-    "chat_inline_v1": 0.018,
-    "chat_followup_v1": 0.025
+    "chat_from_answer_v1": 0.05,
+    "chat_intent_recommendation_v1": 0.05
   },
-  "baseCtrDefault": 0.018,
+  "baseCtrDefault": 0.05,
   "baseCvrByNetwork": {
-    "house": 0.03,
-    "partnerstack": 0.05,
-    "cj": 0.04
+    "house": 0.08,
+    "partnerstack": 0.08,
+    "cj": 0.08
   },
-  "baseCvrDefault": 0.03,
+  "baseCvrDefault": 0.08,
+  "triggerFactorByType": {
+    "from_answer": 1,
+    "intent_recommendation": 1.08
+  },
+  "cpaClampUsd": {
+    "min": 1.8,
+    "max": 3.2
+  },
   "cjDefaultAovUsd": 80,
   "rawSignalFactorRanges": {
     "house": {

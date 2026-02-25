@@ -15,7 +15,7 @@ const contractValidation = ref(null)
 const draft = reactive({
   appId: '',
   environment: 'prod',
-  placementId: 'chat_inline_v1',
+  placementId: 'chat_from_answer_v1',
   repoPath: '/path/to/your/repo',
   integrationToken: '<ONE_TIME_INTEGRATION_TOKEN>',
   tokenTtlMinutes: 10,
@@ -69,7 +69,7 @@ async function issueIntegrationToken() {
     const payload = await controlPlaneClient.agent.issueIntegrationToken({
       appId,
       environment: 'prod',
-      placementId: draft.placementId.trim() || 'chat_inline_v1',
+      placementId: draft.placementId.trim() || 'chat_from_answer_v1',
       ttlMinutes: Number(draft.tokenTtlMinutes) || 10,
     })
     const token = String(payload?.integrationToken || payload?.token || '').trim()

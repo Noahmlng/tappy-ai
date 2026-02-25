@@ -10,7 +10,7 @@
 - Event Endpoint: `POST /api/v1/sdk/events`
 - Event: `followup_generation`
 - Placement Key: `next_step.intent_card`
-- Placement ID (default in simulator): `chat_followup_v1`
+- Placement ID (default in simulator): `chat_intent_recommendation_v1`
 
 This contract is placement-specific and is separate from the current Attach-only frozen contract.
 
@@ -45,7 +45,7 @@ Request example:
   "sessionId": "session_123",
   "turnId": "turn_045",
   "event": "followup_generation",
-  "placementId": "chat_followup_v1",
+  "placementId": "chat_intent_recommendation_v1",
   "placementKey": "next_step.intent_card",
   "context": {
     "query": "我女朋友喜欢材质鲜艳的，推荐几个礼物",
@@ -91,7 +91,7 @@ Response example (`served`):
 ```json
 {
   "requestId": "adreq_20260217_001",
-  "placementId": "chat_followup_v1",
+  "placementId": "chat_intent_recommendation_v1",
   "placementKey": "next_step.intent_card",
   "decision": {
     "result": "served",
@@ -143,7 +143,7 @@ Response example (`no_fill`):
 ```json
 {
   "requestId": "adreq_20260217_002",
-  "placementId": "chat_followup_v1",
+  "placementId": "chat_intent_recommendation_v1",
   "placementKey": "next_step.intent_card",
   "decision": {
     "result": "no_fill",

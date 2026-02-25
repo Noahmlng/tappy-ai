@@ -14,7 +14,7 @@ export const DEFAULT_PORT = 3213
 export const HEALTH_CHECK_TIMEOUT_MS = 15000
 export const DEFAULT_REQUEST_TIMEOUT_MS = 30000
 
-export const DEFAULT_PLACEMENTS = Object.freeze(['chat_inline_v1', 'chat_followup_v1'])
+export const DEFAULT_PLACEMENTS = Object.freeze(['chat_from_answer_v1', 'chat_intent_recommendation_v1'])
 export const DEFAULT_SCENARIO_SET_PATH = path.join(PROJECT_ROOT, 'tests', 'scenarios', 'meyka-finance-dialogues.json')
 export const DEFAULT_INVENTORY_NETWORKS = Object.freeze(['house', 'partnerstack', 'cj'])
 
@@ -705,7 +705,7 @@ export function createInlineEventPayload(input = {}) {
     intentScore: clamp01(input.intentScore),
     locale: String(input.locale || 'en-US').trim() || 'en-US',
     kind: String(input.kind || 'impression').trim().toLowerCase(),
-    placementId: String(input.placementId || 'chat_inline_v1').trim(),
+    placementId: String(input.placementId || 'chat_from_answer_v1').trim(),
     requestId: String(input.requestId || '').trim(),
     adId: String(input.adId || '').trim(),
   }
@@ -719,7 +719,7 @@ export function createFollowupEventPayload(input = {}) {
     userId: String(input.userId || '').trim(),
     event: 'followup_generation',
     kind: String(input.kind || 'impression').trim().toLowerCase(),
-    placementId: String(input.placementId || 'chat_followup_v1').trim(),
+    placementId: String(input.placementId || 'chat_intent_recommendation_v1').trim(),
     placementKey: 'next_step.intent_card',
     requestId: String(input.requestId || '').trim(),
     adId: String(input.adId || '').trim(),
@@ -736,7 +736,7 @@ export function createFollowupEventPayload(input = {}) {
 
 export function createSdkEventPayload(input = {}) {
   const placementId = String(input.placementId || '').trim()
-  if (placementId === 'chat_followup_v1') {
+  if (placementId === 'chat_intent_recommendation_v1') {
     return createFollowupEventPayload(input)
   }
   return createInlineEventPayload(input)

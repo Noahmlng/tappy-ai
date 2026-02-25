@@ -82,7 +82,7 @@ Request body:
 {
   "userId": "user_123",
   "chatId": "chat_123",
-  "placementId": "chat_inline_v1",
+  "placementId": "chat_from_answer_v1",
   "messages": [
     { "role": "user", "content": "i want to buy a camera" },
     { "role": "assistant", "content": "what type are you looking for?" },

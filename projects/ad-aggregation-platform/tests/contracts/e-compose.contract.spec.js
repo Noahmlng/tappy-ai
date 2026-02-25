@@ -89,7 +89,7 @@ function buildPlacementSpecLite(overrides = {}) {
     allowedRenderModes: ['native_card', 'webview'],
     maxRenderCount: 1,
     uiConstraintProfile: {
-      templateId: 'tpl_chat_inline_v1',
+      templateId: 'tpl_chat_from_answer_v1',
       maxHeightPx: 320,
       maxWidthPx: 320,
       safeAreaRequired: true,

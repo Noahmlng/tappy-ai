@@ -151,7 +151,7 @@ function buildV2BidPayload(attachPayload) {
   return {
     userId: String(attachPayload?.sessionId || ''),
     chatId: String(attachPayload?.sessionId || ''),
-    placementId: 'chat_inline_v1',
+    placementId: 'chat_from_answer_v1',
     messages: [
       { role: 'user', content: String(attachPayload?.query || '') },
       { role: 'assistant', content: String(attachPayload?.answerText || '') },
@@ -229,14 +229,14 @@ test('e2e: minimal closed-loop request -> delivery -> event -> archive', async (
     await waitForGateway(baseUrl)
     dashboardHeaders = await registerDashboardHeaders(baseUrl)
     runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, dashboardHeaders)
-    const patchResponse = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_inline_v1', {
+    const patchResponse = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_from_answer_v1', {
       method: 'PUT',
       headers: dashboardHeaders,
       body: {
         enabled: false
       }
     })
-    assert.equal(patchResponse.ok, true, 'fail condition: chat_inline_v1 should be configurable for deterministic e2e')
+    assert.equal(patchResponse.ok, true, 'fail condition: chat_from_answer_v1 should be configurable for deterministic e2e')
     placementPatched = true
 
     const requestPayload = buildAttachMvpPayload()
@@ -311,7 +311,7 @@ test('e2e: minimal closed-loop request -> delivery -> event -> archive', async (
     assert.equal(archiveRecord.terminalEvent.eventType, 'sdk_event')
   } finally {
     if (placementPatched) {
-      await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_inline_v1', {
+      await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_from_answer_v1', {
         method: 'PUT',
         headers: dashboardHeaders,
         body: {

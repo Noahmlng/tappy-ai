@@ -9,7 +9,7 @@ import {
 
 function buildValidRequest(overrides = {}) {
   return {
-    placementId: 'chat_inline_v1',
+    placementId: 'chat_from_answer_v1',
     appContext: {
       appId: 'app_chat_main',
       sessionId: 'sess_001',

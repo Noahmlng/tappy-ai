@@ -28,7 +28,7 @@ function buildBaseRequest(overrides = {}) {
     environment: 'prod',
     actionType: 'publish',
     targetScope: 'placement',
-    targetKey: 'app_chat_main|chat_inline_v1|prod',
+    targetKey: 'app_chat_main|chat_from_answer_v1|prod',
     changeSetId: 'changeset_001',
     baseVersionSnapshot: {
       schemaVersion: 'schema_v1',

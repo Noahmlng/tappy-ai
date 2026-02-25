@@ -16,7 +16,7 @@ function baseRequest(overrides = {}) {
     requestKey: 'req_rollout_001',
     traceKey: 'trace_rollout_001',
     appId: 'app_chat_main',
-    placementId: 'chat_inline_v1',
+    placementId: 'chat_from_answer_v1',
     sdkVersion: '2.1.0',
     adapterIds: ['cj', 'partnerstack'],
     environment: 'prod',
@@ -38,7 +38,7 @@ function basePolicy(overrides = {}) {
       excludeAppIds: []
     },
     placementSelector: {
-      includePlacementIds: ['chat_inline_v1'],
+      includePlacementIds: ['chat_from_answer_v1'],
       excludePlacementIds: []
     },
     sdkSelector: {

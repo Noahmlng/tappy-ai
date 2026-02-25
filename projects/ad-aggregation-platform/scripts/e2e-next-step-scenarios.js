@@ -83,7 +83,7 @@ function buildBasePayload(name) {
     turnId: `turn_${name}_${now}`,
     userId: `user_${name}`,
     event: 'followup_generation',
-    placementId: 'chat_followup_v1',
+    placementId: 'chat_intent_recommendation_v1',
     placementKey: 'next_step.intent_card',
     context: {
       query: '',
@@ -281,7 +281,7 @@ async function ensureNextStepPlacementEnabled(baseUrl) {
   const placement = placements.find((item) => {
     const placementKey = String(item?.placementKey || '').trim()
     const placementId = String(item?.placementId || '').trim()
-    return placementKey === 'next_step.intent_card' || placementId === 'chat_followup_v1'
+    return placementKey === 'next_step.intent_card' || placementId === 'chat_intent_recommendation_v1'
   })
 
   if (!placement || !placement.placementId) {

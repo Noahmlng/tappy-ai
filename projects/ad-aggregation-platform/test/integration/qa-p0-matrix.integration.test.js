@@ -88,7 +88,7 @@ const REPORT_PATH = path.join(PROJECT_ROOT, 'tests', 'p0-matrix-report.json')
 
 function buildATriggerRequest(overrides = {}) {
   return {
-    placementId: 'chat_inline_v1',
+    placementId: 'chat_from_answer_v1',
     appContext: {
       appId: 'app_chat_main',
       sessionId: 'sess_a_001',
@@ -113,7 +113,7 @@ function buildACreateInput(overrides = {}) {
     impSeed: [
       {
         impKey: 'imp_a_matrix_001',
-        placementId: 'chat_inline_v1',
+        placementId: 'chat_from_answer_v1',
         placementType: 'inline',
         slotIndex: 0
       }
@@ -433,7 +433,7 @@ function buildEComposeInput(overrides = {}) {
       allowedRenderModes: ['native_card', 'webview'],
       maxRenderCount: 1,
       uiConstraintProfile: {
-        templateId: 'tpl_chat_inline_v1',
+        templateId: 'tpl_chat_from_answer_v1',
         maxHeightPx: 320,
         maxWidthPx: 320,
         safeAreaRequired: true,
@@ -600,7 +600,7 @@ function buildHContext(overrides = {}) {
     requestKey: 'req_h_matrix_001',
     traceKey: 'trace_h_matrix_001',
     appId: 'app_chat_main',
-    placementId: 'chat_inline_v1',
+    placementId: 'chat_from_answer_v1',
     environment: 'prod',
     schemaVersion: 'schema_v1',
     resolveAt: '2026-02-23T02:20:00.000Z',
@@ -1225,7 +1225,7 @@ test('qa-p0-matrix: A-H contract/state/error/idempotency/audit matrix with expli
           requestKey: 'req_rollout_matrix_001',
           traceKey: 'trace_rollout_matrix_001',
           appId: 'app_chat_main',
-          placementId: 'chat_inline_v1',
+          placementId: 'chat_from_answer_v1',
           sdkVersion: '2.1.0',
           adapterIds: ['cj', 'partnerstack'],
           environment: 'prod',
@@ -1243,7 +1243,7 @@ test('qa-p0-matrix: A-H contract/state/error/idempotency/audit matrix with expli
             excludeAppIds: []
           },
           placementSelector: {
-            includePlacementIds: ['chat_inline_v1'],
+            includePlacementIds: ['chat_from_answer_v1'],
             excludePlacementIds: []
           },
           sdkSelector: {

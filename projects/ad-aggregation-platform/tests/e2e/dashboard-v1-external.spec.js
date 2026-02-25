@@ -188,7 +188,7 @@ function buildExternalBidPayload(eventPayload) {
   return {
     userId: String(eventPayload?.sessionId || ''),
     chatId: String(eventPayload?.sessionId || ''),
-    placementId: 'chat_inline_v1',
+    placementId: 'chat_from_answer_v1',
     messages: [
       { role: 'user', content: String(eventPayload?.query || '') },
       { role: 'assistant', content: String(eventPayload?.answerText || '') },
@@ -220,7 +220,7 @@ async function runExternalTurnFailOpen(baseUrl, bidPayload, eventPayload, failMo
     }
 
     const requestPayload = failMode === 'invalid_payload'
-      ? { placementId: String(bidPayload?.placementId || 'chat_inline_v1') }
+      ? { placementId: String(bidPayload?.placementId || 'chat_from_answer_v1') }
       : bidPayload
     const bid = await requestJson(baseUrl, '/api/v2/bid', {
       method: 'POST',
@@ -293,12 +293,12 @@ test('dashboard v1 external e2e happy path: config -> v2 bid -> events', async (
 
     const config = await requestJson(
       baseUrl,
-      '/api/v1/mediation/config?appId=simulator-chatbot&placementId=chat_inline_v1&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z',
+      '/api/v1/mediation/config?appId=simulator-chatbot&placementId=chat_from_answer_v1&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z',
       { headers: runtimeHeaders },
     )
     assert.equal(config.ok, true, `config failed: ${JSON.stringify(config.payload)}`)
     assert.equal(config.status, 200)
-    assert.equal(String(config.payload?.placementId || ''), 'chat_inline_v1')
+    assert.equal(String(config.payload?.placementId || ''), 'chat_from_answer_v1')
     assert.equal(Number.isFinite(config.payload?.configVersion), true)
 
     const eventPayload = buildExternalEventPayload()

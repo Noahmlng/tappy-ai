@@ -18,14 +18,14 @@ export const mockDashboardState = {
   ],
   metricsByPlacement: [
     {
-      placementId: 'chat_inline_v1',
+      placementId: 'chat_from_answer_v1',
       layer: 'attach',
       revenueUsd: 643.3,
       ctr: 0.039,
       fillRate: 0.75,
     },
     {
-      placementId: 'chat_followup_v1',
+      placementId: 'chat_intent_recommendation_v1',
       layer: 'next_step',
       revenueUsd: 526.1,
       ctr: 0.033,
@@ -94,7 +94,7 @@ export const mockDashboardState = {
       {
         accountId: 'org_simulator',
         appId: 'simulator-chatbot',
-        placementId: 'chat_inline_v1',
+        placementId: 'chat_from_answer_v1',
         layer: 'attach',
         requests: 16220,
         served: 12100,
@@ -110,7 +110,7 @@ export const mockDashboardState = {
       {
         accountId: 'org_simulator',
         appId: 'simulator-chatbot',
-        placementId: 'chat_followup_v1',
+        placementId: 'chat_intent_recommendation_v1',
         layer: 'next_step',
         requests: 13240,
         served: 9140,
@@ -143,7 +143,7 @@ export const mockDashboardState = {
   },
   placements: [
     {
-      placementId: 'chat_inline_v1',
+      placementId: 'chat_from_answer_v1',
       placementKey: 'attach.post_answer_render',
       surface: 'CHAT_INLINE',
       format: 'NATIVE_BLOCK',
@@ -160,7 +160,7 @@ export const mockDashboardState = {
       },
     },
     {
-      placementId: 'chat_followup_v1',
+      placementId: 'chat_intent_recommendation_v1',
       placementKey: 'next_step.intent_card',
       surface: 'FOLLOW_UP',
       format: 'CARD',
@@ -197,7 +197,7 @@ export const mockDashboardState = {
   decisionLogs: [
     {
       requestId: 'req_001',
-      placementId: 'chat_inline_v1',
+      placementId: 'chat_from_answer_v1',
       result: 'served',
       reason: 'served',
       reasonDetail: 'runtime_eligible',
@@ -215,7 +215,7 @@ export const mockDashboardState = {
     },
     {
       requestId: 'req_003',
-      placementId: 'chat_followup_v1',
+      placementId: 'chat_intent_recommendation_v1',
       result: 'no_fill',
       reason: 'no_fill',
       reasonDetail: 'runtime_no_offer',
@@ -224,7 +224,7 @@ export const mockDashboardState = {
     },
     {
       requestId: 'req_004',
-      placementId: 'chat_inline_v1',
+      placementId: 'chat_from_answer_v1',
       result: 'blocked',
       reason: 'blocked',
       reasonDetail: 'frequency_cap_session',
@@ -233,7 +233,7 @@ export const mockDashboardState = {
     },
     {
       requestId: 'req_005',
-      placementId: 'chat_followup_v1',
+      placementId: 'chat_intent_recommendation_v1',
       result: 'served',
       reason: 'served',
       reasonDetail: 'runtime_eligible',
@@ -242,7 +242,7 @@ export const mockDashboardState = {
     },
     {
       requestId: 'req_006',
-      placementId: 'chat_inline_v1',
+      placementId: 'chat_from_answer_v1',
       result: 'error',
       reason: 'error',
       reasonDetail: 'runtime_pipeline_error',
@@ -297,7 +297,7 @@ export const mockDashboardState = {
       id: 'network_flow_1',
       createdAt: '2026-02-17T10:08:21Z',
       requestId: 'adreq_001',
-      placementId: 'chat_inline_v1',
+      placementId: 'chat_from_answer_v1',
       decisionResult: 'served',
       networkErrors: [{ network: 'cj', errorCode: 'HTTP_503' }],
       snapshotUsage: { partnerstack: false, cj: true },

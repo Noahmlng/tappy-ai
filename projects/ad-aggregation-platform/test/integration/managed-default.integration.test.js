@@ -169,7 +169,7 @@ test('managed default: placement routing mode is fixed to managed_mediation', as
       'all placements should default to managed_mediation',
     )
 
-    const patch = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_inline_v1', {
+    const patch = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_from_answer_v1', {
       method: 'PUT',
       headers: dashboardHeaders,
       body: {

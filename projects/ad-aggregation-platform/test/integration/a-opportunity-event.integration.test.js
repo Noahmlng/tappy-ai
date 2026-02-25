@@ -15,7 +15,7 @@ function buildCreateInput(overrides = {}) {
     impSeed: [
       {
         impKey: 'imp_001',
-        placementId: 'chat_inline_v1',
+        placementId: 'chat_from_answer_v1',
         placementType: 'inline',
         slotIndex: 0
       }

@@ -127,7 +127,7 @@ test('v2 bid API returns unified response and legacy evaluate endpoint is remove
       body: {
         userId: 'user_v2_001',
         chatId: 'chat_v2_001',
-        placementId: 'chat_inline_v1',
+        placementId: 'chat_from_answer_v1',
         messages: [
           { role: 'user', content: 'i want to buy a gift to my girlfriend' },
           { role: 'assistant', content: 'what kind of gift do you prefer?' },
@@ -147,6 +147,8 @@ test('v2 bid API returns unified response and legacy evaluate endpoint is remove
     assert.equal(typeof bid.payload?.intent?.source, 'string')
     assert.equal(typeof bid.payload?.decisionTrace?.reasonCode, 'string')
     assert.equal(Boolean(bid.payload?.decisionTrace?.stageStatus), true)
+    assert.equal(typeof bid.payload?.diagnostics?.triggerType, 'string')
+    assert.equal(bid.payload?.diagnostics?.pricingVersion, 'cpa_mock_v2')
     assert.equal(Boolean(bid.payload?.data), true)
 
     const winner = bid.payload?.data?.bid
@@ -171,6 +173,25 @@ test('v2 bid API returns unified response and legacy evaluate endpoint is remove
       assert.equal(bid.payload?.message, 'No bid')
     }
 
+    const renamedPlacement = await requestJson(baseUrl, '/api/v2/bid', {
+      method: 'POST',
+      body: {
+        userId: 'user_v2_legacy_placement',
+        chatId: 'chat_v2_legacy_placement',
+        placementId: 'chat_inline_v1',
+        messages: [
+          { role: 'user', content: 'show me a broker comparison' },
+          { role: 'assistant', content: 'sure, sharing options' },
+        ],
+      },
+      timeoutMs: 12000,
+    })
+    assert.equal(renamedPlacement.ok, false)
+    assert.equal(renamedPlacement.status, 400)
+    assert.equal(renamedPlacement.payload?.error?.code, 'PLACEMENT_ID_RENAMED')
+    assert.equal(renamedPlacement.payload?.error?.oldPlacementId, 'chat_inline_v1')
+    assert.equal(renamedPlacement.payload?.error?.newPlacementId, 'chat_from_answer_v1')
+
     const legacyEvaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
       method: 'POST',
       body: {
@@ -180,7 +201,7 @@ test('v2 bid API returns unified response and legacy evaluate endpoint is remove
         answerText: 'legacy answer',
         intentScore: 0.8,
         locale: 'en-US',
-        placementId: 'chat_inline_v1',
+        placementId: 'chat_from_answer_v1',
       },
     })
 

@@ -192,7 +192,7 @@ test('control-plane audit records key lifecycle and config publish operations', 
     )
     assert.equal(revoke.ok, true, `revoke failed: ${JSON.stringify(revoke.payload)}`)
 
-    const patch = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_inline_v1', {
+    const patch = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_from_answer_v1', {
       method: 'PUT',
       headers: {
         ...dashboardHeaders,
@@ -217,7 +217,7 @@ test('control-plane audit records key lifecycle and config publish operations', 
 
     const configRows = await requestJson(
       baseUrl,
-      '/api/v1/public/audit/logs?action=config_publish&resourceType=placement&resourceId=chat_inline_v1',
+      '/api/v1/public/audit/logs?action=config_publish&resourceType=placement&resourceId=chat_from_answer_v1',
     )
     assert.equal(configRows.ok, true, `config filter failed: ${JSON.stringify(configRows.payload)}`)
     const configItems = Array.isArray(configRows.payload?.items) ? configRows.payload.items : []
@@ -269,10 +269,10 @@ test('config publish audit is only written when placement config changed', async
     })
     assert.equal(listPlacements.ok, true, `placements list failed: ${JSON.stringify(listPlacements.payload)}`)
     const placements = Array.isArray(listPlacements.payload?.placements) ? listPlacements.payload.placements : []
-    const target = placements.find((row) => row.placementId === 'chat_inline_v1')
-    assert.equal(Boolean(target), true, 'chat_inline_v1 should exist')
+    const target = placements.find((row) => row.placementId === 'chat_from_answer_v1')
+    assert.equal(Boolean(target), true, 'chat_from_answer_v1 should exist')
 
-    const noChangePatch = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_inline_v1', {
+    const noChangePatch = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_from_answer_v1', {
       method: 'PUT',
       headers: dashboardHeaders,
       body: {
@@ -284,7 +284,7 @@ test('config publish audit is only written when placement config changed', async
 
     const configRows = await requestJson(
       baseUrl,
-      '/api/v1/public/audit/logs?action=config_publish&resourceType=placement&resourceId=chat_inline_v1',
+      '/api/v1/public/audit/logs?action=config_publish&resourceType=placement&resourceId=chat_from_answer_v1',
     )
     assert.equal(configRows.ok, true, `config filter failed: ${JSON.stringify(configRows.payload)}`)
     const configItems = Array.isArray(configRows.payload?.items) ? configRows.payload.items : []

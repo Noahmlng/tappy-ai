@@ -167,7 +167,7 @@ test('quick start verifier runs config -> v2 bid -> events and returns evidence'
         accountId: 'org_simulator',
         appId: 'simulator-chatbot',
         environment: 'prod',
-        placementId: 'chat_inline_v1',
+        placementId: 'chat_from_answer_v1',
       },
     })
     assert.equal(verify.ok, true, `verify failed: ${JSON.stringify(verify.payload)}`)
@@ -258,7 +258,7 @@ test('quick start verifier returns precondition failed when app has no active ke
         accountId: 'org_simulator',
         appId: 'simulator-chatbot',
         environment: 'prod',
-        placementId: 'chat_inline_v1',
+        placementId: 'chat_from_answer_v1',
       },
     })
     assert.equal(verify.status, 409)

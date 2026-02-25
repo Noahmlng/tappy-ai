@@ -25,7 +25,7 @@ function normalizeInput(input = {}) {
   return {
     environment: 'prod',
     appId: text(input.appId, '<APP_ID>'),
-    placementId: text(input.placementId, 'chat_inline_v1'),
+    placementId: text(input.placementId, 'chat_from_answer_v1'),
     repoPath: text(input.repoPath, '/path/to/your/repo'),
     integrationToken: text(input.integrationToken, '<ONE_TIME_INTEGRATION_TOKEN>'),
     exchangeTtlSeconds: Number.isFinite(Number(input.exchangeTtlSeconds))

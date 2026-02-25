@@ -261,7 +261,7 @@ async function fetchNetworkOffers(networkId, connector, messageSignals, request 
   }
 
   const params = buildNetworkQueryParams(networkId, messageSignals, request)
-  const isFollowupPlacement = placementId === 'chat_followup_v1'
+  const isFollowupPlacement = placementId === 'chat_intent_recommendation_v1'
 
   if (networkId === 'house' && typeof connector.fetchProductOffersCatalog === 'function') {
     return await connector.fetchProductOffersCatalog(params)

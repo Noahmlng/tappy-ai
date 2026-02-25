@@ -12,7 +12,7 @@ function baseInput(overrides = {}) {
     impSeed: [
       {
         impKey: 'imp_001',
-        placementId: 'chat_inline_v1',
+        placementId: 'chat_from_answer_v1',
         placementType: 'inline',
         slotIndex: 0
       }
@@ -25,7 +25,7 @@ function baseInput(overrides = {}) {
     traceContext: {
       appId: 'app_chat_main',
       sessionId: 'sess_001',
-      placementId: 'chat_inline_v1',
+      placementId: 'chat_from_answer_v1',
       triggerType: 'answer_end',
       triggerAt: '2026-02-21T18:10:01.000Z'
     },

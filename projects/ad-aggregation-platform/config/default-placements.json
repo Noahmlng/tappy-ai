@@ -1,6 +1,6 @@
 [
   {
-    "placementId": "chat_inline_v1",
+    "placementId": "chat_from_answer_v1",
     "placementKey": "attach.post_answer_render",
     "enabled": true,
     "surface": "CHAT_INLINE",
@@ -42,7 +42,7 @@
     "globalTimeoutMs": 1200
   },
   {
-    "placementId": "chat_followup_v1",
+    "placementId": "chat_intent_recommendation_v1",
     "placementKey": "next_step.intent_card",
     "enabled": true,
     "surface": "FOLLOW_UP",

@@ -159,7 +159,7 @@ test('token exchange: exchanges one-time integration token into short-lived scop
       body: {
         appId: 'simulator-chatbot',
         environment: 'prod',
-        placementId: 'chat_inline_v1',
+        placementId: 'chat_from_answer_v1',
         ttlMinutes: 10,
       },
     })

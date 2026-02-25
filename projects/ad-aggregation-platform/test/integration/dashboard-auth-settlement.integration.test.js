@@ -148,7 +148,7 @@ async function seedScopedRevenue(baseUrl, input, headers = {}) {
     body: {
       userId: sessionId,
       chatId: sessionId,
-      placementId: 'chat_inline_v1',
+      placementId: 'chat_from_answer_v1',
       messages: [
         { role: 'user', content: query },
         { role: 'assistant', content: answerText },
@@ -169,7 +169,7 @@ async function seedScopedRevenue(baseUrl, input, headers = {}) {
       sessionId,
       turnId,
       requestId,
-      placementId: 'chat_inline_v1',
+      placementId: 'chat_from_answer_v1',
       adId: `offer_${input.accountId}`,
       postbackType: 'conversion',
       postbackStatus: 'success',
@@ -333,22 +333,22 @@ test('dashboard placement config is isolated per account app', async () => {
     })
     assert.equal(placementsA.ok, true, `placements A failed: ${JSON.stringify(placementsA.payload)}`)
     const placementAInlineBefore = Array.isArray(placementsA.payload?.placements)
-      ? placementsA.payload.placements.find((row) => String(row?.placementId || '') === 'chat_inline_v1')
+      ? placementsA.payload.placements.find((row) => String(row?.placementId || '') === 'chat_from_answer_v1')
       : null
-    assert.equal(Boolean(placementAInlineBefore), true, 'account A should have chat_inline_v1')
-    assert.equal(Boolean(placementAInlineBefore?.enabled), true, 'account A chat_inline_v1 should start enabled')
+    assert.equal(Boolean(placementAInlineBefore), true, 'account A should have chat_from_answer_v1')
+    assert.equal(Boolean(placementAInlineBefore?.enabled), true, 'account A chat_from_answer_v1 should start enabled')
 
     const placementsB = await requestJson(baseUrl, '/api/v1/dashboard/placements', {
       headers: dashboardBHeaders,
     })
     assert.equal(placementsB.ok, true, `placements B failed: ${JSON.stringify(placementsB.payload)}`)
     const placementBInlineBefore = Array.isArray(placementsB.payload?.placements)
-      ? placementsB.payload.placements.find((row) => String(row?.placementId || '') === 'chat_inline_v1')
+      ? placementsB.payload.placements.find((row) => String(row?.placementId || '') === 'chat_from_answer_v1')
       : null
-    assert.equal(Boolean(placementBInlineBefore), true, 'account B should have chat_inline_v1')
-    assert.equal(Boolean(placementBInlineBefore?.enabled), true, 'account B chat_inline_v1 should start enabled')
+    assert.equal(Boolean(placementBInlineBefore), true, 'account B should have chat_from_answer_v1')
+    assert.equal(Boolean(placementBInlineBefore?.enabled), true, 'account B chat_from_answer_v1 should start enabled')
 
-    const patchA = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_inline_v1', {
+    const patchA = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_from_answer_v1', {
       method: 'PUT',
       headers: dashboardAHeaders,
       body: {
@@ -364,7 +364,7 @@ test('dashboard placement config is isolated per account app', async () => {
     })
     assert.equal(placementsAAfterPatch.ok, true)
     const placementAInlineAfter = Array.isArray(placementsAAfterPatch.payload?.placements)
-      ? placementsAAfterPatch.payload.placements.find((row) => String(row?.placementId || '') === 'chat_inline_v1')
+      ? placementsAAfterPatch.payload.placements.find((row) => String(row?.placementId || '') === 'chat_from_answer_v1')
       : null
     assert.equal(Boolean(placementAInlineAfter), true)
     assert.equal(Boolean(placementAInlineAfter?.enabled), false, 'account A placement should remain disabled')
@@ -374,7 +374,7 @@ test('dashboard placement config is isolated per account app', async () => {
     })
     assert.equal(placementsBAfterPatch.ok, true)
     const placementBInlineAfter = Array.isArray(placementsBAfterPatch.payload?.placements)
-      ? placementsBAfterPatch.payload.placements.find((row) => String(row?.placementId || '') === 'chat_inline_v1')
+      ? placementsBAfterPatch.payload.placements.find((row) => String(row?.placementId || '') === 'chat_from_answer_v1')
       : null
     assert.equal(Boolean(placementBInlineAfter), true)
     assert.equal(Boolean(placementBInlineAfter?.enabled), true, 'account B placement should remain enabled')
@@ -382,7 +382,7 @@ test('dashboard placement config is isolated per account app', async () => {
     const sdkConfigA = await requestJson(baseUrl, '/api/v1/sdk/config?appId=simulator-chatbot-a')
     assert.equal(sdkConfigA.ok, true, `sdk config A failed: ${JSON.stringify(sdkConfigA.payload)}`)
     const sdkAInline = Array.isArray(sdkConfigA.payload?.placements)
-      ? sdkConfigA.payload.placements.find((row) => String(row?.placementId || '') === 'chat_inline_v1')
+      ? sdkConfigA.payload.placements.find((row) => String(row?.placementId || '') === 'chat_from_answer_v1')
       : null
     assert.equal(Boolean(sdkAInline), true)
     assert.equal(Boolean(sdkAInline?.enabled), false, 'sdk config for account A app should be disabled')
@@ -390,7 +390,7 @@ test('dashboard placement config is isolated per account app', async () => {
     const sdkConfigB = await requestJson(baseUrl, '/api/v1/sdk/config?appId=simulator-chatbot-b')
     assert.equal(sdkConfigB.ok, true, `sdk config B failed: ${JSON.stringify(sdkConfigB.payload)}`)
     const sdkBInline = Array.isArray(sdkConfigB.payload?.placements)
-      ? sdkConfigB.payload.placements.find((row) => String(row?.placementId || '') === 'chat_inline_v1')
+      ? sdkConfigB.payload.placements.find((row) => String(row?.placementId || '') === 'chat_from_answer_v1')
       : null
     assert.equal(Boolean(sdkBInline), true)
     assert.equal(Boolean(sdkBInline?.enabled), true, 'sdk config for account B app should stay enabled')
@@ -401,7 +401,7 @@ test('dashboard placement config is isolated per account app', async () => {
       body: {
         userId: 'tenant_a_user',
         chatId: `sess_a_${Date.now()}`,
-        placementId: 'chat_inline_v1',
+        placementId: 'chat_from_answer_v1',
         messages: [
           { role: 'user', content: 'find product for tenant A' },
           { role: 'assistant', content: 'seed decision' },
@@ -419,7 +419,7 @@ test('dashboard placement config is isolated per account app', async () => {
       body: {
         userId: 'tenant_b_user',
         chatId: `sess_b_${Date.now()}`,
-        placementId: 'chat_inline_v1',
+        placementId: 'chat_from_answer_v1',
         messages: [
           { role: 'user', content: 'find product for tenant B' },
           { role: 'assistant', content: 'seed decision' },

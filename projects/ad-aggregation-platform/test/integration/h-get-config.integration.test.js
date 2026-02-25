@@ -13,7 +13,7 @@ function buildContext(nowMs) {
     requestKey: `req_${nowMs}`,
     traceKey: `trace_${nowMs}`,
     appId: 'app_chat_main',
-    placementId: 'chat_inline_v1',
+    placementId: 'chat_from_answer_v1',
     environment: 'prod',
     schemaVersion: 'schema_v1',
     resolveAt: new Date(nowMs).toISOString(),
@@ -91,7 +91,7 @@ function createResolver(clock) {
 function buildRequest(nowMs, overrides = {}) {
   return {
     appId: 'app_chat_main',
-    placementId: 'chat_inline_v1',
+    placementId: 'chat_from_answer_v1',
     environment: 'prod',
     schemaVersion: 'schema_v1',
     sdkVersion: '1.0.0',

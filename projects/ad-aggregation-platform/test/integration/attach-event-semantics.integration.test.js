@@ -43,7 +43,7 @@ function createFetchMock({ decisionResult = 'no_fill', ads = [] } = {}) {
       return createJsonResponse(200, {
         placements: [
           {
-            placementId: 'chat_inline_v1',
+            placementId: 'chat_from_answer_v1',
             placementKey: 'attach.post_answer_render',
             enabled: true,
           },
@@ -128,7 +128,7 @@ function createNextStepFetchMock({ decisionResult = 'served', ads = [] } = {}) {
       return createJsonResponse(200, {
         placements: [
           {
-            placementId: 'chat_followup_v1',
+            placementId: 'chat_intent_recommendation_v1',
             placementKey: 'next_step.intent_card',
             enabled: true,
           },
@@ -187,7 +187,7 @@ function buildNextStepInput() {
     turnId: 'turn_next_step_001',
     userId: 'user_next_step_001',
     event: 'followup_generation',
-    placementId: 'chat_followup_v1',
+    placementId: 'chat_intent_recommendation_v1',
     placementKey: 'next_step.intent_card',
     context: {
       query: 'Recent upgrade trend for Amazon stock?',
@@ -247,7 +247,7 @@ test('sdk attach flow: served decision reports impression with adId', async () =
   assert.equal(eventCalls.length, 1)
   assert.equal(eventCalls[0].body.kind, 'impression')
   assert.equal(eventCalls[0].body.adId, 'ad_stock_001')
-  assert.equal(eventCalls[0].body.placementId, 'chat_inline_v1')
+  assert.equal(eventCalls[0].body.placementId, 'chat_from_answer_v1')
 })
 
 test('sdk next_step flow: served decision reports impression with kind and adId', async () => {
@@ -277,6 +277,6 @@ test('sdk next_step flow: served decision reports impression with kind and adId'
   assert.equal(eventCalls.length, 1)
   assert.equal(eventCalls[0].body.kind, 'impression')
   assert.equal(eventCalls[0].body.adId, 'next_item_001')
-  assert.equal(eventCalls[0].body.placementId, 'chat_followup_v1')
+  assert.equal(eventCalls[0].body.placementId, 'chat_intent_recommendation_v1')
   assert.equal(eventCalls[0].body.placementKey, 'next_step.intent_card')
 })

@@ -1,8 +1,8 @@
 const DEFAULT_ADS_BASE_URL = import.meta.env.VITE_SIMULATOR_API_BASE_URL || '/api'
 const ADS_BASE_URL = String(import.meta.env.VITE_ADS_BASE_URL || DEFAULT_ADS_BASE_URL).replace(/\/+$/, '')
 const ADS_API_KEY = String(import.meta.env.VITE_ADS_API_KEY || '').trim()
-const INLINE_PLACEMENT_ID = 'chat_inline_v1'
-const FOLLOWUP_PLACEMENT_ID = 'chat_followup_v1'
+const INLINE_PLACEMENT_ID = 'chat_from_answer_v1'
+const FOLLOWUP_PLACEMENT_ID = 'chat_intent_recommendation_v1'
 const DEFAULT_PLACEMENT_IDS = (() => {
   const raw = String(
     import.meta.env.VITE_ADS_PLACEMENT_IDS
@@ -77,7 +77,8 @@ function normalizeBidPricing(raw) {
   }
 
   return {
-    modelVersion: sanitizeText(raw.modelVersion, 'rpm_v1'),
+    modelVersion: sanitizeText(raw.modelVersion, 'cpa_mock_v2'),
+    triggerType: sanitizeText(raw.triggerType),
     targetRpmUsd: toFiniteNumber(raw.targetRpmUsd, 0),
     ecpmUsd: Number.isFinite(ecpmUsd) ? ecpmUsd : 0,
     cpaUsd: Number.isFinite(cpaUsd) ? cpaUsd : 0,

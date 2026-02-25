@@ -145,14 +145,14 @@ function evaluateRevenue(revenueEval = {}) {
     : []
   const overall = revenueEval?.results?.overallEcpm || {}
   const priceDistribution = revenueEval?.results?.priceDistribution || {}
-  const cpaRanges = Array.isArray(revenueEval?.results?.cpaRanges) ? revenueEval.results.cpaRanges : []
+  const cpaClamp = revenueEval?.results?.cpaClamp || {}
   const settlementPresence = revenueEval?.results?.settlementPresence || {}
 
   return {
     placementPass: placementEcpm.every((item) => item?.pass === true),
     overallPass: overall?.pass === true,
     pricePass: priceDistribution?.pass === true,
-    cpaRangePass: cpaRanges.every((item) => item?.pass === true),
+    cpaRangePass: cpaClamp?.pass === true,
     settlementPass: settlementPresence?.pass === true,
     pass: revenueEval?.pass === true,
   }

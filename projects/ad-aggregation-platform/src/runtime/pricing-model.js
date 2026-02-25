@@ -1,7 +1,13 @@
 import pricingSimulatorDefaults from '../../config/pricing-simulator.defaults.json' with { type: 'json' }
 
-const DEFAULT_PLACEMENT_ID = 'chat_inline_v1'
+const DEFAULT_PLACEMENT_ID = 'chat_from_answer_v1'
 const DEFAULT_NETWORK = 'house'
+const DEFAULT_TRIGGER_TYPE = 'from_answer'
+const KNOWN_TRIGGER_TYPES = new Set(['from_answer', 'intent_recommendation'])
+const TRIGGER_TYPE_BY_PLACEMENT = Object.freeze({
+  chat_from_answer_v1: 'from_answer',
+  chat_intent_recommendation_v1: 'intent_recommendation',
+})
 
 function cleanText(value) {
   return String(value || '').trim()
@@ -37,14 +43,20 @@ function normalizePlacementId(value) {
   return placementId || DEFAULT_PLACEMENT_ID
 }
 
+function normalizeTriggerType(value) {
+  const triggerType = cleanText(value).toLowerCase()
+  if (KNOWN_TRIGGER_TYPES.has(triggerType)) return triggerType
+  return ''
+}
+
 function normalizeWeights(defaults) {
-  const rankWeightRaw = clamp01(defaults?.rankWeight ?? 0.8)
-  const economicWeightRaw = clamp01(defaults?.economicWeight ?? 0.2)
+  const rankWeightRaw = clamp01(defaults?.rankWeight ?? 0.65)
+  const economicWeightRaw = clamp01(defaults?.economicWeight ?? 0.35)
   const sum = rankWeightRaw + economicWeightRaw
   if (sum <= 0) {
     return {
-      rankWeight: 0.8,
-      economicWeight: 0.2,
+      rankWeight: 0.65,
+      economicWeight: 0.35,
     }
   }
   return {
@@ -71,36 +83,48 @@ function normalizeDefaults(input = {}) {
   }
 
   return Object.freeze({
-    modelVersion: cleanText(input.modelVersion) || 'rpm_v1',
+    modelVersion: cleanText(input.modelVersion) || 'cpa_mock_v2',
     rankWeight: weights.rankWeight,
     economicWeight: weights.economicWeight,
+    rankDominanceFloor: clamp(toFiniteNumber(input.rankDominanceFloor, 0.5), 0, 1),
+    rankDominanceMargin: clamp(toFiniteNumber(input.rankDominanceMargin, 0.1), 0, 1),
+    triggerTypeByPlacement: {
+      ...TRIGGER_TYPE_BY_PLACEMENT,
+      ...(input.triggerTypeByPlacement && typeof input.triggerTypeByPlacement === 'object'
+        ? input.triggerTypeByPlacement
+        : {}),
+    },
+    defaultTriggerType: normalizeTriggerType(input.defaultTriggerType) || DEFAULT_TRIGGER_TYPE,
     targetRpmUsdByPlacement: {
       ...(input.targetRpmUsdByPlacement && typeof input.targetRpmUsdByPlacement === 'object'
         ? input.targetRpmUsdByPlacement
         : {}),
     },
-    networkRevenueShareByPlacement: {
-      ...(input.networkRevenueShareByPlacement && typeof input.networkRevenueShareByPlacement === 'object'
-        ? input.networkRevenueShareByPlacement
-        : {}),
-    },
-    networkRevenueShareDefault: {
-      house: clamp01(input?.networkRevenueShareDefault?.house ?? 0.5),
-      partnerstack: clamp01(input?.networkRevenueShareDefault?.partnerstack ?? 0.3),
-      cj: clamp01(input?.networkRevenueShareDefault?.cj ?? 0.2),
+    targetRpmUsdByTriggerType: {
+      from_answer: clamp(toFiniteNumber(input?.targetRpmUsdByTriggerType?.from_answer, 10), 1e-6, 100000),
+      intent_recommendation: clamp(toFiniteNumber(input?.targetRpmUsdByTriggerType?.intent_recommendation, 10), 1e-6, 100000),
     },
     baseCtrByPlacement: {
       ...(input.baseCtrByPlacement && typeof input.baseCtrByPlacement === 'object'
         ? input.baseCtrByPlacement
         : {}),
     },
-    baseCtrDefault: clamp(toFiniteNumber(input.baseCtrDefault, 0.018), 1e-6, 0.5),
-    baseCvrByNetwork: {
-      house: clamp(toFiniteNumber(input?.baseCvrByNetwork?.house, 0.03), 1e-6, 0.5),
-      partnerstack: clamp(toFiniteNumber(input?.baseCvrByNetwork?.partnerstack, 0.05), 1e-6, 0.5),
-      cj: clamp(toFiniteNumber(input?.baseCvrByNetwork?.cj, 0.04), 1e-6, 0.5),
+    baseCtrByTriggerType: {
+      from_answer: clamp(toFiniteNumber(input?.baseCtrByTriggerType?.from_answer, 0.05), 1e-6, 0.5),
+      intent_recommendation: clamp(toFiniteNumber(input?.baseCtrByTriggerType?.intent_recommendation, 0.05), 1e-6, 0.5),
     },
-    baseCvrDefault: clamp(toFiniteNumber(input.baseCvrDefault, 0.03), 1e-6, 0.5),
+    baseCtrDefault: clamp(toFiniteNumber(input.baseCtrDefault, 0.05), 1e-6, 0.5),
+    baseCvrByNetwork: {
+      house: clamp(toFiniteNumber(input?.baseCvrByNetwork?.house, 0.08), 1e-6, 0.5),
+      partnerstack: clamp(toFiniteNumber(input?.baseCvrByNetwork?.partnerstack, 0.08), 1e-6, 0.5),
+      cj: clamp(toFiniteNumber(input?.baseCvrByNetwork?.cj, 0.08), 1e-6, 0.5),
+    },
+    baseCvrDefault: clamp(toFiniteNumber(input.baseCvrDefault, 0.08), 1e-6, 0.5),
+    triggerFactorByType: {
+      from_answer: clamp(toFiniteNumber(input?.triggerFactorByType?.from_answer, 1), 0.1, 5),
+      intent_recommendation: clamp(toFiniteNumber(input?.triggerFactorByType?.intent_recommendation, 1.08), 0.1, 5),
+    },
+    cpaClampUsd: normalizeRange(input.cpaClampUsd, { min: 1.8, max: 3.2 }),
     cjDefaultAovUsd: clamp(toFiniteNumber(input.cjDefaultAovUsd, 80), 1, 100000),
     rawSignalFactorRanges,
   })
@@ -116,27 +140,55 @@ function toQualityNorm(value) {
 }
 
 function resolveTargetRpmUsd(defaults, placementId) {
+  const triggerType = resolveTriggerType(defaults, '', placementId)
+  return resolveTargetRpmUsdWithTrigger(defaults, placementId, triggerType)
+}
+
+function resolveTargetRpmUsdWithTrigger(defaults, placementId, triggerType) {
   const key = normalizePlacementId(placementId)
+  const normalizedTriggerType = normalizeTriggerType(triggerType)
   const byPlacement = defaults.targetRpmUsdByPlacement || {}
   const value = toFiniteNumber(byPlacement[key], NaN)
   if (Number.isFinite(value) && value > 0) return value
-  return toFiniteNumber(byPlacement[DEFAULT_PLACEMENT_ID], 8) || 8
+  const byTriggerType = defaults.targetRpmUsdByTriggerType || {}
+  const triggerValue = toFiniteNumber(byTriggerType[normalizedTriggerType], NaN)
+  if (Number.isFinite(triggerValue) && triggerValue > 0) return triggerValue
+  return toFiniteNumber(byPlacement[DEFAULT_PLACEMENT_ID], 10) || 10
 }
 
 function resolveBaseCtr(defaults, placementId) {
+  const triggerType = resolveTriggerType(defaults, '', placementId)
+  return resolveBaseCtrWithTrigger(defaults, placementId, triggerType)
+}
+
+function resolveBaseCtrWithTrigger(defaults, placementId, triggerType) {
   const key = normalizePlacementId(placementId)
+  const normalizedTriggerType = normalizeTriggerType(triggerType)
   const byPlacement = defaults.baseCtrByPlacement || {}
   const value = toFiniteNumber(byPlacement[key], NaN)
   if (Number.isFinite(value) && value > 0) return clamp(value, 1e-6, 0.5)
+  const byTriggerType = defaults.baseCtrByTriggerType || {}
+  const triggerValue = toFiniteNumber(byTriggerType[normalizedTriggerType], NaN)
+  if (Number.isFinite(triggerValue) && triggerValue > 0) return clamp(triggerValue, 1e-6, 0.5)
   return defaults.baseCtrDefault
 }
 
-function resolveNetworkShare(defaults, placementId, network) {
-  const placementShares = defaults.networkRevenueShareByPlacement?.[normalizePlacementId(placementId)]
-  const defaultShares = defaults.networkRevenueShareDefault
-  const value = toFiniteNumber(placementShares?.[network], NaN)
-  if (Number.isFinite(value)) return clamp01(value)
-  return clamp01(defaultShares?.[network] ?? 0)
+function resolveTriggerType(defaults, triggerType, placementId) {
+  const direct = normalizeTriggerType(triggerType)
+  if (direct) return direct
+  const placement = normalizePlacementId(placementId)
+  const byPlacement = defaults.triggerTypeByPlacement || {}
+  const fromPlacement = normalizeTriggerType(byPlacement[placement] || TRIGGER_TYPE_BY_PLACEMENT[placement])
+  if (fromPlacement) return fromPlacement
+  return normalizeTriggerType(defaults.defaultTriggerType) || DEFAULT_TRIGGER_TYPE
+}
+
+function resolveTriggerFactor(defaults, triggerType) {
+  const normalizedTriggerType = normalizeTriggerType(triggerType)
+  const byType = defaults.triggerFactorByType || {}
+  const value = toFiniteNumber(byType[normalizedTriggerType], NaN)
+  if (Number.isFinite(value) && value > 0) return clamp(value, 0.1, 5)
+  return 1
 }
 
 function mapRawSignalToFactor(defaults, network, rawBidValue) {
@@ -200,32 +252,39 @@ export function computeCandidateEconomicPricing(input = {}) {
   const defaults = input.defaults || DEFAULTS
   const placementId = normalizePlacementId(input.placementId)
   const network = normalizeNetwork(candidate.network)
+  const triggerType = resolveTriggerType(defaults, input.triggerType, placementId)
 
   const fusedScore = clamp01(candidate.fusedScore)
   const qualityNorm = toQualityNorm(candidate.quality)
-  const targetRpmUsd = resolveTargetRpmUsd(defaults, placementId)
-  const baseCtr = resolveBaseCtr(defaults, placementId)
+  const targetRpmUsd = resolveTargetRpmUsdWithTrigger(defaults, placementId, triggerType)
+  const baseCtr = resolveBaseCtrWithTrigger(defaults, placementId, triggerType)
   const baseCvr = clamp(
     toFiniteNumber(defaults.baseCvrByNetwork?.[network], defaults.baseCvrDefault),
     1e-6,
     0.5,
   )
-  const share = resolveNetworkShare(defaults, placementId, network)
   const pConvBase = clamp(baseCtr * baseCvr, 1e-6, 0.2)
 
   const rawSignal = mapRawSignalToFactor(defaults, network, candidate.bidHint)
-  const cpaBase = (targetRpmUsd * share / 1000) / Math.max(pConvBase, 1e-6)
-  const cpaUsd = clamp(cpaBase * rawSignal.normalizedFactor, 1e-6, 10000)
+  const cpaBase = (targetRpmUsd / 1000) / Math.max(pConvBase, 1e-6)
+  const cpaUsdRaw = cpaBase * rawSignal.normalizedFactor
+  const cpaUsd = clamp(
+    cpaUsdRaw,
+    toFiniteNumber(defaults.cpaClampUsd?.min, 1.8),
+    toFiniteNumber(defaults.cpaClampUsd?.max, 3.2),
+  )
 
   const relevanceFactor = clamp(0.6 + fusedScore, 0.5, 1.6)
   const qualityFactor = clamp(0.7 + qualityNorm, 0.6, 1.5)
+  const triggerFactor = resolveTriggerFactor(defaults, triggerType)
   const pClick = clamp(baseCtr * relevanceFactor, 1e-6, 0.6)
-  const pConv = clamp(pConvBase * relevanceFactor * qualityFactor, 1e-6, 0.2)
+  const pConv = clamp(pConvBase * relevanceFactor * qualityFactor * triggerFactor, 1e-6, 0.2)
   const ecpmUsd = clamp(1000 * pConv * cpaUsd, 1e-6, 100000)
   const economicScore = ecpmUsd / (ecpmUsd + targetRpmUsd)
 
   return {
     modelVersion: defaults.modelVersion,
+    triggerType,
     targetRpmUsd: round(targetRpmUsd, 4),
     ecpmUsd: round(ecpmUsd, 4),
     cpaUsd: round(cpaUsd, 4),
@@ -241,5 +300,7 @@ export function getPricingModelWeights() {
   return {
     rankWeight: DEFAULTS.rankWeight,
     economicWeight: DEFAULTS.economicWeight,
+    rankDominanceFloor: DEFAULTS.rankDominanceFloor,
+    rankDominanceMargin: DEFAULTS.rankDominanceMargin,
   }
 }

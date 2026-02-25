@@ -11,7 +11,7 @@ const createMode = ref(true)
 const editingPlacementId = ref('')
 
 const draft = reactive({
-  placementId: 'chat_inline_v1',
+  placementId: 'chat_from_answer_v1',
   environment: 'prod',
   surface: 'CHAT_INLINE',
   enabled: true,

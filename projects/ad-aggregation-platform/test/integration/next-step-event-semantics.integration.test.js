@@ -164,7 +164,7 @@ function buildNextStepEventPayload(overrides = {}) {
     turnId: `turn_next_step_event_${Date.now()}`,
     userId: 'next_step_event_user',
     event: 'followup_generation',
-    placementId: 'chat_followup_v1',
+    placementId: 'chat_intent_recommendation_v1',
     placementKey: 'next_step.intent_card',
     kind: 'impression',
     adId: 'next_item_001',

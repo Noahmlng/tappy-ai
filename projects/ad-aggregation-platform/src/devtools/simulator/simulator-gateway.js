@@ -171,6 +171,56 @@ const ALLOWED_CORS_ORIGINS = Array.from(
       .filter(Boolean),
   ),
 )
+const API_SERVICE_ROLE = normalizeApiServiceRole(
+  readCompatEnvValue(['MEDIATION_API_SERVICE_ROLE', 'MEDIATION_API_ROLE', 'SIMULATOR_API_ROLE'], 'all'),
+)
+const RUNTIME_ROUTE_MATCHERS = Object.freeze([
+  { type: 'prefix', value: '/api/v1/mediation/' },
+  { type: 'prefix', value: '/api/v1/sdk/' },
+  { type: 'prefix', value: '/api/v2/' },
+  { type: 'prefix', value: '/api/v1/intent-card/' },
+])
+const CONTROL_PLANE_ROUTE_MATCHERS = Object.freeze([
+  { type: 'exact', value: '/api/v1/dev/reset' },
+  { type: 'prefix', value: '/api/v1/public/' },
+  { type: 'prefix', value: '/api/v1/dashboard/' },
+  { type: 'prefix', value: '/api/v1/internal/inventory/' },
+])
+
+function normalizeApiServiceRole(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, '_')
+  if (normalized === 'runtime') return 'runtime'
+  if (normalized === 'control_plane' || normalized === 'control') return 'control_plane'
+  return 'all'
+}
+
+function routeMatches(pathname, matcher) {
+  if (!matcher || typeof matcher !== 'object') return false
+  const target = String(matcher.value || '').trim()
+  if (!target) return false
+  if (matcher.type === 'exact') return pathname === target
+  if (matcher.type === 'prefix') return pathname.startsWith(target)
+  return false
+}
+
+function resolveRoutePlane(pathname) {
+  if (pathname === '/api/health') return 'shared'
+  if (RUNTIME_ROUTE_MATCHERS.some((matcher) => routeMatches(pathname, matcher))) return 'runtime'
+  if (CONTROL_PLANE_ROUTE_MATCHERS.some((matcher) => routeMatches(pathname, matcher))) return 'control_plane'
+  return 'unknown'
+}
+
+function isRouteAllowedForServiceRole(pathname, role) {
+  const normalizedRole = normalizeApiServiceRole(role)
+  const routePlane = resolveRoutePlane(pathname)
+  if (routePlane === 'shared') return true
+  if (normalizedRole === 'all') return true
+  if (routePlane === 'unknown') return false
+  return routePlane === normalizedRole
+}
 
 const PLACEMENT_ID_FROM_ANSWER = 'chat_from_answer_v1'
 const PLACEMENT_ID_INTENT_RECOMMENDATION = 'chat_intent_recommendation_v1'
@@ -7764,15 +7814,21 @@ async function recordAttachSdkEvent(request) {
   })
 }
 
-export async function requestHandler(req, res) {
+export async function requestHandler(req, res, options = {}) {
   const requestUrl = new URL(req.url || '/', `http://${req.headers.host || `${HOST}:${PORT}`}`)
   const pathname = requestUrl.pathname
+  const apiServiceRole = normalizeApiServiceRole(options?.apiServiceRole || API_SERVICE_ROLE)
   applyCorsOrigin(req, res)
 
   if (req.method === 'OPTIONS') {
     withCors(res)
     res.statusCode = 204
     res.end()
+    return
+  }
+
+  if (!isRouteAllowedForServiceRole(pathname, apiServiceRole)) {
+    sendNotFound(res)
     return
   }
 
@@ -7812,7 +7868,8 @@ export async function requestHandler(req, res) {
   if (pathname === '/api/health' && req.method === 'GET') {
     sendJson(res, 200, {
       ok: true,
-      service: 'simulator-gateway',
+      service: 'mediation-api',
+      apiServiceRole,
       stateFile: STATE_FILE,
       updatedAt: state.updatedAt,
       now: nowIso(),

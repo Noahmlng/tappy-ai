@@ -18,8 +18,8 @@ Required values:
 3. `APP_ID`
 4. `ENVIRONMENT` (`sandbox` | `staging` | `prod`)
 5. enabled placement:
-   - `chat_inline_v1` (post-answer sponsored block), or
-   - `chat_followup_v1` (next-step intent card)
+   - `chat_from_answer_v1` (post-answer sponsored block), or
+   - `chat_intent_recommendation_v1` (next-step intent card)
 
 ## 2. API Flow (V2 Baseline)
 
@@ -40,7 +40,7 @@ Required values:
 curl -sS -G "$ADS_BASE_URL/v1/mediation/config" \
   -H "Authorization: Bearer $ADS_API_KEY" \
   --data-urlencode "appId=$APP_ID" \
-  --data-urlencode "placementId=chat_inline_v1" \
+  --data-urlencode "placementId=chat_from_answer_v1" \
   --data-urlencode "environment=$ENVIRONMENT" \
   --data-urlencode "schemaVersion=schema_v1" \
   --data-urlencode "sdkVersion=1.0.0" \
@@ -61,7 +61,7 @@ curl -sS -X POST "$ADS_BASE_URL/v2/bid" \
   -d '{
     "userId": "user_12139050",
     "chatId": "chat_8b5d9f5a",
-    "placementId": "chat_inline_v1",
+    "placementId": "chat_from_answer_v1",
     "messages": [
       { "role": "user", "content": "I want to buy a gift for my girlfriend" },
       { "role": "assistant", "content": "What kind of gift do you want?" },
@@ -92,7 +92,7 @@ curl -sS -X POST "$ADS_BASE_URL/v2/bid" \
       "placement": "block",
       "variant": "base",
       "pricing": {
-        "modelVersion": "rpm_v1",
+        "modelVersion": "cpa_mock_v2",
         "targetRpmUsd": 8,
         "ecpmUsd": 7.86,
         "cpaUsd": 3.21,
@@ -140,7 +140,7 @@ async function loadAd(messages) {
       body: JSON.stringify({
         userId: 'user_12139050',
         chatId: 'chat_8b5d9f5a',
-        placementId: 'chat_inline_v1',
+        placementId: 'chat_from_answer_v1',
         messages,
       }),
     }).then((r) => r.json())
@@ -160,7 +160,7 @@ Recommended behavior:
 
 ## 6. Step 4: Report Events
 
-### 6.1 Attach impression (`chat_inline_v1`)
+### 6.1 Attach impression (`chat_from_answer_v1`)
 
 ```bash
 curl -sS -X POST "$ADS_BASE_URL/v1/sdk/events" \
@@ -175,16 +175,16 @@ curl -sS -X POST "$ADS_BASE_URL/v1/sdk/events" \
     "intentScore": 0.80,
     "locale": "en-US",
     "kind": "impression",
-    "placementId": "chat_inline_v1",
+    "placementId": "chat_from_answer_v1",
     "adId": "v2_bid_xxx"
   }'
 ```
 
-### 6.2 Attach click (`chat_inline_v1`)
+### 6.2 Attach click (`chat_from_answer_v1`)
 
 Use the same payload and set `kind` to `click`.
 
-### 6.3 Attach postback conversion (`chat_inline_v1`)
+### 6.3 Attach postback conversion (`chat_from_answer_v1`)
 
 For simulator mode, use `bid.pricing.cpaUsd` from `/api/v2/bid` as `cpaUsd`.
 
@@ -198,7 +198,7 @@ curl -sS -X POST "$ADS_BASE_URL/v1/sdk/events" \
     "sessionId": "chat_8b5d9f5a",
     "turnId": "turn_001",
     "userId": "user_12139050",
-    "placementId": "chat_inline_v1",
+    "placementId": "chat_from_answer_v1",
     "adId": "v2_bid_xxx",
     "postbackType": "conversion",
     "postbackStatus": "success",
@@ -208,7 +208,7 @@ curl -sS -X POST "$ADS_BASE_URL/v1/sdk/events" \
   }'
 ```
 
-### 6.4 Next-step event (`chat_followup_v1`, optional)
+### 6.4 Next-step event (`chat_intent_recommendation_v1`, optional)
 
 ```bash
 curl -sS -X POST "$ADS_BASE_URL/v1/sdk/events" \
@@ -221,7 +221,7 @@ curl -sS -X POST "$ADS_BASE_URL/v1/sdk/events" \
     "userId": "user_12139050",
     "event": "followup_generation",
     "kind": "impression",
-    "placementId": "chat_followup_v1",
+    "placementId": "chat_intent_recommendation_v1",
     "placementKey": "next_step.intent_card",
     "adId": "v2_bid_xxx",
     "context": {

@@ -201,7 +201,7 @@ test('CPA postback facts drive dashboard revenue metrics and replace serve estim
       answerText: 'Focus on switch type and layout first.',
       intentScore: 0.86,
       locale: 'en-US',
-      placementId: 'chat_inline_v1',
+      placementId: 'chat_from_answer_v1',
     }
     const bidPayload = {
       userId: runtimePayload.sessionId,
@@ -258,7 +258,7 @@ test('CPA postback facts drive dashboard revenue metrics and replace serve estim
       sessionId: runtimePayload.sessionId,
       turnId: runtimePayload.turnId,
       requestId,
-      placementId: 'chat_inline_v1',
+      placementId: 'chat_from_answer_v1',
       adId: 'offer_001',
       postbackType: 'conversion',
       postbackStatus: 'success',
@@ -303,7 +303,7 @@ test('CPA postback facts drive dashboard revenue metrics and replace serve estim
     })
     assert.equal(byPlacement.ok, true)
     const placementRows = Array.isArray(byPlacement.payload?.items) ? byPlacement.payload.items : []
-    const inlineRow = placementRows.find((row) => String(row?.placementId || '') === 'chat_inline_v1')
+    const inlineRow = placementRows.find((row) => String(row?.placementId || '') === 'chat_from_answer_v1')
     assert.equal(Boolean(inlineRow), true)
     assert.equal(round(inlineRow.revenueUsd), 2.75)
 

@@ -12,7 +12,7 @@ function baseContext() {
     requestKey: 'req_h_001',
     traceKey: 'trace_h_001',
     appId: 'app_chat_main',
-    placementId: 'chat_inline_v1',
+    placementId: 'chat_from_answer_v1',
     environment: 'prod',
     schemaVersion: 'schema_v1',
     resolveAt: '2026-02-21T12:00:00.000Z',

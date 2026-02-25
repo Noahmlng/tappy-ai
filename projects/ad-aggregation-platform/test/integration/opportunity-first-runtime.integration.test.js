@@ -157,7 +157,7 @@ test('opportunity-first ranking: emits stable reason codes for miss and low-rank
   assert.equal(served.winner.bid.dsp, 'partnerstack')
   assert.equal(typeof served.winner.bid.price, 'number')
   assert.equal(Boolean(served.winner.bid.pricing), true)
-  assert.equal(served.winner.bid.pricing.modelVersion, 'rpm_v1')
+  assert.equal(served.winner.bid.pricing.modelVersion, 'cpa_mock_v2')
   assert.equal(typeof served.winner.bid.pricing.cpaUsd, 'number')
   assert.equal(typeof served.winner.bid.pricing.ecpmUsd, 'number')
   assert.equal(typeof served.winner.bid.pricing.pConv, 'number')
@@ -195,7 +195,7 @@ test('opportunity-first ranking: economic score can break close rank ties', () =
         fusedScore: 0.78,
       },
     ],
-    placementId: 'chat_inline_v1',
+    placementId: 'chat_from_answer_v1',
     query: 'best creator suite deals',
     answerText: '',
     intentScore: 0.82,
@@ -240,7 +240,7 @@ test('opportunity-first ranking: high relevance still wins when rank gap is larg
         fusedScore: 0.78,
       },
     ],
-    placementId: 'chat_inline_v1',
+    placementId: 'chat_from_answer_v1',
     query: 'best creator suite deals',
     answerText: '',
     intentScore: 0.82,
@@ -265,7 +265,7 @@ test('opportunity writer: state fallback records opportunity->delivery->event ch
   const opportunity = await writer.createOpportunityRecord({
     requestId: 'req_chain_001',
     appId: 'simulator-chatbot',
-    placementId: 'chat_inline_v1',
+    placementId: 'chat_from_answer_v1',
     payload: { query: 'vpn deals' },
   })
   assert.equal(Boolean(opportunity.opportunityKey), true)
@@ -273,7 +273,7 @@ test('opportunity writer: state fallback records opportunity->delivery->event ch
   const delivery = await writer.writeDeliveryRecord({
     requestId: 'req_chain_001',
     appId: 'simulator-chatbot',
-    placementId: 'chat_inline_v1',
+    placementId: 'chat_from_answer_v1',
     opportunityKey: opportunity.opportunityKey,
     deliveryStatus: 'served',
     payload: { reasonCode: 'served' },
@@ -283,7 +283,7 @@ test('opportunity writer: state fallback records opportunity->delivery->event ch
   const event = await writer.writeEventRecord({
     requestId: 'req_chain_001',
     appId: 'simulator-chatbot',
-    placementId: 'chat_inline_v1',
+    placementId: 'chat_from_answer_v1',
     eventType: 'sdk_event',
     kind: 'click',
     eventStatus: 'recorded',

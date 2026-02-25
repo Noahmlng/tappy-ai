@@ -138,7 +138,7 @@ async function issueIntegrationToken(baseUrl, authHeaders = {}) {
     body: {
       appId: 'simulator-chatbot',
       environment: 'prod',
-      placementId: 'chat_inline_v1',
+      placementId: 'chat_from_answer_v1',
       ttlMinutes: 10,
     },
   })
@@ -299,7 +299,7 @@ test('token security: agent access token enforces placement scope and audits den
 
     const allowedConfig = await requestJson(
       baseUrl,
-      '/api/v1/mediation/config?appId=simulator-chatbot&placementId=chat_inline_v1&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z',
+      '/api/v1/mediation/config?appId=simulator-chatbot&placementId=chat_from_answer_v1&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z',
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -310,7 +310,7 @@ test('token security: agent access token enforces placement scope and audits den
 
     const deniedConfig = await requestJson(
       baseUrl,
-      '/api/v1/mediation/config?appId=simulator-chatbot&placementId=chat_followup_v1&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z',
+      '/api/v1/mediation/config?appId=simulator-chatbot&placementId=chat_intent_recommendation_v1&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z',
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -328,7 +328,7 @@ test('token security: agent access token enforces placement scope and audits den
       body: {
         userId: 'scope_user',
         chatId: `scope_session_${Date.now()}`,
-        placementId: 'chat_followup_v1',
+        placementId: 'chat_intent_recommendation_v1',
         messages: [
           { role: 'user', content: 'Recommend family SUV options' },
           { role: 'assistant', content: 'You can compare fuel economy and cargo space.' },

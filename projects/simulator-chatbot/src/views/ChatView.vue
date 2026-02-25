@@ -527,7 +527,8 @@ function normalizeAdCard(raw) {
 
   const pricing = raw.pricing && typeof raw.pricing === 'object'
     ? {
-        modelVersion: typeof raw.pricing.modelVersion === 'string' ? raw.pricing.modelVersion : 'rpm_v1',
+        modelVersion: typeof raw.pricing.modelVersion === 'string' ? raw.pricing.modelVersion : 'cpa_mock_v2',
+        triggerType: typeof raw.pricing.triggerType === 'string' ? raw.pricing.triggerType : '',
         targetRpmUsd: Number.isFinite(Number(raw.pricing.targetRpmUsd)) ? Number(raw.pricing.targetRpmUsd) : 0,
         ecpmUsd: Number.isFinite(Number(raw.pricing.ecpmUsd)) ? Number(raw.pricing.ecpmUsd) : 0,
         cpaUsd: Number.isFinite(Number(raw.pricing.cpaUsd)) ? Number(raw.pricing.cpaUsd) : 0,
@@ -546,7 +547,7 @@ function normalizeAdCard(raw) {
 
   return {
     requestId,
-    placementId: typeof raw.placementId === 'string' && raw.placementId.trim() ? raw.placementId.trim() : 'chat_inline_v1',
+    placementId: typeof raw.placementId === 'string' && raw.placementId.trim() ? raw.placementId.trim() : 'chat_from_answer_v1',
     adId,
     advertiser: typeof raw.advertiser === 'string' && raw.advertiser.trim() ? raw.advertiser.trim() : 'Sponsored',
     headline: typeof raw.headline === 'string' && raw.headline.trim() ? raw.headline.trim() : 'Sponsored',

@@ -219,7 +219,7 @@ test('history retention: event logs are not hard-truncated when max limit is dis
           answerText: `history answer ${i}`,
           intentScore: 0.8,
           locale: 'en-US',
-          placementId: 'chat_inline_v1',
+          placementId: 'chat_from_answer_v1',
           kind: 'click',
         },
       })
