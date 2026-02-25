@@ -207,6 +207,8 @@ npm --prefix /Users/zeming/Documents/mediation-chatbot run dev
 npm run mediation:reset
 ```
 
+说明：`/api/v1/dev/reset` 已下线。该命令会改为清理 Supabase 测试库（`SUPABASE_DB_URL_TEST`）。
+
 ## Vercel 重建入口（双仓）
 
 1. `mediation-runtime-api`
@@ -214,6 +216,10 @@ npm run mediation:reset
 
 2. `mediation-control-plane-api`
 - Root Directory: `apps/control-plane-api`
+
+Production env（两个 API 项目都要设置）：
+- `SUPABASE_DB_URL=<prod db>`
+- `MEDIATION_ALLOWED_ORIGINS=https://<dashboard-prod-domain>`
 
 3. `mediation-dashboard`
 - Root Directory: Dashboard 独立仓库根目录
