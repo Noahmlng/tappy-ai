@@ -7,105 +7,77 @@
     </div>
 
     <aside :class="['sim-sidebar', isSidebarOpen ? 'is-open' : '']">
-      <div class="sim-sidebar-head">
-        <div class="sim-brand">
-          <div class="sim-brand-mark">S</div>
-          <div>
-            <p class="sim-brand-title">Simulator Atelier</p>
-            <p class="sim-brand-sub">Conversation Control Room</p>
-          </div>
+      <div class="sim-sidebar-scroll">
+        <div class="sim-sidebar-head">
+          <button class="sim-sidebar-home-btn" @click="startNewChat" aria-label="Go to home">
+            <span class="sim-brand-mark">S</span>
+            <span class="sim-sidebar-home-copy">
+              <span class="sim-brand-title">Simulator Atelier</span>
+              <span class="sim-brand-sub">Conversation Control Room</span>
+            </span>
+          </button>
+          <button class="sim-icon-btn sim-mobile-only" @click="isSidebarOpen = false" aria-label="Close sidebar">
+            <X :size="18" />
+          </button>
         </div>
-        <button class="sim-icon-btn sim-mobile-only" @click="isSidebarOpen = false" aria-label="Close sidebar">
-          <X :size="18" />
+
+        <button @click="startNewChat" class="sim-new-chat-btn">
+          <span class="sim-new-chat-copy">
+            <Plus :size="14" />
+            <span>New chat</span>
+          </span>
         </button>
-      </div>
 
-      <button @click="startNewChat" class="sim-new-chat-btn">
-        <span class="sim-new-chat-copy">
-          <Plus :size="14" />
-          <span>Start New Thread</span>
-        </span>
-        <MessageSquare :size="14" />
-      </button>
+        <label class="sim-search-field">
+          <Search :size="16" />
+          <input v-model="historyQuery" type="text" placeholder="Search chats" />
+        </label>
 
-      <label class="sim-search-field">
-        <Search :size="16" />
-        <input v-model="historyQuery" type="text" placeholder="Search conversations" />
-      </label>
-
-      <div class="sim-sidebar-section-label">Conversation Archive</div>
-
-      <div class="sim-session-list">
-        <div
-          v-for="session in filteredSessions"
-          :key="session.id"
-          :class="['sim-session-card', session.id === activeSessionId ? 'is-active' : '']"
-        >
-          <button @click="openSession(session.id)" class="sim-session-main">
-            <p class="sim-session-title">{{ session.title }}</p>
-            <p class="sim-session-time">{{ formatSessionTime(session.updatedAt) }}</p>
-          </button>
-          <button
-            class="sim-session-delete"
-            @click.stop="deleteSession(session.id)"
-            aria-label="Delete chat"
-            title="Delete chat"
-          >
-            <Trash2 :size="14" />
-          </button>
+        <div class="sim-sidebar-links">
+          <button class="sim-link-btn" type="button">Pulse</button>
+          <button class="sim-link-btn" type="button">Images</button>
+          <button class="sim-link-btn" type="button">Apps</button>
+          <button class="sim-link-btn" type="button">Deep research</button>
+          <button class="sim-link-btn" type="button">Codex</button>
+          <button class="sim-link-btn" type="button">GPTs</button>
         </div>
 
-        <p v-if="filteredSessions.length === 0" class="sim-session-empty">No chat history yet.</p>
+        <section class="sim-sidebar-section">
+          <div class="sim-sidebar-section-label">Projects</div>
+          <button class="sim-link-btn" type="button">New project</button>
+          <button class="sim-link-btn" type="button">Playable Ads in Chat Agent</button>
+          <button class="sim-link-btn" type="button">迈向网球3.5</button>
+          <button class="sim-link-btn" type="button">周复盘</button>
+        </section>
+
+        <section class="sim-sidebar-section sim-sidebar-chats">
+          <div class="sim-sidebar-section-label">Your chats</div>
+
+          <div class="sim-session-list">
+            <div
+              v-for="session in filteredSessions"
+              :key="session.id"
+              :class="['sim-session-card', session.id === activeSessionId ? 'is-active' : '']"
+            >
+              <button @click="openSession(session.id)" class="sim-session-main">
+                <p class="sim-session-title">{{ session.title }}</p>
+              </button>
+            </div>
+
+            <p v-if="filteredSessions.length === 0" class="sim-session-empty">No chat history yet.</p>
+          </div>
+        </section>
       </div>
 
-      <div class="sim-sidebar-panels">
-        <details class="sim-panel">
-          <summary>System Prompt</summary>
-          <div class="sim-panel-row">
-            <button :disabled="!activeSession" @click="resetActiveSystemPrompt">Reset</button>
-          </div>
-          <textarea
-            v-model="activeSystemPrompt"
-            :disabled="!activeSession"
-            rows="5"
-            placeholder="Set a per-chat system prompt..."
-          ></textarea>
-          <p>Applied to every request in the active conversation.</p>
-        </details>
-
-        <details class="sim-panel">
-          <summary>Turn Trace</summary>
-
-          <p v-if="activeSessionTurnLogs.length === 0" class="sim-panel-empty">No turn logs yet.</p>
-
-          <div v-else class="sim-trace-list">
-            <details v-for="log in activeSessionTurnLogs" :key="log.turnId" class="sim-trace-card">
-              <summary>
-                <div class="sim-trace-head">
-                  <span class="sim-trace-query">{{ log.userQuery }}</span>
-                  <span :class="['sim-trace-badge', log.toolUsed ? 'is-tool' : '']">
-                    {{ log.toolUsed ? 'Tool: YES' : 'Tool: NO' }}
-                  </span>
-                </div>
-                <p>{{ formatTraceTime(log.startedAt) }}</p>
-              </summary>
-
-              <div class="sim-trace-body">
-                <p>Retry count: {{ log.retryCount || 0 }}</p>
-                <ul>
-                  <li v-for="event in log.events" :key="event.id">
-                    <span>{{ formatTraceTime(event.at) }}</span>
-                    <span>·</span>
-                    <span>{{ formatTraceEventType(event.type) }}</span>
-                  </li>
-                </ul>
-              </div>
-            </details>
-          </div>
-        </details>
-
-        <button class="sim-clear-history-btn" @click="clearHistory">Clear History</button>
-      </div>
+      <footer class="sim-sidebar-footer">
+        <button class="sim-profile-btn" type="button">
+          <span class="sim-profile-avatar">Gi</span>
+          <span class="sim-profile-meta">
+            <span class="sim-profile-name">Noah Luo</span>
+            <span class="sim-profile-plan">Pro</span>
+          </span>
+        </button>
+      </footer>
     </aside>
 
     <button
@@ -126,18 +98,23 @@
           >
             <Menu :size="18" />
           </button>
-          <div class="sim-title-wrap">
+          <button class="sim-title-wrap" type="button" aria-label="Model selector, current model is 5.2">
             <p class="sim-kicker">ChatGPT 5.2</p>
-          </div>
+            <ChevronDown :size="14" />
+          </button>
         </div>
-        <button class="sim-pill-btn" @click="startNewChat">
-          <span>Share</span>
-        </button>
+        <div class="sim-topbar-actions">
+          <button class="sim-icon-btn sim-topbar-mobile-btn" @click="startNewChat" aria-label="Start new chat">
+            <Plus :size="18" />
+          </button>
+          <button class="sim-pill-btn" type="button">
+            <span>Share</span>
+          </button>
+        </div>
       </header>
 
       <div ref="scrollRef" class="sim-scroll-region">
         <section class="sim-hero" :class="{ 'is-hidden': hasStarted }">
-          <p class="sim-hero-kicker">Simulator</p>
           <h2>Ready when you are.</h2>
           <p>Ask anything</p>
         </section>
@@ -279,7 +256,7 @@
             @compositionstart="isComposing = true"
             @compositionend="isComposing = false"
             @keydown.enter.prevent="handleSend"
-            placeholder="Ask anything..."
+            placeholder="Ask anything"
             class="sim-composer-input"
           ></textarea>
 
@@ -304,13 +281,12 @@ import { ref, computed, nextTick, watch, onBeforeUnmount } from 'vue'
 import {
   X,
   Plus,
-  MessageSquare,
   Search,
   PenSquare,
-  Trash2,
   Menu,
   ArrowUp,
   LoaderCircle,
+  ChevronDown,
 } from 'lucide-vue-next'
 import { sendMessageStream } from '../api/deepseek'
 import { shouldUseWebSearchTool, runWebSearchTool, buildWebSearchContext } from '../api/webSearchTool'
@@ -1715,17 +1691,16 @@ async function handleSend(options = {}) {
   inset: 0 auto 0 0;
   z-index: 50;
   display: flex;
+  min-height: 0;
   width: var(--sidebar-width);
   flex-direction: column;
-  gap: 12px;
-  border-right: 1px solid var(--sidebar-border);
-  background: var(--sidebar-bg);
+  border-right: 1px solid #e5e5e5;
+  background: #f9f9f9;
   color: var(--sidebar-text);
-  padding: var(--space-5) var(--space-4);
+  padding: 0;
   transform: translateX(-110%);
   transition: transform var(--motion-slow) var(--ease-standard);
   box-shadow: none;
-  backdrop-filter: none;
   will-change: transform;
 }
 
@@ -1733,46 +1708,81 @@ async function handleSend(options = {}) {
   transform: translateX(0);
 }
 
+.sim-sidebar-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .sim-sidebar-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  padding: 6px;
 }
 
-.sim-brand {
-  display: flex;
+.sim-sidebar-home-btn {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 2px 0;
+  cursor: pointer;
+  display: inline-flex;
   align-items: center;
   gap: 10px;
+  text-align: left;
+}
+
+.sim-sidebar-home-btn:focus-visible {
+  outline: 1.5px solid #0d0d0d;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.sim-sidebar-home-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .sim-brand-mark {
   display: grid;
-  height: 34px;
-  width: 34px;
+  height: 32px;
+  width: 32px;
   place-items: center;
-  border-radius: 11px;
-  border: 1px solid var(--sidebar-border);
-  background: #d8d8d8;
-  color: #303030;
+  border-radius: 10px;
+  border: 1px solid #e3e3e3;
+  background: #ececec;
+  color: #424242;
   font-family: var(--font-display);
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 17px;
+  font-weight: 600;
   line-height: 1;
+  flex-shrink: 0;
 }
 
 .sim-brand-title {
   margin: 0;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
-  line-height: 1.1;
-  letter-spacing: 0.01em;
+  line-height: 20px;
+  color: #2f2f2f;
 }
 
 .sim-brand-sub {
-  margin: 2px 0 0;
-  color: var(--sidebar-muted);
-  font-size: 11px;
-  letter-spacing: 0.02em;
+  margin: 0;
+  color: #8a8a8a;
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -1782,70 +1792,58 @@ async function handleSend(options = {}) {
   justify-content: center;
   height: 36px;
   width: 36px;
-  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--paper) 76%, transparent);
-  color: inherit;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #5d5d5d;
   cursor: pointer;
   transition:
     background-color var(--motion-fast) var(--ease-standard),
-    border-color var(--motion-fast) var(--ease-standard),
-    transform var(--motion-fast) var(--ease-standard);
+    color var(--motion-fast) var(--ease-standard);
 }
 
 .sim-icon-btn:hover {
-  transform: translateY(-1px);
-  background: color-mix(in srgb, var(--paper) 92%, transparent);
-  border-color: color-mix(in srgb, var(--ink) 20%, transparent);
-}
-
-.sim-icon-btn:active {
-  transform: translateY(0);
+  background: #ececec;
+  color: #0d0d0d;
 }
 
 .sim-icon-btn:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent-sea) 58%, white);
+  outline: 1.5px solid #0d0d0d;
   outline-offset: 2px;
 }
 
 .sim-mobile-only {
-  color: var(--sidebar-muted);
-  border-color: var(--sidebar-border);
-  background: color-mix(in srgb, var(--sidebar-surface) 86%, transparent);
+  display: inline-flex;
 }
 
 .sim-new-chat-btn {
-  display: flex;
+  display: inline-flex;
   width: 100%;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border: 1px solid var(--sidebar-border);
-  border-radius: var(--radius-md);
-  background: var(--sidebar-surface);
-  color: var(--sidebar-text);
-  padding: 11px 12px;
-  font-size: 13px;
-  font-weight: 600;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 36px;
+  border: 1px solid #e2e2e2;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #2f2f2f;
+  padding: 0 12px;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
   cursor: pointer;
   transition:
-    transform var(--motion-base) var(--ease-standard),
-    border-color var(--motion-base) var(--ease-standard),
-    box-shadow var(--motion-base) var(--ease-standard);
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
 }
 
 .sim-new-chat-btn:hover {
-  transform: translateY(-1px);
-  border-color: #cfcfcf;
-  box-shadow: none;
-}
-
-.sim-new-chat-btn:active {
-  transform: translateY(0);
+  background: #f5f5f5;
+  border-color: #dadada;
 }
 
 .sim-new-chat-btn:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent-sea) 58%, white);
+  outline: 1.5px solid #0d0d0d;
   outline-offset: 2px;
 }
 
@@ -1859,11 +1857,12 @@ async function handleSend(options = {}) {
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--sidebar-border);
-  border-radius: var(--radius-sm);
-  background: #efefef;
-  color: var(--sidebar-muted);
-  padding: var(--space-2) var(--space-3);
+  min-height: 36px;
+  border: 1px solid #e2e2e2;
+  border-radius: 10px;
+  background: #f7f7f7;
+  color: #8a8a8a;
+  padding: 0 10px;
 }
 
 .sim-search-field input {
@@ -1871,55 +1870,82 @@ async function handleSend(options = {}) {
   border: 0;
   outline: 0;
   background: transparent;
-  color: var(--sidebar-text);
-  font-size: 13px;
+  color: #2f2f2f;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .sim-search-field input::placeholder {
-  color: var(--sidebar-muted);
+  color: #8a8a8a;
 }
 
 .sim-search-field:focus-within {
-  border-color: #c7c7c7;
-  box-shadow: none;
+  border-color: #0d0d0d26;
+}
+
+.sim-sidebar-links {
+  display: grid;
+  gap: 2px;
+  margin: 2px 0 4px;
+}
+
+.sim-link-btn {
+  min-height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #2f2f2f;
+  font-size: 14px;
+  line-height: 20px;
+  text-align: left;
+  padding: 0 10px;
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+
+.sim-link-btn:hover {
+  background: #ececec;
+}
+
+.sim-link-btn:focus-visible {
+  outline: 1.5px solid #0d0d0d;
+  outline-offset: 2px;
+}
+
+.sim-sidebar-section {
+  display: grid;
+  gap: 2px;
+  margin-top: 8px;
 }
 
 .sim-sidebar-section-label {
-  margin-top: 2px;
-  color: var(--sidebar-muted);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 0 6px;
+  color: #8a8a8a;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  padding: 4px 10px;
 }
 
 .sim-session-list {
+  display: grid;
+  gap: 2px;
+}
+
+.sim-sidebar-chats {
+  min-height: 0;
+  flex: 1;
+}
+
+.sim-sidebar-chats .sim-session-list {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
-  padding: 7px;
-  display: grid;
-  gap: 6px;
   align-content: start;
-  grid-auto-rows: max-content;
-  border: 1px solid #dbdbdb;
-  border-radius: var(--radius-md);
-  background: #ebebeb;
-  box-shadow: none;
-}
-
-.sim-session-list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.sim-session-list::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--sidebar-muted) 40%, transparent);
+  padding-bottom: 8px;
 }
 
 .sim-session-card {
-  position: relative;
-  border-radius: var(--radius-sm);
+  border-radius: 10px;
   border: 1px solid transparent;
   background: transparent;
   transition:
@@ -1929,17 +1955,13 @@ async function handleSend(options = {}) {
 }
 
 .sim-session-card:hover {
-  border-color: #d2d2d2;
-  background: #f2f2f2;
+  border-color: #e2e2e2;
+  background: #efefef;
 }
 
 .sim-session-card.is-active {
-  border-color: #cfcfcf;
-  background: #f5f5f5;
-}
-
-.sim-session-card:focus-within .sim-session-delete {
-  opacity: 1;
+  border-color: #dbdbdb;
+  background: #e9e9e9;
 }
 
 .sim-session-main {
@@ -1947,285 +1969,94 @@ async function handleSend(options = {}) {
   border: 0;
   background: transparent;
   color: inherit;
-  padding: 10px 34px 10px 11px;
+  padding: 8px 10px;
   text-align: left;
   cursor: pointer;
 }
 
 .sim-session-main:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent-sea) 58%, white);
-  outline-offset: -2px;
+  outline: 1.5px solid #0d0d0d;
+  outline-offset: 2px;
   border-radius: 10px;
 }
 
 .sim-session-title {
   margin: 0;
-  font-size: 13px;
-  font-weight: 530;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.sim-session-time {
-  margin: 5px 0 0;
-  color: var(--sidebar-muted);
-  font-size: 11px;
-}
-
-.sim-session-delete {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  height: 24px;
-  width: 24px;
-  border: 0;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  color: var(--sidebar-muted);
-  cursor: pointer;
-  opacity: 0;
-  transition:
-    opacity var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard);
-}
-
-.sim-session-card:hover .sim-session-delete {
-  opacity: 1;
-}
-
-.sim-session-delete:hover {
-  color: var(--sidebar-text);
-  background: color-mix(in srgb, var(--sidebar-border) 34%, transparent);
-}
-
-.sim-session-delete:focus-visible {
-  opacity: 1;
-  outline: 2px solid color-mix(in srgb, var(--accent-sea) 58%, white);
-  outline-offset: 1px;
 }
 
 .sim-session-empty {
-  margin: 6px 4px 2px;
-  color: var(--sidebar-muted);
+  margin: 4px 10px;
+  color: #8a8a8a;
   font-size: 12px;
-  text-align: center;
+  line-height: 16px;
 }
 
-.sim-sidebar-panels {
-  display: grid;
-  gap: 10px;
-  padding-top: 8px;
-  border-top: 1px solid #d9d9d9;
+.sim-sidebar-footer {
+  border-top: 1px solid #e6e6e6;
+  padding: 8px;
 }
 
-.sim-panel {
-  border: 1px solid #d9d9d9;
-  border-radius: var(--radius-md);
-  background: #ededed;
-  padding: 10px;
-}
-
-.sim-panel summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  list-style: none;
-  cursor: pointer;
-  margin: 0;
-  color: var(--sidebar-muted);
-  font-size: 11px;
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.sim-panel summary::-webkit-details-marker {
-  display: none;
-}
-
-.sim-panel summary::after {
-  content: '+';
-  font-size: 14px;
-  line-height: 1;
-  font-weight: 500;
-  color: color-mix(in srgb, var(--sidebar-muted) 90%, #fff);
-}
-
-.sim-panel[open] summary::after {
-  content: '−';
-}
-
-.sim-panel summary:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent-sea) 56%, white);
-  outline-offset: 2px;
-  border-radius: 8px;
-}
-
-.sim-panel-row {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 10px;
-}
-
-.sim-panel-row button,
-.sim-clear-history-btn {
-  border: 1px solid #d3d3d3;
-  border-radius: 9px;
-  background: #f2f2f2;
-  color: var(--sidebar-muted);
-  font-size: 11px;
-  cursor: pointer;
-  transition:
-    border-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard),
-    transform var(--motion-fast) var(--ease-standard);
-}
-
-.sim-panel-row button {
+.sim-profile-btn {
+  width: 100%;
+  min-height: 40px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
   padding: 4px 8px;
-}
-
-.sim-panel-row button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.sim-panel-row button:not(:disabled):hover,
-.sim-clear-history-btn:hover {
-  color: var(--sidebar-text);
-  border-color: color-mix(in srgb, var(--accent-sea) 35%, white);
-}
-
-.sim-panel-row button:not(:disabled):active,
-.sim-clear-history-btn:active {
-  transform: translateY(0);
-}
-
-.sim-panel-row button:focus-visible,
-.sim-clear-history-btn:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent-sea) 58%, white);
-  outline-offset: 2px;
-}
-
-.sim-panel textarea {
-  width: 100%;
-  resize: vertical;
-  margin-top: 10px;
-  border-radius: 10px;
-  border: 1px solid var(--sidebar-border);
-  background: #f6f6f6;
-  color: var(--sidebar-text);
-  font-size: 12px;
-  padding: 8px;
-  outline: none;
-}
-
-.sim-panel textarea:focus {
-  border-color: color-mix(in srgb, var(--accent-sea) 40%, white);
-}
-
-.sim-panel p {
-  margin: 8px 0 0;
-  font-size: 10px;
-  color: var(--sidebar-muted);
-}
-
-.sim-panel-empty {
-  margin-top: 10px;
-}
-
-.sim-trace-list {
-  margin-top: 10px;
-  max-height: 220px;
-  overflow-y: auto;
-  display: grid;
-  gap: 6px;
-}
-
-.sim-trace-card {
-  border: 1px solid #dadada;
-  border-radius: 10px;
-  background: #f2f2f2;
-  padding: 8px;
-}
-
-.sim-trace-card summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
   cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard);
 }
 
-.sim-trace-card summary::-webkit-details-marker {
-  display: none;
+.sim-profile-btn:hover {
+  background: #ececec;
 }
 
-.sim-trace-card summary:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent-sea) 56%, white);
+.sim-profile-btn:focus-visible {
+  outline: 1.5px solid #0d0d0d;
   outline-offset: 2px;
-  border-radius: 8px;
 }
 
-.sim-trace-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.sim-trace-query {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--sidebar-text);
-  font-size: 11px;
-  font-weight: 560;
-}
-
-.sim-trace-badge {
-  margin-left: auto;
+.sim-profile-avatar {
+  height: 24px;
+  width: 24px;
   border-radius: 999px;
-  padding: 2px 8px;
-  font-size: 10px;
-  font-weight: 680;
-  color: var(--sidebar-muted);
-  background: color-mix(in srgb, var(--sidebar-border) 55%, transparent);
-}
-
-.sim-trace-badge.is-tool {
-  color: #333;
-  background: #e4e4e4;
-}
-
-.sim-trace-body {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--sidebar-border);
-}
-
-.sim-trace-body p {
-  margin: 0 0 6px;
-  font-size: 10px;
-}
-
-.sim-trace-body ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+  background: #f08b24;
+  color: #fff;
   display: grid;
-  gap: 3px;
-}
-
-.sim-trace-body li {
-  display: flex;
-  align-items: center;
-  gap: 5px;
+  place-items: center;
   font-size: 11px;
-  color: var(--sidebar-text);
+  font-weight: 600;
+  flex-shrink: 0;
 }
 
-.sim-clear-history-btn {
-  width: 100%;
-  padding: 8px 10px;
+.sim-profile-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sim-profile-name {
+  color: #2f2f2f;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.sim-profile-plan {
+  color: #8a8a8a;
+  font-size: 12px;
+  line-height: 16px;
 }
 
 .sim-sidebar-overlay {
@@ -2233,11 +2064,11 @@ async function handleSend(options = {}) {
   inset: 0;
   z-index: 40;
   border: 0;
-  background: color-mix(in srgb, #000 18%, transparent);
+  background: color-mix(in srgb, #000 40%, transparent);
 }
 
 .sim-sidebar-overlay:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent-sea) 56%, white);
+  outline: 1.5px solid #0d0d0d;
   outline-offset: -2px;
 }
 
@@ -2257,78 +2088,85 @@ async function handleSend(options = {}) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
-  padding: 8px clamp(8px, 1.4vw, 18px);
-  border-bottom: 1px solid #e1e1e1;
-  background: var(--paper);
-  backdrop-filter: none;
-  box-shadow: none;
+  gap: 8px;
+  min-height: 52px;
+  padding: 8px;
+  border-bottom: 1px solid #e5e5e5;
+  background: #f9f9f9;
 }
 
 .sim-topbar-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 4px;
   min-width: 0;
 }
 
 .sim-title-wrap {
   display: inline-flex;
-  min-height: 36px;
   align-items: center;
+  gap: 4px;
+  min-height: 36px;
   min-width: 0;
+  border: 0;
   border-radius: 8px;
   padding: 0 10px;
+  background: transparent;
+  color: #1f1f1f;
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+
+.sim-title-wrap:hover {
+  background: #ececec;
+}
+
+.sim-title-wrap:focus-visible {
+  outline: 1.5px solid #0d0d0d;
+  outline-offset: 2px;
 }
 
 .sim-kicker {
   margin: 0;
   font-size: 18px;
-  letter-spacing: 0;
-  text-transform: none;
-  color: #222;
-  font-weight: 560;
+  color: #1f1f1f;
+  font-weight: 500;
   line-height: 28px;
 }
 
-.sim-title {
+.sim-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sim-topbar-mobile-btn {
   display: none;
 }
 
 .sim-pill-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  height: 36px;
   border: 0;
-  border-radius: var(--radius-pill);
+  border-radius: 8px;
   background: transparent;
   color: #2f2f2f;
   font-size: 14px;
-  font-weight: 600;
-  min-height: 36px;
-  padding: 0 10px;
+  font-weight: 500;
+  line-height: 20px;
+  padding: 0 12px;
   cursor: pointer;
-  transition:
-    transform var(--motion-fast) var(--ease-standard),
-    border-color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard);
+  transition: background-color var(--motion-fast) var(--ease-standard);
 }
 
 .sim-pill-btn:hover {
-  transform: none;
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
-  text-decoration: underline;
-}
-
-.sim-pill-btn:active {
-  transform: translateY(0);
+  background: #ececec;
 }
 
 .sim-pill-btn:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent-sea) 58%, white);
+  outline: 1.5px solid #0d0d0d;
   outline-offset: 2px;
 }
 
@@ -2336,19 +2174,14 @@ async function handleSend(options = {}) {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
-  padding: clamp(16px, 2vw, 28px) var(--sim-edge-padding) var(--space-6);
+  padding: 0 var(--sim-edge-padding) 24px;
   background: transparent;
 }
 
 .sim-hero {
-  margin: clamp(90px, 20vh, 180px) auto 26px;
+  margin: clamp(88px, 20vh, 176px) auto 16px;
   width: var(--sim-content-width);
-  position: relative;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  padding: 0;
+  padding: 0 4px;
   transition:
     opacity var(--motion-slow) var(--ease-standard),
     transform var(--motion-slow) var(--ease-standard),
@@ -2379,26 +2212,23 @@ async function handleSend(options = {}) {
   border-width: 0;
 }
 
-.sim-hero-kicker {
-  display: none;
-}
-
 .sim-hero h2 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(38px, 5.5vw, 56px);
-  line-height: 1.08;
-  letter-spacing: -0.02em;
+  font-size: 28px;
+  line-height: 34px;
+  letter-spacing: 0.38px;
+  font-weight: 400;
   max-width: none;
-  color: #222;
+  color: #202123;
 }
 
 .sim-hero p {
-  margin: 14px 0 0;
+  margin: 8px 0 0;
   max-width: none;
-  color: #8a8a8a;
-  font-size: 18px;
-  line-height: 1.4;
+  color: #8f8f8f;
+  font-size: 16px;
+  line-height: 24px;
 }
 
 .sim-thread {
@@ -2792,8 +2622,8 @@ async function handleSend(options = {}) {
 }
 
 .sim-send-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.4;
+  cursor: default;
+  opacity: 1;
 }
 
 @media (min-width: 1100px) {
@@ -2818,11 +2648,7 @@ async function handleSend(options = {}) {
 
 @media (max-width: 1099px) {
   .sim-sidebar {
-    width: min(92vw, 360px);
-  }
-
-  .sim-topbar {
-    padding-inline: 14px;
+    width: min(78vw, 300px);
   }
 
   .sim-kicker {
@@ -2851,13 +2677,12 @@ async function handleSend(options = {}) {
   }
 
   .sim-hero {
-    border-radius: var(--radius-xl);
-    padding: 18px 17px;
-    margin-top: 12px;
+    margin-top: clamp(76px, 17vh, 132px);
   }
 
   .sim-hero h2 {
-    font-size: clamp(25px, 9vw, 34px);
+    font-size: 28px;
+    line-height: 34px;
   }
 
   .sim-message {
@@ -2874,15 +2699,11 @@ async function handleSend(options = {}) {
     padding-bottom: 16px;
   }
 
-  .sim-pill-btn {
-    height: 34px;
-    width: 34px;
-    border-radius: var(--radius-sm);
-    padding: 0;
-    justify-content: center;
+  .sim-topbar-mobile-btn {
+    display: inline-flex;
   }
 
-  .sim-pill-btn span {
+  .sim-pill-btn {
     display: none;
   }
 
