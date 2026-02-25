@@ -155,6 +155,18 @@ test('v2 bid API returns unified response and legacy evaluate endpoint is remove
       assert.equal(typeof winner.headline, 'string')
       assert.equal(typeof winner.url, 'string')
       assert.equal(typeof winner.bidId, 'string')
+      assert.equal(typeof winner.pricing, 'object')
+      assert.equal(typeof winner.pricing.modelVersion, 'string')
+      assert.equal(typeof winner.pricing.targetRpmUsd, 'number')
+      assert.equal(typeof winner.pricing.ecpmUsd, 'number')
+      assert.equal(typeof winner.pricing.cpaUsd, 'number')
+      assert.equal(typeof winner.pricing.pClick, 'number')
+      assert.equal(typeof winner.pricing.pConv, 'number')
+      assert.equal(typeof winner.pricing.network, 'string')
+      assert.equal(typeof winner.pricing.rawSignal, 'object')
+      assert.equal(typeof winner.pricing.rawSignal.rawBidValue, 'number')
+      assert.equal(typeof winner.pricing.rawSignal.rawUnit, 'string')
+      assert.equal(typeof winner.pricing.rawSignal.normalizedFactor, 'number')
     } else {
       assert.equal(bid.payload?.message, 'No bid')
     }
