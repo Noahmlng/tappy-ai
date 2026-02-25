@@ -1,145 +1,111 @@
 <template>
-  <div class="sim-shell">
-    <div class="sim-backdrop" aria-hidden="true">
-      <span class="sim-orb sim-orb-a"></span>
-      <span class="sim-orb sim-orb-b"></span>
-      <span class="sim-orb sim-orb-c"></span>
-    </div>
-
-    <aside :class="['sim-sidebar', isSidebarOpen ? 'is-open' : '']">
-      <div class="sim-sidebar-scroll">
-        <div class="sim-sidebar-head">
-          <button class="sim-sidebar-home-btn" @click="startNewChat" aria-label="Go to home">
-            <span class="sim-brand-mark">S</span>
-            <span class="sim-sidebar-home-copy">
-              <span class="sim-brand-title">Simulator Atelier</span>
-              <span class="sim-brand-sub">Conversation Control Room</span>
-            </span>
-          </button>
-          <button class="sim-icon-btn sim-mobile-only" @click="isSidebarOpen = false" aria-label="Close sidebar">
+  <div class="chat-shell">
+    <aside :class="['chat-sidebar', isSidebarOpen ? 'is-open' : '']">
+      <div class="chat-sidebar-top">
+        <div class="chat-sidebar-head">
+          <button class="chat-icon-btn chat-mobile-only" @click="isSidebarOpen = false" aria-label="Close sidebar">
             <X :size="18" />
+          </button>
+          <button class="chat-new-btn" @click="startNewChat" type="button">
+            <Plus :size="14" />
+            <span>New chat</span>
           </button>
         </div>
 
-        <button @click="startNewChat" class="sim-new-chat-btn">
-          <span class="sim-new-chat-copy">
-            <Plus :size="14" />
-            <span>New chat</span>
-          </span>
-        </button>
-
-        <label class="sim-search-field">
+        <label class="chat-search-field">
           <Search :size="16" />
           <input v-model="historyQuery" type="text" placeholder="Search chats" />
         </label>
-
-        <div class="sim-sidebar-links">
-          <button class="sim-link-btn" type="button">Pulse</button>
-          <button class="sim-link-btn" type="button">Images</button>
-          <button class="sim-link-btn" type="button">Apps</button>
-          <button class="sim-link-btn" type="button">Deep research</button>
-          <button class="sim-link-btn" type="button">Codex</button>
-          <button class="sim-link-btn" type="button">GPTs</button>
-        </div>
-
-        <section class="sim-sidebar-section">
-          <div class="sim-sidebar-section-label">Projects</div>
-          <button class="sim-link-btn" type="button">New project</button>
-          <button class="sim-link-btn" type="button">Playable Ads in Chat Agent</button>
-          <button class="sim-link-btn" type="button">迈向网球3.5</button>
-          <button class="sim-link-btn" type="button">周复盘</button>
-        </section>
-
-        <section class="sim-sidebar-section sim-sidebar-chats">
-          <div class="sim-sidebar-section-label">Your chats</div>
-
-          <div class="sim-session-list">
-            <div
-              v-for="session in filteredSessions"
-              :key="session.id"
-              :class="['sim-session-card', session.id === activeSessionId ? 'is-active' : '']"
-            >
-              <button @click="openSession(session.id)" class="sim-session-main">
-                <p class="sim-session-title">{{ session.title }}</p>
-              </button>
-            </div>
-
-            <p v-if="filteredSessions.length === 0" class="sim-session-empty">No chat history yet.</p>
-          </div>
-        </section>
       </div>
 
-      <footer class="sim-sidebar-footer">
-        <button class="sim-profile-btn" type="button">
-          <span class="sim-profile-avatar">Gi</span>
-          <span class="sim-profile-meta">
-            <span class="sim-profile-name">Noah Luo</span>
-            <span class="sim-profile-plan">Pro</span>
-          </span>
+      <section class="chat-session-section">
+        <p class="chat-section-label">Chats</p>
+        <div class="chat-session-list">
+          <div
+            v-for="session in filteredSessions"
+            :key="session.id"
+            :class="['chat-session-item', session.id === activeSessionId ? 'is-active' : '']"
+          >
+            <button @click="openSession(session.id)" class="chat-session-main" type="button">
+              <span class="chat-session-title">{{ session.title }}</span>
+              <span class="chat-session-time">{{ formatSessionTime(session.updatedAt) }}</span>
+            </button>
+            <button
+              class="chat-session-delete"
+              type="button"
+              @click.stop="deleteSession(session.id)"
+              :disabled="isLoading"
+              aria-label="Delete chat"
+            >
+              <Trash2 :size="14" />
+            </button>
+          </div>
+
+          <p v-if="filteredSessions.length === 0" class="chat-session-empty">No chat history yet.</p>
+        </div>
+      </section>
+
+      <footer class="chat-sidebar-footer">
+        <button class="chat-clear-btn" type="button" @click="clearHistory" :disabled="isLoading || sessions.length === 0">
+          Clear conversations
         </button>
       </footer>
     </aside>
 
     <button
-      v-if="isSidebarOpen"
-      class="sim-sidebar-overlay"
+      v-if="isSidebarOpen && !isDesktopLayout"
+      class="chat-sidebar-overlay"
       @click="isSidebarOpen = false"
       aria-label="Close sidebar overlay"
+      type="button"
     ></button>
 
-    <main class="sim-main">
-      <header class="sim-topbar">
-        <div class="sim-topbar-left">
+    <main class="chat-main">
+      <header class="chat-topbar">
+        <div class="chat-topbar-left">
           <button
-            v-if="!isSidebarOpen"
-            class="sim-icon-btn sim-open-sidebar-btn"
+            v-if="!isDesktopLayout"
+            class="chat-icon-btn"
             @click="isSidebarOpen = true"
             aria-label="Open sidebar"
+            type="button"
           >
             <Menu :size="18" />
           </button>
-          <button
-            class="sim-title-wrap"
-            type="button"
-            aria-label="Model selector, current model is 5.2"
-            @click="handleTitleButtonClick"
-          >
-            <p class="sim-kicker">ChatGPT 5.2</p>
-          </button>
+          <h1 class="chat-title">ChatGPT</h1>
         </div>
-        <div class="sim-topbar-actions">
-          <button class="sim-icon-btn sim-topbar-mobile-btn" @click="startNewChat" aria-label="Start new chat">
-            <Plus :size="18" />
-          </button>
-          <button class="sim-pill-btn" type="button">
-            <span>Share</span>
-          </button>
-        </div>
+        <button class="chat-new-inline-btn" @click="startNewChat" aria-label="Start new chat" type="button">
+          <Plus :size="17" />
+        </button>
       </header>
 
-      <div ref="scrollRef" class="sim-scroll-region">
-        <section class="sim-hero" :class="{ 'is-hidden': hasStarted }">
+      <div ref="scrollRef" class="chat-scroll-region">
+        <section class="chat-hero" :class="{ 'is-hidden': hasStarted }">
           <h2>Ready when you are.</h2>
           <p>Ask anything</p>
 
-          <div v-if="!hasStarted && isDesktopLayout" class="sim-home-composer">
-            <div class="sim-composer-card sim-composer-card-home">
+          <div v-if="!hasStarted && isDesktopLayout" class="chat-home-composer">
+            <div class="chat-composer-card chat-composer-home">
               <textarea
+                ref="homeComposerRef"
                 v-model="input"
                 rows="1"
                 @compositionstart="isComposing = true"
                 @compositionend="isComposing = false"
-                @keydown.enter.prevent="handleSend"
+                @input="handleComposerInput"
+                @keydown="handleComposerKeydown"
                 placeholder="Ask anything"
-                class="sim-composer-input"
+                class="chat-composer-input"
               ></textarea>
 
-              <div class="sim-composer-footer">
-                <p class="sim-composer-note">ChatGPT can make mistakes. Check important info.</p>
+              <div class="chat-composer-footer">
+                <p class="chat-composer-note">ChatGPT can make mistakes. Check important info.</p>
                 <button
                   @click="handleSend"
                   :disabled="!input.trim() || isLoading"
-                  :class="['sim-send-btn', input.trim() && !isLoading ? 'is-active' : '']"
+                  :class="['chat-send-btn', input.trim() && !isLoading ? 'is-active' : '']"
+                  type="button"
+                  aria-label="Send message"
                 >
                   <ArrowUp :size="15" :stroke-width="2.5" />
                 </button>
@@ -148,27 +114,26 @@
           </div>
         </section>
 
-        <section class="sim-thread" :class="{ 'is-visible': hasStarted }">
+        <section class="chat-thread" :class="{ 'is-visible': hasStarted }">
           <template v-for="msg in currentMessages" :key="msg.id">
-            <article :class="['sim-turn', msg.role === 'user' ? 'is-user' : 'is-assistant']">
-              <div class="sim-turn-inner">
-                <div v-if="msg.role === 'assistant'" class="sim-avatar">AI</div>
-
-                <div :class="['sim-message', msg.role === 'user' ? 'sim-message-user' : 'sim-message-assistant']">
+            <article :class="['chat-turn', msg.role === 'user' ? 'is-user' : 'is-assistant']">
+              <div class="chat-turn-inner">
+                <div :class="['chat-message', msg.role === 'user' ? 'chat-message-user' : 'chat-message-assistant']">
                   <div v-if="msg.role === 'user'">
                     <template v-if="queryRewriteMessageId === msg.id">
                       <textarea
                         v-model="queryRewriteDraft"
                         rows="2"
-                        class="sim-rewrite-input"
+                        class="chat-rewrite-input"
                         @keydown.esc.prevent="cancelQueryRewriteEdit"
                       ></textarea>
-                      <div class="sim-message-actions sim-message-actions-right">
-                        <button class="sim-ghost-btn" @click="cancelQueryRewriteEdit">Cancel</button>
+                      <div class="chat-message-actions chat-message-actions-right">
+                        <button class="chat-btn-ghost" @click="cancelQueryRewriteEdit" type="button">Cancel</button>
                         <button
-                          class="sim-solid-btn"
+                          class="chat-btn-solid"
                           :disabled="!queryRewriteDraft.trim() || isLoading"
                           @click="submitQueryRewrite(msg)"
+                          type="button"
                         >
                           Rewrite & Run
                         </button>
@@ -177,8 +142,8 @@
 
                     <template v-else>
                       <div class="whitespace-pre-wrap">{{ msg.content }}</div>
-                      <div class="sim-message-actions sim-message-actions-right">
-                        <button class="sim-ghost-btn" :disabled="isLoading" @click="startQueryRewriteEdit(msg)">
+                      <div class="chat-message-actions chat-message-actions-right">
+                        <button class="chat-btn-ghost" :disabled="isLoading" @click="startQueryRewriteEdit(msg)" type="button">
                           <PenSquare :size="12" />
                           <span>Edit & Rewrite</span>
                         </button>
@@ -188,29 +153,29 @@
 
                   <div v-else>
                     <template v-if="msg.kind === 'tool'">
-                      <div class="sim-tool-card">
-                        <div class="sim-tool-head">
+                      <div class="chat-tool-card">
+                        <div class="chat-tool-head">
                           <span>Tool</span>
-                          <span class="sim-tool-name">web_search</span>
-                          <span class="sim-tool-state">{{ formatToolState(msg.toolState) }}</span>
+                          <span class="chat-tool-name">web_search</span>
+                          <span class="chat-tool-state">{{ formatToolState(msg.toolState) }}</span>
                         </div>
 
-                        <div v-if="msg.toolQuery" class="sim-tool-query">Query: "{{ msg.toolQuery }}"</div>
+                        <div v-if="msg.toolQuery" class="chat-tool-query">Query: "{{ msg.toolQuery }}"</div>
 
-                        <div v-if="msg.toolState === 'running'" class="sim-tool-running">
+                        <div v-if="msg.toolState === 'running'" class="chat-tool-running">
                           <LoaderCircle :size="12" class="animate-spin" />
                           <span>Searching web...</span>
                         </div>
 
-                        <div v-if="msg.toolState === 'error'" class="sim-tool-error">
+                        <div v-if="msg.toolState === 'error'" class="chat-tool-error">
                           {{ msg.toolError || 'Tool execution failed.' }}
                         </div>
 
-                        <div v-if="msg.toolState === 'done' && msg.toolLatencyMs !== null" class="sim-tool-latency">
+                        <div v-if="msg.toolState === 'done' && msg.toolLatencyMs !== null" class="chat-tool-latency">
                           Finished in {{ msg.toolLatencyMs }} ms
                         </div>
 
-                        <ul v-if="msg.toolResults?.length" class="sim-tool-results">
+                        <ul v-if="msg.toolResults?.length" class="chat-tool-results">
                           <li v-for="(result, idx) in msg.toolResults" :key="result.id || idx">
                             <a :href="result.url" target="_blank" rel="noopener noreferrer">
                               {{ idx + 1 }}. {{ result.title }}
@@ -223,7 +188,7 @@
                     </template>
 
                     <template v-else-if="msg.status === 'reasoning' && !msg.content">
-                      <div class="sim-reasoning">
+                      <div class="chat-reasoning">
                         <LoaderCircle :size="14" class="animate-spin" />
                         <span>Reasoning...</span>
                       </div>
@@ -231,17 +196,17 @@
 
                     <template v-if="msg.kind !== 'tool' && msg.content">
                       <MarkdownRenderer :key="msg.id" :content="msg.content" />
-                      <span v-if="msg.status === 'streaming'" class="cursor-blink sim-stream-caret"></span>
+                      <span v-if="msg.status === 'streaming'" class="cursor-blink chat-stream-caret"></span>
                     </template>
 
                     <div
                       v-if="msg.kind !== 'tool' && msg.role === 'assistant' && msg.status === 'done' && msg.sourceUserContent"
-                      class="sim-message-actions"
+                      class="chat-message-actions"
                     >
-                      <button class="sim-ghost-btn" :disabled="isLoading" @click="handleRegenerate(msg)">
+                      <button class="chat-btn-ghost" :disabled="isLoading" @click="handleRegenerate(msg)" type="button">
                         Regenerate
                       </button>
-                      <span class="sim-retry-tag">Retry #{{ msg.retryCount }}</span>
+                      <span class="chat-retry-tag">Retry #{{ msg.retryCount }}</span>
                     </div>
 
                     <CitationSources
@@ -273,28 +238,32 @@
             </article>
           </template>
 
-          <div class="sim-thread-tail"></div>
+          <div class="chat-thread-tail"></div>
         </section>
       </div>
 
-      <footer v-if="hasStarted || !isDesktopLayout" class="sim-composer-zone" :class="{ 'is-live': hasStarted }">
-        <div class="sim-composer-card">
+      <footer v-if="hasStarted || !isDesktopLayout" class="chat-composer-zone" :class="{ 'is-live': hasStarted }">
+        <div class="chat-composer-card">
           <textarea
+            ref="footerComposerRef"
             v-model="input"
             rows="1"
             @compositionstart="isComposing = true"
             @compositionend="isComposing = false"
-            @keydown.enter.prevent="handleSend"
+            @input="handleComposerInput"
+            @keydown="handleComposerKeydown"
             placeholder="Ask anything"
-            class="sim-composer-input"
+            class="chat-composer-input"
           ></textarea>
 
-          <div class="sim-composer-footer">
-            <p class="sim-composer-note">ChatGPT can make mistakes. Check important info.</p>
+          <div class="chat-composer-footer">
+            <p class="chat-composer-note">ChatGPT can make mistakes. Check important info.</p>
             <button
               @click="handleSend"
               :disabled="!input.trim() || isLoading"
-              :class="['sim-send-btn', input.trim() && !isLoading ? 'is-active' : '']"
+              :class="['chat-send-btn', input.trim() && !isLoading ? 'is-active' : '']"
+              type="button"
+              aria-label="Send message"
             >
               <ArrowUp :size="15" :stroke-width="2.5" />
             </button>
@@ -307,7 +276,7 @@
 
 <script setup>
 import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount } from 'vue'
-import { X, Plus, Search, PenSquare, Menu, ArrowUp, LoaderCircle } from 'lucide-vue-next'
+import { X, Plus, Search, PenSquare, Menu, ArrowUp, LoaderCircle, Trash2 } from 'lucide-vue-next'
 import { sendMessageStream } from '../api/deepseek'
 import { shouldUseWebSearchTool, runWebSearchTool, buildWebSearchContext } from '../api/webSearchTool'
 import {
@@ -340,6 +309,8 @@ const desktopMediaQuery = typeof window !== 'undefined'
 const isSidebarOpen = ref(desktopMediaQuery ? desktopMediaQuery.matches : true)
 const isDesktopLayout = ref(desktopMediaQuery ? desktopMediaQuery.matches : true)
 const scrollRef = ref(null)
+const homeComposerRef = ref(null)
+const footerComposerRef = ref(null)
 const isLoading = ref(false)
 const isComposing = ref(false)
 const queryRewriteMessageId = ref('')
@@ -723,15 +694,47 @@ async function scrollToBottom() {
   }
 }
 
+function syncTextareaHeight(element) {
+  if (!element) return
+  element.style.height = 'auto'
+  const nextHeight = Math.min(Math.max(element.scrollHeight, 24), 220)
+  element.style.height = `${nextHeight}px`
+}
+
+function syncComposerHeights() {
+  syncTextareaHeight(homeComposerRef.value)
+  syncTextareaHeight(footerComposerRef.value)
+}
+
+function handleComposerInput(event) {
+  syncTextareaHeight(event?.target)
+}
+
+function handleComposerKeydown(event) {
+  if (event?.key !== 'Enter') return
+  if (event.shiftKey || event.isComposing || isComposing.value) return
+  event.preventDefault()
+  void handleSend()
+}
+
 watch(
   currentMessages,
   () => {
     if (hasStarted.value) {
       scrollToBottom()
     }
+    nextTick(() => {
+      syncComposerHeights()
+    })
   },
   { deep: true },
 )
+
+watch(input, () => {
+  nextTick(() => {
+    syncComposerHeights()
+  })
+})
 
 onBeforeUnmount(() => {
   if (detachDesktopMediaListener) {
@@ -744,6 +747,10 @@ onBeforeUnmount(() => {
 })
 
 onMounted(() => {
+  nextTick(() => {
+    syncComposerHeights()
+  })
+
   if (!desktopMediaQuery) return
 
   const syncSidebarState = (event) => {
@@ -1688,804 +1695,556 @@ async function handleSend(options = {}) {
 </script>
 
 <style scoped>
-.sim-shell {
-  --sim-content-width: min(var(--content-max-width), 100%);
-  --sim-edge-padding: clamp(12px, 2.2vw, 34px);
+.chat-shell {
+  --chat-sidebar-width: 260px;
+  --chat-topbar-height: 52px;
+  --chat-thread-max: 40rem;
+  --chat-thread-max-lg: 48rem;
+  --chat-edge-padding: clamp(16px, 2.4vw, 64px);
 
   position: relative;
   display: flex;
   height: 100vh;
   width: 100%;
   overflow: hidden;
-  isolation: isolate;
-  color: var(--ink);
+  color: #0d0d0d;
+  background: #f9f9f9;
   font-family: var(--font-body);
-  background: var(--paper);
 }
 
-.sim-shell::before {
-  display: none;
-}
-
-.sim-backdrop {
-  display: none;
-}
-
-.sim-orb {
-  display: none;
-}
-
-.sim-orb-a {
-  top: -80px;
-  left: -56px;
-  height: 220px;
-  width: 220px;
-  background: color-mix(in srgb, var(--accent-sea) 55%, white);
-}
-
-.sim-orb-b {
-  top: 18%;
-  right: -84px;
-  height: 240px;
-  width: 240px;
-  animation-delay: -4s;
-  background: color-mix(in srgb, var(--accent-gold) 56%, white);
-}
-
-.sim-orb-c {
-  bottom: -92px;
-  left: 42%;
-  height: 200px;
-  width: 200px;
-  animation-delay: -8s;
-  background: color-mix(in srgb, var(--accent-rust) 45%, white);
-}
-
-.sim-sidebar {
+.chat-sidebar {
   position: fixed;
   inset: 0 auto 0 0;
-  z-index: 50;
+  z-index: 40;
   display: flex;
-  min-height: 0;
-  width: var(--sidebar-width);
+  width: var(--chat-sidebar-width);
   flex-direction: column;
-  border-right: 1px solid #e5e5e5;
+  border-right: 1px solid #e6e6e6;
   background: #f9f9f9;
-  color: var(--sidebar-text);
-  padding: 0;
-  transform: translateX(-110%);
-  transition: transform var(--motion-slow) var(--ease-standard);
-  box-shadow: none;
-  will-change: transform;
+  transform: translateX(-105%);
+  transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.sim-sidebar.is-open {
+.chat-sidebar.is-open {
   transform: translateX(0);
 }
 
-.sim-sidebar-scroll {
-  min-height: 0;
-  flex: 1;
-  overflow-y: auto;
+.chat-sidebar-top {
+  border-bottom: 1px solid #ececec;
   padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
 }
 
-.sim-sidebar-head {
+.chat-sidebar-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px;
+  gap: 6px;
 }
 
-.sim-sidebar-home-btn {
-  min-width: 0;
-  flex: 1;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  padding: 2px 0;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  text-align: left;
-}
-
-.sim-sidebar-home-btn:focus-visible {
-  outline: 1.5px solid #0d0d0d;
-  outline-offset: 2px;
-  border-radius: 8px;
-}
-
-.sim-sidebar-home-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.sim-brand-mark {
-  display: grid;
-  height: 32px;
-  width: 32px;
-  place-items: center;
-  border-radius: 10px;
-  border: 1px solid #e3e3e3;
-  background: #ececec;
-  color: #424242;
-  font-family: var(--font-display);
-  font-size: 17px;
-  font-weight: 600;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-.sim-brand-title {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 20px;
-  color: #2f2f2f;
-}
-
-.sim-brand-sub {
-  margin: 0;
-  color: #8a8a8a;
-  font-size: 12px;
-  line-height: 16px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.sim-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.chat-icon-btn {
   height: 36px;
   width: 36px;
   border: 0;
   border-radius: 8px;
   background: transparent;
   color: #5d5d5d;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  transition:
-    background-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard);
+  transition: background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.sim-icon-btn:hover {
+.chat-icon-btn:hover {
   background: #ececec;
-  color: #0d0d0d;
 }
 
-.sim-icon-btn:focus-visible {
+.chat-icon-btn:focus-visible {
   outline: 1.5px solid #0d0d0d;
   outline-offset: 2px;
 }
 
-.sim-mobile-only {
+.chat-mobile-only {
   display: inline-flex;
 }
 
-.sim-new-chat-btn {
-  display: inline-flex;
-  width: 100%;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
+.chat-new-btn {
   min-height: 36px;
+  flex: 1;
   border: 0;
   border-radius: 10px;
   background: transparent;
   color: #0d0d0d;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   padding: 6px 10px;
   font-size: 14px;
   line-height: 20px;
-  font-weight: 400;
+  text-align: left;
   cursor: pointer;
-  transition:
-    background-color var(--motion-fast) var(--ease-standard),
-    border-color var(--motion-fast) var(--ease-standard);
-  margin-top: 2px;
+  transition: background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.sim-new-chat-btn:hover {
-  background: color-mix(in srgb, #000 4%, transparent);
+.chat-new-btn:hover {
+  background: #ececec;
 }
 
-.sim-new-chat-btn:focus-visible {
+.chat-new-btn:focus-visible {
   outline: 1.5px solid #0d0d0d;
   outline-offset: 2px;
 }
 
-.sim-new-chat-copy {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.sim-search-field {
+.chat-search-field {
+  margin-top: 4px;
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 36px;
-  border: 0;
   border-radius: 10px;
   background: transparent;
-  color: #0d0d0d;
+  color: #5d5d5d;
   padding: 6px 10px;
-  cursor: text;
-  transition: background-color var(--motion-fast) var(--ease-standard);
+  transition: background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.sim-search-field input {
+.chat-search-field:hover,
+.chat-search-field:focus-within {
+  background: #ececec;
+}
+
+.chat-search-field input {
   width: 100%;
   border: 0;
   outline: 0;
   background: transparent;
-  color: #2f2f2f;
+  color: #0d0d0d;
   font-size: 14px;
   line-height: 20px;
 }
 
-.sim-search-field input::placeholder {
-  color: #8a8a8a;
+.chat-search-field input::placeholder {
+  color: #8f8f8f;
 }
 
-.sim-search-field:focus-within {
-  background: color-mix(in srgb, #000 4%, transparent);
+.chat-session-section {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
 }
 
-.sim-search-field:hover {
-  background: color-mix(in srgb, #000 4%, transparent);
+.chat-section-label {
+  margin: 0;
+  padding: 4px 10px;
+  color: #8f8f8f;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
 }
 
-.sim-sidebar-links {
+.chat-session-list {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
   display: grid;
+  align-content: start;
   gap: 2px;
-  margin: 2px 0 4px;
+  padding-bottom: 8px;
 }
 
-.sim-link-btn {
+.chat-session-item {
+  position: relative;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chat-session-item:hover {
+  border-color: #e4e4e4;
+  background: #efefef;
+}
+
+.chat-session-item.is-active {
+  border-color: #dddddd;
+  background: #e9e9e9;
+}
+
+.chat-session-main {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: grid;
+  gap: 1px;
+  text-align: left;
+  padding: 8px 30px 8px 10px;
+  cursor: pointer;
+}
+
+.chat-session-main:focus-visible {
+  outline: 1.5px solid #0d0d0d;
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
+.chat-session-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.chat-session-time {
+  color: #8f8f8f;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.chat-session-delete {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 24px;
+  width: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #757575;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chat-session-item:hover .chat-session-delete,
+.chat-session-item:focus-within .chat-session-delete {
+  opacity: 1;
+}
+
+.chat-session-delete:hover {
+  background: #dfdfdf;
+}
+
+.chat-session-delete:focus-visible {
+  opacity: 1;
+  outline: 1.5px solid #0d0d0d;
+  outline-offset: 1px;
+}
+
+.chat-session-delete:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.chat-session-empty {
+  margin: 6px 10px;
+  color: #8f8f8f;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.chat-sidebar-footer {
+  border-top: 1px solid #e6e6e6;
+  padding: 8px;
+}
+
+.chat-clear-btn {
+  width: 100%;
   min-height: 36px;
   border: 0;
   border-radius: 10px;
   background: transparent;
-  color: #0d0d0d;
+  color: #5d5d5d;
   font-size: 14px;
   line-height: 20px;
   text-align: left;
   padding: 6px 10px;
   cursor: pointer;
-  transition: background-color var(--motion-fast) var(--ease-standard);
+  transition: background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1), color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.sim-link-btn:hover {
-  background: color-mix(in srgb, #000 4%, transparent);
-}
-
-.sim-link-btn:focus-visible {
-  outline: 1.5px solid #0d0d0d;
-  outline-offset: 2px;
-}
-
-.sim-sidebar-section {
-  display: grid;
-  gap: 2px;
-  margin-top: 8px;
-}
-
-.sim-sidebar-section-label {
-  color: #8a8a8a;
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 500;
-  padding: 4px 10px;
-}
-
-.sim-session-list {
-  display: grid;
-  gap: 2px;
-}
-
-.sim-sidebar-chats {
-  min-height: 0;
-  flex: 1;
-}
-
-.sim-sidebar-chats .sim-session-list {
-  min-height: 0;
-  flex: 1;
-  overflow-y: auto;
-  align-content: start;
-  padding-bottom: 8px;
-}
-
-.sim-session-card {
-  border-radius: 10px;
-  border: 1px solid transparent;
-  background: transparent;
-  transition:
-    border-color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard);
-  overflow: hidden;
-}
-
-.sim-session-card:hover {
-  border-color: #e2e2e2;
-  background: #efefef;
-}
-
-.sim-session-card.is-active {
-  border-color: #dbdbdb;
-  background: #e9e9e9;
-}
-
-.sim-session-main {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  padding: 8px 10px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.sim-session-main:focus-visible {
-  outline: 1.5px solid #0d0d0d;
-  outline-offset: 2px;
-  border-radius: 10px;
-}
-
-.sim-session-title {
-  margin: 0;
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sim-session-empty {
-  margin: 4px 10px;
-  color: #8a8a8a;
-  font-size: 12px;
-  line-height: 16px;
-}
-
-.sim-sidebar-footer {
-  border-top: 1px solid #e6e6e6;
-  padding: 8px;
-}
-
-.sim-profile-btn {
-  width: 100%;
-  min-height: 40px;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  padding: 4px 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  text-align: left;
-  cursor: pointer;
-  transition: background-color var(--motion-fast) var(--ease-standard);
-}
-
-.sim-profile-btn:hover {
+.chat-clear-btn:hover:not(:disabled) {
   background: #ececec;
+  color: #0d0d0d;
 }
 
-.sim-profile-btn:focus-visible {
+.chat-clear-btn:focus-visible {
   outline: 1.5px solid #0d0d0d;
   outline-offset: 2px;
 }
 
-.sim-profile-avatar {
-  height: 24px;
-  width: 24px;
-  border-radius: 999px;
-  background: #f08b24;
-  color: #fff;
-  display: grid;
-  place-items: center;
-  font-size: 11px;
-  font-weight: 600;
-  flex-shrink: 0;
+.chat-clear-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
-.sim-profile-meta {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.sim-profile-name {
-  color: #2f2f2f;
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 500;
-}
-
-.sim-profile-plan {
-  color: #8a8a8a;
-  font-size: 12px;
-  line-height: 16px;
-}
-
-.sim-sidebar-overlay {
+.chat-sidebar-overlay {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: 30;
   border: 0;
-  background: color-mix(in srgb, #000 40%, transparent);
+  background: rgba(0, 0, 0, 0.42);
 }
 
-.sim-sidebar-overlay:focus-visible {
-  outline: 1.5px solid #0d0d0d;
-  outline-offset: -2px;
-}
-
-.sim-main {
+.chat-main {
   position: relative;
   z-index: 10;
-  display: flex;
   min-width: 0;
   flex: 1;
+  display: flex;
   flex-direction: column;
 }
 
-.sim-topbar {
+.chat-topbar {
   position: sticky;
   top: 0;
-  z-index: 22;
+  z-index: 20;
+  min-height: var(--chat-topbar-height);
+  border-bottom: 1px solid #ececec;
+  background: #f9f9f9;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 52px;
   padding: 8px;
-  border-bottom: 1px solid #e5e5e5;
-  background: #f9f9f9;
 }
 
-.sim-topbar-left {
+.chat-topbar-left {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 4px;
-  min-width: 0;
 }
 
-.sim-title-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 36px;
-  min-width: 0;
-  appearance: none;
-  -webkit-appearance: none;
-  border: 0;
-  border-radius: 8px;
-  padding: 0 10px;
-  background: transparent;
-  color: #0d0d0d;
+.chat-title {
+  margin: 0;
   font-size: 18px;
   line-height: 28px;
   font-weight: 400;
-  cursor: pointer;
-  transition: background-color var(--motion-fast) var(--ease-standard);
-}
-
-.sim-title-wrap:hover {
-  background: color-mix(in srgb, #000 7%, transparent);
-}
-
-.sim-title-wrap:focus-visible {
-  outline: 1.5px solid #0d0d0d;
-  outline-offset: 2px;
-}
-
-.sim-kicker {
-  margin: 0;
-  font-size: inherit;
-  color: inherit;
-  font-weight: inherit;
-  line-height: inherit;
-}
-
-.sim-topbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.sim-topbar-mobile-btn {
-  display: none;
-}
-
-.sim-pill-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 36px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: #2f2f2f;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 20px;
-  padding: 0 12px;
-  cursor: pointer;
-  transition: background-color var(--motion-fast) var(--ease-standard);
-}
-
-.sim-pill-btn:hover {
-  background: #ececec;
-}
-
-.sim-pill-btn:focus-visible {
-  outline: 1.5px solid #0d0d0d;
-  outline-offset: 2px;
-}
-
-.sim-scroll-region {
-  min-height: 0;
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 var(--sim-edge-padding) 24px;
-  background: transparent;
-}
-
-.sim-hero {
-  margin: clamp(88px, 20vh, 176px) auto 16px;
-  width: var(--sim-content-width);
-  padding: 0 4px;
-  transition:
-    opacity var(--motion-slow) var(--ease-standard),
-    transform var(--motion-slow) var(--ease-standard),
-    max-height var(--motion-slow) var(--ease-standard),
-    margin var(--motion-slow) var(--ease-standard),
-    padding var(--motion-slow) var(--ease-standard);
-  max-height: 260px;
-  overflow: hidden;
-  text-align: center;
-}
-
-.sim-hero::before {
-  display: none;
-}
-
-.sim-hero > * {
-  position: relative;
-  z-index: 1;
-}
-
-.sim-hero.is-hidden {
-  opacity: 0;
-  transform: translateY(-14px) scale(0.98);
-  max-height: 0;
-  margin: 0 auto;
-  padding-top: 0;
-  padding-bottom: 0;
-  border-width: 0;
-}
-
-.sim-hero h2 {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 28px;
-  line-height: 34px;
-  letter-spacing: 0.38px;
-  font-weight: 400;
-  max-width: none;
   color: #0d0d0d;
 }
 
-.sim-hero p {
-  margin: 8px 0 0;
-  max-width: none;
-  color: #8f8f8f;
-  font-size: 16px;
-  line-height: 24px;
+.chat-new-inline-btn {
+  height: 36px;
+  width: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #5d5d5d;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.sim-home-composer {
-  margin: 34px auto 0;
-  width: var(--sim-content-width);
+.chat-new-inline-btn:hover {
+  background: #ececec;
 }
 
-.sim-thread {
-  margin: 0 auto;
-  width: var(--sim-content-width);
-  padding-top: 4px;
+.chat-new-inline-btn:focus-visible {
+  outline: 1.5px solid #0d0d0d;
+  outline-offset: 2px;
+}
+
+.chat-scroll-region {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 var(--chat-edge-padding) 24px;
+}
+
+.chat-hero {
+  margin: clamp(84px, 19vh, 172px) auto 16px;
+  width: min(var(--chat-thread-max-lg), 100%);
+  text-align: center;
+  max-height: 280px;
+  overflow: hidden;
+  transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), max-height 0.25s cubic-bezier(0.4, 0, 0.2, 1), margin 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chat-hero.is-hidden {
   opacity: 0;
-  transform: translateY(16px);
-  pointer-events: none;
-  transition: opacity var(--motion-slow) var(--ease-standard), transform var(--motion-slow) var(--ease-standard);
+  transform: translateY(-8px);
+  max-height: 0;
+  margin: 0 auto;
 }
 
-.sim-thread.is-visible {
+.chat-hero h2 {
+  margin: 0;
+  font-size: 42px;
+  line-height: 52px;
+  font-weight: 400;
+  letter-spacing: 0.1px;
+}
+
+.chat-hero p {
+  margin: 10px 0 0;
+  color: #8f8f8f;
+  font-size: 20px;
+  line-height: 28px;
+}
+
+.chat-home-composer {
+  margin: 28px auto 0;
+  width: min(var(--chat-thread-max-lg), 100%);
+}
+
+.chat-thread {
+  margin: 0 auto;
+  width: min(var(--chat-thread-max), 100%);
+  opacity: 0;
+  transform: translateY(12px);
+  pointer-events: none;
+  transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1), transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chat-thread.is-visible {
   opacity: 1;
   transform: none;
   pointer-events: auto;
 }
 
-.sim-turn {
-  width: 100%;
-  margin-bottom: var(--space-5);
-  animation: rise-in var(--motion-slow) var(--ease-standard) both;
+.chat-turn {
+  margin-bottom: 24px;
 }
 
-.sim-turn-inner {
+.chat-turn-inner {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
 }
 
-.sim-turn.is-user .sim-turn-inner {
+.chat-turn.is-user .chat-turn-inner {
   justify-content: flex-end;
 }
 
-.sim-avatar {
-  display: none;
-}
-
-.sim-message {
-  width: min(100%, 680px);
-  border-radius: 18px;
-  padding: 14px 16px 13px;
-  font-size: 15px;
-  line-height: 1.7;
-  backdrop-filter: none;
-}
-
-.sim-message-user {
-  max-width: min(76%, 640px);
-  border: 1px solid #dddddd;
-  background: #f3f3f3;
-  box-shadow: none;
-}
-
-.sim-message-assistant {
-  border: 1px solid #e2e2e2;
-  background: #ececec;
-  box-shadow: none;
-}
-
-.sim-rewrite-input {
+.chat-message {
   width: 100%;
-  resize: vertical;
-  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
-  border-radius: 14px;
-  background: color-mix(in srgb, white 75%, var(--paper));
-  color: var(--ink);
-  padding: 10px 12px;
+  font-size: 16px;
+  line-height: 24px;
+  color: #0d0d0d;
+}
+
+.chat-message-user {
+  width: auto;
+  max-width: 70%;
+  border-radius: 18px;
+  background: #f3f3f3;
+  border: 1px solid #e0e0e0;
+  padding: 10px 16px;
+}
+
+.chat-message-assistant {
+  width: 100%;
+  padding: 0;
+}
+
+.chat-rewrite-input {
+  width: 100%;
+  border: 1px solid #d0d0d0;
+  border-radius: 12px;
+  background: #fff;
+  color: #0d0d0d;
   font-size: 14px;
-  line-height: 1.55;
+  line-height: 20px;
+  padding: 10px 12px;
+  resize: vertical;
   outline: none;
 }
 
-.sim-rewrite-input:focus {
-  border-color: color-mix(in srgb, var(--accent-sea) 42%, transparent);
+.chat-rewrite-input:focus {
+  border-color: #0d0d0d;
 }
 
-.sim-message-actions {
+.chat-message-actions {
   margin-top: 10px;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
-  opacity: 0;
-  transform: translateY(2px);
-  transition: opacity var(--motion-base) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 
-.sim-message-actions-right {
+.chat-message-actions-right {
   justify-content: flex-end;
 }
 
-.sim-turn:hover .sim-message-actions,
-.sim-message:focus-within .sim-message-actions {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-@media (hover: none), (pointer: coarse) {
-  .sim-message-actions {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.sim-ghost-btn,
-.sim-solid-btn {
+.chat-btn-ghost,
+.chat-btn-solid {
+  min-height: 32px;
+  border-radius: 999px;
+  border: 1px solid #d7d7d7;
+  background: #f9f9f9;
+  color: #4a4a4a;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border-radius: var(--radius-pill);
-  font-size: 11px;
-  font-weight: 650;
   padding: 7px 11px;
-  transition:
-    border-color var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard),
-    transform var(--motion-fast) var(--ease-standard);
+  cursor: pointer;
+  transition: background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.15s cubic-bezier(0.4, 0, 0.2, 1), color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.sim-ghost-btn {
-  border: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
-  background: color-mix(in srgb, var(--paper) 72%, white);
-  color: var(--graphite);
+.chat-btn-ghost:hover:not(:disabled) {
+  border-color: #cfcfcf;
+  background: #efefef;
+  color: #0d0d0d;
 }
 
-.sim-ghost-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent-sea) 34%, transparent);
-  color: color-mix(in srgb, var(--ink) 78%, var(--accent-sea));
+.chat-btn-solid {
+  border-color: #0d0d0d;
+  background: #0d0d0d;
+  color: #fff;
 }
 
-.sim-solid-btn {
-  border: 1px solid color-mix(in srgb, var(--ink) 42%, transparent);
-  background: color-mix(in srgb, var(--ink) 92%, #13372b);
-  color: #f6f7f2;
+.chat-btn-solid:hover:not(:disabled) {
+  background: #1f1f1f;
+  border-color: #1f1f1f;
 }
 
-.sim-solid-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  background: color-mix(in srgb, var(--ink) 86%, #1f4f3f);
-}
-
-.sim-ghost-btn:active:not(:disabled),
-.sim-solid-btn:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.sim-ghost-btn:focus-visible,
-.sim-solid-btn:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent-sea) 58%, white);
+.chat-btn-ghost:focus-visible,
+.chat-btn-solid:focus-visible {
+  outline: 1.5px solid #0d0d0d;
   outline-offset: 2px;
 }
 
-.sim-ghost-btn:disabled,
-.sim-solid-btn:disabled {
-  opacity: 0.55;
+.chat-btn-ghost:disabled,
+.chat-btn-solid:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
-.sim-tool-card {
-  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
-  border-radius: var(--radius-lg);
-  background: #f0f0f0;
+.chat-tool-card {
+  border: 1px solid #dfdfdf;
+  border-radius: 12px;
+  background: #f3f3f3;
   padding: 12px;
 }
 
-.sim-tool-head {
+.chat-tool-head {
   display: flex;
   align-items: center;
   gap: 8px;
+  color: #5d5d5d;
   font-size: 10px;
-  letter-spacing: 0.11em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--graphite);
 }
 
-.sim-tool-name {
+.chat-tool-name {
   border-radius: 999px;
-  background: color-mix(in srgb, var(--surface) 62%, white);
+  background: #ececec;
   padding: 3px 8px;
-  font-weight: 700;
 }
 
-.sim-tool-state {
+.chat-tool-state {
   margin-left: auto;
   font-size: 11px;
   letter-spacing: normal;
@@ -2493,27 +2252,26 @@ async function handleSend(options = {}) {
   font-weight: 600;
 }
 
-.sim-tool-query,
-.sim-tool-latency,
-.sim-tool-error {
+.chat-tool-query,
+.chat-tool-latency,
+.chat-tool-error,
+.chat-tool-running {
   margin-top: 10px;
   font-size: 12px;
+  line-height: 16px;
 }
 
-.sim-tool-running {
-  margin-top: 10px;
+.chat-tool-running {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-  color: var(--graphite);
 }
 
-.sim-tool-error {
-  color: #a6332a;
+.chat-tool-error {
+  color: #a4332a;
 }
 
-.sim-tool-results {
+.chat-tool-results {
   margin: 10px 0 0;
   padding: 0;
   list-style: none;
@@ -2521,308 +2279,241 @@ async function handleSend(options = {}) {
   gap: 8px;
 }
 
-.sim-tool-results li {
-  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, white 84%, var(--paper));
+.chat-tool-results li {
+  border: 1px solid #dddddd;
+  border-radius: 10px;
+  background: #fff;
   padding: 9px 10px;
 }
 
-.sim-tool-results a {
-  color: color-mix(in srgb, var(--accent-sea) 92%, black);
-  font-weight: 600;
+.chat-tool-results a {
   text-decoration: none;
+  color: #0d0d0d;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
 }
 
-.sim-tool-results a:hover {
+.chat-tool-results a:hover {
   text-decoration: underline;
 }
 
-.sim-tool-results a:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent-sea) 56%, white);
+.chat-tool-results a:focus-visible {
+  outline: 1.5px solid #0d0d0d;
   outline-offset: 2px;
   border-radius: 6px;
 }
 
-.sim-tool-results p {
-  margin: 5px 0 0;
+.chat-tool-results p {
+  margin: 4px 0 0;
+  color: #5d5d5d;
   font-size: 12px;
-  color: var(--graphite);
+  line-height: 16px;
 }
 
-.sim-reasoning {
+.chat-reasoning {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  color: #5d5d5d;
   font-size: 14px;
-  color: var(--graphite);
+  line-height: 20px;
 }
 
-.sim-stream-caret {
+.chat-stream-caret {
   margin-left: 2px;
   width: 2px;
-  height: 19px;
+  height: 18px;
   display: inline-block;
+  background: #0d0d0d;
   vertical-align: middle;
-  background: color-mix(in srgb, var(--ink) 80%, var(--accent-sea));
 }
 
-.sim-retry-tag {
-  color: var(--pencil);
+.chat-retry-tag {
+  color: #8f8f8f;
   font-size: 11px;
-  letter-spacing: 0.02em;
+  line-height: 16px;
 }
 
-.sim-thread-tail {
+.chat-thread-tail {
   height: 14px;
 }
 
-.sim-composer-zone {
+.chat-composer-zone {
   position: sticky;
   bottom: 0;
-  z-index: 24;
-  padding: var(--space-2) var(--sim-edge-padding) 32px;
-  background: transparent;
-  backdrop-filter: none;
+  z-index: 21;
+  padding: 8px var(--chat-edge-padding) 28px;
+  background: linear-gradient(to top, #f9f9f9 72%, transparent);
 }
 
-.sim-composer-zone.is-live {
-  background: transparent;
-}
-
-.sim-composer-card {
-  position: relative;
-  width: var(--sim-content-width);
+.chat-composer-card {
+  width: min(var(--chat-thread-max-lg), 100%);
   margin: 0 auto;
-  border: 1px solid #dadada;
+  min-height: 56px;
+  border: 1px solid #d9d9d9;
   border-radius: 28px;
   background: #fff;
-  box-shadow: none;
-  min-height: 56px;
-  height: 56px;
   padding: 10px 56px 10px 16px;
-  overflow: visible;
-  transition:
-    border-color var(--motion-base) var(--ease-standard),
-    box-shadow var(--motion-base) var(--ease-standard),
-    background-color var(--motion-base) var(--ease-standard);
+  position: relative;
 }
 
-.sim-composer-card-home {
+.chat-composer-home {
   width: 100%;
 }
 
-.sim-composer-card-home .sim-composer-note {
-  display: none;
-}
-
-.sim-composer-card:focus-within {
-  border-color: #cfcfcf;
-  box-shadow: none;
-}
-
-.sim-composer-input {
+.chat-composer-input {
   width: 100%;
-  min-height: 24px;
-  height: 24px;
-  max-height: 180px;
-  resize: none;
   border: 0;
+  outline: 0;
+  resize: none;
+  min-height: 24px;
+  max-height: 220px;
+  height: 24px;
+  padding: 0;
   background: transparent;
-  color: var(--ink);
+  color: #0d0d0d;
   font-size: 16px;
   line-height: 24px;
-  padding: 0;
-  outline: none;
 }
 
-.sim-composer-input::placeholder {
-  color: color-mix(in srgb, var(--pencil) 86%, transparent);
+.chat-composer-input::placeholder {
+  color: #8f8f8f;
 }
 
-.sim-composer-footer {
+.chat-composer-footer {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
 
-.sim-composer-note {
-  margin: 0;
+.chat-composer-note {
   position: absolute;
   left: 50%;
   bottom: -24px;
   transform: translateX(-50%);
+  margin: 0;
   white-space: nowrap;
-  color: var(--pencil);
+  color: #8f8f8f;
   font-size: 12px;
   line-height: 16px;
 }
 
-.sim-send-btn {
+.chat-send-btn {
   position: absolute;
   right: 10px;
   top: 10px;
-  pointer-events: auto;
-  display: grid;
-  place-items: center;
   height: 36px;
   width: 36px;
-  border: 1px solid #000;
   border-radius: 999px;
-  background: #000;
-  color: #fff;
-  transition:
-    transform var(--motion-fast) var(--ease-standard),
-    background-color var(--motion-fast) var(--ease-standard),
-    border-color var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard),
-    box-shadow var(--motion-fast) var(--ease-standard);
+  border: 1px solid #cccccc;
+  background: #ececec;
+  color: #9b9b9b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  transition: background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.15s cubic-bezier(0.4, 0, 0.2, 1), color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.sim-send-btn.is-active {
-  background: #000;
-  border-color: #000;
+.chat-send-btn.is-active {
+  border-color: #0d0d0d;
+  background: #0d0d0d;
   color: #fff;
   cursor: pointer;
-  box-shadow: none;
 }
 
-.sim-send-btn.is-active:hover {
-  transform: none;
+.chat-send-btn.is-active:hover {
+  background: #1f1f1f;
+  border-color: #1f1f1f;
 }
 
-.sim-send-btn.is-active:active {
-  transform: none;
-}
-
-.sim-send-btn:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent-sea) 58%, white);
+.chat-send-btn:focus-visible {
+  outline: 1.5px solid #0d0d0d;
   outline-offset: 2px;
 }
 
-.sim-send-btn:disabled {
+.chat-send-btn:disabled {
   cursor: default;
-  opacity: 1;
 }
 
 @media (min-width: 1100px) {
-  .sim-sidebar {
+  .chat-sidebar {
     position: relative;
+    inset: auto;
     transform: none;
     z-index: 20;
   }
 
-  .sim-mobile-only {
+  .chat-mobile-only {
     display: none;
   }
 
-  .sim-open-sidebar-btn {
+  .chat-sidebar-overlay {
     display: none;
   }
 
-  .sim-sidebar-overlay {
-    display: none;
+  .chat-thread {
+    width: min(var(--chat-thread-max-lg), 100%);
   }
 }
 
 @media (max-width: 1099px) {
-  .sim-sidebar {
-    width: min(78vw, 300px);
+  .chat-sidebar {
+    width: min(80vw, 300px);
   }
 
-  .sim-open-sidebar-btn {
-    display: none;
+  .chat-topbar {
+    padding: 8px 10px;
   }
 
-  .sim-kicker {
-    font-size: 18px;
-    line-height: 28px;
-  }
-}
-
-@media (min-width: 1100px) {
-  .sim-sidebar-head {
-    display: none;
-  }
-
-  .sim-new-chat-btn {
-    margin-top: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sim-orb,
-  .sim-turn,
-  .sim-hero,
-  .sim-thread,
-  .sim-pill-btn,
-  .sim-new-chat-btn,
-  .sim-send-btn,
-  .sim-icon-btn {
-    animation: none !important;
-    transition: none !important;
-  }
-}
-
-@media (max-width: 720px) {
-  .sim-scroll-region {
+  .chat-scroll-region {
     padding-inline: 16px;
   }
 
-  .sim-hero {
-    margin-top: clamp(76px, 17vh, 132px);
-  }
-
-  .sim-hero h2 {
-    font-size: 28px;
-    line-height: 34px;
-  }
-
-  .sim-hero p {
-    display: none;
-  }
-
-  .sim-message {
-    width: 100%;
-    max-width: 100%;
-  }
-
-  .sim-message-user {
-    max-width: 94%;
-  }
-
-  .sim-composer-zone {
+  .chat-composer-zone {
     padding-inline: 16px;
     padding-bottom: 16px;
   }
 
-  .sim-pill-btn {
-    display: none;
-  }
-
-  .sim-composer-note {
+  .chat-composer-note {
     display: none;
   }
 }
 
-@keyframes rise-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
+@media (max-width: 720px) {
+  .chat-hero {
+    margin-top: clamp(74px, 16vh, 130px);
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+
+  .chat-hero h2 {
+    font-size: 32px;
+    line-height: 40px;
+  }
+
+  .chat-hero p {
+    font-size: 16px;
+    line-height: 24px;
+    margin-top: 6px;
+  }
+
+  .chat-message-user {
+    max-width: 92%;
+  }
+
+  .chat-new-inline-btn,
+  .chat-icon-btn {
+    height: 40px;
+    width: 40px;
   }
 }
 
-@keyframes drift {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0);
-  }
-  50% {
-    transform: translate3d(10px, -12px, 0);
+@media (prefers-reduced-motion: reduce) {
+  .chat-shell *,
+  .chat-shell *::before,
+  .chat-shell *::after {
+    animation: none !important;
+    transition: none !important;
   }
 }
 </style>
