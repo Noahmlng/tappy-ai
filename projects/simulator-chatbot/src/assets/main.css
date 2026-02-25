@@ -1,48 +1,78 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650;9..144,700&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap");
 @import "tailwindcss";
 
 :root {
-  --paper: #F8F7F4;
-  --ink: #1C1B1A;
-  --graphite: #6B6966;
-  --pencil: #A8A5A0;
-  --border: #E6E4E0;
-  --surface: #EFEEE9;
-  --indigo: #4F46E5;
-  --indigo-soft: #EEF2FF;
-  --font-mono: "Berkeley Mono", "JetBrains Mono", "SF Mono", Menlo, monospace;
+  color-scheme: light;
 
-  --sidebar-bg: #18181A;
-  --sidebar-surface: #222224;
-  --sidebar-border: #2E2E30;
-  --sidebar-text: #E4E3E0;
-  --sidebar-muted: #8A8985;
+  --font-body: "Manrope", "Avenir Next", "Segoe UI", sans-serif;
+  --font-display: "Fraunces", "Iowan Old Style", serif;
+  --font-mono: "IBM Plex Mono", "JetBrains Mono", "SF Mono", Menlo, monospace;
+
+  --paper: #f5f1e7;
+  --surface: #ebe6da;
+  --surface-strong: #e0d8c6;
+  --ink: #1a221d;
+  --graphite: #49574f;
+  --pencil: #7c867f;
+  --border: #d2cbbd;
+
+  --accent-sea: #1d7a66;
+  --accent-gold: #bd8f35;
+  --accent-rust: #9a5a39;
+  --indigo: var(--accent-sea);
+  --indigo-soft: #dff2ec;
+
+  --sidebar-width: 300px;
+  --sidebar-bg: #171d1a;
+  --sidebar-surface: #222b26;
+  --sidebar-border: #2f3a33;
+  --sidebar-text: #e9ece8;
+  --sidebar-muted: #95a29a;
+
+  --soft-shadow: 0 10px 30px color-mix(in srgb, #182117 12%, transparent);
+  --elev-shadow: 0 14px 40px color-mix(in srgb, #182117 14%, transparent);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  min-height: 100%;
 }
 
 body {
-  margin: 0;
   background: var(--paper);
   color: var(--ink);
-  font-family: "Soehne", "Helvetica Neue", Helvetica, sans-serif;
-  line-height: 1.7;
+  font-family: var(--font-body);
+  text-rendering: geometricPrecision;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
 }
 
-.animate-in {
-  animation: fade-in 0.28s both, slide-in-from-bottom 0.28s both;
+button,
+input,
+textarea {
+  font: inherit;
 }
 
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+a {
+  color: inherit;
 }
 
-@keyframes slide-in-from-bottom {
-  from { transform: translateY(0.45rem); }
-  to { transform: translateY(0); }
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--graphite) 40%, transparent) transparent;
 }
 
 *::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 *::-webkit-scrollbar-track {
@@ -50,52 +80,50 @@ body {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 10px;
-  transition: background 0.2s ease;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  background: color-mix(in srgb, var(--graphite) 38%, transparent);
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: var(--pencil);
-}
-
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-}
-
-.scrollbar-thin::-webkit-scrollbar {
-  width: 4px;
-}
-.scrollbar-thin::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 10px;
-}
-.scrollbar-thin:hover::-webkit-scrollbar-thumb {
-  background: var(--pencil);
-}
-
-.cubic-bezier-transition {
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.cursor-blink {
-  animation: cursor-blink-animation 1s ease-in-out infinite;
-}
-
-@keyframes cursor-blink-animation {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+  background: color-mix(in srgb, var(--graphite) 55%, transparent);
 }
 
 textarea::-webkit-scrollbar {
   display: none;
 }
 
-.msg-toolbar {
-  opacity: 0;
-  transition: opacity 0.15s ease;
+.animate-in {
+  animation: fade-up 0.32s cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
-.group:hover .msg-toolbar {
-  opacity: 1;
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.cubic-bezier-transition {
+  transition-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.cursor-blink {
+  animation: cursor-blink-animation 1s step-end infinite;
+}
+
+@keyframes cursor-blink-animation {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
 }

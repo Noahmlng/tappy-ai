@@ -1,60 +1,53 @@
 <template>
-  <div class="flex h-screen w-full overflow-hidden bg-[var(--paper)] font-sans text-[var(--ink)]">
-    <aside
-      :class="[
-        'fixed z-40 flex h-full w-[260px] -translate-x-full flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] text-[var(--sidebar-text)] transition-transform duration-300 ease-in-out lg:relative lg:z-0 lg:translate-x-0',
-        isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
-      ]"
-    >
-      <div class="border-b border-[var(--sidebar-border)] p-3">
-        <div class="mb-2 flex items-center justify-between lg:hidden">
-          <button @click="isSidebarOpen = false" class="rounded-lg p-2 text-[var(--sidebar-muted)] hover:bg-[var(--sidebar-surface)]">
-            <X :size="18" />
-          </button>
-        </div>
+  <div class="sim-shell">
+    <div class="sim-backdrop" aria-hidden="true">
+      <span class="sim-orb sim-orb-a"></span>
+      <span class="sim-orb sim-orb-b"></span>
+      <span class="sim-orb sim-orb-c"></span>
+    </div>
 
-        <button
-          @click="startNewChat"
-          class="group flex w-full items-center justify-between rounded-xl border border-[var(--sidebar-border)] bg-[var(--sidebar-surface)] p-2 text-sm font-medium transition-colors hover:bg-[#2b2b2b]"
-        >
-          <div class="flex items-center gap-2">
-            <Plus :size="14" class="text-[var(--sidebar-muted)]" />
-            <span>New Chat</span>
+    <aside :class="['sim-sidebar', isSidebarOpen ? 'is-open' : '']">
+      <div class="sim-sidebar-head">
+        <div class="sim-brand">
+          <div class="sim-brand-mark">S</div>
+          <div>
+            <p class="sim-brand-title">Simulator Atelier</p>
+            <p class="sim-brand-sub">Conversation Control Room</p>
           </div>
-          <MessageSquare :size="14" class="text-[var(--sidebar-muted)] opacity-0 group-hover:opacity-100" />
+        </div>
+        <button class="sim-icon-btn sim-mobile-only" @click="isSidebarOpen = false" aria-label="Close sidebar">
+          <X :size="18" />
         </button>
-
-        <label class="mt-2 flex items-center gap-2 rounded-xl border border-[var(--sidebar-border)] bg-[var(--sidebar-surface)] px-2 py-2 text-sm">
-          <Search :size="16" class="text-[var(--sidebar-muted)]" />
-          <input
-            v-model="historyQuery"
-            type="text"
-            placeholder="Search history"
-            class="w-full bg-transparent text-[var(--sidebar-text)] outline-none placeholder:text-[var(--sidebar-muted)]"
-          />
-        </label>
       </div>
 
-      <div class="scrollbar-thin flex-1 space-y-1 overflow-y-auto px-3 py-2">
-        <div class="px-2 py-2 text-[10px] font-medium uppercase tracking-widest text-[var(--sidebar-muted)]">Recent</div>
+      <button @click="startNewChat" class="sim-new-chat-btn">
+        <span class="sim-new-chat-copy">
+          <Plus :size="14" />
+          <span>Start New Thread</span>
+        </span>
+        <MessageSquare :size="14" />
+      </button>
 
+      <label class="sim-search-field">
+        <Search :size="16" />
+        <input v-model="historyQuery" type="text" placeholder="Search conversations" />
+      </label>
+
+      <div class="sim-sidebar-section-label">Conversation Archive</div>
+
+      <div class="sim-session-list">
         <div
           v-for="session in filteredSessions"
           :key="session.id"
-          :class="[
-            'group relative w-full rounded-lg p-2 text-sm outline-none transition-colors',
-            session.id === activeSessionId
-              ? 'bg-[var(--sidebar-surface)] text-white'
-              : 'text-[var(--sidebar-text)] hover:bg-[var(--sidebar-surface)]'
-          ]"
+          :class="['sim-session-card', session.id === activeSessionId ? 'is-active' : '']"
         >
-          <button @click="openSession(session.id)" class="w-full pr-9 text-left">
-            <div class="truncate">{{ session.title }}</div>
-            <div class="mt-1 text-[11px] text-[var(--sidebar-muted)]">{{ formatSessionTime(session.updatedAt) }}</div>
+          <button @click="openSession(session.id)" class="sim-session-main">
+            <p class="sim-session-title">{{ session.title }}</p>
+            <p class="sim-session-time">{{ formatSessionTime(session.updatedAt) }}</p>
           </button>
           <button
+            class="sim-session-delete"
             @click.stop="deleteSession(session.id)"
-            class="absolute right-2 top-1/2 hidden -translate-y-1/2 rounded p-1 text-[var(--sidebar-muted)] hover:bg-[#3a3a3a] group-hover:flex"
             aria-label="Delete chat"
             title="Delete chat"
           >
@@ -62,71 +55,47 @@
           </button>
         </div>
 
-        <div v-if="filteredSessions.length === 0" class="px-2 py-5 text-xs text-[var(--sidebar-muted)]">
-          No chat history.
-        </div>
+        <p v-if="filteredSessions.length === 0" class="sim-session-empty">No chat history yet.</p>
       </div>
 
-      <div class="space-y-2 border-t border-[var(--sidebar-border)] p-3">
-        <details class="rounded-xl border border-[var(--sidebar-border)] bg-[var(--sidebar-surface)] p-2">
-          <summary class="cursor-pointer list-none text-[11px] font-medium uppercase tracking-wide text-[var(--sidebar-muted)]">
-            System Prompt
-          </summary>
-          <div class="mt-2 flex items-center justify-end">
-            <button
-              class="rounded border border-[var(--sidebar-border)] px-1.5 py-0.5 text-[10px] text-[var(--sidebar-muted)] hover:bg-[#2d2d2d] disabled:opacity-60"
-              :disabled="!activeSession"
-              @click="resetActiveSystemPrompt"
-            >
-              Reset
-            </button>
+      <div class="sim-sidebar-panels">
+        <details class="sim-panel">
+          <summary>System Prompt</summary>
+          <div class="sim-panel-row">
+            <button :disabled="!activeSession" @click="resetActiveSystemPrompt">Reset</button>
           </div>
           <textarea
             v-model="activeSystemPrompt"
             :disabled="!activeSession"
             rows="5"
-            class="mt-2 w-full resize-y rounded-lg border border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] px-2 py-1.5 text-[12px] text-[var(--sidebar-text)] outline-none focus:border-[#5a5a5a] disabled:opacity-60"
             placeholder="Set a per-chat system prompt..."
           ></textarea>
-          <div class="mt-1 text-[10px] text-[var(--sidebar-muted)]">
-            Applied to every request in the current chat. New Chat resets to default.
-          </div>
+          <p>Applied to every request in the active conversation.</p>
         </details>
 
-        <details class="rounded-xl border border-[var(--sidebar-border)] bg-[var(--sidebar-surface)] p-2">
-          <summary class="cursor-pointer list-none text-[11px] font-medium uppercase tracking-wide text-[var(--sidebar-muted)]">
-            Turn Trace
-          </summary>
-          <div v-if="activeSessionTurnLogs.length === 0" class="mt-2 text-[11px] text-[var(--sidebar-muted)]">
-            No turn logs yet.
-          </div>
-          <div v-else class="mt-2 max-h-56 space-y-1 overflow-y-auto pr-1">
-            <details
-              v-for="log in activeSessionTurnLogs"
-              :key="log.turnId"
-              class="rounded border border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] px-2 py-1"
-            >
-              <summary class="list-none cursor-pointer">
-                <div class="flex items-center gap-1 text-[11px]">
-                  <span class="truncate font-medium text-[var(--sidebar-text)]">{{ log.userQuery }}</span>
-                  <span
-                    :class="[
-                      'ml-auto rounded px-1.5 py-0.5 text-[10px] font-semibold',
-                      log.toolUsed ? 'bg-emerald-500/20 text-emerald-300' : 'bg-[#303030] text-[var(--sidebar-muted)]'
-                    ]"
-                  >
+        <details class="sim-panel">
+          <summary>Turn Trace</summary>
+
+          <p v-if="activeSessionTurnLogs.length === 0" class="sim-panel-empty">No turn logs yet.</p>
+
+          <div v-else class="sim-trace-list">
+            <details v-for="log in activeSessionTurnLogs" :key="log.turnId" class="sim-trace-card">
+              <summary>
+                <div class="sim-trace-head">
+                  <span class="sim-trace-query">{{ log.userQuery }}</span>
+                  <span :class="['sim-trace-badge', log.toolUsed ? 'is-tool' : '']">
                     {{ log.toolUsed ? 'Tool: YES' : 'Tool: NO' }}
                   </span>
                 </div>
-                <div class="mt-1 text-[10px] text-[var(--sidebar-muted)]">{{ formatTraceTime(log.startedAt) }}</div>
+                <p>{{ formatTraceTime(log.startedAt) }}</p>
               </summary>
 
-              <div class="mt-2 border-t border-[var(--sidebar-border)] pt-2 text-[11px] text-[var(--sidebar-text)]">
-                <div class="mb-1 text-[10px] text-[var(--sidebar-muted)]">Retry count: {{ log.retryCount || 0 }}</div>
-                <ul class="space-y-1">
-                  <li v-for="event in log.events" :key="event.id" class="leading-tight">
-                    <span class="text-[var(--sidebar-muted)]">{{ formatTraceTime(event.at) }}</span>
-                    <span class="mx-1">·</span>
+              <div class="sim-trace-body">
+                <p>Retry count: {{ log.retryCount || 0 }}</p>
+                <ul>
+                  <li v-for="event in log.events" :key="event.id">
+                    <span>{{ formatTraceTime(event.at) }}</span>
+                    <span>·</span>
                     <span>{{ formatTraceEventType(event.type) }}</span>
                   </li>
                 </ul>
@@ -135,253 +104,196 @@
           </div>
         </details>
 
-        <button
-          @click="clearHistory"
-          class="w-full rounded-xl border border-[var(--sidebar-border)] bg-[var(--sidebar-surface)] px-3 py-2 text-xs font-medium text-[var(--sidebar-text)] hover:bg-[#2b2b2b]"
-        >
-          Clear History
-        </button>
+        <button class="sim-clear-history-btn" @click="clearHistory">Clear History</button>
       </div>
     </aside>
 
-    <main class="relative flex h-full flex-1 flex-col overflow-hidden bg-[var(--paper)]">
-      <header class="z-30 flex h-14 shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--paper)]/90 px-4 backdrop-blur-md">
-        <div class="flex items-center gap-2">
-          <button
-            v-if="!isSidebarOpen"
-            @click="isSidebarOpen = true"
-            class="hidden rounded-lg p-2 text-[var(--graphite)] hover:bg-[var(--surface)] lg:block"
-          >
-            <Menu :size="20" />
-          </button>
-          <span class="text-sm font-medium text-[var(--graphite)]">Search</span>
-        </div>
+    <button
+      v-if="isSidebarOpen"
+      class="sim-sidebar-overlay"
+      @click="isSidebarOpen = false"
+      aria-label="Close sidebar overlay"
+    ></button>
 
-        <button
-          @click="startNewChat"
-          class="inline-flex items-center gap-1 rounded-full border border-[var(--border)] px-2.5 py-1 text-xs font-medium text-[var(--graphite)] transition-colors hover:bg-[var(--surface)]"
-        >
+    <main class="sim-main">
+      <header class="sim-topbar">
+        <div class="sim-topbar-left">
+          <button v-if="!isSidebarOpen" class="sim-icon-btn" @click="isSidebarOpen = true" aria-label="Open sidebar">
+            <Menu :size="18" />
+          </button>
+          <div class="sim-title-wrap">
+            <p class="sim-kicker">Simulator Copilot</p>
+            <h1 class="sim-title">Campaign Intelligence Workspace</h1>
+          </div>
+        </div>
+        <button class="sim-pill-btn" @click="startNewChat">
           <Plus :size="13" />
-          <span>New</span>
+          <span>New Thread</span>
         </button>
       </header>
 
-      <div ref="scrollRef" class="flex flex-1 flex-col overflow-y-auto">
-        <div
-          class="cubic-bezier-transition shrink-0 transition-all duration-[700ms]"
-          :class="hasStarted ? 'max-h-0' : 'max-h-[35vh] flex-grow'"
-        ></div>
+      <div ref="scrollRef" class="sim-scroll-region">
+        <section class="sim-hero" :class="{ 'is-hidden': hasStarted }">
+          <p class="sim-hero-kicker">AI Native Ad Platform</p>
+          <h2>Design, simulate, and decide with clarity.</h2>
+          <p>
+            Ask questions, explore scenarios, inspect traces, and iterate strategy in one focused interface.
+          </p>
+        </section>
 
-        <div
-          class="cubic-bezier-transition shrink-0 flex flex-col items-center transition-all duration-[700ms]"
-          :class="hasStarted ? 'mb-0 max-h-0 scale-95 overflow-hidden opacity-0' : 'mb-8 max-h-20 scale-100 opacity-100'"
-        >
-          <h1 class="text-center text-2xl font-normal tracking-tight text-[var(--pencil)]">What would you like to know?</h1>
-        </div>
-
-        <div
-          class="mx-auto flex w-full max-w-[760px] flex-col gap-8 px-4 transition-all duration-[700ms]"
-          :class="hasStarted ? 'py-8 opacity-100' : 'max-h-0 overflow-hidden opacity-0'"
-        >
+        <section class="sim-thread" :class="{ 'is-visible': hasStarted }">
           <template v-for="msg in currentMessages" :key="msg.id">
-            <div
-              :class="[
-                'group animate-in flex',
-                msg.role === 'user' ? 'flex-row-reverse items-start' : 'flex-row items-start'
-              ]"
-            >
-              <div
-                :class="[
-                  'min-h-[44px] max-w-[78%] px-4 py-2.5 text-[15px] leading-[1.75]',
-                  msg.role === 'user'
-                    ? 'rounded-xl bg-[var(--surface)] text-[var(--ink)]'
-                    : 'bg-transparent text-[var(--ink)]'
-                ]"
-              >
-                <div v-if="msg.role === 'user'" class="leading-normal">
-                  <template v-if="queryRewriteMessageId === msg.id">
-                    <textarea
-                      v-model="queryRewriteDraft"
-                      rows="2"
-                      class="w-full resize-y rounded-xl border border-[var(--border)] bg-white px-3 py-2 text-[14px] leading-normal text-[var(--ink)] outline-none focus:border-[var(--indigo)]/40"
-                      @keydown.esc.prevent="cancelQueryRewriteEdit"
-                    ></textarea>
-                    <div class="mt-2 flex items-center justify-end gap-2">
-                      <button
-                        class="rounded-lg border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--graphite)] hover:bg-[var(--surface)]"
-                        @click="cancelQueryRewriteEdit"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        class="rounded-lg border border-[var(--ink)] bg-[var(--ink)] px-2 py-1 text-[11px] text-white hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-60"
-                        :disabled="!queryRewriteDraft.trim() || isLoading"
-                        @click="submitQueryRewrite(msg)"
-                      >
-                        Rewrite & Run
-                      </button>
-                    </div>
-                  </template>
+            <article :class="['sim-turn', msg.role === 'user' ? 'is-user' : 'is-assistant']">
+              <div class="sim-turn-inner">
+                <div v-if="msg.role === 'assistant'" class="sim-avatar">AI</div>
 
-                  <template v-else>
-                    <div class="whitespace-pre-wrap">{{ msg.content }}</div>
-                    <div class="msg-toolbar mt-2 flex justify-end">
-                      <button
-                        class="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] bg-white px-2 py-1 text-[11px] text-[var(--graphite)] hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-60"
-                        :disabled="isLoading"
-                        @click="startQueryRewriteEdit(msg)"
-                      >
-                        <PenSquare :size="12" />
-                        <span>Edit & Rewrite</span>
-                      </button>
-                    </div>
-                  </template>
-                </div>
-
-                <div v-else class="leading-normal">
-                  <template v-if="msg.kind === 'tool'">
-                    <div class="rounded-xl border border-[var(--border)] bg-[var(--paper)] px-3 py-2 text-sm">
-                      <div class="flex items-center gap-2 text-xs uppercase tracking-widest text-[var(--graphite)]">
-                        <span class="font-medium">Tool</span>
-                        <span class="rounded-md bg-[var(--surface)] px-1.5 py-0.5 text-[10px] text-[var(--graphite)]">web_search</span>
-                        <span class="ml-auto text-[11px] font-medium normal-case text-[var(--graphite)]">{{ formatToolState(msg.toolState) }}</span>
+                <div :class="['sim-message', msg.role === 'user' ? 'sim-message-user' : 'sim-message-assistant']">
+                  <div v-if="msg.role === 'user'">
+                    <template v-if="queryRewriteMessageId === msg.id">
+                      <textarea
+                        v-model="queryRewriteDraft"
+                        rows="2"
+                        class="sim-rewrite-input"
+                        @keydown.esc.prevent="cancelQueryRewriteEdit"
+                      ></textarea>
+                      <div class="sim-message-actions sim-message-actions-right">
+                        <button class="sim-ghost-btn" @click="cancelQueryRewriteEdit">Cancel</button>
+                        <button
+                          class="sim-solid-btn"
+                          :disabled="!queryRewriteDraft.trim() || isLoading"
+                          @click="submitQueryRewrite(msg)"
+                        >
+                          Rewrite & Run
+                        </button>
                       </div>
+                    </template>
 
-                      <div v-if="msg.toolQuery" class="mt-2 text-[13px] text-[var(--graphite)]">Query: "{{ msg.toolQuery }}"</div>
-
-                      <div v-if="msg.toolState === 'running'" class="mt-2 inline-flex items-center gap-2 text-xs text-[var(--pencil)]">
-                        <LoaderCircle :size="12" class="animate-spin" />
-                        <span>Searching web...</span>
+                    <template v-else>
+                      <div class="whitespace-pre-wrap">{{ msg.content }}</div>
+                      <div class="sim-message-actions sim-message-actions-right">
+                        <button class="sim-ghost-btn" :disabled="isLoading" @click="startQueryRewriteEdit(msg)">
+                          <PenSquare :size="12" />
+                          <span>Edit & Rewrite</span>
+                        </button>
                       </div>
-
-                      <div v-if="msg.toolState === 'error'" class="mt-2 text-xs text-red-600">
-                        {{ msg.toolError || 'Tool execution failed.' }}
-                      </div>
-
-                      <div v-if="msg.toolState === 'done' && msg.toolLatencyMs !== null" class="mt-2 text-[11px] text-[var(--pencil)]">
-                        Finished in {{ msg.toolLatencyMs }} ms
-                      </div>
-
-                      <ul v-if="msg.toolResults?.length" class="mt-2 space-y-2">
-                        <li v-for="(result, idx) in msg.toolResults" :key="result.id || idx" class="rounded-lg border border-[var(--border)] bg-white p-2">
-                          <a
-                            :href="result.url"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            class="text-sm font-medium text-[var(--indigo)] hover:underline"
-                          >
-                            {{ idx + 1 }}. {{ result.title }}
-                          </a>
-                          <p class="mt-1 text-xs text-[var(--graphite)]">{{ result.snippet }}</p>
-                          <p class="mt-1 text-[11px] text-[var(--pencil)]">{{ getHostLabel(result.url) }}</p>
-                        </li>
-                      </ul>
-                    </div>
-                  </template>
-
-                  <template v-else-if="msg.status === 'reasoning' && !msg.content">
-                    <div class="inline-flex items-center gap-2 text-sm text-[var(--pencil)]">
-                      <LoaderCircle :size="14" class="animate-spin" />
-                      <span>Reasoning...</span>
-                    </div>
-                  </template>
-
-                  <template v-if="msg.kind !== 'tool' && msg.content">
-                    <MarkdownRenderer
-                      :key="msg.id"
-                      :content="msg.content"
-                    />
-                    <span
-                      v-if="msg.status === 'streaming'"
-                      class="cursor-blink ml-0.5 inline-block h-5 w-0.5 bg-[var(--ink)] align-middle"
-                    ></span>
-                  </template>
-
-                  <div
-                    v-if="msg.kind !== 'tool' && msg.role === 'assistant' && msg.status === 'done' && msg.sourceUserContent"
-                    class="msg-toolbar mt-2 flex items-center gap-2"
-                  >
-                    <button
-                      class="rounded-lg border border-[var(--border)] bg-white px-2 py-1 text-[11px] text-[var(--graphite)] hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-60"
-                      :disabled="isLoading"
-                      @click="handleRegenerate(msg)"
-                    >
-                      Regenerate
-                    </button>
-                    <span class="text-[10px] text-[var(--pencil)]">Retry #{{ msg.retryCount }}</span>
+                    </template>
                   </div>
 
-                  <CitationSources
-                    v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.sources?.length"
-                    :sources="msg.sources"
-                    @source-click="(source) => handleSourceClick(msg, source)"
-                  />
+                  <div v-else>
+                    <template v-if="msg.kind === 'tool'">
+                      <div class="sim-tool-card">
+                        <div class="sim-tool-head">
+                          <span>Tool</span>
+                          <span class="sim-tool-name">web_search</span>
+                          <span class="sim-tool-state">{{ formatToolState(msg.toolState) }}</span>
+                        </div>
 
-                  <FollowUpSuggestions
-                    v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.followUps?.length"
-                    :items="msg.followUps"
-                    :disabled="isLoading"
-                    @select="handleFollowUpSelect"
-                  />
+                        <div v-if="msg.toolQuery" class="sim-tool-query">Query: "{{ msg.toolQuery }}"</div>
 
-                  <template v-if="msg.kind !== 'tool' && msg.role === 'assistant' && msg.status === 'done' && msg.adCards?.length">
-                    <AdCard
-                      v-for="ad in msg.adCards"
-                      :key="`${ad.placementId}:${ad.adId}`"
-                      :ad="ad"
-                      @ad-click="handleAdClick(msg, ad)"
+                        <div v-if="msg.toolState === 'running'" class="sim-tool-running">
+                          <LoaderCircle :size="12" class="animate-spin" />
+                          <span>Searching web...</span>
+                        </div>
+
+                        <div v-if="msg.toolState === 'error'" class="sim-tool-error">
+                          {{ msg.toolError || 'Tool execution failed.' }}
+                        </div>
+
+                        <div v-if="msg.toolState === 'done' && msg.toolLatencyMs !== null" class="sim-tool-latency">
+                          Finished in {{ msg.toolLatencyMs }} ms
+                        </div>
+
+                        <ul v-if="msg.toolResults?.length" class="sim-tool-results">
+                          <li v-for="(result, idx) in msg.toolResults" :key="result.id || idx">
+                            <a :href="result.url" target="_blank" rel="noopener noreferrer">
+                              {{ idx + 1 }}. {{ result.title }}
+                            </a>
+                            <p>{{ result.snippet }}</p>
+                            <p>{{ getHostLabel(result.url) }}</p>
+                          </li>
+                        </ul>
+                      </div>
+                    </template>
+
+                    <template v-else-if="msg.status === 'reasoning' && !msg.content">
+                      <div class="sim-reasoning">
+                        <LoaderCircle :size="14" class="animate-spin" />
+                        <span>Reasoning...</span>
+                      </div>
+                    </template>
+
+                    <template v-if="msg.kind !== 'tool' && msg.content">
+                      <MarkdownRenderer :key="msg.id" :content="msg.content" />
+                      <span v-if="msg.status === 'streaming'" class="cursor-blink sim-stream-caret"></span>
+                    </template>
+
+                    <div
+                      v-if="msg.kind !== 'tool' && msg.role === 'assistant' && msg.status === 'done' && msg.sourceUserContent"
+                      class="sim-message-actions"
+                    >
+                      <button class="sim-ghost-btn" :disabled="isLoading" @click="handleRegenerate(msg)">
+                        Regenerate
+                      </button>
+                      <span class="sim-retry-tag">Retry #{{ msg.retryCount }}</span>
+                    </div>
+
+                    <CitationSources
+                      v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.sources?.length"
+                      :sources="msg.sources"
+                      @source-click="(source) => handleSourceClick(msg, source)"
                     />
-                  </template>
+
+                    <FollowUpSuggestions
+                      v-if="msg.kind !== 'tool' && msg.status === 'done' && msg.followUps?.length"
+                      :items="msg.followUps"
+                      :disabled="isLoading"
+                      @select="handleFollowUpSelect"
+                    />
+
+                    <template
+                      v-if="msg.kind !== 'tool' && msg.role === 'assistant' && msg.status === 'done' && msg.adCards?.length"
+                    >
+                      <AdCard
+                        v-for="ad in msg.adCards"
+                        :key="`${ad.placementId}:${ad.adId}`"
+                        :ad="ad"
+                        @ad-click="handleAdClick(msg, ad)"
+                      />
+                    </template>
+                  </div>
                 </div>
               </div>
-            </div>
+            </article>
           </template>
 
-          <div class="h-4"></div>
-        </div>
+          <div class="sim-thread-tail"></div>
+        </section>
+      </div>
 
-        <div
-          class="cubic-bezier-transition sticky bottom-0 z-20 w-full bg-gradient-to-t from-[var(--paper)] via-[var(--paper)] to-[var(--paper)]/90 transition-all duration-[700ms]"
-          :class="hasStarted ? 'mt-auto pb-5 pt-2' : 'pb-8'"
-        >
-          <div class="mx-auto max-w-[760px] px-4">
-            <div class="relative flex flex-col rounded-2xl border border-[var(--border)] bg-white p-2 transition-all duration-300 focus-within:border-[var(--indigo)]/40">
-              <textarea
-                v-model="input"
-                rows="1"
-                @compositionstart="isComposing = true"
-                @compositionend="isComposing = false"
-                @keydown.enter.prevent="handleSend"
-                placeholder="Ask anything..."
-                class="max-h-52 w-full resize-none border-none bg-transparent py-3 pl-4 pr-20 text-[16px] text-[var(--ink)] outline-none focus:outline-none focus:ring-0 placeholder:text-[var(--pencil)]"
-                style="min-height: 44px"
-              ></textarea>
+      <footer class="sim-composer-zone" :class="{ 'is-live': hasStarted }">
+        <div class="sim-composer-card">
+          <textarea
+            v-model="input"
+            rows="1"
+            @compositionstart="isComposing = true"
+            @compositionend="isComposing = false"
+            @keydown.enter.prevent="handleSend"
+            placeholder="Ask anything..."
+            class="sim-composer-input"
+          ></textarea>
 
-              <div class="flex items-center justify-end px-2 pb-1">
-                <button
-                  @click="handleSend"
-                  :disabled="!input.trim() || isLoading"
-                  :class="[
-                    'rounded-full p-2 outline-none transition-all',
-                    input.trim() && !isLoading ? 'bg-[var(--indigo)] text-white hover:opacity-85' : 'cursor-not-allowed bg-[var(--surface)] text-[var(--pencil)]'
-                  ]"
-                >
-                  <ArrowUp :size="15" :stroke-width="2.5" />
-                </button>
-              </div>
-            </div>
-
-            <div class="mt-3 text-center">
-              <p class="select-none text-[11px] text-[var(--pencil)]">AI can make mistakes. Verify important information.</p>
-            </div>
+          <div class="sim-composer-footer">
+            <p class="sim-composer-note">Enter to send · AI output may be imperfect</p>
+            <button
+              @click="handleSend"
+              :disabled="!input.trim() || isLoading"
+              :class="['sim-send-btn', input.trim() && !isLoading ? 'is-active' : '']"
+            >
+              <ArrowUp :size="15" :stroke-width="2.5" />
+            </button>
           </div>
         </div>
-
-        <div
-          class="cubic-bezier-transition shrink-0 transition-all duration-[700ms]"
-          :class="hasStarted ? 'max-h-0' : 'max-h-[25vh] flex-grow'"
-        ></div>
-      </div>
+      </footer>
     </main>
   </div>
 </template>
@@ -1742,3 +1654,1016 @@ async function handleSend(options = {}) {
   )
 }
 </script>
+
+<style scoped>
+.sim-shell {
+  position: relative;
+  display: flex;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+  color: var(--ink);
+  font-family: var(--font-body);
+  background: var(--paper);
+}
+
+.sim-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 22% 14%, color-mix(in srgb, var(--accent-sea) 24%, transparent) 0%, transparent 42%),
+    radial-gradient(circle at 78% 10%, color-mix(in srgb, var(--accent-gold) 26%, transparent) 0%, transparent 44%),
+    radial-gradient(circle at 50% 110%, color-mix(in srgb, var(--accent-rust) 18%, transparent) 0%, transparent 54%);
+}
+
+.sim-orb {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(36px);
+  opacity: 0.6;
+  animation: drift 14s ease-in-out infinite;
+}
+
+.sim-orb-a {
+  top: -80px;
+  left: -56px;
+  height: 220px;
+  width: 220px;
+  background: color-mix(in srgb, var(--accent-sea) 55%, white);
+}
+
+.sim-orb-b {
+  top: 18%;
+  right: -84px;
+  height: 240px;
+  width: 240px;
+  animation-delay: -4s;
+  background: color-mix(in srgb, var(--accent-gold) 56%, white);
+}
+
+.sim-orb-c {
+  bottom: -92px;
+  left: 42%;
+  height: 200px;
+  width: 200px;
+  animation-delay: -8s;
+  background: color-mix(in srgb, var(--accent-rust) 45%, white);
+}
+
+.sim-sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 50;
+  display: flex;
+  width: var(--sidebar-width);
+  flex-direction: column;
+  gap: 12px;
+  border-right: 1px solid var(--sidebar-border);
+  background: linear-gradient(180deg, var(--sidebar-bg), color-mix(in srgb, var(--sidebar-bg) 90%, black));
+  color: var(--sidebar-text);
+  padding: 18px 14px;
+  transform: translateX(-110%);
+  transition: transform 0.28s ease;
+}
+
+.sim-sidebar.is-open {
+  transform: translateX(0);
+}
+
+.sim-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sim-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sim-brand-mark {
+  display: grid;
+  height: 34px;
+  width: 34px;
+  place-items: center;
+  border-radius: 11px;
+  border: 1px solid color-mix(in srgb, var(--accent-sea) 40%, white);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-sea) 82%, black), color-mix(in srgb, var(--accent-rust) 72%, black));
+  color: #f9f6f0;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.sim-brand-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+}
+
+.sim-brand-sub {
+  margin: 2px 0 0;
+  color: var(--sidebar-muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sim-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  width: 36px;
+  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--paper) 76%, transparent);
+  color: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.sim-icon-btn:hover {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
+  border-color: color-mix(in srgb, var(--ink) 20%, transparent);
+}
+
+.sim-mobile-only {
+  color: var(--sidebar-muted);
+  border-color: var(--sidebar-border);
+  background: color-mix(in srgb, var(--sidebar-surface) 86%, transparent);
+}
+
+.sim-new-chat-btn {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 14px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--sidebar-surface) 80%, #111), color-mix(in srgb, var(--sidebar-surface) 100%, #000));
+  color: var(--sidebar-text);
+  padding: 11px 12px;
+  font-size: 13px;
+  font-weight: 580;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.sim-new-chat-btn:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent-sea) 36%, white);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--accent-sea) 20%, transparent);
+}
+
+.sim-new-chat-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sim-search-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--sidebar-surface) 88%, #0f1110);
+  color: var(--sidebar-muted);
+  padding: 9px 10px;
+}
+
+.sim-search-field input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--sidebar-text);
+  font-size: 13px;
+}
+
+.sim-search-field input::placeholder {
+  color: var(--sidebar-muted);
+}
+
+.sim-sidebar-section-label {
+  margin-top: 2px;
+  color: var(--sidebar-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0 6px;
+}
+
+.sim-session-list {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+  display: grid;
+  gap: 6px;
+}
+
+.sim-session-card {
+  position: relative;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.sim-session-card:hover {
+  border-color: color-mix(in srgb, var(--sidebar-border) 40%, var(--accent-sea));
+  background: color-mix(in srgb, var(--sidebar-surface) 74%, #121312);
+}
+
+.sim-session-card.is-active {
+  border-color: color-mix(in srgb, var(--accent-sea) 40%, white);
+  background: color-mix(in srgb, var(--sidebar-surface) 78%, #0f1210);
+}
+
+.sim-session-main {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 10px 34px 10px 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sim-session-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 530;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sim-session-time {
+  margin: 5px 0 0;
+  color: var(--sidebar-muted);
+  font-size: 11px;
+}
+
+.sim-session-delete {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 24px;
+  width: 24px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--sidebar-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.16s ease, background-color 0.16s ease, color 0.16s ease;
+}
+
+.sim-session-card:hover .sim-session-delete {
+  opacity: 1;
+}
+
+.sim-session-delete:hover {
+  color: var(--sidebar-text);
+  background: color-mix(in srgb, var(--sidebar-border) 34%, transparent);
+}
+
+.sim-session-empty {
+  margin: 6px 4px 0;
+  color: var(--sidebar-muted);
+  font-size: 12px;
+}
+
+.sim-sidebar-panels {
+  display: grid;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--sidebar-border);
+}
+
+.sim-panel {
+  border: 1px solid var(--sidebar-border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--sidebar-surface) 90%, #111);
+  padding: 10px;
+}
+
+.sim-panel summary {
+  list-style: none;
+  cursor: pointer;
+  margin: 0;
+  color: var(--sidebar-muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.sim-panel-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.sim-panel-row button,
+.sim-clear-history-btn {
+  border: 1px solid var(--sidebar-border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--sidebar-surface) 88%, #0f0f0f);
+  color: var(--sidebar-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.16s ease, color 0.16s ease;
+}
+
+.sim-panel-row button {
+  padding: 4px 8px;
+}
+
+.sim-panel-row button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sim-panel-row button:not(:disabled):hover,
+.sim-clear-history-btn:hover {
+  color: var(--sidebar-text);
+  border-color: color-mix(in srgb, var(--accent-sea) 35%, white);
+}
+
+.sim-panel textarea {
+  width: 100%;
+  resize: vertical;
+  margin-top: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--sidebar-border);
+  background: color-mix(in srgb, var(--sidebar-bg) 76%, black);
+  color: var(--sidebar-text);
+  font-size: 12px;
+  padding: 8px;
+  outline: none;
+}
+
+.sim-panel textarea:focus {
+  border-color: color-mix(in srgb, var(--accent-sea) 40%, white);
+}
+
+.sim-panel p {
+  margin: 8px 0 0;
+  font-size: 10px;
+  color: var(--sidebar-muted);
+}
+
+.sim-panel-empty {
+  margin-top: 10px;
+}
+
+.sim-trace-list {
+  margin-top: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+  display: grid;
+  gap: 6px;
+}
+
+.sim-trace-card {
+  border: 1px solid var(--sidebar-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--sidebar-bg) 80%, black);
+  padding: 8px;
+}
+
+.sim-trace-card summary {
+  cursor: pointer;
+}
+
+.sim-trace-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sim-trace-query {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sidebar-text);
+  font-size: 11px;
+  font-weight: 560;
+}
+
+.sim-trace-badge {
+  margin-left: auto;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 680;
+  color: var(--sidebar-muted);
+  background: color-mix(in srgb, var(--sidebar-border) 55%, transparent);
+}
+
+.sim-trace-badge.is-tool {
+  color: #8ce5c8;
+  background: color-mix(in srgb, #2c7a61 45%, transparent);
+}
+
+.sim-trace-body {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--sidebar-border);
+}
+
+.sim-trace-body p {
+  margin: 0 0 6px;
+  font-size: 10px;
+}
+
+.sim-trace-body ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.sim-trace-body li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--sidebar-text);
+}
+
+.sim-clear-history-btn {
+  width: 100%;
+  padding: 8px 10px;
+}
+
+.sim-sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  border: 0;
+  background: color-mix(in srgb, #000 42%, transparent);
+}
+
+.sim-main {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.sim-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 22;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 22px;
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+  background: color-mix(in srgb, var(--paper) 92%, white);
+  backdrop-filter: blur(10px);
+}
+
+.sim-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sim-title-wrap {
+  min-width: 0;
+}
+
+.sim-kicker {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--graphite) 88%, transparent);
+  font-weight: 650;
+}
+
+.sim-title {
+  margin: 2px 0 0;
+  font-size: clamp(16px, 1.4vw, 21px);
+  font-weight: 620;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+  font-family: var(--font-display);
+  color: color-mix(in srgb, var(--ink) 92%, #334a3f);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sim-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--paper) 86%, white);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 13px;
+  cursor: pointer;
+  transition: transform 0.16s ease, border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.sim-pill-btn:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent-sea) 34%, transparent);
+  background: color-mix(in srgb, var(--accent-sea) 15%, var(--paper));
+}
+
+.sim-scroll-region {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: clamp(16px, 2vw, 28px) clamp(12px, 2.2vw, 34px) 22px;
+}
+
+.sim-hero {
+  margin: clamp(14px, 3vh, 32px) auto 26px;
+  width: min(860px, 100%);
+  border: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
+  border-radius: 28px;
+  background: linear-gradient(152deg, color-mix(in srgb, var(--paper) 88%, white), color-mix(in srgb, var(--surface) 72%, white));
+  box-shadow: var(--elev-shadow);
+  padding: clamp(22px, 3.5vw, 38px);
+  transition: opacity 0.5s ease, transform 0.5s ease, max-height 0.5s ease, margin 0.5s ease, padding 0.5s ease;
+  max-height: 420px;
+  overflow: hidden;
+}
+
+.sim-hero.is-hidden {
+  opacity: 0;
+  transform: translateY(-14px) scale(0.98);
+  max-height: 0;
+  margin: 0 auto;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-width: 0;
+}
+
+.sim-hero-kicker {
+  margin: 0;
+  color: var(--graphite);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.sim-hero h2 {
+  margin: 12px 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(29px, 4.2vw, 48px);
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  max-width: 19ch;
+}
+
+.sim-hero p {
+  margin: 16px 0 0;
+  max-width: 54ch;
+  color: var(--graphite);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.sim-thread {
+  margin: 0 auto;
+  width: min(860px, 100%);
+  opacity: 0;
+  transform: translateY(16px);
+  pointer-events: none;
+  transition: opacity 0.45s ease, transform 0.45s ease;
+}
+
+.sim-thread.is-visible {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.sim-turn {
+  width: 100%;
+  margin-bottom: 20px;
+  animation: rise-in 0.35s ease both;
+}
+
+.sim-turn-inner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.sim-turn.is-user .sim-turn-inner {
+  justify-content: flex-end;
+}
+
+.sim-avatar {
+  margin-top: 2px;
+  display: grid;
+  place-items: center;
+  height: 30px;
+  width: 30px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent-sea) 35%, transparent);
+  background: color-mix(in srgb, var(--accent-sea) 25%, white);
+  color: color-mix(in srgb, var(--ink) 75%, var(--accent-sea));
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.sim-message {
+  width: min(100%, 680px);
+  border-radius: 22px;
+  padding: 14px 16px;
+  font-size: 15px;
+  line-height: 1.72;
+}
+
+.sim-message-user {
+  max-width: min(76%, 640px);
+  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--accent-rust) 14%, white), color-mix(in srgb, var(--surface) 88%, white));
+  box-shadow: 0 6px 22px color-mix(in srgb, var(--accent-rust) 12%, transparent);
+}
+
+.sim-message-assistant {
+  border: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
+  background: color-mix(in srgb, white 80%, var(--paper));
+  box-shadow: var(--soft-shadow);
+}
+
+.sim-rewrite-input {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, white 75%, var(--paper));
+  color: var(--ink);
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.55;
+  outline: none;
+}
+
+.sim-rewrite-input:focus {
+  border-color: color-mix(in srgb, var(--accent-sea) 42%, transparent);
+}
+
+.sim-message-actions {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  opacity: 0.24;
+  transition: opacity 0.2s ease;
+}
+
+.sim-message-actions-right {
+  justify-content: flex-end;
+}
+
+.sim-turn:hover .sim-message-actions,
+.sim-message:focus-within .sim-message-actions {
+  opacity: 1;
+}
+
+.sim-ghost-btn,
+.sim-solid-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 650;
+  padding: 7px 11px;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.sim-ghost-btn {
+  border: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
+  background: color-mix(in srgb, var(--paper) 72%, white);
+  color: var(--graphite);
+}
+
+.sim-ghost-btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent-sea) 34%, transparent);
+  color: color-mix(in srgb, var(--ink) 78%, var(--accent-sea));
+}
+
+.sim-solid-btn {
+  border: 1px solid color-mix(in srgb, var(--ink) 42%, transparent);
+  background: color-mix(in srgb, var(--ink) 92%, #13372b);
+  color: #f6f7f2;
+}
+
+.sim-solid-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ink) 86%, #1f4f3f);
+}
+
+.sim-ghost-btn:disabled,
+.sim-solid-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.sim-tool-card {
+  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--paper) 82%, white);
+  padding: 12px;
+}
+
+.sim-tool-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--graphite);
+}
+
+.sim-tool-name {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 62%, white);
+  padding: 3px 8px;
+  font-weight: 700;
+}
+
+.sim-tool-state {
+  margin-left: auto;
+  font-size: 11px;
+  letter-spacing: normal;
+  text-transform: none;
+  font-weight: 600;
+}
+
+.sim-tool-query,
+.sim-tool-latency,
+.sim-tool-error {
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.sim-tool-running {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--graphite);
+}
+
+.sim-tool-error {
+  color: #a6332a;
+}
+
+.sim-tool-results {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.sim-tool-results li {
+  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, white 84%, var(--paper));
+  padding: 9px 10px;
+}
+
+.sim-tool-results a {
+  color: color-mix(in srgb, var(--accent-sea) 92%, black);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.sim-tool-results a:hover {
+  text-decoration: underline;
+}
+
+.sim-tool-results p {
+  margin: 5px 0 0;
+  font-size: 12px;
+  color: var(--graphite);
+}
+
+.sim-reasoning {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--graphite);
+}
+
+.sim-stream-caret {
+  margin-left: 2px;
+  width: 2px;
+  height: 19px;
+  display: inline-block;
+  vertical-align: middle;
+  background: color-mix(in srgb, var(--ink) 80%, var(--accent-sea));
+}
+
+.sim-retry-tag {
+  color: var(--pencil);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.sim-thread-tail {
+  height: 14px;
+}
+
+.sim-composer-zone {
+  position: sticky;
+  bottom: 0;
+  z-index: 24;
+  padding: 10px clamp(12px, 2.1vw, 34px) 18px;
+  background: linear-gradient(0deg, color-mix(in srgb, var(--paper) 95%, white) 62%, transparent 100%);
+}
+
+.sim-composer-card {
+  width: min(860px, 100%);
+  margin: 0 auto;
+  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  border-radius: 24px;
+  background: color-mix(in srgb, white 80%, var(--paper));
+  box-shadow: var(--elev-shadow);
+  padding: 8px;
+}
+
+.sim-composer-input {
+  width: 100%;
+  min-height: 54px;
+  max-height: 220px;
+  resize: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.7;
+  padding: 10px 14px 4px;
+  outline: none;
+}
+
+.sim-composer-input::placeholder {
+  color: color-mix(in srgb, var(--pencil) 86%, transparent);
+}
+
+.sim-composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 6px 2px 6px;
+}
+
+.sim-composer-note {
+  margin: 0;
+  color: var(--pencil);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.sim-send-btn {
+  display: grid;
+  place-items: center;
+  height: 36px;
+  width: 36px;
+  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 70%, white);
+  color: var(--pencil);
+  transition: transform 0.16s ease, background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.sim-send-btn.is-active {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--accent-sea) 78%, black), color-mix(in srgb, var(--accent-rust) 58%, black));
+  border-color: color-mix(in srgb, var(--accent-sea) 60%, black);
+  color: #f6f6f2;
+  cursor: pointer;
+}
+
+.sim-send-btn.is-active:hover {
+  transform: translateY(-1px) scale(1.02);
+}
+
+.sim-send-btn:disabled {
+  cursor: not-allowed;
+}
+
+@media (min-width: 1100px) {
+  .sim-sidebar {
+    position: relative;
+    transform: none;
+    z-index: 20;
+  }
+
+  .sim-mobile-only {
+    display: none;
+  }
+
+  .sim-sidebar-overlay {
+    display: none;
+  }
+}
+
+@media (max-width: 1099px) {
+  .sim-topbar {
+    padding-inline: 14px;
+  }
+
+  .sim-title {
+    font-size: 16px;
+  }
+
+  .sim-kicker {
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 720px) {
+  .sim-scroll-region {
+    padding-inline: 10px;
+  }
+
+  .sim-hero {
+    border-radius: 22px;
+    padding: 18px;
+    margin-top: 12px;
+  }
+
+  .sim-hero h2 {
+    font-size: clamp(25px, 9vw, 34px);
+  }
+
+  .sim-message {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .sim-message-user {
+    max-width: 94%;
+  }
+
+  .sim-composer-zone {
+    padding-inline: 10px;
+    padding-bottom: 12px;
+  }
+
+  .sim-composer-note {
+    display: none;
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(10px, -12px, 0);
+  }
+}
+</style>
