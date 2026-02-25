@@ -10,8 +10,13 @@ const PROJECT_ROOT = path.resolve(__dirname, '..', '..')
 const GATEWAY_ENTRY = path.join(PROJECT_ROOT, 'src', 'devtools', 'simulator', 'simulator-gateway.js')
 
 const HOST = '127.0.0.1'
-const HEALTH_TIMEOUT_MS = 15000
+const HEALTH_TIMEOUT_MS = 20000
 const REQUEST_TIMEOUT_MS = 8000
+const FAST_FIRST_GATEWAY_ENV = Object.freeze({
+  SIMULATOR_SETTLEMENT_STORAGE: 'state_file',
+  SIMULATOR_REQUIRE_DURABLE_SETTLEMENT: 'false',
+  SIMULATOR_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE: 'false',
+})
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -78,10 +83,11 @@ async function waitForGateway(baseUrl) {
 }
 
 function startGateway(port) {
-  const child = spawn(process.execPath, ['--env-file-if-exists=.env', GATEWAY_ENTRY], {
+  const child = spawn(process.execPath, [GATEWAY_ENTRY], {
     cwd: PROJECT_ROOT,
     env: {
       ...process.env,
+      ...FAST_FIRST_GATEWAY_ENV,
       SIMULATOR_GATEWAY_HOST: HOST,
       SIMULATOR_GATEWAY_PORT: String(port),
       OPENROUTER_API_KEY: '',
