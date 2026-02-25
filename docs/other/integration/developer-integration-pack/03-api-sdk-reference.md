@@ -236,5 +236,5 @@ Sample response:
 
 ## 7. Compatibility Notes
 
-1. Legacy `POST /api/v1/sdk/evaluate` is not the primary integration path.
+1. Legacy evaluate endpoint is deprecated for new integrations.
 2. New integrations must use `config -> v2/bid -> events`.

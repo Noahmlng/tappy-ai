@@ -214,7 +214,7 @@ function contractCheckClass(ok) {
       <h3>Output Contract</h3>
       <ul class="checklist">
         <li>Patch only, no auto PR submission.</li>
-        <li>Must run `token exchange -> config -> evaluate -> events` smoke.</li>
+        <li>Must run `token exchange -> config -> v2/bid -> events` smoke.</li>
         <li>Evidence includes `requestId`, `decisionResult`, and `eventsOk`.</li>
         <li>Fail-open is explicitly preserved.</li>
         <li>{{ AUTO_PR_POLICY.acknowledgement }}</li>

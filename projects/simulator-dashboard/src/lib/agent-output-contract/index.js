@@ -16,9 +16,9 @@ const SMOKE_STEPS = [
     markers: ['/api/v1/mediation/config', 'mediation/config'],
   },
   {
-    id: 'evaluate',
-    label: 'evaluate',
-    markers: ['/api/v1/sdk/evaluate', 'sdk/evaluate'],
+    id: 'v2Bid',
+    label: 'v2 bid',
+    markers: ['/api/v2/bid', 'v2/bid'],
   },
   {
     id: 'events',
@@ -145,7 +145,7 @@ function validateSmokeChain(text) {
   if (!isOrdered) {
     return {
       ok: false,
-      message: 'Smoke steps are present but order is not `token exchange -> config -> evaluate -> events`.',
+      message: 'Smoke steps are present but order is not `token exchange -> config -> v2 bid -> events`.',
       positions,
     }
   }

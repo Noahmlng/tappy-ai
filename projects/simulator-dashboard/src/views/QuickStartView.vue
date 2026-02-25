@@ -11,15 +11,23 @@ const verifyResult = ref(null)
 
 const envSnippet = `MEDIATION_API_BASE_URL=https://api.<env>.example.com
 MEDIATION_API_KEY=<issued_api_key>
+APP_ID=<your_app_id>
 PLACEMENT_ID=chat_inline_v1`
 
 const examples = {
   javascript: `const baseUrl = process.env.MEDIATION_API_BASE_URL;
 const apiKey = process.env.MEDIATION_API_KEY;
+const appId = process.env.APP_ID;
 const placementId = process.env.PLACEMENT_ID || 'chat_inline_v1';
 
 async function runQuickStart() {
+  const sessionId = 'quickstart_session_001';
+  const turnId = 'quickstart_turn_001';
+  const query = 'Recommend waterproof running shoes';
+  const answerText = 'Prioritize grip and breathable waterproof upper.';
+
   const configParams = new URLSearchParams({
+    appId,
     placementId,
     environment: 'prod',
     schemaVersion: 'schema_v1',
@@ -35,27 +43,31 @@ async function runQuickStart() {
     throw new Error(\`config failed: \${configRes.status}\`);
   }
 
-  const evaluateRes = await fetch(\`\${baseUrl}/api/v1/sdk/evaluate\`, {
+  const bidRes = await fetch(\`\${baseUrl}/api/v2/bid\`, {
     method: 'POST',
     headers: {
       'Authorization': \`Bearer \${apiKey}\`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      sessionId: 'quickstart_session_001',
-      turnId: 'quickstart_turn_001',
-      query: 'Recommend waterproof running shoes',
-      answerText: 'Prioritize grip and breathable waterproof upper.',
-      intentScore: 0.91,
-      locale: 'en-US'
+      userId: sessionId,
+      chatId: sessionId,
+      placementId,
+      messages: [
+        { role: 'user', content: query },
+        { role: 'assistant', content: answerText }
+      ]
     })
   });
-  if (!evaluateRes.ok) {
-    throw new Error(\`evaluate failed: \${evaluateRes.status}\`);
+  if (!bidRes.ok) {
+    throw new Error(\`v2/bid failed: \${bidRes.status}\`);
   }
 
-  const evaluateData = await evaluateRes.json();
-  const requestId = evaluateData.requestId;
+  const bidData = await bidRes.json();
+  const requestId = String(bidData.requestId || '');
+  if (!requestId) {
+    throw new Error('v2/bid returned empty requestId');
+  }
 
   const eventsRes = await fetch(\`\${baseUrl}/api/v1/sdk/events\`, {
     method: 'POST',
@@ -65,19 +77,26 @@ async function runQuickStart() {
     },
     body: JSON.stringify({
       requestId,
-      sessionId: 'quickstart_session_001',
-      turnId: 'quickstart_turn_001',
-      query: 'Recommend waterproof running shoes',
-      answerText: 'Prioritize grip and breathable waterproof upper.',
+      appId,
+      sessionId,
+      turnId,
+      query,
+      answerText,
       intentScore: 0.91,
-      locale: 'en-US'
+      locale: 'en-US',
+      kind: 'impression',
+      placementId
     })
   });
   if (!eventsRes.ok) {
     throw new Error(\`events failed: \${eventsRes.status}\`);
   }
 
-  console.log({ requestId, result: evaluateData.decision?.result });
+  console.log({
+    requestId,
+    bidMessage: bidData.message || '',
+    hasBid: Boolean(bidData?.data?.bid)
+  });
 }
 
 runQuickStart().catch((error) => {
@@ -89,6 +108,7 @@ import requests
 
 base_url = os.environ["MEDIATION_API_BASE_URL"]
 api_key = os.environ["MEDIATION_API_KEY"]
+app_id = os.environ["APP_ID"]
 placement_id = os.environ.get("PLACEMENT_ID", "chat_inline_v1")
 
 headers = {
@@ -100,6 +120,7 @@ config = requests.get(
     f"{base_url}/api/v1/mediation/config",
     headers={"Authorization": f"Bearer {api_key}"},
     params={
+        "appId": app_id,
         "placementId": placement_id,
         "environment": "prod",
         "schemaVersion": "schema_v1",
@@ -111,55 +132,80 @@ config = requests.get(
 if config.status_code not in (200, 304):
     raise RuntimeError(f"config failed: {config.status_code}")
 
-payload = {
-    "sessionId": "quickstart_session_001",
-    "turnId": "quickstart_turn_001",
-    "query": "Recommend waterproof running shoes",
-    "answerText": "Prioritize grip and breathable waterproof upper.",
+session_id = "quickstart_session_001"
+turn_id = "quickstart_turn_001"
+query = "Recommend waterproof running shoes"
+answer_text = "Prioritize grip and breathable waterproof upper."
+
+bid = requests.post(
+    f"{base_url}/api/v2/bid",
+    headers=headers,
+    json={
+        "userId": session_id,
+        "chatId": session_id,
+        "placementId": placement_id,
+        "messages": [
+            {"role": "user", "content": query},
+            {"role": "assistant", "content": answer_text}
+        ]
+    },
+    timeout=5
+)
+bid.raise_for_status()
+bid_json = bid.json()
+request_id = str(bid_json.get("requestId", ""))
+if not request_id:
+    raise RuntimeError("v2/bid returned empty requestId")
+
+event_payload = {
+    "requestId": request_id,
+    "appId": app_id,
+    "sessionId": session_id,
+    "turnId": turn_id,
+    "query": query,
+    "answerText": answer_text,
     "intentScore": 0.91,
-    "locale": "en-US"
+    "locale": "en-US",
+    "kind": "impression",
+    "placementId": placement_id
 }
-
-evaluate = requests.post(f"{base_url}/api/v1/sdk/evaluate", headers=headers, json=payload, timeout=5)
-evaluate.raise_for_status()
-evaluate_json = evaluate.json()
-request_id = evaluate_json.get("requestId")
-
-event_payload = dict(payload)
-event_payload["requestId"] = request_id
 
 events = requests.post(f"{base_url}/api/v1/sdk/events", headers=headers, json=event_payload, timeout=5)
 events.raise_for_status()
 
-print({"requestId": request_id, "result": evaluate_json.get("decision", {}).get("result")})`,
-  curl: `curl -sS "$MEDIATION_API_BASE_URL/api/v1/mediation/config?placementId=\${PLACEMENT_ID:-chat_inline_v1}&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z" \\
+print({"requestId": request_id, "bidMessage": bid_json.get("message", ""), "hasBid": bool((bid_json.get("data") or {}).get("bid"))})`,
+  curl: `curl -sS "$MEDIATION_API_BASE_URL/api/v1/mediation/config?appId=$APP_ID&placementId=\${PLACEMENT_ID:-chat_inline_v1}&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-22T00:00:00.000Z" \\
   -H "Authorization: Bearer $MEDIATION_API_KEY"
 
-curl -sS -X POST "$MEDIATION_API_BASE_URL/api/v1/sdk/evaluate" \\
+curl -sS -X POST "$MEDIATION_API_BASE_URL/api/v2/bid" \\
   -H "Authorization: Bearer $MEDIATION_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d "{
-    \\"sessionId\\": \\"quickstart_session_001\\",
-    \\"turnId\\": \\"quickstart_turn_001\\",
-    \\"query\\": \\"Recommend waterproof running shoes\\",
-    \\"answerText\\": \\"Prioritize grip and breathable waterproof upper.\\",
-    \\"intentScore\\": 0.91,
-    \\"locale\\": \\"en-US\\"
-  }" | tee /tmp/mediation-eval.json
+    \\"userId\\": \\"quickstart_session_001\\",
+    \\"chatId\\": \\"quickstart_session_001\\",
+    \\"placementId\\": \\"chat_inline_v1\\",
+    \\"messages\\": [
+      { \\"role\\": \\"user\\", \\"content\\": \\"Recommend waterproof running shoes\\" },
+      { \\"role\\": \\"assistant\\", \\"content\\": \\"Prioritize grip and breathable waterproof upper.\\" }
+    ]
+  }" | tee /tmp/mediation-bid.json
 
-REQUEST_ID=$(cat /tmp/mediation-eval.json | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{const j=JSON.parse(d||"{}");process.stdout.write(j.requestId||"")})')
+REQUEST_ID=$(cat /tmp/mediation-bid.json | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{const j=JSON.parse(d||"{}");process.stdout.write(j.requestId||"")})')
 
 curl -sS -X POST "$MEDIATION_API_BASE_URL/api/v1/sdk/events" \\
   -H "Authorization: Bearer $MEDIATION_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d "{
     \\"requestId\\": \\"$REQUEST_ID\\",
+    \\"appId\\": \\"$APP_ID\\",
     \\"sessionId\\": \\"quickstart_session_001\\",
     \\"turnId\\": \\"quickstart_turn_001\\",
     \\"query\\": \\"Recommend waterproof running shoes\\",
     \\"answerText\\": \\"Prioritize grip and breathable waterproof upper.\\",
     \\"intentScore\\": 0.91,
-    \\"locale\\": \\"en-US\\"
+    \\"locale\\": \\"en-US\\",
+    \\"kind\\": \\"impression\\",
+    \\"placementId\\": \\"chat_inline_v1\\"
   }"`
 }
 
@@ -267,7 +313,7 @@ async function runQuickStartVerifier() {
           {{ verifyLoading ? 'Verifying...' : 'Run verify' }}
         </button>
       </div>
-      <p class="subtitle">Runs `config -> evaluate -> events` and returns evidence.</p>
+      <p class="subtitle">Runs `config -> v2/bid -> events` and returns evidence.</p>
       <p v-if="verifyError" class="muted">{{ verifyError }}</p>
       <div v-if="verifyResult">
         <p><strong>requestId:</strong> <code>{{ verifyResult.requestId || '-' }}</code></p>
@@ -280,8 +326,8 @@ async function runQuickStartVerifier() {
       <h3>Pass criteria</h3>
       <ul class="checklist">
         <li>`config` returns `200` or `304`</li>
-        <li>`evaluate` returns a non-empty `requestId`</li>
-        <li>`decision.result` exists (`served|blocked|no_fill|error`)</li>
+        <li>`v2/bid` returns a non-empty `requestId`</li>
+        <li>`v2/bid.message` is `Bid successful` or `No bid`</li>
         <li>`events` request succeeds with `{ "ok": true }`</li>
         <li>Dashboard verify panel returns evidence (`requestId/status`)</li>
         <li>Main user response remains fail-open on ads errors</li>
