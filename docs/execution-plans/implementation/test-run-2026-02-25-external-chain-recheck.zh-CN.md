@@ -101,7 +101,7 @@ Run ID：`external_chain_1771961602184`
 
 ## 5. Final Check 收口（V2-only / Fast-first）
 
-- 时间：2026-02-25 17:04:15 CST
+- 时间：2026-02-25 17:37:16 CST
 - 范围：外部开发者接入一致性 + Dashboard 可见性 + 生产门禁稳定性（仅 API + Dashboard）
 
 ### 5.1 根因与修复摘要
@@ -110,6 +110,7 @@ Run ID：`external_chain_1771961602184`
 | --- | --- | --- | --- |
 | 对外接入内容 | 文档/模板混用旧新链路（`config -> evaluate -> events`） | 集成包 + Dashboard onboarding 统一到 V2-only（`config -> v2/bid -> events`） | 对外资料中不再有 `/api/v1/sdk/evaluate` |
 | 运行环境模型 | 网关/UI/SDK 同时存在 `sandbox/staging/prod` 默认 | 网关默认值与校验、Dashboard 表单、SDK 默认值、集成文档统一改为 `prod` | 对外接入改为 prod-only，移除 staging key 依赖 |
+| API 服务边界 | runtime 与 control-plane 路由同入口暴露 | 新增按角色路由隔离 + 独立 Vercel 入口（`api/runtime.js`、`api/control-plane.js`） | runtime/control-plane 可独立部署与扩缩容 |
 | E2E 稳定性（`test:functional:p0`） | 本地 `.env` durable 设置导致网关启动超时，出现 3 个假失败 | E2E 启动强制 fast-first 环境（`state_file` + 关闭 durable 强制项），移除对 `.env` 的隐式依赖，增加健康检查窗口 | E2E 稳定全绿 |
 
 ### 5.2 Final Check 命令矩阵
@@ -125,11 +126,11 @@ npm --prefix projects/simulator-dashboard run build
 结果：
 
 1. `test:integration`：**PASS**
-   - 44 个文件
-   - 185 tests，185 pass，0 fail
+   - 45 个文件
+   - 189 tests，189 pass，0 fail
 2. `test:functional:p0`：**PASS**
    - contracts：38 pass，0 fail
-   - integration：185 pass，0 fail
+   - integration：189 pass，0 fail
    - e2e：7 pass，0 fail
 3. `simulator-dashboard build`：**PASS**
 

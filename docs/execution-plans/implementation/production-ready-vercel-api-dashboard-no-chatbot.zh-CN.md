@@ -1,6 +1,6 @@
 # Production Ready 收口部署方案（Vercel：Mediation API + Dashboard，No Chatbot）
 
-- 更新时间：2026-02-25 17:04:15 CST
+- 更新时间：2026-02-25 17:37:16 CST
 - 适用范围：`/Users/zeming/Documents/chat-ads-main` 当前主仓
 - 部署范围：仅 `projects/ad-aggregation-platform` 与 `projects/simulator-dashboard`
 

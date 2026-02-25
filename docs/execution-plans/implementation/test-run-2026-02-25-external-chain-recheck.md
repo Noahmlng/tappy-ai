@@ -101,7 +101,7 @@ Additional confirmed behavior:
 
 ## 5. Final Check Closure (V2-only / Fast-first)
 
-- Date: 2026-02-25 17:04:15 CST
+- Date: 2026-02-25 17:37:16 CST
 - Scope: external developer onboarding consistency + dashboard visibility + production gate stability (API + Dashboard only)
 
 ### 5.1 Root Cause and Fix Summary
@@ -110,6 +110,7 @@ Additional confirmed behavior:
 | --- | --- | --- | --- |
 | External onboarding content | Mixed old/new flow (`config -> evaluate -> events`) in docs/templates | Unified to V2-only (`config -> v2/bid -> events`) across integration pack + dashboard onboarding views/templates | No `/api/v1/sdk/evaluate` reference remains in developer-facing docs/views |
 | Runtime environment model | `sandbox/staging/prod` defaults coexisted in gateway/UI/SDK | Enforced `prod` as the only runtime environment in gateway defaults/checks, dashboard forms, SDK defaults, and integration docs | External onboarding is prod-only; staging key dependency removed |
+| API service boundary | Runtime + control-plane endpoints were exposed by a single service entry | Added role-based route isolation and dedicated Vercel handlers (`api/runtime.js`, `api/control-plane.js`) | Runtime/control-plane can now be deployed and scaled as independent services |
 | E2E stability (`test:functional:p0`) | 3 flaky failures due gateway startup timeout under local `.env` durable settings | E2E gateway startup now forces fast-first env (`state_file`, durable flags disabled), removes implicit `.env` dependency, extends health timeout window | E2E suite stable and fully passing |
 
 ### 5.2 Final Check Command Matrix
@@ -125,11 +126,11 @@ npm --prefix projects/simulator-dashboard run build
 Results:
 
 1. `test:integration`: **PASS**
-   - 44 files
-   - 185 tests, 185 pass, 0 fail
+   - 45 files
+   - 189 tests, 189 pass, 0 fail
 2. `test:functional:p0`: **PASS**
    - contracts: 38 pass, 0 fail
-   - integration: 185 pass, 0 fail
+   - integration: 189 pass, 0 fail
    - e2e: 7 pass, 0 fail
 3. `simulator-dashboard build`: **PASS**
 
