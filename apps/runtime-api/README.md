@@ -10,5 +10,5 @@ This app exposes runtime-only endpoints:
 
 Handler source:
 
-- `mediation/src/devtools/mediation/mediation-gateway.js`
+- `mediation/src/devtools/mediation/runtime-api-handler.js`
 - export: `handleRuntimeRequest`

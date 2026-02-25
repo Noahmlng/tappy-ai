@@ -9,5 +9,5 @@ This app exposes control-plane-only endpoints:
 
 Handler source:
 
-- `mediation/src/devtools/mediation/mediation-gateway.js`
+- `mediation/src/devtools/mediation/control-plane-api-handler.js`
 - export: `handleControlPlaneRequest`

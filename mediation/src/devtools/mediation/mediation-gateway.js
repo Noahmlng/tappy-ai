@@ -9938,18 +9938,6 @@ export async function handleGatewayRequest(req, res, options = {}) {
   }
 }
 
-export async function handleRuntimeRequest(req, res) {
-  await handleGatewayRequest(req, res, {
-    apiServiceRole: 'runtime',
-  })
-}
-
-export async function handleControlPlaneRequest(req, res) {
-  await handleGatewayRequest(req, res, {
-    apiServiceRole: 'control_plane',
-  })
-}
-
 const server = http.createServer((req, res) => {
   void handleGatewayRequest(req, res, {
     apiServiceRole: API_SERVICE_ROLE,

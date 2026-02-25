@@ -101,6 +101,8 @@
 - 渲染位置：assistant 消息下方 Sponsored 区块
 - 关键代码：
   - `mediation/src/devtools/mediation/mediation-gateway.js`
+  - `mediation/src/devtools/mediation/runtime-api-handler.js`
+  - `mediation/src/devtools/mediation/control-plane-api-handler.js`
   - 外部客户端：`/Users/zeming/Documents/mediation-chatbot`
 
 ### Next-Step 输出：Intent Card
