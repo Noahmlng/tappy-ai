@@ -7347,7 +7347,7 @@ async function recordAttachSdkEvent(request) {
   })
 }
 
-async function requestHandler(req, res) {
+export async function requestHandler(req, res) {
   const requestUrl = new URL(req.url || '/', `http://${req.headers.host || `${HOST}:${PORT}`}`)
   const pathname = requestUrl.pathname
 
@@ -9423,21 +9423,63 @@ async function requestHandler(req, res) {
   sendNotFound(res)
 }
 
-const server = http.createServer((req, res) => {
-  requestHandler(req, res).catch((error) => {
-    console.error('[simulator-gateway] unhandled error:', error)
-    sendJson(res, 500, {
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: 'Internal server error',
-      },
-    })
+function sendInternalError(res, error) {
+  console.error('[simulator-gateway] unhandled error:', error)
+  sendJson(res, 500, {
+    error: {
+      code: 'INTERNAL_ERROR',
+      message: 'Internal server error',
+    },
   })
+}
+
+function verifyGatewayReadiness() {
+  if (REQUIRE_DURABLE_SETTLEMENT && !isPostgresSettlementStore()) {
+    throw new Error('durable settlement is required but supabase store is unavailable.')
+  }
+  if (REQUIRE_RUNTIME_LOG_DB_PERSISTENCE && !isPostgresSettlementStore()) {
+    throw new Error('runtime log DB persistence is required but supabase store is unavailable.')
+  }
+}
+
+let readyPromise = null
+
+export async function ensureReady() {
+  if (!readyPromise) {
+    readyPromise = (async () => {
+      await ensureSettlementStoreReady()
+      verifyGatewayReadiness()
+      return true
+    })().catch((error) => {
+      readyPromise = null
+      throw error
+    })
+  }
+  await readyPromise
+}
+
+export async function handleGatewayRequest(req, res) {
+  try {
+    await ensureReady()
+    await requestHandler(req, res)
+  } catch (error) {
+    sendInternalError(res, error)
+  }
+}
+
+const server = http.createServer((req, res) => {
+  void handleGatewayRequest(req, res)
 })
+
+function isDirectExecution() {
+  const entry = String(process.argv?.[1] || '').trim()
+  if (!entry) return false
+  return path.resolve(entry) === __filename
+}
 
 async function startServer() {
   try {
-    await ensureSettlementStoreReady()
+    await ensureReady()
   } catch (error) {
     console.error(
       '[simulator-gateway] settlement store init error (fail-fast):',
@@ -9456,18 +9498,12 @@ async function startServer() {
     console.log(`[simulator-gateway] settlement store mode: ${settlementStore.mode}`)
     console.log(`[simulator-gateway] strict manual integration: ${STRICT_MANUAL_INTEGRATION}`)
     console.log(`[simulator-gateway] runtime log db persistence required: ${REQUIRE_RUNTIME_LOG_DB_PERSISTENCE}`)
-    if (REQUIRE_DURABLE_SETTLEMENT && !isPostgresSettlementStore()) {
-      console.error('[simulator-gateway] durable settlement is required but supabase store is unavailable.')
-      process.exit(1)
-    }
-    if (REQUIRE_RUNTIME_LOG_DB_PERSISTENCE && !isPostgresSettlementStore()) {
-      console.error('[simulator-gateway] runtime log DB persistence is required but supabase store is unavailable.')
-      process.exit(1)
-    }
   })
 }
 
-startServer().catch((error) => {
-  console.error('[simulator-gateway] startup failure:', error)
-  process.exit(1)
-})
+if (isDirectExecution()) {
+  startServer().catch((error) => {
+    console.error('[simulator-gateway] startup failure:', error)
+    process.exit(1)
+  })
+}
