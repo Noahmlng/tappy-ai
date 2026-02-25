@@ -1672,6 +1672,23 @@ async function handleSend(options = {}) {
   background: var(--paper);
 }
 
+.sim-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      color-mix(in srgb, var(--ink) 2.5%, transparent) 0px,
+      color-mix(in srgb, var(--ink) 2.5%, transparent) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+  opacity: 0.08;
+  z-index: 0;
+}
+
 .sim-backdrop {
   position: absolute;
   inset: 0;
@@ -1680,6 +1697,7 @@ async function handleSend(options = {}) {
     radial-gradient(circle at 22% 14%, color-mix(in srgb, var(--accent-sea) 24%, transparent) 0%, transparent 42%),
     radial-gradient(circle at 78% 10%, color-mix(in srgb, var(--accent-gold) 26%, transparent) 0%, transparent 44%),
     radial-gradient(circle at 50% 110%, color-mix(in srgb, var(--accent-rust) 18%, transparent) 0%, transparent 54%);
+  z-index: 1;
 }
 
 .sim-orb {
@@ -1730,6 +1748,9 @@ async function handleSend(options = {}) {
   padding: 18px 14px;
   transform: translateX(-110%);
   transition: transform 0.28s ease;
+  box-shadow: 18px 0 42px color-mix(in srgb, #000 26%, transparent);
+  backdrop-filter: blur(8px);
+  will-change: transform;
 }
 
 .sim-sidebar.is-open {
@@ -1887,9 +1908,19 @@ async function handleSend(options = {}) {
   min-height: 0;
   flex: 1;
   overflow-y: auto;
-  padding-right: 4px;
+  padding: 7px;
   display: grid;
   gap: 6px;
+  align-content: start;
+  grid-auto-rows: max-content;
+  border: 1px solid color-mix(in srgb, var(--sidebar-border) 70%, transparent);
+  border-radius: 14px;
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--sidebar-surface) 32%, #151a17),
+    color-mix(in srgb, var(--sidebar-bg) 88%, #090b0a)
+  );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
 }
 
 .sim-session-card {
@@ -1898,6 +1929,7 @@ async function handleSend(options = {}) {
   border: 1px solid transparent;
   background: transparent;
   transition: border-color 0.16s ease, background-color 0.16s ease;
+  overflow: hidden;
 }
 
 .sim-session-card:hover {
@@ -1907,7 +1939,7 @@ async function handleSend(options = {}) {
 
 .sim-session-card.is-active {
   border-color: color-mix(in srgb, var(--accent-sea) 40%, white);
-  background: color-mix(in srgb, var(--sidebar-surface) 78%, #0f1210);
+  background: color-mix(in srgb, var(--sidebar-surface) 84%, #0f1210);
 }
 
 .sim-session-main {
@@ -1973,9 +2005,10 @@ async function handleSend(options = {}) {
 }
 
 .sim-session-empty {
-  margin: 6px 4px 0;
+  margin: 6px 4px 2px;
   color: var(--sidebar-muted);
   font-size: 12px;
+  text-align: center;
 }
 
 .sim-sidebar-panels {
@@ -2191,10 +2224,11 @@ async function handleSend(options = {}) {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 22px;
+  padding: 15px 22px 14px;
   border-bottom: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
-  background: color-mix(in srgb, var(--paper) 92%, white);
-  backdrop-filter: blur(10px);
+  background: color-mix(in srgb, var(--paper) 90%, white);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 1px 0 color-mix(in srgb, #fff 66%, transparent);
 }
 
 .sim-topbar-left {
@@ -2261,19 +2295,48 @@ async function handleSend(options = {}) {
   flex: 1;
   overflow-y: auto;
   padding: clamp(16px, 2vw, 28px) clamp(12px, 2.2vw, 34px) 22px;
+  background:
+    radial-gradient(circle at 60% 100%, color-mix(in srgb, var(--accent-gold) 6%, transparent), transparent 40%),
+    radial-gradient(circle at 6% 0%, color-mix(in srgb, var(--accent-sea) 7%, transparent), transparent 42%);
 }
 
 .sim-hero {
   margin: clamp(14px, 3vh, 32px) auto 26px;
   width: min(860px, 100%);
+  position: relative;
+  isolation: isolate;
   border: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
   border-radius: 28px;
   background: linear-gradient(152deg, color-mix(in srgb, var(--paper) 88%, white), color-mix(in srgb, var(--surface) 72%, white));
-  box-shadow: var(--elev-shadow);
+  box-shadow:
+    0 28px 60px color-mix(in srgb, #111b17 16%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 70%, transparent);
   padding: clamp(22px, 3.5vw, 38px);
   transition: opacity 0.5s ease, transform 0.5s ease, max-height 0.5s ease, margin 0.5s ease, padding 0.5s ease;
   max-height: 420px;
   overflow: hidden;
+}
+
+.sim-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 8px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent-sea) 44%, transparent),
+    color-mix(in srgb, var(--accent-gold) 28%, transparent),
+    color-mix(in srgb, var(--accent-rust) 32%, transparent)
+  );
+  opacity: 0.72;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.sim-hero > * {
+  position: relative;
+  z-index: 1;
 }
 
 .sim-hero.is-hidden {
@@ -2315,6 +2378,7 @@ async function handleSend(options = {}) {
 .sim-thread {
   margin: 0 auto;
   width: min(860px, 100%);
+  padding-top: 4px;
   opacity: 0;
   transform: translateY(16px);
   pointer-events: none;
@@ -2361,22 +2425,27 @@ async function handleSend(options = {}) {
 .sim-message {
   width: min(100%, 680px);
   border-radius: 22px;
-  padding: 14px 16px;
+  padding: 14px 16px 13px;
   font-size: 15px;
   line-height: 1.72;
+  backdrop-filter: blur(6px);
 }
 
 .sim-message-user {
   max-width: min(76%, 640px);
   border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
   background: linear-gradient(145deg, color-mix(in srgb, var(--accent-rust) 14%, white), color-mix(in srgb, var(--surface) 88%, white));
-  box-shadow: 0 6px 22px color-mix(in srgb, var(--accent-rust) 12%, transparent);
+  box-shadow:
+    0 10px 24px color-mix(in srgb, var(--accent-rust) 11%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 54%, transparent);
 }
 
 .sim-message-assistant {
   border: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
   background: color-mix(in srgb, white 80%, var(--paper));
-  box-shadow: var(--soft-shadow);
+  box-shadow:
+    0 10px 26px color-mix(in srgb, #182117 10%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 70%, transparent);
 }
 
 .sim-rewrite-input {
@@ -2402,8 +2471,9 @@ async function handleSend(options = {}) {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  opacity: 0.24;
-  transition: opacity 0.2s ease;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
 .sim-message-actions-right {
@@ -2413,6 +2483,14 @@ async function handleSend(options = {}) {
 .sim-turn:hover .sim-message-actions,
 .sim-message:focus-within .sim-message-actions {
   opacity: 1;
+  transform: translateY(0);
+}
+
+@media (hover: none), (pointer: coarse) {
+  .sim-message-actions {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .sim-ghost-btn,
@@ -2581,7 +2659,12 @@ async function handleSend(options = {}) {
   bottom: 0;
   z-index: 24;
   padding: 10px clamp(12px, 2.1vw, 34px) 18px;
-  background: linear-gradient(0deg, color-mix(in srgb, var(--paper) 95%, white) 62%, transparent 100%);
+  background: linear-gradient(0deg, color-mix(in srgb, var(--paper) 95%, white) 58%, transparent 100%);
+  backdrop-filter: blur(9px);
+}
+
+.sim-composer-zone.is-live {
+  background: linear-gradient(0deg, color-mix(in srgb, var(--paper) 97%, white) 52%, transparent 100%);
 }
 
 .sim-composer-card {
@@ -2589,8 +2672,10 @@ async function handleSend(options = {}) {
   margin: 0 auto;
   border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
   border-radius: 24px;
-  background: color-mix(in srgb, white 80%, var(--paper));
-  box-shadow: var(--elev-shadow);
+  background: color-mix(in srgb, white 84%, var(--paper));
+  box-shadow:
+    0 18px 45px color-mix(in srgb, #111d18 14%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 72%, transparent);
   padding: 8px;
 }
 
@@ -2603,8 +2688,8 @@ async function handleSend(options = {}) {
 
 .sim-composer-input {
   width: 100%;
-  min-height: 54px;
-  max-height: 220px;
+  min-height: 52px;
+  max-height: 180px;
   resize: none;
   border: 0;
   background: transparent;
@@ -2651,6 +2736,9 @@ async function handleSend(options = {}) {
   border-color: color-mix(in srgb, var(--accent-sea) 60%, black);
   color: #f6f6f2;
   cursor: pointer;
+  box-shadow:
+    0 8px 16px color-mix(in srgb, var(--accent-sea) 22%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 25%, transparent);
 }
 
 .sim-send-btn.is-active:hover {
@@ -2721,7 +2809,7 @@ async function handleSend(options = {}) {
 
   .sim-hero {
     border-radius: 22px;
-    padding: 18px;
+    padding: 18px 17px;
     margin-top: 12px;
   }
 
@@ -2741,6 +2829,18 @@ async function handleSend(options = {}) {
   .sim-composer-zone {
     padding-inline: 10px;
     padding-bottom: 12px;
+  }
+
+  .sim-pill-btn {
+    height: 34px;
+    width: 34px;
+    border-radius: 11px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .sim-pill-btn span {
+    display: none;
   }
 
   .sim-composer-note {

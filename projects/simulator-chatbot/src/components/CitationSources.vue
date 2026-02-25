@@ -67,6 +67,7 @@ defineEmits(['source-click'])
 .citation-sources li a:hover {
   transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--accent-sea) 38%, transparent);
+  background: color-mix(in srgb, var(--indigo-soft) 48%, white);
 }
 
 .citation-sources li a:focus-visible {
@@ -100,6 +101,7 @@ defineEmits(['source-click'])
   grid-column: 2;
   color: var(--pencil);
   font-size: 11px;
+  letter-spacing: 0.01em;
 }
 
 .citation-empty {

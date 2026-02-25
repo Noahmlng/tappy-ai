@@ -55,6 +55,7 @@ defineEmits(['select'])
   text-align: left;
   padding: 7px 11px;
   cursor: pointer;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 65%, transparent);
   transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
@@ -63,6 +64,9 @@ defineEmits(['select'])
   border-color: color-mix(in srgb, var(--accent-sea) 44%, transparent);
   background: color-mix(in srgb, var(--indigo-soft) 70%, white);
   color: color-mix(in srgb, var(--accent-sea) 90%, black);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 72%, transparent),
+    0 8px 18px color-mix(in srgb, var(--accent-sea) 10%, transparent);
 }
 
 .followup-grid button:focus-visible {

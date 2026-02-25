@@ -36,6 +36,20 @@ defineEmits(['ad-click'])
   background: linear-gradient(145deg, color-mix(in srgb, var(--paper) 55%, white), color-mix(in srgb, var(--surface) 74%, white));
   box-shadow: var(--soft-shadow);
   padding: 12px;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.ad-card:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent-sea) 28%, transparent);
+  box-shadow: 0 14px 30px color-mix(in srgb, var(--accent-sea) 10%, transparent);
+}
+
+.ad-card:focus-within {
+  border-color: color-mix(in srgb, var(--accent-sea) 34%, transparent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--accent-sea) 16%, transparent),
+    0 14px 30px color-mix(in srgb, var(--accent-sea) 10%, transparent);
 }
 
 .ad-card-meta {

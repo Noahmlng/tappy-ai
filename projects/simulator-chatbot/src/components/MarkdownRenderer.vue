@@ -47,7 +47,7 @@ const renderedHtml = computed(() => markdownParser.render(String(props.content |
   font-family: var(--font-display);
   font-size: 1.72em;
   font-weight: 650;
-  margin: 0.7em 0 0.45em;
+  margin: 0.78em 0 0.48em;
   line-height: 1.15;
   display: block;
 }
@@ -56,7 +56,7 @@ const renderedHtml = computed(() => markdownParser.render(String(props.content |
   font-family: var(--font-display);
   font-size: 1.46em;
   font-weight: 620;
-  margin: 0.72em 0 0.44em;
+  margin: 0.76em 0 0.46em;
   line-height: 1.2;
   display: block;
 }
@@ -69,7 +69,7 @@ const renderedHtml = computed(() => markdownParser.render(String(props.content |
 }
 
 .markdown-content :deep(p) {
-  margin: 0 0 1em;
+  margin: 0 0 1.02em;
 }
 
 .markdown-content :deep(p:last-child) {
@@ -132,11 +132,11 @@ const renderedHtml = computed(() => markdownParser.render(String(props.content |
 }
 
 .markdown-content :deep(blockquote) {
-  margin: 0.8em 0;
+  margin: 0.86em 0;
   border-left: 3px solid color-mix(in srgb, var(--accent-sea) 72%, white);
   background: color-mix(in srgb, var(--indigo-soft) 42%, white);
   border-radius: 0 10px 10px 0;
-  padding: 0.45em 0.9em;
+  padding: 0.55em 0.92em;
   color: color-mix(in srgb, var(--graphite) 95%, #23352d);
 }
 

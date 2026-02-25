@@ -31,6 +31,7 @@
 
   --soft-shadow: 0 10px 30px color-mix(in srgb, #182117 12%, transparent);
   --elev-shadow: 0 14px 40px color-mix(in srgb, #182117 14%, transparent);
+  --focus-ring: color-mix(in srgb, var(--accent-sea) 58%, white);
 }
 
 *,
@@ -47,12 +48,17 @@ body,
 }
 
 body {
-  background: var(--paper);
+  background:
+    radial-gradient(circle at 14% 0%, color-mix(in srgb, var(--accent-sea) 6%, transparent), transparent 34%),
+    radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--accent-gold) 8%, transparent), transparent 40%),
+    var(--paper);
   color: var(--ink);
   font-family: var(--font-body);
   text-rendering: geometricPrecision;
   line-height: 1.65;
   -webkit-font-smoothing: antialiased;
+  font-feature-settings: "liga", "kern";
+  background-attachment: fixed;
 }
 
 ::selection {
@@ -64,6 +70,10 @@ button,
 input,
 textarea {
   font: inherit;
+}
+
+:focus-visible {
+  outline-color: var(--focus-ring);
 }
 
 a {
