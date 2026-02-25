@@ -98,9 +98,13 @@
           >
             <Menu :size="18" />
           </button>
-          <button class="sim-title-wrap" type="button" aria-label="Model selector, current model is 5.2">
+          <button
+            class="sim-title-wrap"
+            type="button"
+            aria-label="Model selector, current model is 5.2"
+            @click="handleTitleButtonClick"
+          >
             <p class="sim-kicker">ChatGPT 5.2</p>
-            <ChevronDown :size="14" />
           </button>
         </div>
         <div class="sim-topbar-actions">
@@ -117,6 +121,31 @@
         <section class="sim-hero" :class="{ 'is-hidden': hasStarted }">
           <h2>Ready when you are.</h2>
           <p>Ask anything</p>
+
+          <div v-if="!hasStarted && isDesktopLayout" class="sim-home-composer">
+            <div class="sim-composer-card sim-composer-card-home">
+              <textarea
+                v-model="input"
+                rows="1"
+                @compositionstart="isComposing = true"
+                @compositionend="isComposing = false"
+                @keydown.enter.prevent="handleSend"
+                placeholder="Ask anything"
+                class="sim-composer-input"
+              ></textarea>
+
+              <div class="sim-composer-footer">
+                <p class="sim-composer-note">ChatGPT can make mistakes. Check important info.</p>
+                <button
+                  @click="handleSend"
+                  :disabled="!input.trim() || isLoading"
+                  :class="['sim-send-btn', input.trim() && !isLoading ? 'is-active' : '']"
+                >
+                  <ArrowUp :size="15" :stroke-width="2.5" />
+                </button>
+              </div>
+            </div>
+          </div>
         </section>
 
         <section class="sim-thread" :class="{ 'is-visible': hasStarted }">
@@ -248,7 +277,7 @@
         </section>
       </div>
 
-      <footer class="sim-composer-zone" :class="{ 'is-live': hasStarted }">
+      <footer v-if="hasStarted || !isDesktopLayout" class="sim-composer-zone" :class="{ 'is-live': hasStarted }">
         <div class="sim-composer-card">
           <textarea
             v-model="input"
@@ -277,17 +306,8 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, watch, onBeforeUnmount } from 'vue'
-import {
-  X,
-  Plus,
-  Search,
-  PenSquare,
-  Menu,
-  ArrowUp,
-  LoaderCircle,
-  ChevronDown,
-} from 'lucide-vue-next'
+import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount } from 'vue'
+import { X, Plus, Search, PenSquare, Menu, ArrowUp, LoaderCircle } from 'lucide-vue-next'
 import { sendMessageStream } from '../api/deepseek'
 import { shouldUseWebSearchTool, runWebSearchTool, buildWebSearchContext } from '../api/webSearchTool'
 import {
@@ -314,7 +334,11 @@ const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant. Be accurate, concise
 
 const input = ref('')
 const historyQuery = ref('')
-const isSidebarOpen = ref(true)
+const desktopMediaQuery = typeof window !== 'undefined'
+  ? window.matchMedia('(min-width: 1100px)')
+  : null
+const isSidebarOpen = ref(desktopMediaQuery ? desktopMediaQuery.matches : true)
+const isDesktopLayout = ref(desktopMediaQuery ? desktopMediaQuery.matches : true)
 const scrollRef = ref(null)
 const isLoading = ref(false)
 const isComposing = ref(false)
@@ -326,6 +350,7 @@ const activeSessionId = ref('')
 const turnLogs = ref([])
 
 let persistTimer = null
+let detachDesktopMediaListener = null
 
 function createId(prefix) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -709,9 +734,33 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  if (detachDesktopMediaListener) {
+    detachDesktopMediaListener()
+    detachDesktopMediaListener = null
+  }
   if (persistTimer) {
     clearTimeout(persistTimer)
   }
+})
+
+onMounted(() => {
+  if (!desktopMediaQuery) return
+
+  const syncSidebarState = (event) => {
+    isDesktopLayout.value = event.matches
+    isSidebarOpen.value = event.matches
+  }
+
+  syncSidebarState(desktopMediaQuery)
+
+  if (typeof desktopMediaQuery.addEventListener === 'function') {
+    desktopMediaQuery.addEventListener('change', syncSidebarState)
+    detachDesktopMediaListener = () => desktopMediaQuery.removeEventListener('change', syncSidebarState)
+    return
+  }
+
+  desktopMediaQuery.addListener(syncSidebarState)
+  detachDesktopMediaListener = () => desktopMediaQuery.removeListener(syncSidebarState)
 })
 
 function touchActiveSession() {
@@ -729,6 +778,12 @@ function formatTraceEventType(eventType) {
   return String(eventType || '')
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function handleTitleButtonClick() {
+  if (typeof window === 'undefined') return
+  if (window.matchMedia('(min-width: 1100px)').matches) return
+  isSidebarOpen.value = true
 }
 
 function createTurnTrace(sessionId, userQuery, retryCount = 0) {
@@ -1823,9 +1878,9 @@ async function handleSend(options = {}) {
   justify-content: flex-start;
   gap: 8px;
   min-height: 36px;
-  border: 1px solid #e2e2e2;
+  border: 0;
   border-radius: 10px;
-  background: #ffffff;
+  background: transparent;
   color: #2f2f2f;
   padding: 0 12px;
   font-size: 14px;
@@ -1835,11 +1890,11 @@ async function handleSend(options = {}) {
   transition:
     background-color var(--motion-fast) var(--ease-standard),
     border-color var(--motion-fast) var(--ease-standard);
+  margin-top: 2px;
 }
 
 .sim-new-chat-btn:hover {
-  background: #f5f5f5;
-  border-color: #dadada;
+  background: #ececec;
 }
 
 .sim-new-chat-btn:focus-visible {
@@ -1858,11 +1913,13 @@ async function handleSend(options = {}) {
   align-items: center;
   gap: 8px;
   min-height: 36px;
-  border: 1px solid #e2e2e2;
+  border: 0;
   border-radius: 10px;
-  background: #f7f7f7;
+  background: transparent;
   color: #8a8a8a;
   padding: 0 10px;
+  cursor: text;
+  transition: background-color var(--motion-fast) var(--ease-standard);
 }
 
 .sim-search-field input {
@@ -1880,7 +1937,7 @@ async function handleSend(options = {}) {
 }
 
 .sim-search-field:focus-within {
-  border-color: #0d0d0d26;
+  background: #ececec;
 }
 
 .sim-sidebar-links {
@@ -2231,6 +2288,11 @@ async function handleSend(options = {}) {
   line-height: 24px;
 }
 
+.sim-home-composer {
+  margin: 34px auto 0;
+  width: var(--sim-content-width);
+}
+
 .sim-thread {
   margin: 0 auto;
   width: var(--sim-content-width);
@@ -2537,6 +2599,14 @@ async function handleSend(options = {}) {
     background-color var(--motion-base) var(--ease-standard);
 }
 
+.sim-composer-card-home {
+  width: 100%;
+}
+
+.sim-composer-card-home .sim-composer-note {
+  display: none;
+}
+
 .sim-composer-card:focus-within {
   border-color: #cfcfcf;
   box-shadow: none;
@@ -2651,9 +2721,23 @@ async function handleSend(options = {}) {
     width: min(78vw, 300px);
   }
 
+  .sim-open-sidebar-btn {
+    display: none;
+  }
+
   .sim-kicker {
     font-size: 18px;
     line-height: 28px;
+  }
+}
+
+@media (min-width: 1100px) {
+  .sim-sidebar-head {
+    display: none;
+  }
+
+  .sim-new-chat-btn {
+    margin-top: 0;
   }
 }
 
@@ -2685,6 +2769,10 @@ async function handleSend(options = {}) {
     line-height: 34px;
   }
 
+  .sim-hero p {
+    display: none;
+  }
+
   .sim-message {
     width: 100%;
     max-width: 100%;
@@ -2697,10 +2785,6 @@ async function handleSend(options = {}) {
   .sim-composer-zone {
     padding-inline: 16px;
     padding-bottom: 16px;
-  }
-
-  .sim-topbar-mobile-btn {
-    display: inline-flex;
   }
 
   .sim-pill-btn {
