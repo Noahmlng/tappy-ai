@@ -8,12 +8,6 @@ const processes = [
     args: ['run', 'dev:gateway', '--workspace', '@ai-network/ad-aggregation-platform'],
   },
   {
-    name: 'chatbot',
-    color: '\x1b[33m',
-    cmd: 'npm',
-    args: ['run', 'dev', '--workspace', '@ai-network/simulator-chatbot'],
-  },
-  {
     name: 'dashboard',
     color: '\x1b[35m',
     cmd: 'npm',
@@ -84,4 +78,4 @@ for (const proc of processes) {
 process.on('SIGINT', () => shutdown(0))
 process.on('SIGTERM', () => shutdown(0))
 
-console.log('Starting local stack: gateway + chatbot + dashboard')
+console.log('Starting local stack: gateway + dashboard')

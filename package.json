@@ -3,7 +3,6 @@
   "private": true,
   "version": "0.1.0",
   "workspaces": [
-    "projects/simulator-chatbot",
     "projects/simulator-dashboard",
     "projects/ad-aggregation-platform"
   ],
@@ -11,8 +10,6 @@
     "dev": "npm run dev:dashboard",
     "build": "npm run build:dashboard",
     "lint": "npm run lint --workspace @ai-network/dashboard",
-    "dev:chatbot": "npm run dev --workspace @ai-network/simulator-chatbot",
-    "build:chatbot": "npm run build --workspace @ai-network/simulator-chatbot",
     "dev:gateway": "npm run dev:gateway --workspace @ai-network/ad-aggregation-platform",
     "dev:dashboard": "npm run dev --workspace @ai-network/dashboard",
     "build:dashboard": "node ./scripts/build-dashboard-from-root.cjs",

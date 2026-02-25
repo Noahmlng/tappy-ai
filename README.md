@@ -20,16 +20,17 @@
 
 这是一个多项目工作区，目标是完成 AI Native App 场景的广告聚合、策略验证与可观测闭环。
 
-当前仓库分为三块：
+当前仓库分为两块核心项目：
 
 1. `projects/ad-aggregation-platform`
 - 广告聚合平台核心（协议、runtime、gateway、control plane）。
 
-2. `projects/simulator-chatbot`
-- AI Native Chat 容器（用户侧），负责触发和渲染广告结果。
-
-3. `projects/simulator-dashboard`
+2. `projects/simulator-dashboard`
 - Developer Dashboard（接入方侧），负责配置、审计、决策和事件观测。
+
+外部测试客户端（已迁出仓库）：
+- `/Users/zeming/Documents/simulator-chatbot`
+- 作为独立 AI Native Chat 容器，用于触发与验证广告链路。
 
 <a id="readme-status"></a>
 ## 当前状态（2026-02-24）
@@ -71,12 +72,12 @@
 ### 端到端接入链路
 
 1. Attach（`chat_inline_v1`）
-- Chatbot 在回答完成后触发广告请求。
+- 客户端在回答完成后触发广告请求。
 - 通过 `POST /api/v2/bid` 请求单一 winner bid。
 - 前端按返回渲染 Sponsored links，并调用 `POST /api/v1/sdk/events` 上报事件。
 
 2. Next-Step（`chat_followup_v1`）
-- Chatbot 在 `followup_generation` 事件触发请求。
+- 客户端在 `followup_generation` 事件触发请求。
 - 通过 `POST /api/v2/bid` 拉取候选并落地为 Intent Card。
 - 渲染后通过 `POST /api/v1/sdk/events` 上报 impression/click/dismiss。
 
@@ -98,9 +99,8 @@
 - 触发点：`answer_completed`
 - 渲染位置：assistant 消息下方 Sponsored 区块
 - 关键代码：
-  - `projects/simulator-chatbot/src/views/ChatView.vue`
-  - `projects/simulator-chatbot/src/api/adsSdk.js`
   - `projects/ad-aggregation-platform/src/devtools/simulator/simulator-gateway.js`
+  - 外部客户端：`/Users/zeming/Documents/simulator-chatbot`
 
 ### Next-Step 输出：Intent Card
 
@@ -122,7 +122,7 @@
 - Runtime 并发聚合多网络（CJ / PartnerStack / house），执行召回、归一化、排序、降级。
 
 4. 体验面（Experience Plane）
-- Chatbot 负责 SDK 调用和渲染；广告链路全部 fail-open，不阻塞主回答。
+- 客户端负责 SDK 调用和渲染；广告链路全部 fail-open，不阻塞主回答。
 
 <a id="readme-sdk-docs"></a>
 ## SDK 文档入口（重点）
@@ -156,9 +156,9 @@
 ### 核心代码目录
 
 - `projects/ad-aggregation-platform`
-- `projects/simulator-chatbot`
 - `projects/simulator-dashboard`
 - `scripts/dev-local.js`
+- `/Users/zeming/Documents/simulator-chatbot`（外部仓库）
 
 ### 关键文档目录
 
@@ -173,7 +173,7 @@
 <a id="readme-run"></a>
 ## 本地联调与运行
 
-### 一键联调（Gateway + Chatbot + Dashboard）
+### 一键联调（Gateway + Dashboard）
 
 ```bash
 npm run dev:local
@@ -182,15 +182,19 @@ npm run dev:local
 默认本地拓扑：
 
 1. Gateway: `http://127.0.0.1:3100`
-2. Chatbot: `http://127.0.0.1:3001`
-3. Dashboard: `http://127.0.0.1:3002`
+2. Dashboard: `http://127.0.0.1:3002`
 
 ### 单独启动
 
 ```bash
 npm --prefix ./projects/ad-aggregation-platform run dev:gateway
-npm --prefix ./projects/simulator-chatbot run dev
 npm --prefix ./projects/simulator-dashboard run dev
+```
+
+外部客户端（可选）：
+
+```bash
+npm --prefix /Users/zeming/Documents/simulator-chatbot run dev
 ```
 
 ### 重置联调状态（可选）

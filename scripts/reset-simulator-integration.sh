@@ -28,6 +28,6 @@ fi
 
 cat <<'MSG'
 [sim-reset] Browser-side cleanup:
-1) Chatbot (http://127.0.0.1:3001): click "Clear History" in sidebar.
+1) External client app (if connected): clear cached conversation/history as needed.
 2) Dashboard (http://127.0.0.1:3002): hard refresh to pull latest gateway snapshot.
 MSG
