@@ -4,16 +4,17 @@
 
 ## 核心能力
 
-- ChatGPT-like 对话流程（提问 -> 推理中 -> 输出）
+- ChatGPT Light 风格聊天界面（首页 + 会话页 + 响应式侧栏）
+- ChatGPT-like 对话流程（提问 -> 推理中 -> 流式输出）
 - DeepSeek 流式回复
-- 多会话历史持久化（`localStorage`）
+- 多会话管理（新建、搜索、切换、删除、清空历史）
+- 会话历史持久化（`localStorage`）
 - Web Search Tool Call 模拟链路（触发 -> 执行 -> 状态展示 -> 结果注入回答）
 - Follow-up 推荐组件（每轮回答后展示追问建议）
 - Citation / Source 独立区块（展示外部来源）
 - Regenerate / Retry（可对同一问题重试）
 - Query Rewrite（编辑历史用户消息后，从该节点重写 query 并重跑链路）
-- Turn Trace（可回看每轮的工具调用与关键事件）
-- 前端可编辑 System Prompt（按会话生效，新建 Chat 自动重置默认值）
+- Ads SDK 集成（异步广告卡 + 曝光/点击/postback 上报，fail-open）
 
 ## 运行
 
@@ -42,5 +43,3 @@ npm run dev
 - Assistant 回复完成后会展示可点击追问项。
 - Assistant 回复完成后会异步拉取广告，若有 bid 则在回答下方展示广告卡片，并上报曝光/点击事件（fail-open）。
 - 点击后会基于 `hash(requestId|adId|turnId)` 与 `bid.pricing.pConv` 做可复现采样，命中则上报 `postback`，`cpaUsd` 取 `bid.pricing.cpaUsd`。
-- Sidebar 内置 Turn Trace 面板，可按轮查看链路事件。
-- Sidebar 内置 System Prompt 面板，可实时编辑当前会话提示词。
