@@ -656,31 +656,7 @@ const filteredSessions = computed(() => {
 const activeSession = computed(() => {
   return sessions.value.find((session) => session.id === activeSessionId.value) || null
 })
-const activeSystemPrompt = computed({
-  get() {
-    if (!activeSession.value) return DEFAULT_SYSTEM_PROMPT
-    return typeof activeSession.value.systemPrompt === 'string'
-      ? activeSession.value.systemPrompt
-      : DEFAULT_SYSTEM_PROMPT
-  },
-  set(nextValue) {
-    if (!activeSession.value) return
-    activeSession.value.systemPrompt = typeof nextValue === 'string'
-      ? nextValue
-      : DEFAULT_SYSTEM_PROMPT
-    touchActiveSession()
-    scheduleSaveSessions()
-  },
-})
-
 const currentMessages = computed(() => activeSession.value?.messages || [])
-
-const activeSessionTurnLogs = computed(() => {
-  return turnLogs.value
-    .filter((log) => log.sessionId === activeSessionId.value)
-    .sort((a, b) => b.startedAt - a.startedAt)
-    .slice(0, 20)
-})
 
 const hasStarted = computed(() => currentMessages.value.length > 0)
 
@@ -774,23 +750,6 @@ function touchActiveSession() {
   const session = activeSession.value
   if (!session) return
   session.updatedAt = Date.now()
-}
-
-function formatTraceTime(timestamp) {
-  if (!Number.isFinite(timestamp)) return '--:--'
-  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-}
-
-function formatTraceEventType(eventType) {
-  return String(eventType || '')
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase())
-}
-
-function handleTitleButtonClick() {
-  if (typeof window === 'undefined') return
-  if (window.matchMedia('(min-width: 1100px)').matches) return
-  isSidebarOpen.value = true
 }
 
 function createTurnTrace(sessionId, userQuery, retryCount = 0) {
@@ -979,16 +938,12 @@ function formatSessionTime(timestamp) {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
-function resetActiveSystemPrompt() {
-  if (!activeSession.value) return
-  activeSession.value.systemPrompt = DEFAULT_SYSTEM_PROMPT
-  touchActiveSession()
-  scheduleSaveSessions()
-}
-
 function openSession(sessionId) {
   cancelQueryRewriteEdit()
   activeSessionId.value = sessionId
+  if (!isDesktopLayout.value) {
+    isSidebarOpen.value = false
+  }
   scrollToBottom()
 }
 
@@ -998,6 +953,9 @@ function startNewChat() {
   sessions.value = [newSession, ...sessions.value].slice(0, MAX_SESSIONS)
   activeSessionId.value = newSession.id
   historyQuery.value = ''
+  if (!isDesktopLayout.value) {
+    isSidebarOpen.value = false
+  }
   persistSessionsNow()
 }
 
