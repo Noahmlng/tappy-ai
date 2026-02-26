@@ -1,3 +1,48 @@
+const RUNTIME_ROUTE_ERROR_STATUS_BY_CODE = Object.freeze({
+  PLACEMENT_NOT_FOUND: 404,
+  PLACEMENT_ID_RENAMED: 400,
+})
+
+function toRuntimeRouteError(error, options = {}) {
+  const fallbackCode = String(options.defaultCode || 'INVALID_REQUEST').trim() || 'INVALID_REQUEST'
+  const fallbackStatus = Number.isInteger(options.defaultStatus) ? options.defaultStatus : 400
+  const fallbackMessage = String(options.defaultMessage || 'Invalid request').trim() || 'Invalid request'
+  const code = String(error?.code || '').trim() || fallbackCode
+  const requestedStatus = Number(error?.statusCode ?? error?.status)
+  const status = Number.isInteger(requestedStatus) && requestedStatus >= 400 && requestedStatus < 600
+    ? requestedStatus
+    : (RUNTIME_ROUTE_ERROR_STATUS_BY_CODE[code] || fallbackStatus)
+
+  const payload = {
+    code,
+    message: error instanceof Error ? error.message : fallbackMessage,
+  }
+
+  const replacementPlacementId = String(
+    error?.replacementPlacementId
+    || error?.details?.replacementPlacementId
+    || '',
+  ).trim()
+  if (replacementPlacementId) {
+    payload.replacementPlacementId = replacementPlacementId
+  }
+
+  const placementId = String(error?.placementId || error?.details?.placementId || '').trim()
+  if (placementId && code === 'PLACEMENT_ID_RENAMED') {
+    payload.placementId = placementId
+  }
+
+  const field = String(error?.fieldName || error?.details?.fieldName || '').trim()
+  if (field && code === 'PLACEMENT_ID_RENAMED') {
+    payload.field = field
+  }
+
+  return {
+    status,
+    error: payload,
+  }
+}
+
 export async function handleRuntimeRoutes(context, deps) {
   const { req, res, pathname, requestUrl } = context
   const {
@@ -101,15 +146,8 @@ export async function handleRuntimeRoutes(context, deps) {
         sendJson(res, 200, resolved.payload)
         return
       } catch (error) {
-        const isPlacementNotFound = error instanceof Error && error.code === 'PLACEMENT_NOT_FOUND'
-        sendJson(res, isPlacementNotFound ? 404 : 400, {
-          error: {
-            code: isPlacementNotFound
-              ? 'PLACEMENT_NOT_FOUND'
-              : 'INVALID_REQUEST',
-            message: error instanceof Error ? error.message : 'Invalid request',
-          },
-        })
+        const mapped = toRuntimeRouteError(error)
+        sendJson(res, mapped.status, { error: mapped.error })
         return
       }
     }
@@ -137,12 +175,8 @@ export async function handleRuntimeRoutes(context, deps) {
         })
         return
       } catch (error) {
-        sendJson(res, 400, {
-          error: {
-            code: 'INVALID_REQUEST',
-            message: error instanceof Error ? error.message : 'Invalid request',
-          },
-        })
+        const mapped = toRuntimeRouteError(error)
+        sendJson(res, mapped.status, { error: mapped.error })
         return
       }
     }
@@ -179,12 +213,8 @@ export async function handleRuntimeRoutes(context, deps) {
         })
         return
       } catch (error) {
-        sendJson(res, 400, {
-          error: {
-            code: 'INVALID_REQUEST',
-            message: error instanceof Error ? error.message : 'Invalid request',
-          },
-        })
+        const mapped = toRuntimeRouteError(error)
+        sendJson(res, mapped.status, { error: mapped.error })
         return
       }
     }
@@ -245,12 +275,8 @@ export async function handleRuntimeRoutes(context, deps) {
         })
         return
       } catch (error) {
-        sendJson(res, 400, {
-          error: {
-            code: 'INVALID_REQUEST',
-            message: error instanceof Error ? error.message : 'Invalid request',
-          },
-        })
+        const mapped = toRuntimeRouteError(error)
+        sendJson(res, mapped.status, { error: mapped.error })
         return
       }
     }
@@ -463,12 +489,8 @@ export async function handleRuntimeRoutes(context, deps) {
         sendJson(res, 200, responsePayload)
         return
       } catch (error) {
-        sendJson(res, 400, {
-          error: {
-            code: 'INVALID_REQUEST',
-            message: error instanceof Error ? error.message : 'Invalid request',
-          },
-        })
+        const mapped = toRuntimeRouteError(error)
+        sendJson(res, mapped.status, { error: mapped.error })
         return
       }
     }

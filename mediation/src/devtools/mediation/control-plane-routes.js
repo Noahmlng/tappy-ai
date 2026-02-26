@@ -1,3 +1,53 @@
+const CONTROL_PLANE_ROUTE_ERROR_STATUS_BY_CODE = Object.freeze({
+  PLACEMENT_NOT_FOUND: 404,
+  PLACEMENT_ID_RENAMED: 400,
+})
+
+function toControlPlaneRouteError(error, options = {}) {
+  const fallbackCode = String(options.defaultCode || 'INVALID_REQUEST').trim() || 'INVALID_REQUEST'
+  const fallbackStatus = Number.isInteger(options.defaultStatus) ? options.defaultStatus : 400
+  const fallbackMessage = String(options.defaultMessage || 'Invalid request').trim() || 'Invalid request'
+  const code = String(error?.code || '').trim() || fallbackCode
+  const requestedStatus = Number(error?.statusCode ?? error?.status)
+  const status = Number.isInteger(requestedStatus) && requestedStatus >= 400 && requestedStatus < 600
+    ? requestedStatus
+    : (CONTROL_PLANE_ROUTE_ERROR_STATUS_BY_CODE[code] || fallbackStatus)
+
+  const payload = {
+    code,
+    message: error instanceof Error ? error.message : fallbackMessage,
+  }
+
+  const replacementPlacementId = String(
+    error?.replacementPlacementId
+    || error?.details?.replacementPlacementId
+    || '',
+  ).trim()
+  if (replacementPlacementId) {
+    payload.replacementPlacementId = replacementPlacementId
+  }
+
+  const placementId = String(error?.placementId || error?.details?.placementId || '').trim()
+  if (placementId && code === 'PLACEMENT_ID_RENAMED') {
+    payload.placementId = placementId
+  }
+
+  const field = String(error?.fieldName || error?.details?.fieldName || '').trim()
+  if (field && code === 'PLACEMENT_ID_RENAMED') {
+    payload.field = field
+  }
+
+  const route = String(options.route || '').trim()
+  if (route && code === fallbackCode) {
+    payload.route = route
+  }
+
+  return {
+    status,
+    error: payload,
+  }
+}
+
 export async function handleControlPlaneRoutes(context, deps) {
   const { req, res, pathname, requestUrl } = context
   const {
@@ -242,14 +292,11 @@ export async function handleControlPlaneRoutes(context, deps) {
         })
         return
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Invalid request'
-        sendJson(res, 400, {
-          error: {
-            code: 'QUICKSTART_INVALID_PAYLOAD',
-            message,
-            route: '/api/v1/public/quick-start/verify',
-          },
+        const mapped = toControlPlaneRouteError(error, {
+          defaultCode: 'QUICKSTART_INVALID_PAYLOAD',
+          route: '/api/v1/public/quick-start/verify',
         })
+        sendJson(res, mapped.status, { error: mapped.error })
         return
       }
     }
@@ -416,12 +463,8 @@ export async function handleControlPlaneRoutes(context, deps) {
         })
         return
       } catch (error) {
-        sendJson(res, 400, {
-          error: {
-            code: 'INVALID_REQUEST',
-            message: error instanceof Error ? error.message : 'Invalid request',
-          },
-        })
+        const mapped = toControlPlaneRouteError(error)
+        sendJson(res, mapped.status, { error: mapped.error })
         return
       }
     }
@@ -521,7 +564,10 @@ export async function handleControlPlaneRoutes(context, deps) {
         }
   
         const placementId = normalizePlacementIdWithMigration(
-          String(payload?.placementId || payload?.placement_id || '').trim(),
+          assertPlacementIdNotRenamed(
+            String(payload?.placementId || payload?.placement_id || '').trim() || PLACEMENT_ID_FROM_ANSWER,
+            'placementId',
+          ),
           PLACEMENT_ID_FROM_ANSWER,
         )
         const ensured = await ensureControlPlaneAppAndEnvironment(appId, environment, scopedAccountId)
@@ -576,12 +622,8 @@ export async function handleControlPlaneRoutes(context, deps) {
         sendJson(res, 201, toPublicIntegrationTokenRecord(tokenRecord, token))
         return
       } catch (error) {
-        sendJson(res, 400, {
-          error: {
-            code: 'INVALID_REQUEST',
-            message: error instanceof Error ? error.message : 'Invalid request',
-          },
-        })
+        const mapped = toControlPlaneRouteError(error)
+        sendJson(res, mapped.status, { error: mapped.error })
         return
       }
     }
@@ -926,12 +968,8 @@ export async function handleControlPlaneRoutes(context, deps) {
         sendJson(res, 201, toPublicAgentAccessTokenRecord(tokenRecord, accessToken))
         return
       } catch (error) {
-        sendJson(res, 400, {
-          error: {
-            code: 'INVALID_REQUEST',
-            message: error instanceof Error ? error.message : 'Invalid request',
-          },
-        })
+        const mapped = toControlPlaneRouteError(error)
+        sendJson(res, mapped.status, { error: mapped.error })
         return
       }
     }
@@ -1097,12 +1135,8 @@ export async function handleControlPlaneRoutes(context, deps) {
         })
         return
       } catch (error) {
-        sendJson(res, 400, {
-          error: {
-            code: 'INVALID_REQUEST',
-            message: error instanceof Error ? error.message : 'Invalid request',
-          },
-        })
+        const mapped = toControlPlaneRouteError(error)
+        sendJson(res, mapped.status, { error: mapped.error })
         return
       }
     }
@@ -1346,12 +1380,8 @@ export async function handleControlPlaneRoutes(context, deps) {
         })
         return
       } catch (error) {
-        sendJson(res, 400, {
-          error: {
-            code: 'INVALID_REQUEST',
-            message: error instanceof Error ? error.message : 'Invalid request',
-          },
-        })
+        const mapped = toControlPlaneRouteError(error)
+        sendJson(res, mapped.status, { error: mapped.error })
         return
       }
     }
@@ -1508,12 +1538,8 @@ export async function handleControlPlaneRoutes(context, deps) {
         })
         return
       } catch (error) {
-        sendJson(res, 400, {
-          error: {
-            code: 'INVALID_REQUEST',
-            message: error instanceof Error ? error.message : 'Invalid request',
-          },
-        })
+        const mapped = toControlPlaneRouteError(error)
+        sendJson(res, mapped.status, { error: mapped.error })
         return
       }
     }

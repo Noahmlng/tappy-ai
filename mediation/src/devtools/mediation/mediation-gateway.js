@@ -204,6 +204,10 @@ function isRouteAllowedForServiceRole(pathname, role) {
 
 const PLACEMENT_ID_FROM_ANSWER = 'chat_from_answer_v1'
 const PLACEMENT_ID_INTENT_RECOMMENDATION = 'chat_intent_recommendation_v1'
+const LEGACY_PLACEMENT_ID_MAP = Object.freeze({
+  chat_inline_v1: PLACEMENT_ID_FROM_ANSWER,
+  chat_followup_v1: PLACEMENT_ID_INTENT_RECOMMENDATION,
+})
 const PLACEMENT_KEY_BY_ID = {
   [PLACEMENT_ID_FROM_ANSWER]: 'attach.post_answer_render',
   [PLACEMENT_ID_INTENT_RECOMMENDATION]: 'next_step.intent_card',
@@ -2276,12 +2280,30 @@ function requiredNonEmptyString(value, fieldName) {
 
 function normalizePlacementIdWithMigration(value, fallback = '') {
   const placementId = String(value || '').trim() || String(fallback || '').trim()
-  return placementId
+  if (!placementId) return ''
+  return String(LEGACY_PLACEMENT_ID_MAP[placementId] || placementId).trim()
 }
 
-function assertPlacementIdNotRenamed(value, _fieldName = 'placementId') {
+function createPlacementIdRenamedError(placementId, fieldName = 'placementId') {
+  const normalizedPlacementId = String(placementId || '').trim()
+  const replacementPlacementId = String(LEGACY_PLACEMENT_ID_MAP[normalizedPlacementId] || '').trim()
+  const error = new Error(
+    `${fieldName} "${normalizedPlacementId}" has been renamed to "${replacementPlacementId}". Use "${replacementPlacementId}" instead.`,
+  )
+  error.code = 'PLACEMENT_ID_RENAMED'
+  error.statusCode = 400
+  error.fieldName = fieldName
+  error.placementId = normalizedPlacementId
+  error.replacementPlacementId = replacementPlacementId
+  return error
+}
+
+function assertPlacementIdNotRenamed(value, fieldName = 'placementId') {
   const placementId = String(value || '').trim()
   if (!placementId) return placementId
+  if (Object.prototype.hasOwnProperty.call(LEGACY_PLACEMENT_ID_MAP, placementId)) {
+    throw createPlacementIdRenamedError(placementId, fieldName)
+  }
   return placementId
 }
 
@@ -7036,6 +7058,7 @@ function resolveMediationConfigSnapshot(query = {}) {
   if (!placement) {
     const error = new Error(`placementId not found: ${placementId}`)
     error.code = 'PLACEMENT_NOT_FOUND'
+    error.statusCode = 404
     throw error
   }
 
