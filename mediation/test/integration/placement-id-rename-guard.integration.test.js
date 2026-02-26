@@ -60,8 +60,9 @@ test('runtime-routes rejects legacy placementId for /api/v1/mediation/config wit
   assert.equal(result.payload?.error?.replacementPlacementId, 'chat_from_answer_v1')
 })
 
-test('runtime-routes rejects legacy placementId for /api/v2/bid with structured error', async () => {
+test('runtime-routes allows legacy placementId for /api/v2/bid after payload normalization', async () => {
   const { result, sendJson } = createSendJsonCapture()
+  let authorizePlacementId = ''
   const handled = await handleRuntimeRoutes({
     req: { method: 'POST', headers: {} },
     res: {},
@@ -80,16 +81,33 @@ test('runtime-routes rejects legacy placementId for /api/v2/bid with structured 
     normalizeV2BidPayload: (payload) => ({
       userId: String(payload?.userId || '').trim(),
       chatId: String(payload?.chatId || '').trim(),
-      placementId: assertPlacementIdNotRenamed(payload?.placementId, 'placementId'),
+      placementId: String(LEGACY_TO_NEW_PLACEMENT_ID[payload?.placementId] || payload?.placementId || '').trim(),
       messages: Array.isArray(payload?.messages) ? payload.messages : [],
     }),
+    authorizeRuntimeCredential: async (_req, options = {}) => {
+      authorizePlacementId = String(options?.placementId || '').trim()
+      return { ok: true, mode: 'anonymous' }
+    },
+    applyRuntimeCredentialScope: (scope) => scope,
+    DEFAULT_CONTROL_PLANE_APP_ID: 'sample-client-app',
+    normalizeControlPlaneAccountId: () => 'org_demo',
+    resolveAccountIdForApp: () => 'org_demo',
+    evaluateV2BidRequest: async () => ({
+      requestId: 'req_legacy_mapped',
+      timestamp: '2026-02-26T00:00:00.000Z',
+      message: 'No bid',
+      opportunityId: 'opp_legacy_mapped',
+      diagnostics: { reasonCode: 'no_bid' },
+      data: { bid: null },
+    }),
+    nowIso: () => '2026-02-26T00:00:00.000Z',
   })
 
   assert.equal(handled, true)
-  assert.equal(result.status, 400)
-  assert.equal(result.payload?.error?.code, 'PLACEMENT_ID_RENAMED')
-  assert.equal(result.payload?.error?.placementId, 'chat_inline_v1')
-  assert.equal(result.payload?.error?.replacementPlacementId, 'chat_from_answer_v1')
+  assert.equal(authorizePlacementId, 'chat_from_answer_v1')
+  assert.equal(result.status, 200)
+  assert.equal(result.payload?.filled, false)
+  assert.equal(result.payload?.landingUrl, null)
 })
 
 test('control-plane routes rejects legacy placementId for integration-token issue with structured error', async () => {

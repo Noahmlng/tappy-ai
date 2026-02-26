@@ -1920,8 +1920,9 @@ function parseBearerToken(req) {
   const authorization = String(req.headers.authorization || '').trim()
   if (!authorization) return ''
   const matched = authorization.match(/^bearer\s+(.+)$/i)
-  if (!matched) return ''
-  return String(matched[1] || '').trim()
+  if (matched) return String(matched[1] || '').trim()
+  if (authorization.includes(' ')) return ''
+  return authorization
 }
 
 function resolveControlPlaneAppRecord(appId = '') {
@@ -2372,25 +2373,55 @@ function normalizeV2BidMessages(value) {
     throw new Error('messages must be an array.')
   }
 
+  const diagnostics = {
+    roleCoercions: [],
+    droppedTimestamps: [],
+  }
   const messages = value
     .map((item, index) => {
       if (!item || typeof item !== 'object') {
         throw new Error(`messages[${index}] must be an object.`)
       }
-      validateNoExtraFields(item, V2_BID_MESSAGE_ALLOWED_FIELDS, `messages[${index}]`)
-      const role = String(item.role || '').trim().toLowerCase()
+      const roleInput = String(item.role || '').trim().toLowerCase()
+      let role = roleInput
       if (!V2_BID_MESSAGE_ROLES.has(role)) {
-        throw new Error(`messages[${index}].role must be user, assistant, or system.`)
+        if (
+          roleInput.includes('assistant')
+          || roleInput.includes('bot')
+          || roleInput.includes('agent')
+          || roleInput.includes('model')
+          || roleInput.includes('ai')
+          || roleInput.includes('system')
+          || roleInput === 'sys'
+        ) {
+          role = 'assistant'
+        } else {
+          role = 'user'
+        }
+        diagnostics.roleCoercions.push({
+          index,
+          from: roleInput || '(empty)',
+          to: role,
+        })
       }
       const content = requiredNonEmptyString(item.content, `messages[${index}].content`)
       const timestamp = String(item.timestamp || '').trim()
-      if (timestamp && !Number.isFinite(Date.parse(timestamp))) {
-        throw new Error(`messages[${index}].timestamp must be a valid ISO-8601 datetime.`)
+      let normalizedTimestamp = ''
+      if (timestamp) {
+        const parsed = Date.parse(timestamp)
+        if (Number.isFinite(parsed)) {
+          normalizedTimestamp = new Date(parsed).toISOString()
+        } else {
+          diagnostics.droppedTimestamps.push({
+            index,
+            value: timestamp,
+          })
+        }
       }
       return {
         role,
         content,
-        ...(timestamp ? { timestamp: new Date(timestamp).toISOString() } : {}),
+        ...(normalizedTimestamp ? { timestamp: normalizedTimestamp } : {}),
       }
     })
     .filter(Boolean)
@@ -2399,26 +2430,77 @@ function normalizeV2BidMessages(value) {
     throw new Error('messages must contain at least one valid message.')
   }
 
-  return messages
+  return {
+    messages,
+    diagnostics,
+  }
 }
 
 function normalizeV2BidPayload(payload, routeName) {
   const input = payload && typeof payload === 'object' ? payload : {}
-  validateNoExtraFields(input, V2_BID_ALLOWED_FIELDS, routeName)
+  const rawMessages = Array.isArray(input.messages) ? input.messages : null
+  let synthesizedMessageSources = []
+  let messagesInput = rawMessages
+  if (!messagesInput || messagesInput.length === 0) {
+    const query = String(input.query || input.prompt || '').trim()
+    const answerText = String(input.answerText || input.answer || '').trim()
+    messagesInput = []
+    if (query) {
+      messagesInput.push({ role: 'user', content: query })
+      synthesizedMessageSources.push('query_or_prompt')
+    }
+    if (answerText) {
+      messagesInput.push({ role: 'assistant', content: answerText })
+      synthesizedMessageSources.push('answer')
+    }
+  }
+  const { messages, diagnostics: messageDiagnostics } = normalizeV2BidMessages(messagesInput)
 
-  const userId = requiredNonEmptyString(input.userId, 'userId')
-  const chatId = requiredNonEmptyString(input.chatId, 'chatId')
-  const placementId = assertPlacementIdNotRenamed(
-    requiredNonEmptyString(input.placementId, 'placementId'),
-    'placementId',
-  )
-  const messages = normalizeV2BidMessages(input.messages)
+  const rawUserId = String(input.userId || input.user_id || '').trim()
+  const rawChatId = String(input.chatId || input.chat_id || input.sessionId || input.session_id || '').trim()
+  let userId = rawUserId
+  let chatId = rawChatId
+  if (!userId) {
+    if (chatId) {
+      const suffix = createHash('sha256').update(chatId).digest('hex').slice(0, 12)
+      userId = `anon_${suffix}`
+    } else {
+      const stableSeed = JSON.stringify({
+        messages: messages.map((item) => `${item.role}:${item.content}`).slice(0, 6),
+        query: String(input.query || input.prompt || '').trim(),
+        answer: String(input.answerText || input.answer || '').trim(),
+      })
+      const suffix = createHash('sha256').update(stableSeed).digest('hex').slice(0, 12)
+      userId = `anon_${suffix}`
+    }
+  }
+  if (!chatId) {
+    chatId = userId
+  }
+
+  const rawPlacementId = String(input.placementId || input.placement_id || '').trim()
+  const placementId = normalizePlacementIdWithMigration(rawPlacementId, PLACEMENT_ID_FROM_ANSWER)
 
   return {
     userId,
     chatId,
     placementId,
     messages,
+    inputDiagnostics: {
+      routeName: String(routeName || '').trim(),
+      defaultsApplied: {
+        userIdGenerated: !rawUserId,
+        chatIdDefaultedToUserId: !rawChatId,
+        placementIdDefaulted: !rawPlacementId,
+      },
+      placementMigration: rawPlacementId && rawPlacementId !== placementId
+        ? { from: rawPlacementId, to: placementId }
+        : null,
+      messagesSynthesized: !rawMessages || rawMessages.length === 0,
+      messageSources: synthesizedMessageSources,
+      roleCoercions: messageDiagnostics.roleCoercions,
+      droppedTimestamps: messageDiagnostics.droppedTimestamps,
+    },
   }
 }
 

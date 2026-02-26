@@ -146,9 +146,7 @@ async function issueRuntimeApiKeyHeaders(baseUrl, dashboardHeaders) {
   assert.equal(created.status, 201, `issue runtime key failed: ${JSON.stringify(created.payload)}`)
   const secret = String(created.payload?.secret || '').trim()
   assert.equal(Boolean(secret), true, 'runtime key create should return secret')
-  return {
-    Authorization: `Bearer ${secret}`,
-  }
+  return { secret }
 }
 
 test('v2 bid API returns unified response and legacy evaluate endpoint is removed', async () => {
@@ -163,7 +161,10 @@ test('v2 bid API returns unified response and legacy evaluate endpoint is remove
     assert.equal(reset.status, 404)
 
     const dashboardHeaders = await registerDashboardHeaders(baseUrl)
-    const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, dashboardHeaders)
+    const runtimeCredential = await issueRuntimeApiKeyHeaders(baseUrl, dashboardHeaders)
+    const runtimeHeaders = {
+      Authorization: `Bearer ${runtimeCredential.secret}`,
+    }
 
     const bid = await requestJson(baseUrl, '/api/v2/bid', {
       method: 'POST',
@@ -186,6 +187,8 @@ test('v2 bid API returns unified response and legacy evaluate endpoint is remove
     assert.equal(typeof bid.payload?.requestId, 'string')
     assert.equal(typeof bid.payload?.timestamp, 'string')
     assert.equal(typeof bid.payload?.opportunityId, 'string')
+    assert.equal(typeof bid.payload?.filled, 'boolean')
+    assert.equal(Object.prototype.hasOwnProperty.call(bid.payload || {}, 'landingUrl'), true)
     assert.equal(typeof bid.payload?.intent?.score, 'number')
     assert.equal(typeof bid.payload?.intent?.class, 'string')
     assert.equal(typeof bid.payload?.intent?.source, 'string')
@@ -213,9 +216,83 @@ test('v2 bid API returns unified response and legacy evaluate endpoint is remove
       assert.equal(typeof winner.pricing.rawSignal.rawBidValue, 'number')
       assert.equal(typeof winner.pricing.rawSignal.rawUnit, 'string')
       assert.equal(typeof winner.pricing.rawSignal.normalizedFactor, 'number')
+      assert.equal(typeof bid.payload?.landingUrl, 'string')
+      assert.equal(bid.payload?.landingUrl.length > 0, true)
     } else {
       assert.equal(bid.payload?.message, 'No bid')
+      assert.equal(bid.payload?.filled, false)
+      assert.equal(bid.payload?.landingUrl, null)
     }
+
+    const tolerantMissingChat = await requestJson(baseUrl, '/api/v2/bid', {
+      method: 'POST',
+      headers: runtimeHeaders,
+      body: {
+        userId: 'user_missing_chat',
+        placementId: 'chat_from_answer_v1',
+        messages: [{ role: 'USER_INPUT', content: 'find me a running shoe deal' }],
+        extraField: 'ignored',
+      },
+      timeoutMs: 12000,
+    })
+    assert.equal(tolerantMissingChat.status, 200, JSON.stringify(tolerantMissingChat.payload))
+    assert.equal(tolerantMissingChat.payload?.diagnostics?.inputNormalization?.defaultsApplied?.chatIdDefaultedToUserId, true)
+    assert.equal(tolerantMissingChat.payload?.diagnostics?.inputNormalization?.roleCoercions?.[0]?.to, 'user')
+
+    const tolerantMissingUser = await requestJson(baseUrl, '/api/v2/bid', {
+      method: 'POST',
+      headers: runtimeHeaders,
+      body: {
+        chatId: 'chat_missing_user',
+        placementId: 'chat_from_answer_v1',
+        query: 'suggest a vlogging camera',
+      },
+      timeoutMs: 12000,
+    })
+    assert.equal(tolerantMissingUser.status, 200, JSON.stringify(tolerantMissingUser.payload))
+    assert.equal(tolerantMissingUser.payload?.diagnostics?.inputNormalization?.defaultsApplied?.userIdGenerated, true)
+    assert.equal(tolerantMissingUser.payload?.diagnostics?.inputNormalization?.messagesSynthesized, true)
+
+    const tolerantMissingPlacement = await requestJson(baseUrl, '/api/v2/bid', {
+      method: 'POST',
+      headers: runtimeHeaders,
+      body: {
+        chatId: 'chat_missing_placement',
+        messages: [{ role: 'assistant-bot', content: 'placeholder answer' }],
+        prompt: 'show me a gift recommendation',
+      },
+      timeoutMs: 12000,
+    })
+    assert.equal(tolerantMissingPlacement.status, 200, JSON.stringify(tolerantMissingPlacement.payload))
+    assert.equal(tolerantMissingPlacement.payload?.diagnostics?.inputNormalization?.defaultsApplied?.placementIdDefaulted, true)
+    assert.equal(tolerantMissingPlacement.payload?.diagnostics?.inputNormalization?.roleCoercions?.[0]?.to, 'assistant')
+
+    const legacyPlacementMapped = await requestJson(baseUrl, '/api/v2/bid', {
+      method: 'POST',
+      headers: runtimeHeaders,
+      body: {
+        userId: 'user_legacy_placement',
+        messages: [{ role: 'user', content: 'legacy placement request' }],
+        placementId: 'chat_inline_v1',
+      },
+      timeoutMs: 12000,
+    })
+    assert.equal(legacyPlacementMapped.status, 200, JSON.stringify(legacyPlacementMapped.payload))
+    assert.equal(legacyPlacementMapped.payload?.diagnostics?.inputNormalization?.placementMigration?.from, 'chat_inline_v1')
+    assert.equal(legacyPlacementMapped.payload?.diagnostics?.inputNormalization?.placementMigration?.to, 'chat_from_answer_v1')
+
+    const rawAuthBid = await requestJson(baseUrl, '/api/v2/bid', {
+      method: 'POST',
+      headers: { Authorization: runtimeCredential.secret },
+      body: {
+        userId: 'user_raw_auth',
+        chatId: 'chat_raw_auth',
+        placementId: 'chat_from_answer_v1',
+        messages: [{ role: 'user', content: 'raw auth header should pass' }],
+      },
+      timeoutMs: 12000,
+    })
+    assert.equal(rawAuthBid.status, 200, JSON.stringify(rawAuthBid.payload))
 
     const legacyEvaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
       method: 'POST',

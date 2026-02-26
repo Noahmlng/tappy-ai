@@ -253,6 +253,28 @@ export async function handleRuntimeRoutes(context, deps) {
           accountId: scopedRequest.accountId,
           placementId: scopedRequest.placementId || request.placementId,
         })
+        const winnerBid = result?.data?.bid && typeof result.data.bid === 'object'
+          ? result.data.bid
+          : null
+        const landingUrl = winnerBid
+          ? String(
+            winnerBid.url
+            || winnerBid.targetUrl
+            || winnerBid.trackingUrl
+            || winnerBid.clickUrl
+            || '',
+          ).trim()
+          : ''
+        const responseDiagnostics = result?.diagnostics && typeof result.diagnostics === 'object'
+          ? {
+              ...result.diagnostics,
+              ...(request?.inputDiagnostics && typeof request.inputDiagnostics === 'object'
+                ? { inputNormalization: request.inputDiagnostics }
+                : {}),
+            }
+          : (request?.inputDiagnostics && typeof request.inputDiagnostics === 'object'
+            ? { inputNormalization: request.inputDiagnostics }
+            : undefined)
   
         sendJson(res, 200, {
           requestId: String(result.requestId || ''),
@@ -260,17 +282,17 @@ export async function handleRuntimeRoutes(context, deps) {
           status: 'success',
           message: String(result.message || 'No bid'),
           opportunityId: String(result.opportunityId || ''),
+          filled: Boolean(winnerBid),
+          landingUrl: landingUrl || null,
           intent: result?.intent && typeof result.intent === 'object'
             ? result.intent
             : undefined,
           decisionTrace: result?.decisionTrace && typeof result.decisionTrace === 'object'
             ? result.decisionTrace
             : undefined,
-          diagnostics: result?.diagnostics && typeof result.diagnostics === 'object'
-            ? result.diagnostics
-            : undefined,
+          diagnostics: responseDiagnostics,
           data: {
-            bid: result?.data?.bid || null,
+            bid: winnerBid,
           },
         })
         return
