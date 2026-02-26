@@ -65,14 +65,15 @@ function parseCorsOriginList(input) {
   return origins
 }
 
-function loadProductionGatewayConfig(env = process.env) {
+function loadProductionGatewayConfig(env = process.env, options = {}) {
+  const strict = options?.strict !== false
   const supabaseDbUrl = readEnvValue(env, 'SUPABASE_DB_URL', '')
-  if (!supabaseDbUrl) {
+  if (strict && !supabaseDbUrl) {
     throw new Error('SUPABASE_DB_URL is required in production mode.')
   }
 
   const allowedCorsOrigins = parseCorsOriginList(readEnvValue(env, 'MEDIATION_ALLOWED_ORIGINS', ''))
-  if (allowedCorsOrigins.length === 0) {
+  if (strict && allowedCorsOrigins.length === 0) {
     throw new Error('MEDIATION_ALLOWED_ORIGINS must include at least one allowed origin.')
   }
 
@@ -82,7 +83,20 @@ function loadProductionGatewayConfig(env = process.env) {
   }
 }
 
-const GATEWAY_CONFIG = loadProductionGatewayConfig(process.env)
+function assertProductionGatewayConfig(config = GATEWAY_CONFIG) {
+  const supabaseDbUrl = String(config?.supabaseDbUrl || '').trim()
+  if (!supabaseDbUrl) {
+    throw new Error('SUPABASE_DB_URL is required in production mode.')
+  }
+  const allowedCorsOrigins = Array.isArray(config?.allowedCorsOrigins)
+    ? config.allowedCorsOrigins
+    : []
+  if (allowedCorsOrigins.length === 0) {
+    throw new Error('MEDIATION_ALLOWED_ORIGINS must include at least one allowed origin.')
+  }
+}
+
+const GATEWAY_CONFIG = loadProductionGatewayConfig(process.env, { strict: false })
 const REQUEST_BASE_ORIGIN = 'http://mediation.local'
 const SETTLEMENT_DB_URL = GATEWAY_CONFIG.supabaseDbUrl
 const SETTLEMENT_FACT_TABLE = 'mediation_settlement_conversion_facts'
@@ -7858,6 +7872,7 @@ let readyPromise = null
 export async function ensureReady() {
   if (!readyPromise) {
     readyPromise = (async () => {
+      assertProductionGatewayConfig()
       await ensureSettlementStoreReady()
       verifyGatewayReadiness()
       return true
