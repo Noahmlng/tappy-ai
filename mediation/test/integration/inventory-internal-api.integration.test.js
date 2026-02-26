@@ -144,8 +144,14 @@ test('internal inventory endpoints expose status and perform guarded sync behavi
     const status = await requestJson(baseUrl, '/api/v1/internal/inventory/status', {
       headers: dashboardHeaders,
     })
-    assert.equal(status.ok, true)
-    assert.equal(typeof status.payload?.ok, 'boolean')
+    assert.equal([200, 409].includes(status.status), true)
+    if (status.status === 409) {
+      assert.equal(status.payload?.error?.code, 'INVENTORY_EMPTY')
+    } else {
+      assert.equal(status.ok, true)
+      assert.equal(typeof status.payload?.ok, 'boolean')
+      assert.equal(typeof status.payload?.readiness?.ready, 'boolean')
+    }
 
     const sync = await requestJson(baseUrl, '/api/v1/internal/inventory/sync', {
       method: 'POST',

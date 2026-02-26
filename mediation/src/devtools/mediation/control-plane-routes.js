@@ -142,6 +142,8 @@ export async function handleControlPlaneRoutes(context, deps) {
     computeScopedNetworkFlowStats,
     isPostgresSettlementStore,
     getInventoryStatus,
+    summarizeInventoryReadiness,
+    INVENTORY_SYNC_COMMAND,
     syncInventoryNetworks,
     buildInventoryEmbeddings,
     materializeServingSnapshot,
@@ -204,6 +206,20 @@ export async function handleControlPlaneRoutes(context, deps) {
             error: {
               code: 'PRECONDITION_FAILED',
               message: `No active API key for appId=${request.appId} environment=${request.environment}.`,
+            },
+          })
+          return
+        }
+
+        const inventoryStatus = await getInventoryStatus(isPostgresSettlementStore() ? settlementStore.pool : null)
+        const inventoryReadiness = summarizeInventoryReadiness(inventoryStatus)
+        if (!inventoryReadiness.ready) {
+          sendJson(res, 409, {
+            error: {
+              code: 'INVENTORY_EMPTY',
+              message: 'Inventory is empty or missing required core network coverage for strict runtime mode.',
+              remediation: `Run ${INVENTORY_SYNC_COMMAND} and retry quick-start verification.`,
+              details: inventoryReadiness,
             },
           })
           return
@@ -287,6 +303,13 @@ export async function handleControlPlaneRoutes(context, deps) {
               status: 200,
               ok: true,
               latencyMs: eventLatencyMs,
+            },
+            inventory: {
+              status: 200,
+              ready: true,
+              totalOffers: inventoryReadiness.totalOffers,
+              missingNetworks: inventoryReadiness.missingNetworks,
+              checkedAt: inventoryReadiness.checkedAt,
             },
           },
         })
@@ -1805,7 +1828,23 @@ export async function handleControlPlaneRoutes(context, deps) {
     if (pathname === '/api/v1/internal/inventory/status' && req.method === 'GET') {
       try {
         const status = await getInventoryStatus(isPostgresSettlementStore() ? settlementStore.pool : null)
-        sendJson(res, 200, status)
+        const readiness = summarizeInventoryReadiness(status)
+        if (!readiness.ready) {
+          sendJson(res, 409, {
+            error: {
+              code: 'INVENTORY_EMPTY',
+              message: 'Inventory is empty or missing required core network coverage for strict runtime mode.',
+              remediation: `Run ${INVENTORY_SYNC_COMMAND} and retry.`,
+              details: readiness,
+            },
+            status,
+          })
+          return
+        }
+        sendJson(res, 200, {
+          ...status,
+          readiness,
+        })
         return
       } catch (error) {
         sendJson(res, 500, {

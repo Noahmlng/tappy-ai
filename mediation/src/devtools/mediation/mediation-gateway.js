@@ -145,6 +145,9 @@ const DASHBOARD_SESSION_TTL_SECONDS = 86400 * 30
 const DASHBOARD_AUTH_REQUIRED = true
 const RUNTIME_AUTH_REQUIRED = true
 const INVENTORY_FALLBACK_WHEN_UNAVAILABLE = true
+const INVENTORY_READINESS_CACHE_TTL_MS = 30_000
+const CORE_INVENTORY_NETWORKS = Object.freeze(['partnerstack', 'cj', 'house'])
+const INVENTORY_SYNC_COMMAND = 'npm --prefix ./mediation run inventory:sync:all'
 const MIN_AGENT_ACCESS_TTL_SECONDS = 60
 const MAX_AGENT_ACCESS_TTL_SECONDS = 900
 const TOKEN_EXCHANGE_FORBIDDEN_FIELDS = new Set([
@@ -386,6 +389,8 @@ const runtimeMemory = {
   perSessionPlacementCount: new Map(),
   perUserPlacementDayCount: new Map(),
   opportunityContextByRequest: new Map(),
+  inventoryReadinessSummary: null,
+  inventoryReadinessCheckedAtMs: 0,
 }
 
 function nowIso() {
@@ -635,6 +640,54 @@ function isInventoryFallbackEnabled() {
   return INVENTORY_FALLBACK_WHEN_UNAVAILABLE
 }
 
+function summarizeInventoryReadiness(statusInput = {}) {
+  const status = statusInput && typeof statusInput === 'object' ? statusInput : {}
+  const counts = Array.isArray(status.counts) ? status.counts : []
+  const countsByNetwork = {}
+  let totalOffers = 0
+
+  for (const row of counts) {
+    const network = String(row?.network || '').trim().toLowerCase()
+    if (!network) continue
+    const offerCount = toPositiveInteger(row?.offer_count, 0)
+    countsByNetwork[network] = offerCount
+    totalOffers += offerCount
+  }
+
+  const missingNetworks = CORE_INVENTORY_NETWORKS.filter((network) => toPositiveInteger(countsByNetwork[network], 0) <= 0)
+  const coveredNetworks = CORE_INVENTORY_NETWORKS.filter((network) => toPositiveInteger(countsByNetwork[network], 0) > 0)
+  const ready = totalOffers > 0 && missingNetworks.length === 0
+
+  return {
+    ready,
+    totalOffers,
+    coreNetworks: [...CORE_INVENTORY_NETWORKS],
+    coveredNetworks,
+    missingNetworks,
+    countsByNetwork,
+    mode: String(status.mode || '').trim(),
+    checkedAt: String(status.checkedAt || nowIso()).trim() || nowIso(),
+  }
+}
+
+async function getCachedInventoryReadinessSummary(options = {}) {
+  const forceRefresh = options && options.forceRefresh === true
+  const nowMs = Date.now()
+  if (
+    !forceRefresh
+    && runtimeMemory.inventoryReadinessSummary
+    && nowMs - toPositiveInteger(runtimeMemory.inventoryReadinessCheckedAtMs, 0) < INVENTORY_READINESS_CACHE_TTL_MS
+  ) {
+    return runtimeMemory.inventoryReadinessSummary
+  }
+
+  const status = await getInventoryStatus(isPostgresSettlementStore() ? settlementStore.pool : null)
+  const summary = summarizeInventoryReadiness(status)
+  runtimeMemory.inventoryReadinessSummary = summary
+  runtimeMemory.inventoryReadinessCheckedAtMs = nowMs
+  return summary
+}
+
 const SIMULATED_LIVE_FALLBACK_OFFERS = Object.freeze([
   {
     offerId: 'house:broker_low_fee',
@@ -744,7 +797,7 @@ function mapOpportunityReasonToDecision(reasonCode = '', served = false) {
   if (served) return 'served'
   if (reasonCode === 'policy_blocked') return 'blocked'
   if (reasonCode === 'placement_unavailable') return 'blocked'
-  if (reasonCode === 'inventory_no_match' || reasonCode === 'rank_below_floor') return 'no_fill'
+  if (reasonCode === 'inventory_no_match' || reasonCode === 'rank_below_floor' || reasonCode === 'inventory_empty') return 'no_fill'
   return 'error'
 }
 
@@ -5945,6 +5998,20 @@ async function evaluateV2BidOpportunityFirst(payload) {
           accountId: request.accountId,
         })
       }
+      if (
+        !winnerBid
+        && reasonCode === 'inventory_no_match'
+        && toPositiveInteger(retrievalDebug?.fusedHitCount, 0) <= 0
+      ) {
+        const inventoryReadiness = await getCachedInventoryReadinessSummary()
+        rankingDebug = {
+          ...rankingDebug,
+          inventoryReadiness,
+        }
+        if (toPositiveInteger(inventoryReadiness?.totalOffers, 0) <= 0) {
+          reasonCode = 'inventory_empty'
+        }
+      }
     }
   }
 
@@ -6654,7 +6721,7 @@ function filterRowsByScope(rows, scope = {}) {
   return list.filter((row) => recordMatchesScope(row, scope))
 }
 
-function computeScopedMetricsSummary(decisionRows, eventRows, factRows) {
+function computeScopedMetricsSummary(decisionRows, eventRows, factRows, controlPlaneAuditRows = []) {
   const requests = decisionRows.length
   const servedRows = decisionRows.filter((row) => String(row?.result || '') === 'served')
   const served = servedRows.length
@@ -6668,6 +6735,16 @@ function computeScopedMetricsSummary(decisionRows, eventRows, factRows) {
   const ctr = impressions > 0 ? clicks / impressions : 0
   const ecpm = impressions > 0 ? (revenueUsd / impressions) * 1000 : 0
   const fillRate = requests > 0 ? served / requests : 0
+  const placementUnavailableCount = decisionRows.filter((row) => (
+    String(row?.reasonDetail || row?.reason || '').trim() === 'placement_unavailable'
+  )).length
+  const inventoryEmptyCount = decisionRows.filter((row) => (
+    String(row?.reasonDetail || row?.reason || '').trim() === 'inventory_empty'
+  )).length
+  const scopeViolationCount = (Array.isArray(controlPlaneAuditRows) ? controlPlaneAuditRows : []).filter((row) => (
+    String(row?.action || '').trim() === 'agent_access_deny'
+    && String(row?.metadata?.code || '').toUpperCase().includes('SCOPE_VIOLATION')
+  )).length
 
   return {
     revenueUsd: round(revenueUsd, 2),
@@ -6676,6 +6753,16 @@ function computeScopedMetricsSummary(decisionRows, eventRows, factRows) {
     ctr: round(ctr, 4),
     ecpm: round(ecpm, 2),
     fillRate: round(fillRate, 4),
+    reasonCounts: {
+      placementUnavailable: placementUnavailableCount,
+      inventoryEmpty: inventoryEmptyCount,
+      scopeViolation: scopeViolationCount,
+    },
+    reasonRatios: {
+      placementUnavailable: requests > 0 ? round(placementUnavailableCount / requests, 4) : 0,
+      inventoryEmpty: requests > 0 ? round(inventoryEmptyCount / requests, 4) : 0,
+      scopeViolation: requests > 0 ? round(scopeViolationCount / requests, 4) : 0,
+    },
   }
 }
 
@@ -7068,7 +7155,12 @@ async function getDashboardStatePayload(scopeInput = {}) {
     ? []
     : (shouldApplyScope ? filterRowsByScope(state.networkFlowLogs, scope) : state.networkFlowLogs)
 
-  const metricsSummary = computeScopedMetricsSummary(decisionLogs, eventLogs, conversionFacts)
+  const metricsSummary = computeScopedMetricsSummary(
+    decisionLogs,
+    eventLogs,
+    conversionFacts,
+    controlPlaneAuditLogs,
+  )
   const metricsByDay = computeScopedMetricsByDay(decisionLogs, eventLogs, conversionFacts)
   const metricsByPlacement = emptyScoped
     ? []
@@ -7889,6 +7981,8 @@ function createControlPlaneRouteDeps() {
     computeScopedNetworkFlowStats,
     isPostgresSettlementStore,
     getInventoryStatus,
+    summarizeInventoryReadiness,
+    INVENTORY_SYNC_COMMAND,
     syncInventoryNetworks,
     buildInventoryEmbeddings,
     materializeServingSnapshot,
@@ -8013,10 +8107,12 @@ export async function handleGatewayRequest(req, res, options = {}) {
 }
 
 export {
+  computeScopedMetricsSummary,
   migrateLegacyPlacementIdsInSupabase,
   normalizeAgentAccessTokenRecord,
   normalizeIntegrationTokenRecord,
   normalizePlacementIdWithMigration,
+  summarizeInventoryReadiness,
 }
 
 function isDirectExecution() {
