@@ -22,12 +22,12 @@ jobs:
         with:
           node-version: 22
           registry-url: https://npm.pkg.github.com
-          scope: '@ai-network'
+          scope: '@noahmlng'
 
       - name: Install dependencies
         run: npm ci
 
       - name: Publish contracts package
-        run: npm publish --workspace @ai-network/mediation-sdk-contracts
+        run: npm publish --workspace @noahmlng/mediation-sdk-contracts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

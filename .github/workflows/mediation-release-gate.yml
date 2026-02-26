@@ -59,7 +59,7 @@ jobs:
       - name: Validate contracts package
         run: |
           node -e "import('./packages/mediation-sdk-contracts/src/index.js').then((m)=>console.log(m.listSchemaKeys().length))"
-          npm pack --workspace @ai-network/mediation-sdk-contracts --dry-run
+          npm pack --workspace @noahmlng/mediation-sdk-contracts --dry-run
 
       - name: Migration dry run
         run: npm --prefix ./mediation run db:migrate:dry-run
