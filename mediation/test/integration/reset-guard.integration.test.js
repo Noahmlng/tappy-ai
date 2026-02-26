@@ -76,6 +76,9 @@ function startGateway(port) {
       ...process.env,
       SUPABASE_DB_URL: process.env.SUPABASE_DB_URL_TEST || process.env.SUPABASE_DB_URL || '',
       MEDIATION_ALLOWED_ORIGINS: ALLOWED_ORIGIN,
+      MEDIATION_ENABLE_LOCAL_SERVER: 'true',
+      MEDIATION_GATEWAY_HOST: HOST,
+      MEDIATION_GATEWAY_PORT: String(port),
       OPENROUTER_API_KEY: '',
       OPENROUTER_MODEL: 'glm-5',
       CJ_TOKEN: 'mock-cj-token',
@@ -108,6 +111,32 @@ async function stopGateway(handle) {
   await sleep(200)
   if (!handle.child.killed) {
     handle.child.kill('SIGKILL')
+  }
+}
+
+async function registerDashboardHeaders(baseUrl, input = {}) {
+  const now = Date.now()
+  const email = String(input.email || `owner_${now}@example.com`)
+  const password = String(input.password || 'pass12345')
+  const accountId = String(input.accountId || 'org_mediation')
+  const appId = String(input.appId || `sample-client-app-${now}`)
+  const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+    method: 'POST',
+    headers: {
+      Origin: ALLOWED_ORIGIN,
+    },
+    body: {
+      email,
+      password,
+      accountId,
+      appId,
+    },
+  })
+  assert.equal(register.status, 201, `dashboard register failed: ${JSON.stringify(register.payload)}`)
+  const accessToken = String(register.payload?.session?.accessToken || '').trim()
+  assert.equal(Boolean(accessToken), true, 'dashboard register should return access token')
+  return {
+    Authorization: `Bearer ${accessToken}`,
   }
 }
 
@@ -177,6 +206,95 @@ test('cors guard: server-to-server request without origin remains accessible', a
     const logs = gateway.getLogs()
     const message = error instanceof Error ? error.message : String(error)
     throw new Error(`[cors-server-to-server] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`)
+  } finally {
+    await stopGateway(gateway)
+  }
+})
+
+test('dashboard updates allowed origins without redeploy and takes effect immediately', async () => {
+  const port = 7250 + Math.floor(Math.random() * 200)
+  const baseUrl = `http://${HOST}:${port}`
+  const gateway = startGateway(port)
+  const newAllowedOrigin = 'http://127.0.0.1:4300'
+
+  try {
+    await waitForGateway(baseUrl)
+    const authHeaders = await registerDashboardHeaders(baseUrl, {
+      email: `cors-admin-${Date.now()}@example.com`,
+      accountId: 'acct_cors_admin',
+    })
+
+    const beforeList = await requestJson(baseUrl, '/api/v1/dashboard/security/origins', {
+      method: 'GET',
+      headers: {
+        ...authHeaders,
+        Origin: ALLOWED_ORIGIN,
+      },
+    })
+    assert.equal(beforeList.status, 200, `origins list failed: ${JSON.stringify(beforeList.payload)}`)
+    assert.equal(Array.isArray(beforeList.payload?.items), true, 'origins list should return items')
+    assert.equal(
+      beforeList.payload.items.some((item) => String(item?.origin || '') === ALLOWED_ORIGIN),
+      true,
+      'bootstrap origin should exist before update',
+    )
+
+    const updateOrigins = await requestJson(baseUrl, '/api/v1/dashboard/security/origins', {
+      method: 'PUT',
+      headers: {
+        ...authHeaders,
+        Origin: ALLOWED_ORIGIN,
+      },
+      body: {
+        origins: [newAllowedOrigin],
+      },
+    })
+    assert.equal(updateOrigins.status, 200, `origins update failed: ${JSON.stringify(updateOrigins.payload)}`)
+    assert.equal(updateOrigins.payload?.updated, true)
+    assert.equal(
+      Array.isArray(updateOrigins.payload?.items) && updateOrigins.payload.items.length === 1,
+      true,
+      'updated origin list should contain one origin',
+    )
+    assert.equal(String(updateOrigins.payload?.items?.[0]?.origin || ''), newAllowedOrigin)
+
+    const oldOriginHealth = await requestJson(baseUrl, '/api/health', {
+      method: 'GET',
+      headers: {
+        Origin: ALLOWED_ORIGIN,
+      },
+    })
+    assert.equal(oldOriginHealth.status, 403)
+    assert.equal(String(oldOriginHealth.payload?.error?.code || ''), 'CORS_ORIGIN_FORBIDDEN')
+
+    const newOriginHealth = await requestJson(baseUrl, '/api/health', {
+      method: 'GET',
+      headers: {
+        Origin: newAllowedOrigin,
+      },
+    })
+    assert.equal(newOriginHealth.status, 200)
+    assert.equal(newOriginHealth.payload?.ok, true)
+
+    const afterList = await requestJson(baseUrl, '/api/v1/dashboard/security/origins', {
+      method: 'GET',
+      headers: {
+        ...authHeaders,
+        Origin: newAllowedOrigin,
+      },
+    })
+    assert.equal(afterList.status, 200)
+    assert.equal(
+      afterList.payload.items.every((item) => String(item?.origin || '') === newAllowedOrigin),
+      true,
+      'origin list should be replaced by updated origins',
+    )
+  } catch (error) {
+    const logs = gateway.getLogs()
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `[cors-origins-dynamic] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`,
+    )
   } finally {
     await stopGateway(gateway)
   }

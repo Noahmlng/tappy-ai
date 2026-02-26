@@ -34,20 +34,44 @@ function readEnvValue(env, key, fallback = '') {
   return String(fallback || '').trim()
 }
 
+function normalizeCorsOrigin(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  let parsed
+  try {
+    parsed = new URL(raw)
+  } catch {
+    return ''
+  }
+  const protocol = String(parsed.protocol || '').toLowerCase()
+  if (protocol !== 'http:' && protocol !== 'https:') return ''
+  return parsed.origin
+}
+
+function parseCorsOriginList(input) {
+  const pieces = Array.isArray(input)
+    ? input
+    : String(input || '')
+      .split(',')
+      .map((item) => String(item || '').trim())
+  const dedup = new Set()
+  const origins = []
+  for (const value of pieces) {
+    const normalized = normalizeCorsOrigin(value)
+    if (!normalized || dedup.has(normalized)) continue
+    dedup.add(normalized)
+    origins.push(normalized)
+  }
+  return origins
+}
+
 function loadProductionGatewayConfig(env = process.env) {
   const supabaseDbUrl = readEnvValue(env, 'SUPABASE_DB_URL', '')
   if (!supabaseDbUrl) {
     throw new Error('SUPABASE_DB_URL is required in production mode.')
   }
 
-  const allowedCorsOrigins = Array.from(
-    new Set(
-      readEnvValue(env, 'MEDIATION_ALLOWED_ORIGINS', '')
-        .split(',')
-        .map((item) => String(item || '').trim())
-        .filter(Boolean),
-    ),
-  )
+  const allowedCorsOrigins = parseCorsOriginList(readEnvValue(env, 'MEDIATION_ALLOWED_ORIGINS', ''))
   if (allowedCorsOrigins.length === 0) {
     throw new Error('MEDIATION_ALLOWED_ORIGINS must include at least one allowed origin.')
   }
@@ -71,6 +95,7 @@ const CONTROL_PLANE_DASHBOARD_USERS_TABLE = 'control_plane_dashboard_users'
 const CONTROL_PLANE_DASHBOARD_SESSIONS_TABLE = 'control_plane_dashboard_sessions'
 const CONTROL_PLANE_INTEGRATION_TOKENS_TABLE = 'control_plane_integration_tokens'
 const CONTROL_PLANE_AGENT_ACCESS_TOKENS_TABLE = 'control_plane_agent_access_tokens'
+const CONTROL_PLANE_ALLOWED_ORIGINS_TABLE = 'control_plane_allowed_origins'
 
 const DB_POOL_MAX = 1
 const DB_POOL_IDLE_TIMEOUT_MS = 10000
@@ -114,7 +139,7 @@ const TOKEN_EXCHANGE_FORBIDDEN_FIELDS = new Set([
   'tokenType',
   'token_type',
 ])
-const ALLOWED_CORS_ORIGINS = GATEWAY_CONFIG.allowedCorsOrigins
+const BOOTSTRAP_ALLOWED_CORS_ORIGINS = GATEWAY_CONFIG.allowedCorsOrigins
 const API_SERVICE_ROLE = 'all'
 const RUNTIME_ROUTE_MATCHERS = Object.freeze([
   { type: 'prefix', value: '/api/v1/mediation/' },
@@ -372,6 +397,11 @@ const settlementStore = {
   initPromise: null,
 }
 
+const corsOriginState = {
+  origins: [...BOOTSTRAP_ALLOWED_CORS_ORIGINS],
+  originSet: new Set(BOOTSTRAP_ALLOWED_CORS_ORIGINS),
+}
+
 const controlPlaneRefreshState = {
   lastLoadedAt: 0,
   refreshPromise: null,
@@ -383,6 +413,126 @@ function isSupabaseSettlementStore() {
 
 function isPostgresSettlementStore() {
   return isSupabaseSettlementStore()
+}
+
+function setAllowedCorsOrigins(originsInput = []) {
+  const origins = parseCorsOriginList(originsInput)
+  if (origins.length === 0) {
+    throw new Error('At least one allowed CORS origin is required.')
+  }
+  corsOriginState.origins = origins
+  corsOriginState.originSet = new Set(origins)
+  return origins
+}
+
+function getAllowedCorsOrigins() {
+  return Array.isArray(corsOriginState.origins) ? [...corsOriginState.origins] : []
+}
+
+async function listAllowedCorsOriginsFromSupabase(pool = null) {
+  const db = pool || settlementStore.pool
+  if (!db) return []
+  const result = await db.query(`
+    SELECT origin, created_at, updated_at
+    FROM ${CONTROL_PLANE_ALLOWED_ORIGINS_TABLE}
+    ORDER BY created_at ASC, origin ASC
+  `)
+  const rows = Array.isArray(result.rows) ? result.rows : []
+  const dedup = new Set()
+  const items = []
+  for (const row of rows) {
+    const origin = normalizeCorsOrigin(row?.origin)
+    if (!origin || dedup.has(origin)) continue
+    dedup.add(origin)
+    items.push({
+      origin,
+      createdAt: normalizeDbTimestamp(row?.created_at, nowIso()),
+      updatedAt: normalizeDbTimestamp(row?.updated_at, nowIso()),
+    })
+  }
+  return items
+}
+
+async function replaceAllowedCorsOriginsInSupabase(originsInput = [], pool = null) {
+  const db = pool || settlementStore.pool
+  const origins = parseCorsOriginList(originsInput)
+  if (origins.length === 0) {
+    throw new Error('origins must include at least one valid http/https origin.')
+  }
+  if (!db) {
+    setAllowedCorsOrigins(origins)
+    return origins.map((origin) => ({
+      origin,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    }))
+  }
+
+  const client = typeof db.connect === 'function' ? await db.connect() : null
+  const runner = client || db
+
+  try {
+    await runner.query('BEGIN')
+    await runner.query(`DELETE FROM ${CONTROL_PLANE_ALLOWED_ORIGINS_TABLE}`)
+    for (const origin of origins) {
+      await runner.query(
+        `
+          INSERT INTO ${CONTROL_PLANE_ALLOWED_ORIGINS_TABLE} (
+            origin,
+            created_at,
+            updated_at
+          )
+          VALUES ($1, NOW(), NOW())
+        `,
+        [origin],
+      )
+    }
+    await runner.query('COMMIT')
+  } catch (error) {
+    await runner.query('ROLLBACK').catch(() => {})
+    throw error
+  } finally {
+    if (client) client.release()
+  }
+
+  const loaded = await listAllowedCorsOriginsFromSupabase(db)
+  setAllowedCorsOrigins(loaded.map((item) => item.origin))
+  return loaded
+}
+
+async function refreshAllowedCorsOriginsFromSupabase(pool = null) {
+  const db = pool || settlementStore.pool
+  if (!db) return false
+  const rows = await listAllowedCorsOriginsFromSupabase(db)
+  if (rows.length > 0) {
+    setAllowedCorsOrigins(rows.map((item) => item.origin))
+    return true
+  }
+  await replaceAllowedCorsOriginsInSupabase(BOOTSTRAP_ALLOWED_CORS_ORIGINS, db)
+  return true
+}
+
+function normalizeAllowedCorsOriginsPayload(payload, fieldName = 'origins') {
+  const source = payload && typeof payload === 'object' ? payload : {}
+  const raw = source.origins
+  if (raw === undefined || raw === null) {
+    throw new Error(`${fieldName} is required.`)
+  }
+  const normalized = parseCorsOriginList(raw)
+  if (normalized.length === 0) {
+    throw new Error(`${fieldName} must include at least one valid http/https origin.`)
+  }
+  const sourceValues = Array.isArray(raw)
+    ? raw
+    : String(raw).split(',')
+  for (const value of sourceValues) {
+    const text = String(value || '').trim()
+    if (!text) continue
+    if (!normalizeCorsOrigin(text)) {
+      throw new Error(`Invalid origin: ${text}`)
+    }
+  }
+  return normalized
 }
 
 async function refreshControlPlaneStateFromStore(options = {}) {
@@ -401,7 +551,10 @@ async function refreshControlPlaneStateFromStore(options = {}) {
   }
 
   controlPlaneRefreshState.refreshPromise = (async () => {
-    await loadControlPlaneStateFromSupabase()
+    await Promise.all([
+      loadControlPlaneStateFromSupabase(),
+      refreshAllowedCorsOriginsFromSupabase(),
+    ])
     controlPlaneRefreshState.lastLoadedAt = Date.now()
     return true
   })()
@@ -3348,6 +3501,19 @@ async function ensureControlPlaneTables(pool) {
     CREATE INDEX IF NOT EXISTS idx_cp_agent_access_tokens_status
       ON ${CONTROL_PLANE_AGENT_ACCESS_TOKENS_TABLE} (status, expires_at DESC)
   `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ${CONTROL_PLANE_ALLOWED_ORIGINS_TABLE} (
+      id BIGSERIAL PRIMARY KEY,
+      origin TEXT NOT NULL UNIQUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_cp_allowed_origins_updated
+      ON ${CONTROL_PLANE_ALLOWED_ORIGINS_TABLE} (updated_at DESC)
+  `)
 }
 
 function upsertControlPlaneStateRecord(collectionKey, recordKey, record, max = 0) {
@@ -4146,7 +4312,6 @@ async function ensureSettlementStoreReady() {
       await ensureRuntimeLogTables(pool)
       await ensureControlPlaneTables(pool)
       settlementStore.pool = pool
-      await loadControlPlaneStateFromSupabase(pool)
     } catch (error) {
       throw new Error(
         `supabase persistence init failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -4424,10 +4589,10 @@ function mergePlacementRowsWithObserved(baseRows = [], observedPlacementIds = []
 syncLegacyPlacementSnapshot()
 
 function applyCorsOrigin(req, res) {
-  const requestOrigin = String(req?.headers?.origin || '').trim()
+  const requestOrigin = normalizeCorsOrigin(req?.headers?.origin || '')
   if (!requestOrigin) return { ok: true, requestOrigin: '' }
 
-  if (ALLOWED_CORS_ORIGINS.includes(requestOrigin)) {
+  if (corsOriginState.originSet.has(requestOrigin)) {
     res.setHeader('Access-Control-Allow-Origin', requestOrigin)
     res.setHeader('Vary', 'Origin')
     return { ok: true, requestOrigin }
@@ -7608,6 +7773,11 @@ function createControlPlaneRouteDeps() {
     syncInventoryNetworks,
     buildInventoryEmbeddings,
     materializeServingSnapshot,
+    listAllowedCorsOriginsFromSupabase,
+    replaceAllowedCorsOriginsInSupabase,
+    refreshAllowedCorsOriginsFromSupabase,
+    normalizeAllowedCorsOriginsPayload,
+    getAllowedCorsOrigins,
   }
 }
 
@@ -7628,13 +7798,6 @@ export async function requestHandler(req, res, options = {}) {
     return
   }
 
-  await refreshControlPlaneStateFromStore().catch((error) => {
-    console.error(
-      '[mediation-gateway] control plane state refresh warning:',
-      error instanceof Error ? error.message : String(error),
-    )
-  })
-
   if ((pathname === '/' || pathname === '/health' || pathname === '/api/health') && req.method === 'GET') {
     sendJson(res, 200, {
       ok: true,
@@ -7645,6 +7808,13 @@ export async function requestHandler(req, res, options = {}) {
     })
     return
   }
+
+  await refreshControlPlaneStateFromStore().catch((error) => {
+    console.error(
+      '[mediation-gateway] control plane state refresh warning:',
+      error instanceof Error ? error.message : String(error),
+    )
+  })
 
   const routeContext = {
     req,
@@ -7701,12 +7871,21 @@ export async function ensureReady() {
 
 export async function handleGatewayRequest(req, res, options = {}) {
   try {
+    await ensureReady()
+    const hasOriginHeader = Boolean(normalizeCorsOrigin(req?.headers?.origin || ''))
+    if (hasOriginHeader) {
+      await refreshControlPlaneStateFromStore().catch((error) => {
+        console.error(
+          '[mediation-gateway] runtime refresh warning:',
+          error instanceof Error ? error.message : String(error),
+        )
+      })
+    }
     const corsCheck = applyCorsOrigin(req, res)
     if (!corsCheck.ok) {
       sendCorsForbidden(res, corsCheck.requestOrigin)
       return
     }
-    await ensureReady()
     await requestHandler(req, res, options)
   } catch (error) {
     sendInternalError(res, error)

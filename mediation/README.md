@@ -42,7 +42,7 @@
 
 - 生产必需（MVP 首发）：
   - `SUPABASE_DB_URL`
-  - `MEDIATION_ALLOWED_ORIGINS=<dashboard domain>`
+  - `MEDIATION_ALLOWED_ORIGINS=<dashboard domain>`（仅首次启动 bootstrap；运行期以 Supabase 持久化白名单为准）
 - 供应侧 provider key 为可选：
   - `OPENROUTER_API_KEY` / `CJ_TOKEN` / `PARTNERSTACK_API_KEY` 缺省时允许降级到 no-bid/house ads，不阻断 API 启动。
 - 测试专用：
@@ -113,6 +113,14 @@ npm --prefix ./mediation run dev:gateway
 ```
 
 默认监听：`http://127.0.0.1:3100`（该脚本会自动设置 `MEDIATION_ENABLE_LOCAL_SERVER=true`）
+
+## 动态 CORS 白名单（无需重部署）
+
+- 白名单默认拒绝（非白名单 Origin 直接 `403`）。
+- `MEDIATION_ALLOWED_ORIGINS` 只用于首次启动种子。
+- 运行期可通过 Dashboard 鉴权接口更新白名单：
+  - `GET /api/v1/dashboard/security/origins`
+  - `PUT /api/v1/dashboard/security/origins`，`body: { "origins": ["https://dashboard.example.com"] }`
 
 ## Vercel 部署入口
 

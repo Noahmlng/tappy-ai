@@ -95,6 +95,11 @@ export async function handleControlPlaneRoutes(context, deps) {
     syncInventoryNetworks,
     buildInventoryEmbeddings,
     materializeServingSnapshot,
+    listAllowedCorsOriginsFromSupabase,
+    replaceAllowedCorsOriginsInSupabase,
+    refreshAllowedCorsOriginsFromSupabase,
+    normalizeAllowedCorsOriginsPayload,
+    getAllowedCorsOrigins,
   } = deps
 
   const isControlPlaneRouteRequest = (
@@ -111,6 +116,8 @@ export async function handleControlPlaneRoutes(context, deps) {
     || (pathname.match(/^\/api\/v1\/public\/credentials\/keys\/([^/]+)\/rotate$/) && req.method === 'POST')
     || (pathname.match(/^\/api\/v1\/public\/credentials\/keys\/([^/]+)\/revoke$/) && req.method === 'POST')
     || (pathname === '/api/v1/dashboard/state' && req.method === 'GET')
+    || (pathname === '/api/v1/dashboard/security/origins' && req.method === 'GET')
+    || (pathname === '/api/v1/dashboard/security/origins' && req.method === 'PUT')
     || (pathname === '/api/v1/dashboard/placements' && req.method === 'GET')
     || (pathname === '/api/v1/dashboard/placements' && req.method === 'POST')
     || (pathname.startsWith('/api/v1/dashboard/placements/') && req.method === 'PUT')
@@ -1275,6 +1282,78 @@ export async function handleControlPlaneRoutes(context, deps) {
       const scope = auth.scope
       sendJson(res, 200, await getDashboardStatePayload(scope))
       return
+    }
+
+    if (pathname === '/api/v1/dashboard/security/origins' && req.method === 'GET') {
+      const auth = await authorizeDashboardScope(req, requestUrl.searchParams)
+      if (!auth.ok) {
+        sendJson(res, auth.status, { error: auth.error })
+        return
+      }
+
+      let items = []
+      if (isSupabaseSettlementStore()) {
+        items = await listAllowedCorsOriginsFromSupabase(settlementStore.pool)
+      }
+      if (!Array.isArray(items) || items.length === 0) {
+        const fallbackNow = nowIso()
+        items = getAllowedCorsOrigins().map((origin) => ({
+          origin,
+          createdAt: fallbackNow,
+          updatedAt: fallbackNow,
+        }))
+      }
+
+      sendJson(res, 200, { items })
+      return
+    }
+
+    if (pathname === '/api/v1/dashboard/security/origins' && req.method === 'PUT') {
+      try {
+        const auth = await authorizeDashboardScope(req, requestUrl.searchParams, { requireAuth: true })
+        if (!auth.ok) {
+          sendJson(res, auth.status, { error: auth.error })
+          return
+        }
+
+        const payload = await readJsonBody(req)
+        const origins = normalizeAllowedCorsOriginsPayload(payload, 'origins')
+        const items = await replaceAllowedCorsOriginsInSupabase(origins, settlementStore.pool)
+        if (isSupabaseSettlementStore()) {
+          await refreshAllowedCorsOriginsFromSupabase(settlementStore.pool)
+        }
+
+        const scopedAccountId = resolveAuthorizedDashboardAccount(auth)
+        const scopedAppId = String(auth?.scope?.appId || auth?.user?.appId || auth?.session?.appId || '').trim()
+        recordControlPlaneAudit({
+          action: 'cors_origins_update',
+          actor: resolveAuditActor(req, 'dashboard'),
+          accountId: scopedAccountId,
+          appId: scopedAppId,
+          environment: 'prod',
+          resourceType: 'gateway_security',
+          resourceId: 'allowed_cors_origins',
+          metadata: {
+            count: Array.isArray(items) ? items.length : 0,
+            origins: Array.isArray(items) ? items.map((item) => String(item?.origin || '').trim()).filter(Boolean) : [],
+          },
+        })
+        persistState(state)
+
+        sendJson(res, 200, {
+          updated: true,
+          items,
+        })
+        return
+      } catch (error) {
+        sendJson(res, 400, {
+          error: {
+            code: 'INVALID_REQUEST',
+            message: error instanceof Error ? error.message : 'Invalid request',
+          },
+        })
+        return
+      }
     }
   
     if (pathname === '/api/v1/dashboard/placements' && req.method === 'GET') {
