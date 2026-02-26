@@ -1,4 +1,4 @@
-# @ai-network/mediation-sdk-contracts
+# @noahmlng/mediation-sdk-contracts
 
 Shared contracts package for:
 
@@ -8,17 +8,17 @@ Shared contracts package for:
 ## Install
 
 ```bash
-npm install @ai-network/mediation-sdk-contracts
+npm install @noahmlng/mediation-sdk-contracts
 ```
 
 ## Exports
 
-- `@ai-network/mediation-sdk-contracts`
+- `@noahmlng/mediation-sdk-contracts`
   - `listSchemaKeys()`
   - `resolveSchemaUrl(schemaKey)`
   - `createRuntimeClient(config)`
   - `createControlPlaneClient(config)`
-- `@ai-network/mediation-sdk-contracts/client`
+- `@noahmlng/mediation-sdk-contracts/client`
   - `createRuntimeClient(config)`
   - `createControlPlaneClient(config)`
 

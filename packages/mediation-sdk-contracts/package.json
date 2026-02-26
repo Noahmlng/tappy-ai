@@ -1,5 +1,5 @@
 {
-  "name": "@ai-network/mediation-sdk-contracts",
+  "name": "@noahmlng/mediation-sdk-contracts",
   "version": "0.1.0",
   "description": "Shared API contracts and clients for Mediation Runtime and Control Plane.",
   "type": "module",
