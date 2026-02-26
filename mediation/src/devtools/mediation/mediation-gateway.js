@@ -110,6 +110,13 @@ const CONTROL_PLANE_DASHBOARD_SESSIONS_TABLE = 'control_plane_dashboard_sessions
 const CONTROL_PLANE_INTEGRATION_TOKENS_TABLE = 'control_plane_integration_tokens'
 const CONTROL_PLANE_AGENT_ACCESS_TOKENS_TABLE = 'control_plane_agent_access_tokens'
 const CONTROL_PLANE_ALLOWED_ORIGINS_TABLE = 'control_plane_allowed_origins'
+const PLACEMENT_ID_MIGRATION_TABLES = Object.freeze([
+  { table: CONTROL_PLANE_INTEGRATION_TOKENS_TABLE, column: 'placement_id' },
+  { table: CONTROL_PLANE_AGENT_ACCESS_TOKENS_TABLE, column: 'placement_id' },
+  { table: RUNTIME_DECISION_LOG_TABLE, column: 'placement_id' },
+  { table: RUNTIME_EVENT_LOG_TABLE, column: 'placement_id' },
+  { table: SETTLEMENT_FACT_TABLE, column: 'placement_id' },
+])
 
 const DB_POOL_MAX = 1
 const DB_POOL_IDLE_TIMEOUT_MS = 10000
@@ -3552,6 +3559,54 @@ async function ensureControlPlaneTables(pool) {
   `)
 }
 
+async function migrateLegacyPlacementIdsInSupabase(pool) {
+  const db = pool || settlementStore.pool
+  if (!db) {
+    return {
+      executed: false,
+      totalUpdatedRows: 0,
+      updatedRowsByTable: {},
+    }
+  }
+
+  const updatedRowsByTable = {}
+  let totalUpdatedRows = 0
+  const migrationEntries = Object.entries(LEGACY_PLACEMENT_ID_MAP)
+
+  for (const target of PLACEMENT_ID_MIGRATION_TABLES) {
+    const table = String(target?.table || '').trim()
+    const column = String(target?.column || '').trim()
+    if (!table || !column) continue
+
+    let tableUpdatedRows = 0
+    const byLegacy = {}
+
+    for (const [legacyPlacementId, replacementPlacementId] of migrationEntries) {
+      const result = await db.query(
+        `UPDATE ${table} SET ${column} = $1 WHERE ${column} = $2`,
+        [replacementPlacementId, legacyPlacementId],
+      )
+      const rowCount = Number(result?.rowCount)
+      const affectedRows = Number.isFinite(rowCount) && rowCount > 0 ? Math.floor(rowCount) : 0
+      byLegacy[`${legacyPlacementId}->${replacementPlacementId}`] = affectedRows
+      tableUpdatedRows += affectedRows
+      totalUpdatedRows += affectedRows
+    }
+
+    updatedRowsByTable[table] = {
+      column,
+      updatedRows: tableUpdatedRows,
+      byLegacy,
+    }
+  }
+
+  return {
+    executed: true,
+    totalUpdatedRows,
+    updatedRowsByTable,
+  }
+}
+
 function upsertControlPlaneStateRecord(collectionKey, recordKey, record, max = 0) {
   if (!state?.controlPlane || typeof state.controlPlane !== 'object') {
     state.controlPlane = createInitialControlPlaneState()
@@ -4347,6 +4402,33 @@ async function ensureSettlementStoreReady() {
       await ensureSettlementFactTable(pool)
       await ensureRuntimeLogTables(pool)
       await ensureControlPlaneTables(pool)
+      const migration = await migrateLegacyPlacementIdsInSupabase(pool)
+      if (migration.executed) {
+        const rowsByTable = migration.updatedRowsByTable && typeof migration.updatedRowsByTable === 'object'
+          ? migration.updatedRowsByTable
+          : {}
+        for (const target of PLACEMENT_ID_MIGRATION_TABLES) {
+          const table = String(target?.table || '').trim()
+          const row = rowsByTable[table] && typeof rowsByTable[table] === 'object'
+            ? rowsByTable[table]
+            : { column: String(target?.column || '').trim(), updatedRows: 0 }
+          console.info(
+            `[mediation-gateway] placement-id migration ${table}.${row.column}: ${toPositiveInteger(row.updatedRows, 0)} rows updated`,
+          )
+        }
+        recordControlPlaneAudit({
+          action: 'placement_id_migration',
+          actor: 'system',
+          environment: 'prod',
+          resourceType: 'gateway_migration',
+          resourceId: 'legacy_placement_id',
+          metadata: {
+            totalUpdatedRows: toPositiveInteger(migration.totalUpdatedRows, 0),
+            updatedRowsByTable: rowsByTable,
+          },
+        })
+        persistState(state)
+      }
       settlementStore.pool = pool
     } catch (error) {
       throw new Error(
@@ -7928,6 +8010,13 @@ export async function handleGatewayRequest(req, res, options = {}) {
   } catch (error) {
     sendInternalError(res, error)
   }
+}
+
+export {
+  migrateLegacyPlacementIdsInSupabase,
+  normalizeAgentAccessTokenRecord,
+  normalizeIntegrationTokenRecord,
+  normalizePlacementIdWithMigration,
 }
 
 function isDirectExecution() {
