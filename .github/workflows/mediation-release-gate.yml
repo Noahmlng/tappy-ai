@@ -35,6 +35,9 @@ jobs:
   gate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      SUPABASE_DB_URL_TEST: ${{ secrets.SUPABASE_DB_URL_TEST }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,10 +64,26 @@ jobs:
       - name: Migration dry run
         run: npm --prefix ./mediation run db:migrate:dry-run
 
+      - name: Detect Supabase test DB env
+        id: db-env
+        run: |
+          if [ -n "${SUPABASE_DB_URL_TEST}" ] || [ -n "${SUPABASE_DB_URL}" ]; then
+            echo "has_db_env=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "has_db_env=false" >> "$GITHUB_OUTPUT"
+          echo "::warning::SUPABASE_DB_URL_TEST/SUPABASE_DB_URL is not configured in GitHub Secrets. Integration/E2E gates are skipped."
+
       - name: Functional P0 gate
+        if: steps.db-env.outputs.has_db_env == 'true'
         run: npm --prefix ./mediation run test:functional:p0
 
+      - name: Functional P0 fallback (contracts only)
+        if: steps.db-env.outputs.has_db_env != 'true'
+        run: npm --prefix ./mediation run test:contracts
+
       - name: E2E gate
+        if: steps.db-env.outputs.has_db_env == 'true'
         run: npm --prefix ./mediation run test:e2e
 
   release-checklist:
