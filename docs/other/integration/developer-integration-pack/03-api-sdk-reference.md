@@ -1,7 +1,7 @@
 # 03 - API and SDK Reference (V2 Baseline)
 
 - Owner: Integrations Team
-- Last Updated: 2026-02-24
+- Last Updated: 2026-02-26
 - Scope: external runtime integration (`config -> v2/bid -> events`)
 
 ## 1. Endpoint Summary
@@ -37,6 +37,10 @@ Required query params:
 4. `sdkVersion`
 5. `requestAt` (ISO-8601)
 
+Placement ID contract:
+1. Allowed IDs: `chat_from_answer_v1`, `chat_intent_recommendation_v1`
+2. Legacy (renamed) IDs are rejected with `400 PLACEMENT_ID_RENAMED`.
+
 Optional query params:
 1. `environment` (defaults to `prod`; only `prod` is accepted)
 
@@ -46,7 +50,7 @@ Sample request:
 curl -sS -G "$BASE_URL/api/v1/mediation/config" \
   -H "Authorization: Bearer $API_KEY" \
   --data-urlencode "appId=$APP_ID" \
-  --data-urlencode "placementId=chat_inline_v1" \
+  --data-urlencode "placementId=chat_from_answer_v1" \
   --data-urlencode "environment=prod" \
   --data-urlencode "schemaVersion=schema_v1" \
   --data-urlencode "sdkVersion=1.0.0" \
@@ -60,7 +64,7 @@ Sample response (`200`):
   "appId": "app_demo",
   "accountId": "org_demo",
   "environment": "prod",
-  "placementId": "chat_inline_v1",
+  "placementId": "chat_from_answer_v1",
   "placementKey": "attach.post_answer_render",
   "schemaVersion": "schema_v1",
   "sdkVersion": "1.0.0",
@@ -68,7 +72,7 @@ Sample response (`200`):
   "configVersion": 3,
   "ttlSec": 300,
   "placement": {
-    "placementId": "chat_inline_v1",
+    "placementId": "chat_from_answer_v1",
     "enabled": true
   }
 }
@@ -79,7 +83,7 @@ Sample response (`200`):
 Required top-level fields:
 1. `userId: string`
 2. `chatId: string`
-3. `placementId: chat_inline_v1 | chat_followup_v1`
+3. `placementId: chat_from_answer_v1 | chat_intent_recommendation_v1`
 4. `messages: Array<{ role, content, timestamp? }>`
 
 `messages[*].role` must be `user | assistant | system`.
@@ -93,7 +97,7 @@ curl -sS -X POST "$BASE_URL/api/v2/bid" \
   -d '{
     "userId": "user_001",
     "chatId": "chat_001",
-    "placementId": "chat_inline_v1",
+    "placementId": "chat_from_answer_v1",
     "messages": [
       { "role": "user", "content": "Recommend running shoes" },
       { "role": "assistant", "content": "Focus on grip." }
@@ -140,6 +144,20 @@ No-bid response (normal):
 }
 ```
 
+Legacy placement ID rejection example (`400`):
+
+```json
+{
+  "error": {
+    "code": "PLACEMENT_ID_RENAMED",
+    "message": "placementId \"legacy_placement_id_v1\" has been renamed to \"chat_from_answer_v1\".",
+    "placementId": "legacy_placement_id_v1",
+    "replacementPlacementId": "chat_from_answer_v1",
+    "field": "placementId"
+  }
+}
+```
+
 ## 3.3 `POST /api/v1/sdk/events` (Attach)
 
 Attach payload required fields:
@@ -155,7 +173,7 @@ Optional fields:
 2. `appId`
 3. `kind` (`impression` | `click`, default `impression`)
 4. `adId`
-5. `placementId` (default `chat_inline_v1`)
+5. `placementId` (default `chat_from_answer_v1`)
 
 Sample response:
 
@@ -222,11 +240,16 @@ Sample response:
 
 | HTTP Code | Error Code (examples) | Retryable | Client Action |
 | --- | --- | --- | --- |
-| 400 | `INVALID_REQUEST`, `SDK_EVENTS_INVALID_PAYLOAD` | No | Fix payload/schema mismatch |
+| 400 | `INVALID_REQUEST`, `SDK_EVENTS_INVALID_PAYLOAD`, `PLACEMENT_ID_RENAMED` | No | Fix payload/schema mismatch, and migrate to canonical placement ID |
 | 401 | `RUNTIME_AUTH_REQUIRED`, `INVALID_API_KEY`, `ACCESS_TOKEN_EXPIRED` | No | Refresh/replace credential |
 | 403 | `API_KEY_SCOPE_VIOLATION`, `ACCESS_TOKEN_SCOPE_VIOLATION` | No | Use token with correct scope/app/placement |
 | 404 | `PLACEMENT_NOT_FOUND` (config) | No | Check appId + placementId mapping |
+| 409 | `PRECONDITION_FAILED`, `INVENTORY_EMPTY` (quick-start verify) | No | Provision runtime key or sync inventory before retry |
 | 5xx | runtime/upstream transient failure | Yes (limited) | Backoff retry + fail-open |
+
+No-bid boundary:
+1. `No bid` is only the `HTTP 200 + status=success + data.bid=null` case.
+2. Any `4xx/5xx` is integration/runtime error, not no-bid.
 
 ## 6. Timeout and Retry Recommendations
 

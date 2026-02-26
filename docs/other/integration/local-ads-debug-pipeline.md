@@ -1,7 +1,7 @@
 # Local Ads Debug Pipeline（经验沉淀）
 
 - Version: v1.0
-- Last Updated: 2026-02-24
+- Last Updated: 2026-02-26
 - Scope: External Client + Gateway + Dashboard 本地联调（重点排查 `No bid`）
 
 ## 1. 目标
@@ -81,7 +81,7 @@ curl -sS -X POST http://127.0.0.1:3100/api/v2/bid \
   -d '{
     "userId":"u1",
     "chatId":"c1",
-    "placementId":"chat_inline_v1",
+    "placementId":"chat_from_answer_v1",
     "messages":[
       {"role":"user","content":"best iphone deals"},
       {"role":"assistant","content":"I can help"}
@@ -110,6 +110,22 @@ curl -sS http://127.0.0.1:3100/api/v1/dashboard/metrics/summary | jq .
 ```
 
 ## 4. `No bid` 快速分型（核心经验）
+
+先做边界判断：
+- 只有 `HTTP 200 + status=success + message=No bid` 才是业务 no-fill。
+- `4xx/5xx` 都是配置或链路错误，不能按 no-bid 处理。
+
+### 类型 0：旧 placementId 触发显式拒绝
+
+现象：
+- `POST /api/v2/bid` 或 `GET /api/v1/mediation/config` 返回 `400`
+- 错误码 `PLACEMENT_ID_RENAMED`
+
+根因：
+- 请求仍使用旧命名的 placement ID。
+
+处理：
+- 立即替换为新 ID：`chat_from_answer_v1` / `chat_intent_recommendation_v1`。
 
 ### 类型 1：伪 no bid（实际是鉴权失败）
 
@@ -148,6 +164,19 @@ curl -sS http://127.0.0.1:3100/api/v1/dashboard/metrics/summary | jq .
 处理：
 - 本地排障优先设 `HOUSE_ADS_SOURCE=file`。
 - 严格模式下同步检查 Supabase `house_ads_offers` 数据量与状态。
+
+### 类型 4：`inventory_empty`（严格库存前置条件不满足）
+
+现象：
+- `POST /api/v1/public/quick-start/verify` 返回 `409 INVENTORY_EMPTY`
+- 或 `GET /api/v1/internal/inventory/status` 返回 `409 INVENTORY_EMPTY`
+
+根因：
+- 库存总量为 0，或核心网络覆盖不完整。
+
+处理：
+- 平台侧执行 `npm --prefix ./mediation run inventory:sync:all`
+- 重试 preflight，再进入 `v2/bid` 联调。
 
 ## 5. 成功判定（Done Definition）
 

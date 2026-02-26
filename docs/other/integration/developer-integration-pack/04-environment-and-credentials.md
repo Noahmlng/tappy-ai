@@ -1,7 +1,7 @@
 # 04 - Environment and Credentials Guide
 
 - Owner: Integrations Team + Security
-- Last Updated: 2026-02-25
+- Last Updated: 2026-02-26
 
 ## 1. Environment Matrix
 
@@ -18,7 +18,8 @@
 | Runtime API key (`Authorization: Bearer`) | control-plane key store | App Owner | every 90 days (or incident-triggered) |
 | Integration token (one-time) | agent onboarding issuance API | Integrations | short-lived, single onboarding session |
 | Access token (token exchange output) | client memory only | Integrations | TTL-based (120s~900s) |
-| Optional durable DB URL (`SUPABASE_DB_URL`) | secret manager | Platform | per infra rotation policy |
+| Durable DB URL (`SUPABASE_DB_URL`, required in prod runtime) | secret manager | Platform | per infra rotation policy |
+| Allowed dashboard origins (`MEDIATION_ALLOWED_ORIGINS`, required in prod runtime bootstrap) | secret manager | Platform | update when dashboard domains change |
 
 ## 3. Bootstrap Steps
 
@@ -30,7 +31,7 @@
 export MEDIATION_API_BASE_URL=https://api.example.com/api
 export MEDIATION_API_KEY=<issued_runtime_key>
 export APP_ID=<your_app_id>
-export PLACEMENT_ID=chat_inline_v1
+export PLACEMENT_ID=chat_from_answer_v1
 ```
 
 4. Validate health + config:
@@ -45,7 +46,7 @@ Expected minimal response:
 ```json
 {
   "appId": "sample-client-app",
-  "placementId": "chat_inline_v1",
+  "placementId": "chat_from_answer_v1",
   "configVersion": 3
 }
 ```
@@ -59,7 +60,7 @@ curl -sS -X POST "$MEDIATION_API_BASE_URL/v2/bid" \
   -d '{
     "userId": "env_guide_user_001",
     "chatId": "env_guide_chat_001",
-    "placementId": "chat_inline_v1",
+    "placementId": "chat_from_answer_v1",
     "messages": [
       { "role": "user", "content": "Recommend waterproof running shoes" },
       { "role": "assistant", "content": "Focus on grip and waterproof uppers." }
@@ -93,7 +94,7 @@ curl -sS -X POST "$MEDIATION_API_BASE_URL/v1/sdk/events" \
     "intentScore": 0.9,
     "locale": "en-US",
     "kind": "impression",
-    "placementId": "chat_inline_v1"
+    "placementId": "chat_from_answer_v1"
   }'
 ```
 
@@ -107,11 +108,18 @@ Expected response:
 
 | Symptom | Likely Cause | Action |
 | --- | --- | --- |
+| gateway startup fails with env validation error | missing `SUPABASE_DB_URL` or `MEDIATION_ALLOWED_ORIGINS` in prod runtime | fix runtime env config and restart gateway |
 | `401 RUNTIME_AUTH_REQUIRED` | missing/empty bearer token | ensure `Authorization` header is set with active key |
 | `401 INVALID_API_KEY` | revoked/expired key | rotate key from dashboard and retry |
 | `403 API_KEY_SCOPE_VIOLATION` | key scope doesn't match `appId/placementId` | issue key under correct scope |
+| `400 PLACEMENT_ID_RENAMED` | request uses legacy placement ID | migrate to `chat_from_answer_v1` or `chat_intent_recommendation_v1` |
+| `409 INVENTORY_EMPTY` (quick-start verify/internal inventory status) | strict inventory mode has empty inventory or missing core networks | platform side runs `npm --prefix ./mediation run inventory:sync:all`, then retry |
 | `400 INVALID_REQUEST` on `v2/bid` | payload not in V2 schema | keep only `userId/chatId/placementId/messages` |
-| `message=No bid` | no eligible bidder under current context | treat as valid no-fill, do not blind retry |
+| `message=No bid` with `HTTP 200 + status=success` | no eligible bidder under current context | treat as valid no-fill, do not blind retry |
+
+No-bid boundary:
+1. `No bid` is business no-fill only when `HTTP 200` and response `status=success`.
+2. `4xx/5xx` always indicates integration/config/runtime issues that need correction.
 
 ## 5. Security Guardrails
 

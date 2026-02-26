@@ -1,7 +1,7 @@
 # 05 - Network and Adapter Support Matrix
 
 - Owner: Runtime Platform + Integrations QA
-- Last Updated: 2026-02-25
+- Last Updated: 2026-02-26
 
 ## 1. Adapter Matrix
 
@@ -42,7 +42,7 @@ curl -sS -X POST "$MEDIATION_API_BASE_URL/v2/bid" \
   -d '{
     "userId": "adapter_matrix_user_001",
     "chatId": "adapter_matrix_chat_001",
-    "placementId": "chat_inline_v1",
+    "placementId": "chat_from_answer_v1",
     "messages": [
       { "role": "user", "content": "Recommend lightweight hiking shoes" },
       { "role": "assistant", "content": "Prioritize traction and ankle support." }
@@ -72,6 +72,7 @@ If no winner, `message` can be `No bid` and `data.bid` can be `null`; this is st
 | Symptom | Likely Cause | Action |
 | --- | --- | --- |
 | `message=No bid` rate spikes | partner timeouts or strict placement rules | inspect placement config and bidder health, then run staged replay |
+| `409 INVENTORY_EMPTY` during preflight | strict inventory snapshot empty or missing core network coverage | platform side runs `npm --prefix ./mediation run inventory:sync:all`, then re-run preflight |
 | adapter-specific DSP disappears | adapter disabled in placement config | verify bidder list and `enabled=true` flags |
 | postback counted twice concern | duplicate callback replay | confirm same `idempotency_key` returns duplicate path and no extra revenue |
 | frequent `5xx` from bidder path | upstream dependency instability | keep fail-open, throttle retries, temporarily rely on fallback route |

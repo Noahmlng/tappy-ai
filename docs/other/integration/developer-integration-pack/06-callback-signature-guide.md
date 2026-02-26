@@ -1,7 +1,7 @@
 # 06 - Callback and Signature Validation Guide
 
 - Owner: Security + Runtime Platform
-- Last Updated: 2026-02-25
+- Last Updated: 2026-02-26
 
 ## 1. Callback Types
 
@@ -17,6 +17,7 @@ Current runtime baseline:
 1. `/api/v1/sdk/events` requires runtime credential (`Authorization: Bearer ...`).
 2. No mandatory third-party callback signature header is enforced inside gateway.
 3. Transport requirement is HTTPS + scoped runtime credential.
+4. Callback payload `placementId` must use canonical IDs (`chat_from_answer_v1` / `chat_intent_recommendation_v1`); legacy IDs are rejected with `400 PLACEMENT_ID_RENAMED`.
 
 Recommended edge policy (if your callback source can sign payloads):
 1. Signature header: `X-Callback-Signature`
@@ -54,7 +55,7 @@ curl -sS -X POST "$MEDIATION_API_BASE_URL/v1/sdk/events" \
     "intentScore": 0.9,
     "locale": "en-US",
     "kind": "impression",
-    "placementId": "chat_inline_v1"
+    "placementId": "chat_from_answer_v1"
   }'
 ```
 
@@ -95,5 +96,6 @@ Success response:
 | invalid signature (edge policy enabled) | `401` at edge gateway (blocked before runtime) | no | yes (security) |
 | timestamp expired (edge policy enabled) | `401` at edge gateway | no | yes (security) |
 | malformed payload | `400 SDK_EVENTS_INVALID_PAYLOAD` | no | yes (integration) |
+| legacy placement ID in payload | `400 PLACEMENT_ID_RENAMED` | no | yes (integration) |
 | missing `cpaUsd` on success postback | `400 SDK_EVENTS_INVALID_PAYLOAD` | no | yes (integration) |
 | duplicate conversion postback | `200` with `duplicate=true` | no extra retry needed | monitor only |

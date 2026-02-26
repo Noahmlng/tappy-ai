@@ -34,7 +34,7 @@
 - 作为独立 AI Native Chat 容器，用于触发与验证广告链路。
 
 <a id="readme-status"></a>
-## 当前状态（2026-02-24）
+## 当前状态（2026-02-26）
 
 1. 对外 SDK 主链路固定为：
 - `GET /api/v1/mediation/config`
@@ -42,13 +42,20 @@
 - `POST /api/v1/sdk/events`
 
 2. 默认已接通广告位：
-- `chat_inline_v1`（`attach.post_answer_render`）
-- `chat_followup_v1`（`next_step.intent_card`）
+- `chat_from_answer_v1`（`attach.post_answer_render`）
+- `chat_intent_recommendation_v1`（`next_step.intent_card`）
 
 3. `No bid` 语义稳定：
 - `HTTP 200` + `status=success` + `data.bid=null`，属于正常业务结果，不是错误。
 
-4. 迁移说明：
+4. 生产运行硬约束：
+- `SUPABASE_DB_URL`、`MEDIATION_ALLOWED_ORIGINS` 必填；缺失时网关启动失败（fail-fast）。
+
+5. 错误分型基线：
+- 旧 `placementId`（历史命名）会返回 `400 PLACEMENT_ID_RENAMED`。
+- 严格库存预检失败会返回 `409 INVENTORY_EMPTY`（不是 `No bid`）。
+
+6. 迁移说明：
 - 旧路径 `/api/v1/sdk/evaluate` 不再作为主接入路径，统一使用 `/api/v2/bid`。
 
 <a id="readme-placements"></a>
@@ -58,13 +65,13 @@
 
 ### 已接入广告位（默认）
 
-1. `chat_inline_v1`
+1. `chat_from_answer_v1`
 - `placementKey`: `attach.post_answer_render`
 - `surface`: `CHAT_INLINE`
 - `format`: `NATIVE_BLOCK`
 - 用途：主回答后展示 Sponsored links
 
-2. `chat_followup_v1`
+2. `chat_intent_recommendation_v1`
 - `placementKey`: `next_step.intent_card`
 - `surface`: `FOLLOW_UP`
 - `format`: `CARD`
@@ -72,12 +79,12 @@
 
 ### 端到端接入链路
 
-1. Attach（`chat_inline_v1`）
+1. Attach（`chat_from_answer_v1`）
 - 客户端在回答完成后触发广告请求。
 - 通过 `POST /api/v2/bid` 请求单一 winner bid。
 - 前端按返回渲染 Sponsored links，并调用 `POST /api/v1/sdk/events` 上报事件。
 
-2. Next-Step（`chat_followup_v1`）
+2. Next-Step（`chat_intent_recommendation_v1`）
 - 客户端在 `followup_generation` 事件触发请求。
 - 通过 `POST /api/v2/bid` 拉取候选并落地为 Intent Card。
 - 渲染后通过 `POST /api/v1/sdk/events` 上报 impression/click/dismiss。
