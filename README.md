@@ -36,10 +36,10 @@
 <a id="readme-status"></a>
 ## 当前状态（2026-02-26）
 
-1. 对外 SDK 主链路固定为：
-- `GET /api/v1/mediation/config`
-- `POST /api/v2/bid`
-- `POST /api/v1/sdk/events`
+1. 对外 SDK MVP 主链路固定为：
+- `POST /api/v2/bid`（必需）
+- `POST /api/v1/sdk/events`（可选增强）
+- `GET /api/v1/mediation/config`（可选诊断）
 
 2. 默认已接通广告位：
 - `chat_from_answer_v1`（`attach.post_answer_render`）
@@ -52,11 +52,12 @@
 - `SUPABASE_DB_URL`、`MEDIATION_ALLOWED_ORIGINS` 必填；缺失时网关启动失败（fail-fast）。
 
 5. 错误分型基线：
-- 旧 `placementId`（历史命名）会返回 `400 PLACEMENT_ID_RENAMED`。
+- `/api/v2/bid` 对旧 `placementId` 自动映射，不再返回 `PLACEMENT_ID_RENAMED`。
 - 严格库存预检失败会返回 `409 INVENTORY_EMPTY`（不是 `No bid`）。
 
 6. 迁移说明：
 - 旧路径 `/api/v1/sdk/evaluate` 不再作为主接入路径，统一使用 `/api/v2/bid`。
+- 旧路径 `/api/v1/public/sdk/bootstrap`、`/api/v1/public/runtime-domain/verify-and-bind`、`/api/v1/public/runtime-domain/probe` 已下线并返回 `410`。
 
 <a id="readme-placements"></a>
 ## 广告位配置与接入方式

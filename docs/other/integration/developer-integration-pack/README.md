@@ -4,10 +4,10 @@
 - Last Updated: 2026-02-25
 - Audience: SDK integrators, product reviewers, release managers
 
-This folder tracks external integration docs for the V2 baseline:
-1. `GET /api/v1/mediation/config`
-2. `POST /api/v2/bid`
-3. `POST /api/v1/sdk/events`
+This folder tracks external integration docs for the MVP-first V2 baseline:
+1. `POST /api/v2/bid` (required)
+2. `POST /api/v1/sdk/events` (optional enhancement)
+3. `GET /api/v1/mediation/config` (optional diagnostics)
 
 ## Document Index
 

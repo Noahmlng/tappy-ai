@@ -3,6 +3,24 @@ const CONTROL_PLANE_ROUTE_ERROR_STATUS_BY_CODE = Object.freeze({
   PLACEMENT_ID_RENAMED: 400,
 })
 
+const REMOVED_PUBLIC_CONTROL_ROUTES = Object.freeze({
+  '/api/v1/public/sdk/bootstrap': {
+    method: 'GET',
+    code: 'BOOTSTRAP_REMOVED',
+    message: 'Bootstrap has been removed. Use runtime key and POST /api/v2/bid directly.',
+  },
+  '/api/v1/public/runtime-domain/verify-and-bind': {
+    method: 'POST',
+    code: 'RUNTIME_BIND_FLOW_REMOVED',
+    message: 'Runtime domain bind flow has been removed. Use runtime key and POST /api/v2/bid directly.',
+  },
+  '/api/v1/public/runtime-domain/probe': {
+    method: 'POST',
+    code: 'RUNTIME_BIND_FLOW_REMOVED',
+    message: 'Runtime domain bind flow has been removed. Use runtime key and POST /api/v2/bid directly.',
+  },
+})
+
 function toControlPlaneRouteError(error, options = {}) {
   const fallbackCode = String(options.defaultCode || 'INVALID_REQUEST').trim() || 'INVALID_REQUEST'
   const fallbackStatus = Number.isInteger(options.defaultStatus) ? options.defaultStatus : 400
@@ -155,7 +173,10 @@ export async function handleControlPlaneRoutes(context, deps) {
   } = deps
 
   const isControlPlaneRouteRequest = (
-    (pathname === '/api/v1/public/quick-start/verify' && req.method === 'POST')
+    (pathname === '/api/v1/public/sdk/bootstrap' && req.method === 'GET')
+    || (pathname === '/api/v1/public/runtime-domain/verify-and-bind' && req.method === 'POST')
+    || (pathname === '/api/v1/public/runtime-domain/probe' && req.method === 'POST')
+    || (pathname === '/api/v1/public/quick-start/verify' && req.method === 'POST')
     || (pathname === '/api/v1/public/audit/logs' && req.method === 'GET')
     || (pathname === '/api/v1/public/dashboard/register' && req.method === 'POST')
     || (pathname === '/api/v1/public/dashboard/login' && req.method === 'POST')
@@ -191,6 +212,19 @@ export async function handleControlPlaneRoutes(context, deps) {
   }
 
   await (async () => {
+    if (Object.prototype.hasOwnProperty.call(REMOVED_PUBLIC_CONTROL_ROUTES, pathname)) {
+      const policy = REMOVED_PUBLIC_CONTROL_ROUTES[pathname]
+      if (String(policy?.method || '').toUpperCase() === String(req.method || '').toUpperCase()) {
+        sendJson(res, 410, {
+          error: {
+            code: policy.code,
+            message: policy.message,
+          },
+        })
+        return
+      }
+    }
+
     if (pathname === '/api/v1/public/quick-start/verify' && req.method === 'POST') {
       try {
         const payload = await readJsonBody(req)

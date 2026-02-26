@@ -2,22 +2,26 @@
 
 - Owner: Integrations Team
 - Last Updated: 2026-02-26
-- Scope: external runtime integration (`config -> v2/bid -> events`)
+- Scope: external runtime integration (`v2/bid` required, `events/config` optional)
 
 ## 1. Endpoint Summary
 
 | Endpoint | Method | Purpose | Auth | Idempotency |
 | --- | --- | --- | --- | --- |
-| `/api/v1/mediation/config` | `GET` | Read placement config snapshot | Bearer runtime credential | N/A (read) |
 | `/api/v2/bid` | `POST` | Request single winner bid | Bearer runtime credential | No hard idempotency guarantee |
 | `/api/v1/sdk/events` | `POST` | Report SDK events (attach/next-step/postback) | Bearer runtime credential | Postback supports dedup by semantic idempotency key |
+| `/api/v1/mediation/config` | `GET` | Read placement config snapshot (diagnostics) | Bearer runtime credential | N/A (read) |
 
 ## 2. Authentication and Scope
 
-All endpoints require runtime credential in header:
+Runtime endpoints accept either of the following headers:
 
 ```http
 Authorization: Bearer <token>
+```
+
+```http
+Authorization: <token>
 ```
 
 Common auth failures:
@@ -81,12 +85,15 @@ Sample response (`200`):
 ## 3.2 `POST /api/v2/bid`
 
 Required top-level fields:
-1. `userId: string`
-2. `chatId: string`
-3. `placementId: chat_from_answer_v1 | chat_intent_recommendation_v1`
-4. `messages: Array<{ role, content, timestamp? }>`
+1. `messages` OR (`query` / `prompt`) must provide non-empty user intent text.
 
-`messages[*].role` must be `user | assistant | system`.
+Tolerance behavior:
+1. Missing `chatId` -> defaults to `userId`; if `userId` missing too, server generates stable `anon_*`.
+2. Missing `userId` -> server generates `anon_*`.
+3. Missing `placementId` -> defaults to `chat_from_answer_v1`.
+4. Legacy placement IDs are auto-mapped (no `PLACEMENT_ID_RENAMED` for `/api/v2/bid`).
+5. Extra fields are ignored.
+6. Invalid `messages[*].role` is coerced to `user` or `assistant` and surfaced in diagnostics.
 
 Sample request:
 
@@ -113,6 +120,8 @@ Sample success response:
   "timestamp": "2026-02-24T10:31:24.787Z",
   "status": "success",
   "message": "Bid successful",
+  "filled": true,
+  "landingUrl": "https://example.com",
   "data": {
     "bid": {
       "price": 12.34,
@@ -138,6 +147,8 @@ No-bid response (normal):
   "timestamp": "2026-02-24T10:31:24.787Z",
   "status": "success",
   "message": "No bid",
+  "filled": false,
+  "landingUrl": null,
   "data": {
     "bid": null
   }
