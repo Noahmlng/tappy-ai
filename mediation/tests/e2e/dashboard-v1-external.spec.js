@@ -12,11 +12,6 @@ const GATEWAY_ENTRY = path.join(PROJECT_ROOT, 'src', 'devtools', 'mediation', 'm
 const HOST = '127.0.0.1'
 const HEALTH_TIMEOUT_MS = 20000
 const REQUEST_TIMEOUT_MS = 8000
-const FAST_FIRST_GATEWAY_ENV = Object.freeze({
-  MEDIATION_SETTLEMENT_STORAGE: 'state_file',
-  MEDIATION_REQUIRE_DURABLE_SETTLEMENT: 'false',
-  MEDIATION_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE: 'false',
-})
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -87,7 +82,9 @@ function startGateway(port) {
     cwd: PROJECT_ROOT,
     env: {
       ...process.env,
-      ...FAST_FIRST_GATEWAY_ENV,
+      SUPABASE_DB_URL: process.env.SUPABASE_DB_URL_TEST || process.env.SUPABASE_DB_URL || '',
+      MEDIATION_ALLOWED_ORIGINS: 'http://127.0.0.1:3000',
+      MEDIATION_ENABLE_LOCAL_SERVER: 'true',
       MEDIATION_GATEWAY_HOST: HOST,
       MEDIATION_GATEWAY_PORT: String(port),
       OPENROUTER_API_KEY: '',
@@ -270,7 +267,7 @@ test('dashboard v1 external e2e happy path: config -> v2 bid -> events', async (
   try {
     await waitForGateway(baseUrl)
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
-    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    assert.equal(reset.status, 404)
 
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'dashboard-v1-owner@example.com',
@@ -378,7 +375,7 @@ test('dashboard v1 external e2e fail-open: ads failure does not block primary re
   try {
     await waitForGateway(baseUrl)
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
-    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    assert.equal(reset.status, 404)
 
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
       email: 'dashboard-v1-failopen@example.com',

@@ -72,14 +72,15 @@ function startGateway(port) {
     cwd: PROJECT_ROOT,
     env: {
       ...process.env,
+      SUPABASE_DB_URL: process.env.SUPABASE_DB_URL_TEST || process.env.SUPABASE_DB_URL || '',
+      MEDIATION_ALLOWED_ORIGINS: 'http://127.0.0.1:3000',
+      MEDIATION_ENABLE_LOCAL_SERVER: 'true',
       MEDIATION_GATEWAY_HOST: HOST,
       MEDIATION_GATEWAY_PORT: String(port),
-      MEDIATION_RUNTIME_AUTH_REQUIRED: 'false',
       OPENROUTER_API_KEY: '',
       OPENROUTER_MODEL: 'glm-5',
       CJ_TOKEN: 'mock-cj-token',
       PARTNERSTACK_API_KEY: 'mock-partnerstack-key',
-      SUPABASE_DB_URL: '',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -112,27 +113,51 @@ async function stopGateway(handle) {
   }
 }
 
-test('internal inventory endpoints expose status and fail-safe sync behavior without db', async () => {
+async function registerDashboardHeaders(baseUrl) {
+  const now = Date.now()
+  const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+    method: 'POST',
+    body: {
+      email: `inventory_admin_${now}@example.com`,
+      password: 'pass12345',
+      accountId: 'org_mediation',
+      appId: 'sample-client-app',
+    },
+  })
+  assert.equal(register.status, 201, `dashboard register failed: ${JSON.stringify(register.payload)}`)
+  const accessToken = String(register.payload?.session?.accessToken || '').trim()
+  assert.equal(Boolean(accessToken), true, 'dashboard register should return access token')
+  return {
+    Authorization: `Bearer ${accessToken}`,
+  }
+}
+
+test('internal inventory endpoints expose status and perform guarded sync behavior', async () => {
   const port = 4160 + Math.floor(Math.random() * 120)
   const baseUrl = `http://${HOST}:${port}`
   const gateway = startGateway(port)
 
   try {
     await waitForGateway(baseUrl)
+    const dashboardHeaders = await registerDashboardHeaders(baseUrl)
 
-    const status = await requestJson(baseUrl, '/api/v1/internal/inventory/status')
+    const status = await requestJson(baseUrl, '/api/v1/internal/inventory/status', {
+      headers: dashboardHeaders,
+    })
     assert.equal(status.ok, true)
     assert.equal(typeof status.payload?.ok, 'boolean')
 
     const sync = await requestJson(baseUrl, '/api/v1/internal/inventory/sync', {
       method: 'POST',
+      headers: dashboardHeaders,
       body: {
         networks: ['house'],
       },
     })
-
-    assert.equal(sync.status, 503)
-    assert.equal(sync.payload?.error?.code, 'INVENTORY_SYNC_UNAVAILABLE')
+    assert.equal([200, 503].includes(sync.status), true)
+    if (sync.status === 503) {
+      assert.equal(sync.payload?.error?.code, 'INVENTORY_SYNC_UNAVAILABLE')
+    }
   } catch (error) {
     const logs = gateway.getLogs()
     const message = error instanceof Error ? error.message : String(error)

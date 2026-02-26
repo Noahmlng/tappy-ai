@@ -5,7 +5,7 @@ const REQUIRED_ENV_VARS = [
   'PARTNERSTACK_API_KEY'
 ]
 
-function readEnv(env, key, { required = true } = {}) {
+function readEnv(env, key, { required = false } = {}) {
   const value = env[key]
   if (typeof value !== 'string' || value.trim().length === 0) {
     if (required) {
@@ -23,7 +23,7 @@ function toPositiveInteger(value, fallback) {
 }
 
 export function loadRuntimeConfig(env = process.env, options = {}) {
-  const strict = options?.strict !== false
+  const strict = options?.strict === true
 
   return {
     openrouter: {

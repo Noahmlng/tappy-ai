@@ -625,7 +625,7 @@ async function main() {
   const skipLandingCheck = toBoolean(args.skipLandingCheck, false)
   const skipReset = toBoolean(args.skipReset, false)
   const withPostback = toBoolean(args.withPostback, false)
-  const settlementStorage = parseSettlementStorage(args.settlementStorage, 'auto')
+  const settlementStorage = 'supabase'
   const inventoryPrewarm = toBoolean(args.inventoryPrewarm, true)
   const fallbackWhenInventoryUnavailable = toBoolean(args.fallbackWhenInventoryUnavailable, true)
   const inventoryNetworks = parseInventoryNetworks(args.inventoryNetworks)
@@ -635,46 +635,25 @@ async function main() {
   const startedAt = nowIso()
   const baseUrl = externalGatewayUrl || `http://${DEFAULT_HOST}:${port}`
   const useExternalGateway = Boolean(externalGatewayUrl)
-  let effectiveSettlementStorage = settlementStorage
+  const effectiveSettlementStorage = 'supabase'
 
   let gatewayHandle = null
   try {
     if (!useExternalGateway) {
-      gatewayHandle = startGatewayProcess(port, {
-        MEDIATION_STRICT_MANUAL_INTEGRATION: 'false',
-        MEDIATION_SETTLEMENT_STORAGE: effectiveSettlementStorage,
-        MEDIATION_REQUIRE_DURABLE_SETTLEMENT: 'false',
-        MEDIATION_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE: 'false',
-        MEDIATION_RUNTIME_AUTH_REQUIRED: 'true',
-        MEDIATION_V2_INVENTORY_FALLBACK: fallbackWhenInventoryUnavailable ? 'true' : 'false',
-      })
+      gatewayHandle = startGatewayProcess(port, {})
     }
 
     try {
       await waitForGateway(baseUrl)
     } catch (error) {
-      if (!useExternalGateway && settlementStorage === 'auto') {
-        await stopGatewayProcess(gatewayHandle)
-        effectiveSettlementStorage = 'state_file'
-        gatewayHandle = startGatewayProcess(port, {
-          MEDIATION_STRICT_MANUAL_INTEGRATION: 'false',
-          MEDIATION_SETTLEMENT_STORAGE: effectiveSettlementStorage,
-          MEDIATION_REQUIRE_DURABLE_SETTLEMENT: 'false',
-          MEDIATION_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE: 'false',
-          MEDIATION_RUNTIME_AUTH_REQUIRED: 'true',
-          MEDIATION_V2_INVENTORY_FALLBACK: fallbackWhenInventoryUnavailable ? 'true' : 'false',
-        })
-        await waitForGateway(baseUrl)
-      } else {
-        throw error
-      }
+      throw error
     }
 
     if (!skipReset) {
       const resetRes = await requestJson(baseUrl, '/api/v1/dev/reset', {
         method: 'POST',
       })
-      if (!resetRes.ok) {
+      if (!(resetRes.ok || resetRes.status === 404)) {
         throw new Error(`gateway reset failed: HTTP_${resetRes.status}`)
       }
     }

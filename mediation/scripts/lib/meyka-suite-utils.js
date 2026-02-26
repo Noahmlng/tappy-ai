@@ -152,6 +152,9 @@ export function startGatewayProcess(port, extraEnv = {}) {
     cwd: PROJECT_ROOT,
     env: {
       ...process.env,
+      SUPABASE_DB_URL: process.env.SUPABASE_DB_URL_TEST || process.env.SUPABASE_DB_URL || '',
+      MEDIATION_ALLOWED_ORIGINS: 'http://127.0.0.1:3000',
+      MEDIATION_ENABLE_LOCAL_SERVER: 'true',
       MEDIATION_GATEWAY_HOST: DEFAULT_HOST,
       MEDIATION_GATEWAY_PORT: String(port),
       ...extraEnv,

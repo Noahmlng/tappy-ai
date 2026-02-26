@@ -42,27 +42,11 @@
 
 - 生产必需（MVP 首发）：
   - `SUPABASE_DB_URL`
-  - `MEDIATION_SETTLEMENT_STORAGE=supabase`
-  - `MEDIATION_PRODUCTION_MODE=true`
-  - `MEDIATION_REQUIRE_DURABLE_SETTLEMENT=true`
-  - `MEDIATION_REQUIRE_RUNTIME_LOG_DB_PERSISTENCE=true`
-  - `MEDIATION_DASHBOARD_AUTH_REQUIRED=true`
-  - `MEDIATION_RUNTIME_AUTH_REQUIRED=true`
-  - `MEDIATION_STRICT_MANUAL_INTEGRATION=true`
-  - `MEDIATION_DEV_RESET_ENABLED=false`
-  - `MEDIATION_ALLOWED_ORIGINS=<dashboard domain>`
+  - `MEDIATION_ALLOWED_ORIGINS=<dashboard domain>`（仅首次启动 bootstrap；运行期以 Supabase 持久化白名单为准）
 - 供应侧 provider key 为可选：
   - `OPENROUTER_API_KEY` / `CJ_TOKEN` / `PARTNERSTACK_API_KEY` 缺省时允许降级到 no-bid/house ads，不阻断 API 启动。
-- 服务边界控制：
-  - `MEDIATION_API_SERVICE_ROLE`：`all`（默认）/ `runtime` / `control_plane`
-- 本地开发专用：
-  - `MEDIATION_GATEWAY_HOST`、`MEDIATION_GATEWAY_PORT` 只用于本地 `dev:gateway`，Vercel 不需要。
-
-House Ads（Supabase）相关可调参数：
-
-- `HOUSE_ADS_SOURCE`：`supabase`（默认）或 `file`
-- `HOUSE_ADS_DB_CACHE_TTL_MS`：House offers DB 读取缓存时间（毫秒）
-- `HOUSE_ADS_DB_FETCH_LIMIT`：House offers 单次抓取上限
+- 测试专用：
+  - `SUPABASE_DB_URL_TEST`（必须指向非生产库；integration/e2e 使用）
 
 校验命令：
 
@@ -128,7 +112,15 @@ npm --prefix ./mediation run meyka:suite -- \
 npm --prefix ./mediation run dev:gateway
 ```
 
-默认监听：`http://127.0.0.1:3100`
+默认监听：`http://127.0.0.1:3100`（该脚本会自动设置 `MEDIATION_ENABLE_LOCAL_SERVER=true`）
+
+## 动态 CORS 白名单（无需重部署）
+
+- 白名单默认拒绝（非白名单 Origin 直接 `403`）。
+- `MEDIATION_ALLOWED_ORIGINS` 只用于首次启动种子。
+- 运行期可通过 Dashboard 鉴权接口更新白名单：
+  - `GET /api/v1/dashboard/security/origins`
+  - `PUT /api/v1/dashboard/security/origins`，`body: { "origins": ["https://dashboard.example.com"] }`
 
 ## Vercel 部署入口
 
@@ -136,4 +128,4 @@ npm --prefix ./mediation run dev:gateway
 - Control-plane API 入口：`apps/control-plane-api/api/[...path].js`
 - Runtime Vercel config：`apps/runtime-api/vercel.json`
 - Control-plane Vercel config：`apps/control-plane-api/vercel.json`
-- 本地 CLI 入口：`src/devtools/mediation/mediation-gateway.js`（直接执行时才会 `listen`）
+- 本地 CLI 入口：`src/devtools/mediation/mediation-gateway.js`（仅在 `MEDIATION_ENABLE_LOCAL_SERVER=true` 时才会 `listen`）

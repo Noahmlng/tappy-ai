@@ -9,9 +9,10 @@ const __dirname = path.dirname(__filename)
 const PROJECT_ROOT = path.resolve(__dirname, '../..')
 const GATEWAY_ENTRY = path.join(PROJECT_ROOT, 'src', 'devtools', 'mediation', 'mediation-gateway.js')
 
-const CLIENT_HOST = '127.0.0.1'
+const HOST = '127.0.0.1'
 const HEALTH_TIMEOUT_MS = 12000
 const REQUEST_TIMEOUT_MS = 5000
+const ALLOWED_ORIGIN = 'http://127.0.0.1:3000'
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -68,18 +69,20 @@ async function waitForGateway(baseUrl) {
   throw new Error(`gateway health check timeout after ${HEALTH_TIMEOUT_MS}ms`)
 }
 
-function startGateway(port, env = {}) {
+function startGateway(port) {
   const child = spawn(process.execPath, [GATEWAY_ENTRY], {
     cwd: PROJECT_ROOT,
     env: {
       ...process.env,
-      MEDIATION_GATEWAY_HOST: CLIENT_HOST,
+      SUPABASE_DB_URL: process.env.SUPABASE_DB_URL_TEST || process.env.SUPABASE_DB_URL || '',
+      MEDIATION_ALLOWED_ORIGINS: ALLOWED_ORIGIN,
+      MEDIATION_ENABLE_LOCAL_SERVER: 'true',
+      MEDIATION_GATEWAY_HOST: HOST,
       MEDIATION_GATEWAY_PORT: String(port),
       OPENROUTER_API_KEY: '',
       OPENROUTER_MODEL: 'glm-5',
       CJ_TOKEN: 'mock-cj-token',
       PARTNERSTACK_API_KEY: 'mock-partnerstack-key',
-      ...env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -104,7 +107,6 @@ function startGateway(port, env = {}) {
 
 async function stopGateway(handle) {
   if (!handle?.child) return
-
   handle.child.kill('SIGTERM')
   await sleep(200)
   if (!handle.child.killed) {
@@ -112,81 +114,186 @@ async function stopGateway(handle) {
   }
 }
 
-test('reset guard: non-loopback bind rejects unauthenticated reset', async () => {
-  const port = 6650 + Math.floor(Math.random() * 200)
-  const baseUrl = `http://${CLIENT_HOST}:${port}`
-  const gateway = startGateway(port, {
-    MEDIATION_GATEWAY_HOST: '0.0.0.0',
+async function registerDashboardHeaders(baseUrl, input = {}) {
+  const now = Date.now()
+  const email = String(input.email || `owner_${now}@example.com`)
+  const password = String(input.password || 'pass12345')
+  const accountId = String(input.accountId || 'org_mediation')
+  const appId = String(input.appId || `sample-client-app-${now}`)
+  const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+    method: 'POST',
+    headers: {
+      Origin: ALLOWED_ORIGIN,
+    },
+    body: {
+      email,
+      password,
+      accountId,
+      appId,
+    },
   })
-
-  try {
-    await waitForGateway(baseUrl)
-
-    const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
-    assert.equal(reset.ok, false)
-    assert.equal(reset.status, 403)
-    assert.equal(String(reset.payload?.error?.code || ''), 'RESET_FORBIDDEN')
-  } catch (error) {
-    const logs = gateway.getLogs()
-    const message = error instanceof Error ? error.message : String(error)
-    throw new Error(
-      `[reset-guard-deny] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`,
-    )
-  } finally {
-    await stopGateway(gateway)
+  assert.equal(register.status, 201, `dashboard register failed: ${JSON.stringify(register.payload)}`)
+  const accessToken = String(register.payload?.session?.accessToken || '').trim()
+  assert.equal(Boolean(accessToken), true, 'dashboard register should return access token')
+  return {
+    Authorization: `Bearer ${accessToken}`,
   }
-})
+}
 
-test('reset guard: non-loopback bind accepts reset with valid internal token', async () => {
-  const port = 6850 + Math.floor(Math.random() * 200)
-  const baseUrl = `http://${CLIENT_HOST}:${port}`
-  const gateway = startGateway(port, {
-    MEDIATION_GATEWAY_HOST: '0.0.0.0',
-    MEDIATION_DEV_RESET_TOKEN: 'internal-reset-token',
-  })
+test('cors guard: non-whitelisted preflight origin returns 403', async () => {
+  const port = 6650 + Math.floor(Math.random() * 200)
+  const baseUrl = `http://${HOST}:${port}`
+  const gateway = startGateway(port)
 
   try {
     await waitForGateway(baseUrl)
 
-    const reset = await requestJson(baseUrl, '/api/v1/dev/reset', {
-      method: 'POST',
+    const preflight = await requestJson(baseUrl, '/api/v1/public/dashboard/me', {
+      method: 'OPTIONS',
       headers: {
-        'x-mediation-reset-token': 'internal-reset-token',
+        Origin: 'http://evil.example.com',
+        'Access-Control-Request-Method': 'GET',
       },
     })
-    assert.equal(reset.ok, true, `reset should succeed: ${JSON.stringify(reset.payload)}`)
-    assert.equal(reset.status, 200)
-    assert.equal(String(reset.payload?.authMode || ''), 'token')
+    assert.equal(preflight.status, 403)
+    assert.equal(String(preflight.payload?.error?.code || ''), 'CORS_ORIGIN_FORBIDDEN')
   } catch (error) {
     const logs = gateway.getLogs()
     const message = error instanceof Error ? error.message : String(error)
-    throw new Error(
-      `[reset-guard-token] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`,
-    )
+    throw new Error(`[cors-preflight-guard] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`)
   } finally {
     await stopGateway(gateway)
   }
 })
 
-test('reset guard: reset can be globally disabled by env flag', async () => {
-  const port = 7050 + Math.floor(Math.random() * 200)
-  const baseUrl = `http://${CLIENT_HOST}:${port}`
-  const gateway = startGateway(port, {
-    MEDIATION_DEV_RESET_ENABLED: 'false',
-  })
+test('cors guard: non-whitelisted request origin returns 403', async () => {
+  const port = 6850 + Math.floor(Math.random() * 200)
+  const baseUrl = `http://${HOST}:${port}`
+  const gateway = startGateway(port)
 
   try {
     await waitForGateway(baseUrl)
 
-    const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
-    assert.equal(reset.ok, false)
-    assert.equal(reset.status, 403)
-    assert.equal(String(reset.payload?.error?.code || ''), 'RESET_DISABLED')
+    const request = await requestJson(baseUrl, '/api/health', {
+      method: 'GET',
+      headers: {
+        Origin: 'http://evil.example.com',
+      },
+    })
+    assert.equal(request.status, 403)
+    assert.equal(String(request.payload?.error?.code || ''), 'CORS_ORIGIN_FORBIDDEN')
+  } catch (error) {
+    const logs = gateway.getLogs()
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`[cors-request-guard] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`)
+  } finally {
+    await stopGateway(gateway)
+  }
+})
+
+test('cors guard: server-to-server request without origin remains accessible', async () => {
+  const port = 7050 + Math.floor(Math.random() * 200)
+  const baseUrl = `http://${HOST}:${port}`
+  const gateway = startGateway(port)
+
+  try {
+    await waitForGateway(baseUrl)
+
+    const health = await requestJson(baseUrl, '/api/health', { method: 'GET' })
+    assert.equal(health.status, 200)
+    assert.equal(health.payload?.ok, true)
+  } catch (error) {
+    const logs = gateway.getLogs()
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`[cors-server-to-server] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`)
+  } finally {
+    await stopGateway(gateway)
+  }
+})
+
+test('dashboard updates allowed origins without redeploy and takes effect immediately', async () => {
+  const port = 7250 + Math.floor(Math.random() * 200)
+  const baseUrl = `http://${HOST}:${port}`
+  const gateway = startGateway(port)
+  const newAllowedOrigin = 'http://127.0.0.1:4300'
+
+  try {
+    await waitForGateway(baseUrl)
+    const authHeaders = await registerDashboardHeaders(baseUrl, {
+      email: `cors-admin-${Date.now()}@example.com`,
+      accountId: 'acct_cors_admin',
+    })
+
+    const beforeList = await requestJson(baseUrl, '/api/v1/dashboard/security/origins', {
+      method: 'GET',
+      headers: {
+        ...authHeaders,
+        Origin: ALLOWED_ORIGIN,
+      },
+    })
+    assert.equal(beforeList.status, 200, `origins list failed: ${JSON.stringify(beforeList.payload)}`)
+    assert.equal(Array.isArray(beforeList.payload?.items), true, 'origins list should return items')
+    assert.equal(
+      beforeList.payload.items.some((item) => String(item?.origin || '') === ALLOWED_ORIGIN),
+      true,
+      'bootstrap origin should exist before update',
+    )
+
+    const updateOrigins = await requestJson(baseUrl, '/api/v1/dashboard/security/origins', {
+      method: 'PUT',
+      headers: {
+        ...authHeaders,
+        Origin: ALLOWED_ORIGIN,
+      },
+      body: {
+        origins: [newAllowedOrigin],
+      },
+    })
+    assert.equal(updateOrigins.status, 200, `origins update failed: ${JSON.stringify(updateOrigins.payload)}`)
+    assert.equal(updateOrigins.payload?.updated, true)
+    assert.equal(
+      Array.isArray(updateOrigins.payload?.items) && updateOrigins.payload.items.length === 1,
+      true,
+      'updated origin list should contain one origin',
+    )
+    assert.equal(String(updateOrigins.payload?.items?.[0]?.origin || ''), newAllowedOrigin)
+
+    const oldOriginHealth = await requestJson(baseUrl, '/api/health', {
+      method: 'GET',
+      headers: {
+        Origin: ALLOWED_ORIGIN,
+      },
+    })
+    assert.equal(oldOriginHealth.status, 403)
+    assert.equal(String(oldOriginHealth.payload?.error?.code || ''), 'CORS_ORIGIN_FORBIDDEN')
+
+    const newOriginHealth = await requestJson(baseUrl, '/api/health', {
+      method: 'GET',
+      headers: {
+        Origin: newAllowedOrigin,
+      },
+    })
+    assert.equal(newOriginHealth.status, 200)
+    assert.equal(newOriginHealth.payload?.ok, true)
+
+    const afterList = await requestJson(baseUrl, '/api/v1/dashboard/security/origins', {
+      method: 'GET',
+      headers: {
+        ...authHeaders,
+        Origin: newAllowedOrigin,
+      },
+    })
+    assert.equal(afterList.status, 200)
+    assert.equal(
+      afterList.payload.items.every((item) => String(item?.origin || '') === newAllowedOrigin),
+      true,
+      'origin list should be replaced by updated origins',
+    )
   } catch (error) {
     const logs = gateway.getLogs()
     const message = error instanceof Error ? error.message : String(error)
     throw new Error(
-      `[reset-guard-disabled] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`,
+      `[cors-origins-dynamic] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`,
     )
   } finally {
     await stopGateway(gateway)

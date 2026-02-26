@@ -73,6 +73,9 @@ function startGateway(port) {
     cwd: PROJECT_ROOT,
     env: {
       ...process.env,
+      SUPABASE_DB_URL: process.env.SUPABASE_DB_URL_TEST || process.env.SUPABASE_DB_URL || '',
+      MEDIATION_ALLOWED_ORIGINS: 'http://127.0.0.1:3000',
+      MEDIATION_ENABLE_LOCAL_SERVER: 'true',
       MEDIATION_GATEWAY_HOST: HOST,
       MEDIATION_GATEWAY_PORT: String(port),
       OPENROUTER_API_KEY: '',
@@ -143,7 +146,7 @@ test('public key api supports create/list/rotate/revoke lifecycle', async () => 
     await waitForGateway(baseUrl)
 
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
-    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    assert.equal(reset.status, 404)
 
     const unauthorized = await requestJson(baseUrl, '/api/v1/public/credentials/keys')
     assert.equal(unauthorized.status, 401)

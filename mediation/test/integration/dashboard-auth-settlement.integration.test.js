@@ -78,6 +78,9 @@ function startGateway(port) {
     cwd: PROJECT_ROOT,
     env: {
       ...process.env,
+      SUPABASE_DB_URL: process.env.SUPABASE_DB_URL_TEST || process.env.SUPABASE_DB_URL || '',
+      MEDIATION_ALLOWED_ORIGINS: 'http://127.0.0.1:3000',
+      MEDIATION_ENABLE_LOCAL_SERVER: 'true',
       MEDIATION_GATEWAY_HOST: HOST,
       MEDIATION_GATEWAY_PORT: String(port),
       OPENROUTER_API_KEY: '',
@@ -189,7 +192,7 @@ test('dashboard auth: login session enforces account scope for settlement aggreg
   try {
     await waitForGateway(baseUrl)
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
-    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    assert.equal(reset.status, 404)
 
     const registerOrg = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
       method: 'POST',
@@ -289,7 +292,7 @@ test('dashboard placement config is isolated per account app', async () => {
   try {
     await waitForGateway(baseUrl)
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
-    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    assert.equal(reset.status, 404)
 
     const registerAccountA = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
       method: 'POST',
@@ -461,7 +464,7 @@ test('dashboard placements create route is available and scoped by account app',
   try {
     await waitForGateway(baseUrl)
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
-    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    assert.equal(reset.status, 404)
 
     const registerAccountA = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
       method: 'POST',
@@ -552,7 +555,7 @@ test('dashboard register enforces account ownership proof for claimed accounts',
   try {
     await waitForGateway(baseUrl)
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
-    assert.equal(reset.ok, true, `reset failed: ${JSON.stringify(reset.payload)}`)
+    assert.equal(reset.status, 404)
 
     const registerOwner = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
       method: 'POST',

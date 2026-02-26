@@ -177,6 +177,9 @@ function startGatewayProcess(port) {
     cwd: PROJECT_ROOT,
     env: {
       ...process.env,
+      SUPABASE_DB_URL: process.env.SUPABASE_DB_URL_TEST || process.env.SUPABASE_DB_URL || '',
+      MEDIATION_ALLOWED_ORIGINS: 'http://127.0.0.1:3000',
+      MEDIATION_ENABLE_LOCAL_SERVER: 'true',
       MEDIATION_GATEWAY_HOST: DEFAULT_HOST,
       MEDIATION_GATEWAY_PORT: String(port),
     },
@@ -188,7 +191,53 @@ function startGatewayProcess(port) {
   return child
 }
 
-async function runScenario(baseUrl, name) {
+async function registerDashboardHeaders(baseUrl) {
+  const now = Date.now()
+  const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
+    method: 'POST',
+    body: {
+      email: `next_step_${now}@example.com`,
+      password: 'pass12345',
+      accountId: 'org_mediation',
+      appId: 'sample-client-app',
+    },
+  })
+  if (!register.ok) {
+    throw new Error(`dashboard register failed: HTTP_${register.status}`)
+  }
+  const accessToken = String(register.payload?.session?.accessToken || '').trim()
+  if (!accessToken) {
+    throw new Error('dashboard register did not return an access token')
+  }
+  return {
+    Authorization: `Bearer ${accessToken}`,
+  }
+}
+
+async function issueRuntimeApiKeyHeaders(baseUrl, dashboardHeaders) {
+  const created = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
+    method: 'POST',
+    headers: dashboardHeaders,
+    body: {
+      accountId: 'org_mediation',
+      appId: 'sample-client-app',
+      environment: 'prod',
+      name: `runtime-${Date.now()}`,
+    },
+  })
+  if (!created.ok) {
+    throw new Error(`issue runtime key failed: HTTP_${created.status}`)
+  }
+  const secret = String(created.payload?.secret || '').trim()
+  if (!secret) {
+    throw new Error('runtime key create did not return a secret')
+  }
+  return {
+    Authorization: `Bearer ${secret}`,
+  }
+}
+
+async function runScenario(baseUrl, name, auth) {
   const scenarioPayload = buildScenarioPayload(name)
   const bidPayload = {
     userId: scenarioPayload.userId,
@@ -201,6 +250,7 @@ async function runScenario(baseUrl, name) {
   }
   const bidResponse = await requestJson(baseUrl, '/api/v2/bid', {
     method: 'POST',
+    headers: auth.runtimeHeaders,
     body: bidPayload,
   })
 
@@ -234,6 +284,7 @@ async function runScenario(baseUrl, name) {
     }
     await requestJson(baseUrl, '/api/v1/sdk/events', {
       method: 'POST',
+      headers: auth.runtimeHeaders,
       body: eventPayload,
     })
   }
@@ -241,10 +292,12 @@ async function runScenario(baseUrl, name) {
   const decisions = await requestJson(
     baseUrl,
     `/api/v1/dashboard/decisions?requestId=${encodeURIComponent(requestId)}`,
+    { headers: auth.dashboardHeaders },
   )
   const events = await requestJson(
     baseUrl,
     `/api/v1/dashboard/events?requestId=${encodeURIComponent(requestId)}`,
+    { headers: auth.dashboardHeaders },
   )
 
   const decisionRows = Array.isArray(decisions?.items) ? decisions.items : []
@@ -275,8 +328,10 @@ async function runScenario(baseUrl, name) {
   }
 }
 
-async function ensureNextStepPlacementEnabled(baseUrl) {
-  const placementsPayload = await requestJson(baseUrl, '/api/v1/dashboard/placements')
+async function ensureNextStepPlacementEnabled(baseUrl, dashboardHeaders) {
+  const placementsPayload = await requestJson(baseUrl, '/api/v1/dashboard/placements', {
+    headers: dashboardHeaders,
+  })
   const placements = Array.isArray(placementsPayload?.placements) ? placementsPayload.placements : []
   const placement = placements.find((item) => {
     const placementKey = String(item?.placementKey || '').trim()
@@ -295,6 +350,7 @@ async function ensureNextStepPlacementEnabled(baseUrl) {
     `/api/v1/dashboard/placements/${encodeURIComponent(String(placement.placementId))}`,
     {
       method: 'PUT',
+      headers: dashboardHeaders,
       body: {
         enabled: true,
       },
@@ -318,11 +374,14 @@ async function main() {
     }
 
     await waitForGateway(baseUrl)
-    await ensureNextStepPlacementEnabled(baseUrl)
+    const dashboardHeaders = await registerDashboardHeaders(baseUrl)
+    const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, dashboardHeaders)
+    const auth = { dashboardHeaders, runtimeHeaders }
+    await ensureNextStepPlacementEnabled(baseUrl, dashboardHeaders)
 
     const results = []
     for (const name of scenarioNames) {
-      const result = await runScenario(baseUrl, name)
+      const result = await runScenario(baseUrl, name, auth)
       results.push(result)
     }
 
