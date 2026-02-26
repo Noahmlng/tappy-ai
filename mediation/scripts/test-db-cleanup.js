@@ -1,6 +1,7 @@
 import { Pool } from 'pg'
 
 const TABLES = Object.freeze([
+  'control_plane_allowed_origins',
   'control_plane_agent_access_tokens',
   'control_plane_integration_tokens',
   'control_plane_dashboard_sessions',
@@ -30,6 +31,9 @@ async function cleanupDatabase(connectionString) {
   try {
     await pool.query('BEGIN')
     for (const table of TABLES) {
+      const existsResult = await pool.query('SELECT to_regclass($1) AS reg', [`public.${table}`])
+      const exists = Boolean(existsResult?.rows?.[0]?.reg)
+      if (!exists) continue
       await pool.query(`TRUNCATE TABLE ${table} CASCADE`)
     }
     await pool.query('COMMIT')
