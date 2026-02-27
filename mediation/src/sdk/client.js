@@ -392,9 +392,6 @@ export function createAdsSdkClient(options = {}) {
     if (!chatId) {
       throw new Error('requestBid requires chatId')
     }
-    if (!placementId) {
-      throw new Error('requestBid requires placementId')
-    }
     if (messageSignals.normalized.length === 0) {
       throw new Error('requestBid requires at least one valid message')
     }
@@ -402,8 +399,10 @@ export function createAdsSdkClient(options = {}) {
     const payload = {
       userId,
       chatId,
-      placementId,
       messages: messageSignals.normalized,
+    }
+    if (placementId) {
+      payload.placementId = placementId
     }
 
     const response = await requestJson('/v2/bid', {

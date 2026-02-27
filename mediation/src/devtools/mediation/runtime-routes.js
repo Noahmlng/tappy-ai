@@ -43,6 +43,23 @@ function toRuntimeRouteError(error, options = {}) {
   }
 }
 
+function pickDefaultPlacementIdForRequest(input = {}, deps = {}) {
+  const appId = String(input.appId || '').trim()
+  if (!appId) return ''
+  const accountId = String(input.accountId || '').trim()
+  const event = String(input.event || '').trim() || 'answer_completed'
+  const picker = typeof deps.pickPlacementForRequest === 'function'
+    ? deps.pickPlacementForRequest
+    : null
+  if (!picker) return ''
+  const placement = picker({
+    appId,
+    accountId,
+    event,
+  })
+  return String(placement?.placementId || '').trim()
+}
+
 export async function handleRuntimeRoutes(context, deps) {
   const { req, res, pathname, requestUrl } = context
   const {
@@ -84,6 +101,7 @@ export async function handleRuntimeRoutes(context, deps) {
     normalizeAttachMvpPayload,
     ATTACH_MVP_EVENT,
     ATTACH_MVP_PLACEMENT_KEY,
+    pickPlacementForRequest,
     persistState,
     round,
   } = deps
@@ -103,10 +121,10 @@ export async function handleRuntimeRoutes(context, deps) {
   await (async () => {
     if (pathname === '/api/v1/mediation/config' && req.method === 'GET') {
       try {
-        const requestedPlacementId = assertPlacementIdNotRenamed(
-          String(requestUrl.searchParams.get('placementId') || '').trim(),
-          'placementId',
-        )
+        const rawPlacementId = String(requestUrl.searchParams.get('placementId') || '').trim()
+        const requestedPlacementId = rawPlacementId
+          ? assertPlacementIdNotRenamed(rawPlacementId, 'placementId')
+          : ''
         const auth = await authorizeRuntimeCredential(req, {
           operation: 'mediation_config_read',
           requiredScope: 'mediationConfigRead',
@@ -122,11 +140,20 @@ export async function handleRuntimeRoutes(context, deps) {
         const runtimeScope = applyRuntimeCredentialScope({
           appId: String(requestUrl.searchParams.get('appId') || '').trim(),
           environment: String(requestUrl.searchParams.get('environment') || '').trim(),
+          placementId: requestedPlacementId,
         }, auth, { applyEnvironment: true })
-  
+
+        const resolvedPlacementId = String(runtimeScope.placementId || '').trim()
+          || pickDefaultPlacementIdForRequest({
+            appId: runtimeScope.appId,
+            accountId: runtimeScope.accountId || resolveAccountIdForApp(runtimeScope.appId),
+            event: 'answer_completed',
+          }, { pickPlacementForRequest })
+          || PLACEMENT_ID_FROM_ANSWER
+
         const resolved = resolveMediationConfigSnapshot({
           appId: runtimeScope.appId,
-          placementId: requestedPlacementId,
+          placementId: resolvedPlacementId,
           environment: runtimeScope.environment || requestUrl.searchParams.get('environment'),
           schemaVersion: requestUrl.searchParams.get('schemaVersion'),
           sdkVersion: requestUrl.searchParams.get('sdkVersion'),
@@ -223,6 +250,16 @@ export async function handleRuntimeRoutes(context, deps) {
       try {
         const payload = await readJsonBody(req)
         const request = normalizeV2BidPayload(payload, 'v2/bid')
+        const inputNormalization = request?.inputDiagnostics && typeof request.inputDiagnostics === 'object'
+          ? {
+              ...request.inputDiagnostics,
+              defaultsApplied: {
+                ...(request.inputDiagnostics.defaultsApplied && typeof request.inputDiagnostics.defaultsApplied === 'object'
+                  ? request.inputDiagnostics.defaultsApplied
+                  : {}),
+              },
+            }
+          : null
         const auth = await authorizeRuntimeCredential(req, {
           operation: 'v2_bid',
           requiredScope: 'sdkEvaluate',
@@ -246,12 +283,43 @@ export async function handleRuntimeRoutes(context, deps) {
               accountId: '',
               placementId: request.placementId,
             }, auth)
-  
+
+        const placementDefaultedByClient = inputNormalization?.defaultsApplied?.placementIdDefaulted === true
+        let resolvedPlacementId = String(scopedRequest.placementId || request.placementId || '').trim()
+        let placementResolutionSource = scopedRequest.placementId
+          ? 'credential_scope'
+          : (placementDefaultedByClient ? 'request_defaulted' : 'request')
+
+        if ((!resolvedPlacementId || placementDefaultedByClient) && !String(scopedRequest.placementId || '').trim()) {
+          const dashboardDefaultPlacementId = pickDefaultPlacementIdForRequest({
+            appId: scopedRequest.appId,
+            accountId: scopedRequest.accountId || resolveAccountIdForApp(scopedRequest.appId),
+            event: 'answer_completed',
+          }, { pickPlacementForRequest })
+          if (dashboardDefaultPlacementId) {
+            resolvedPlacementId = dashboardDefaultPlacementId
+            placementResolutionSource = 'dashboard_default'
+          }
+        }
+        if (!resolvedPlacementId) {
+          resolvedPlacementId = PLACEMENT_ID_FROM_ANSWER
+          placementResolutionSource = 'hardcoded_fallback'
+        }
+        if (inputNormalization) {
+          inputNormalization.defaultsApplied.placementIdResolvedFromDashboardDefault = placementResolutionSource === 'dashboard_default'
+          inputNormalization.defaultsApplied.placementIdFallbackApplied = placementResolutionSource === 'hardcoded_fallback'
+          inputNormalization.placementResolution = {
+            source: placementResolutionSource,
+            placementId: resolvedPlacementId,
+          }
+          request.inputDiagnostics = inputNormalization
+        }
+
         const result = await evaluateV2BidRequest({
           ...request,
           appId: scopedRequest.appId,
           accountId: scopedRequest.accountId,
-          placementId: scopedRequest.placementId || request.placementId,
+          placementId: resolvedPlacementId,
         })
         const winnerBid = result?.data?.bid && typeof result.data.bid === 'object'
           ? result.data.bid

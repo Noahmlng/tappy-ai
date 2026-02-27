@@ -2512,7 +2512,9 @@ function normalizeV2BidPayload(payload, routeName) {
   }
 
   const rawPlacementId = String(input.placementId || input.placement_id || '').trim()
-  const placementId = normalizePlacementIdWithMigration(rawPlacementId, PLACEMENT_ID_FROM_ANSWER)
+  const placementId = rawPlacementId
+    ? normalizePlacementIdWithMigration(rawPlacementId, PLACEMENT_ID_FROM_ANSWER)
+    : ''
 
   return {
     userId,
@@ -2525,6 +2527,8 @@ function normalizeV2BidPayload(payload, routeName) {
         userIdGenerated: !rawUserId,
         chatIdDefaultedToUserId: !rawChatId,
         placementIdDefaulted: !rawPlacementId,
+        placementIdResolvedFromDashboardDefault: false,
+        placementIdFallbackApplied: false,
       },
       placementMigration: rawPlacementId && rawPlacementId !== placementId
         ? { from: rawPlacementId, to: placementId }
@@ -8166,6 +8170,7 @@ function createRuntimeRouteDeps() {
     normalizeAttachMvpPayload,
     ATTACH_MVP_EVENT,
     ATTACH_MVP_PLACEMENT_KEY,
+    pickPlacementForRequest,
     persistState,
     round,
   }

@@ -1,7 +1,7 @@
 # Ads SDK Quick Start (Public, V2)
 
 - Version: v1.1
-- Last Updated: 2026-02-24
+- Last Updated: 2026-02-27
 - Audience: External developers integrating ads in AI chat applications
 
 This guide helps you run first integration in 10-15 minutes:
@@ -17,9 +17,7 @@ Required values:
 2. `ADS_API_KEY` (runtime key; should have runtime scopes)
 3. `APP_ID`
 4. `ENVIRONMENT` (`sandbox` | `staging` | `prod`)
-5. enabled placement:
-   - `chat_from_answer_v1` (post-answer sponsored block), or
-   - `chat_intent_recommendation_v1` (next-step intent card)
+5. Dashboard should have placement config enabled for this app.
 
 ## 2. API Flow (V2 Baseline)
 
@@ -40,7 +38,6 @@ Required values:
 curl -sS -G "$ADS_BASE_URL/v1/mediation/config" \
   -H "Authorization: Bearer $ADS_API_KEY" \
   --data-urlencode "appId=$APP_ID" \
-  --data-urlencode "placementId=chat_from_answer_v1" \
   --data-urlencode "environment=$ENVIRONMENT" \
   --data-urlencode "schemaVersion=schema_v1" \
   --data-urlencode "sdkVersion=1.0.0" \
@@ -61,7 +58,6 @@ curl -sS -X POST "$ADS_BASE_URL/v2/bid" \
   -d '{
     "userId": "user_12139050",
     "chatId": "chat_8b5d9f5a",
-    "placementId": "chat_from_answer_v1",
     "messages": [
       { "role": "user", "content": "I want to buy a gift for my girlfriend" },
       { "role": "assistant", "content": "What kind of gift do you want?" },
@@ -140,7 +136,6 @@ async function loadAd(messages) {
       body: JSON.stringify({
         userId: 'user_12139050',
         chatId: 'chat_8b5d9f5a',
-        placementId: 'chat_from_answer_v1',
         messages,
       }),
     }).then((r) => r.json())
@@ -157,6 +152,7 @@ async function loadAd(messages) {
 Recommended behavior:
 1. `data.bid == null`: skip rendering
 2. request timeout/failure: swallow ad error, do not block answer rendering
+3. If `placementId` is omitted, runtime resolves default placement from Dashboard config.
 
 ## 6. Step 4: Report Events
 
@@ -239,7 +235,7 @@ curl -sS -X POST "$ADS_BASE_URL/v1/sdk/events" \
 
 ## 7. Minimal Contract Rules
 
-1. `/api/v2/bid` only accepts fields: `userId`, `chatId`, `placementId`, `messages`.
+1. `/api/v2/bid` only accepts fields: `userId`, `chatId`, `placementId`, `messages` (`placementId` optional in common path).
 2. `messages[*].role` must be `user | assistant | system`.
 3. `/api/v1/sdk/events` uses strict payload validation per event type.
 4. Unknown extra fields are rejected with `400`.

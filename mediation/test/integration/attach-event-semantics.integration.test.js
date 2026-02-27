@@ -340,6 +340,65 @@ test('sdk managed flow: bid timeout defaults to fail-open no_fill', async () => 
   assert.equal(flow.decision.reasonDetail, 'bid_timeout_fail_open')
 })
 
+test('sdk managed flow: placementId is optional and follows dashboard config default', async () => {
+  const calls = []
+  const fetchImpl = async (url, init = {}) => {
+    const parsedUrl = new URL(url, 'http://localhost')
+    const method = String(init.method || 'GET').toUpperCase()
+    const body = typeof init.body === 'string' && init.body
+      ? JSON.parse(init.body)
+      : null
+    calls.push({ method, pathname: parsedUrl.pathname, search: parsedUrl.search, body })
+
+    if (parsedUrl.pathname === '/api/v1/mediation/config') {
+      return createJsonResponse(200, {
+        placements: [
+          {
+            placementId: 'chat_from_answer_v1',
+            placementKey: 'attach.post_answer_render',
+            enabled: true,
+          },
+        ],
+      })
+    }
+    if (parsedUrl.pathname === '/api/v2/bid') {
+      return createJsonResponse(200, {
+        requestId: 'adreq_optional_placement_001',
+        status: 'success',
+        message: 'No bid',
+        data: { bid: null },
+      })
+    }
+    throw new Error(`unexpected request: ${method} ${parsedUrl.pathname}`)
+  }
+
+  const sdkClient = createAdsSdkClient({
+    apiBaseUrl: '/api',
+    fetchImpl,
+  })
+
+  const flow = await sdkClient.runManagedFlow({
+    appId: 'sample-client-app',
+    userId: 'user_optional_placement_001',
+    chatId: 'chat_optional_placement_001',
+    bidPayload: {
+      userId: 'user_optional_placement_001',
+      chatId: 'chat_optional_placement_001',
+      messages: [{ role: 'user', content: 'best broker offer' }],
+    },
+  })
+
+  const configCall = calls.find((item) => item.pathname === '/api/v1/mediation/config')
+  assert.equal(Boolean(configCall), true)
+  assert.equal(String(configCall.search || '').includes('placementId='), false)
+
+  const bidCall = calls.find((item) => item.pathname === '/api/v2/bid')
+  assert.equal(Boolean(bidCall), true)
+  assert.equal((bidCall.body || {}).placementId, 'chat_from_answer_v1')
+  assert.equal(flow.placementId, 'chat_from_answer_v1')
+  assert.equal(flow.decision.result, 'no_fill')
+})
+
 test('sdk runChatTurnWithAd: fastPath starts bid before chatDone promise resolves', async () => {
   const callTimestamps = {
     bidCalledAt: 0,

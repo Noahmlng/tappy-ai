@@ -15,7 +15,11 @@ const HEALTH_TIMEOUT_MS = (() => {
   if (!Number.isFinite(raw) || raw <= 0) return 12000
   return Math.floor(raw)
 })()
-const REQUEST_TIMEOUT_MS = 5000
+const REQUEST_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.MEDIATION_TEST_REQUEST_TIMEOUT_MS || HEALTH_TIMEOUT_MS)
+  if (!Number.isFinite(raw) || raw <= 0) return HEALTH_TIMEOUT_MS
+  return Math.floor(raw)
+})()
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -142,6 +146,9 @@ async function registerDashboardHeaders(baseUrl, input = {}) {
 }
 
 test('quick start verifier runs config -> v2 bid -> events and returns evidence', async () => {
+  const suffix = `${Date.now()}_${Math.floor(Math.random() * 1000)}`
+  const scopedAccountId = `org_mediation_${suffix}`
+  const scopedAppId = `sample-client-app-${suffix}`
   const port = 3850 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${HOST}:${port}`
   const gateway = startGateway(port)
@@ -152,16 +159,16 @@ test('quick start verifier runs config -> v2 bid -> events and returns evidence'
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.status, 404)
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
-      email: 'quickstart-owner@example.com',
-      accountId: 'org_mediation',
-      appId: 'sample-client-app',
+      email: `quickstart-owner-${suffix}@example.com`,
+      accountId: scopedAccountId,
+      appId: scopedAppId,
     })
     const createKey = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
       method: 'POST',
       headers: dashboardHeaders,
       body: {
-        accountId: 'org_mediation',
-        appId: 'sample-client-app',
+        accountId: scopedAccountId,
+        appId: scopedAppId,
         environment: 'prod',
         name: 'quickstart-active-key',
       },
@@ -171,8 +178,8 @@ test('quick start verifier runs config -> v2 bid -> events and returns evidence'
     const verify = await requestJson(baseUrl, '/api/v1/public/quick-start/verify', {
       method: 'POST',
       body: {
-        accountId: 'org_mediation',
-        appId: 'sample-client-app',
+        accountId: scopedAccountId,
+        appId: scopedAppId,
         environment: 'prod',
         placementId: 'chat_from_answer_v1',
       },
@@ -217,6 +224,9 @@ test('quick start verifier runs config -> v2 bid -> events and returns evidence'
 })
 
 test('quick start verifier returns precondition failed when app has no active key', async () => {
+  const suffix = `${Date.now()}_${Math.floor(Math.random() * 1000)}`
+  const scopedAccountId = `org_mediation_${suffix}`
+  const scopedAppId = `sample-client-app-${suffix}`
   const port = 4050 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${HOST}:${port}`
   const gateway = startGateway(port)
@@ -227,24 +237,24 @@ test('quick start verifier returns precondition failed when app has no active ke
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.status, 404)
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
-      email: 'quickstart-precondition@example.com',
-      accountId: 'org_mediation',
-      appId: 'sample-client-app',
+      email: `quickstart-precondition-${suffix}@example.com`,
+      accountId: scopedAccountId,
+      appId: scopedAppId,
     })
 
     const createKey = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
       method: 'POST',
       headers: dashboardHeaders,
       body: {
-        accountId: 'org_mediation',
-        appId: 'sample-client-app',
+        accountId: scopedAccountId,
+        appId: scopedAppId,
         environment: 'prod',
         name: 'precondition-test-key',
       },
     })
     assert.equal(createKey.status, 201, `key create failed: ${JSON.stringify(createKey.payload)}`)
 
-    const listKeys = await requestJson(baseUrl, '/api/v1/public/credentials/keys?appId=sample-client-app&environment=prod', {
+    const listKeys = await requestJson(baseUrl, `/api/v1/public/credentials/keys?appId=${encodeURIComponent(scopedAppId)}&environment=prod`, {
       headers: dashboardHeaders,
     })
     assert.equal(listKeys.ok, true, `key list failed: ${JSON.stringify(listKeys.payload)}`)
@@ -262,8 +272,8 @@ test('quick start verifier returns precondition failed when app has no active ke
     const verify = await requestJson(baseUrl, '/api/v1/public/quick-start/verify', {
       method: 'POST',
       body: {
-        accountId: 'org_mediation',
-        appId: 'sample-client-app',
+        accountId: scopedAccountId,
+        appId: scopedAppId,
         environment: 'prod',
         placementId: 'chat_from_answer_v1',
       },

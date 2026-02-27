@@ -15,12 +15,17 @@ const HEALTH_TIMEOUT_MS = (() => {
   if (!Number.isFinite(raw) || raw <= 0) return 12000
   return Math.floor(raw)
 })()
+const REQUEST_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.MEDIATION_TEST_REQUEST_TIMEOUT_MS || HEALTH_TIMEOUT_MS)
+  if (!Number.isFinite(raw) || raw <= 0) return HEALTH_TIMEOUT_MS
+  return Math.floor(raw)
+})()
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-function withTimeoutSignal(timeoutMs = 5000) {
+function withTimeoutSignal(timeoutMs = REQUEST_TIMEOUT_MS) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   return {
@@ -117,15 +122,17 @@ async function stopGateway(handle) {
   }
 }
 
-async function registerDashboardHeaders(baseUrl) {
+async function registerDashboardHeaders(baseUrl, input = {}) {
   const now = Date.now()
+  const accountId = String(input.accountId || 'org_mediation').trim()
+  const appId = String(input.appId || 'sample-client-app').trim()
   const register = await requestJson(baseUrl, '/api/v1/public/dashboard/register', {
     method: 'POST',
     body: {
-      email: `v2_bid_${now}@example.com`,
+      email: String(input.email || `v2_bid_${now}@example.com`).trim(),
       password: 'pass12345',
-      accountId: 'org_mediation',
-      appId: 'sample-client-app',
+      accountId,
+      appId,
     },
   })
   assert.equal(register.status, 201, `dashboard register failed: ${JSON.stringify(register.payload)}`)
@@ -136,13 +143,15 @@ async function registerDashboardHeaders(baseUrl) {
   }
 }
 
-async function issueRuntimeApiKeyHeaders(baseUrl, dashboardHeaders) {
+async function issueRuntimeApiKeyHeaders(baseUrl, dashboardHeaders, input = {}) {
+  const accountId = String(input.accountId || 'org_mediation').trim()
+  const appId = String(input.appId || 'sample-client-app').trim()
   const created = await requestJson(baseUrl, '/api/v1/public/credentials/keys', {
     method: 'POST',
     headers: dashboardHeaders,
     body: {
-      accountId: 'org_mediation',
-      appId: 'sample-client-app',
+      accountId,
+      appId,
       environment: 'prod',
       name: `runtime-${Date.now()}`,
     },
@@ -154,6 +163,9 @@ async function issueRuntimeApiKeyHeaders(baseUrl, dashboardHeaders) {
 }
 
 test('v2 bid API returns unified response and legacy evaluate endpoint is removed', async () => {
+  const suffix = `${Date.now()}_${Math.floor(Math.random() * 1000)}`
+  const scopedAccountId = `org_mediation_${suffix}`
+  const scopedAppId = `sample-client-app-${suffix}`
   const port = 3950 + Math.floor(Math.random() * 120)
   const baseUrl = `http://${HOST}:${port}`
   const gateway = startGateway(port)
@@ -164,11 +176,31 @@ test('v2 bid API returns unified response and legacy evaluate endpoint is remove
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.status, 404)
 
-    const dashboardHeaders = await registerDashboardHeaders(baseUrl)
-    const runtimeCredential = await issueRuntimeApiKeyHeaders(baseUrl, dashboardHeaders)
+    const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
+      email: `v2_bid_${suffix}@example.com`,
+      accountId: scopedAccountId,
+      appId: scopedAppId,
+    })
+    const runtimeCredential = await issueRuntimeApiKeyHeaders(baseUrl, dashboardHeaders, {
+      accountId: scopedAccountId,
+      appId: scopedAppId,
+    })
     const runtimeHeaders = {
       Authorization: `Bearer ${runtimeCredential.secret}`,
     }
+
+    const configWithoutPlacement = await requestJson(
+      baseUrl,
+      `/api/v1/mediation/config?appId=${encodeURIComponent(scopedAppId)}&environment=prod&schemaVersion=schema_v1&sdkVersion=1.0.0&requestAt=2026-02-27T00%3A00%3A00.000Z`,
+      {
+      method: 'GET',
+      headers: runtimeHeaders,
+      timeoutMs: 12000,
+      },
+    )
+    assert.equal(configWithoutPlacement.status, 200, JSON.stringify(configWithoutPlacement.payload))
+    assert.equal(typeof configWithoutPlacement.payload?.placementId, 'string')
+    assert.equal(configWithoutPlacement.payload?.placementId.length > 0, true)
 
     const bid = await requestJson(baseUrl, '/api/v2/bid', {
       method: 'POST',
@@ -279,6 +311,14 @@ test('v2 bid API returns unified response and legacy evaluate endpoint is remove
     })
     assert.equal(tolerantMissingPlacement.status, 200, JSON.stringify(tolerantMissingPlacement.payload))
     assert.equal(tolerantMissingPlacement.payload?.diagnostics?.inputNormalization?.defaultsApplied?.placementIdDefaulted, true)
+    assert.equal(
+      tolerantMissingPlacement.payload?.diagnostics?.inputNormalization?.defaultsApplied?.placementIdResolvedFromDashboardDefault,
+      true,
+    )
+    assert.equal(
+      tolerantMissingPlacement.payload?.diagnostics?.inputNormalization?.placementResolution?.source,
+      'dashboard_default',
+    )
     assert.equal(tolerantMissingPlacement.payload?.diagnostics?.inputNormalization?.roleCoercions?.[0]?.to, 'assistant')
 
     const legacyPlacementMapped = await requestJson(baseUrl, '/api/v2/bid', {

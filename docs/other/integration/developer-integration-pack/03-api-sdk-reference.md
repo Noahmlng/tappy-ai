@@ -1,7 +1,7 @@
 # 03 - API and SDK Reference (V2 Baseline)
 
 - Owner: Integrations Team
-- Last Updated: 2026-02-26
+- Last Updated: 2026-02-27
 - Scope: external runtime integration (`v2/bid` required, `events/config` optional)
 
 ## 1. Endpoint Summary
@@ -36,14 +36,14 @@ Common auth failures:
 
 Required query params:
 1. `appId`
-2. `placementId`
-3. `schemaVersion`
-4. `sdkVersion`
-5. `requestAt` (ISO-8601)
+2. `schemaVersion`
+3. `sdkVersion`
+4. `requestAt` (ISO-8601)
 
 Placement ID contract:
 1. Allowed IDs: `chat_from_answer_v1`, `chat_intent_recommendation_v1`
 2. Legacy (renamed) IDs are rejected with `400 PLACEMENT_ID_RENAMED`.
+3. `placementId` is optional; when omitted runtime resolves the default placement from Dashboard config.
 
 Optional query params:
 1. `environment` (defaults to `prod`; only `prod` is accepted)
@@ -54,7 +54,6 @@ Sample request:
 curl -sS -G "$BASE_URL/api/v1/mediation/config" \
   -H "Authorization: Bearer $API_KEY" \
   --data-urlencode "appId=$APP_ID" \
-  --data-urlencode "placementId=chat_from_answer_v1" \
   --data-urlencode "environment=prod" \
   --data-urlencode "schemaVersion=schema_v1" \
   --data-urlencode "sdkVersion=1.0.0" \
@@ -90,7 +89,8 @@ Required top-level fields:
 Tolerance behavior:
 1. Missing `chatId` -> defaults to `userId`; if `userId` missing too, server generates stable `anon_*`.
 2. Missing `userId` -> server generates `anon_*`.
-3. Missing `placementId` -> defaults to `chat_from_answer_v1`.
+3. Missing `placementId` -> resolve in order:
+`credential scoped placement` -> `Dashboard default placement` -> `fallback placement`.
 4. Legacy placement IDs are auto-mapped (no `PLACEMENT_ID_RENAMED` for `/api/v2/bid`).
 5. Extra fields are ignored.
 6. Invalid `messages[*].role` is coerced to `user` or `assistant` and surfaced in diagnostics.
@@ -104,7 +104,6 @@ curl -sS -X POST "$BASE_URL/api/v2/bid" \
   -d '{
     "userId": "user_001",
     "chatId": "chat_001",
-    "placementId": "chat_from_answer_v1",
     "messages": [
       { "role": "user", "content": "Recommend running shoes" },
       { "role": "assistant", "content": "Focus on grip." }
@@ -244,6 +243,7 @@ Sample response:
 ## 4. Validation Rules
 
 1. `v2/bid` only allows: `userId`, `chatId`, `placementId`, `messages`.
+`placementId` is optional in normal single-slot integration.
 2. `sdk/events` validates allowed fields by payload type.
 3. Unknown fields are rejected with `400`.
 
