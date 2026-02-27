@@ -29,5 +29,5 @@
 
 - `other/integration/`（外部接入入口与联调说明）
 - `other/integration/local-ads-debug-pipeline.md`（本地广告联调排障 Pipeline，含 no-bid 根因分型）
-- `other/integration/developer-integration-pack/`（对外生效文档入口：00/02/03/11）
+- `other/integration/developer-integration-pack/`（对外交付默认文档：11）
 - `other/project-structure.md`

@@ -147,17 +147,13 @@
 3. Integration Pack 索引：
 - `docs/other/integration/developer-integration-pack/README.md`
 
-4. Integration Pack 外部总览（Mediation + Dashboard）：
-- `docs/other/integration/developer-integration-pack/00-external-integration-overview.md`
-
-5. Integration Pack Quickstart：
-- `docs/other/integration/developer-integration-pack/02-quickstart.md`
-
-6. Integration Pack API 参考：
-- `docs/other/integration/developer-integration-pack/03-api-sdk-reference.md`
-
-7. Integration Pack 全链路接入手册：
+4. Integration Pack 对外交付主文档（默认只发这份）：
 - `docs/other/integration/developer-integration-pack/11-end-to-end-integration-playbook.md`
+
+5. Integration Pack 内部补充文档（可选）：
+- `docs/other/integration/developer-integration-pack/00-external-integration-overview.md`
+- `docs/other/integration/developer-integration-pack/02-quickstart.md`
+- `docs/other/integration/developer-integration-pack/03-api-sdk-reference.md`
 
 <a id="readme-mediation"></a>
 ## Mediation 设计文档入口（最新）

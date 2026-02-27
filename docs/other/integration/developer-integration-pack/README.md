@@ -1,18 +1,22 @@
 # Developer Integration Pack
 
-- Version: v1.3
+- Version: v1.4
 - Last Updated: 2026-02-27
 - Audience: external app developers and integration support
-- Assumption: caller already has a valid runtime API key
 
-## Active Documents (Only These)
+## Delivery Default
 
-1. `00-external-integration-overview.md` - mediation + dashboard external overview
-2. `02-quickstart.md` - 10-minute integration path
-3. `03-api-sdk-reference.md` - canonical runtime API and SDK contract
-4. `11-end-to-end-integration-playbook.md` - rollout and validation checklist
+对外交付默认只发这一份：
+1. `11-end-to-end-integration-playbook.md`（最终版，可单文档完成接入）
 
-If content conflicts, always follow `00/02/03/11`.
+## Internal Supporting Docs (Optional)
+
+以下文档仅供内部补充说明，外部交付非必需：
+1. `00-external-integration-overview.md`
+2. `02-quickstart.md`
+3. `03-api-sdk-reference.md`
+
+If content conflicts, always follow `11-end-to-end-integration-playbook.md`.
 
 ## Archive Policy
 
