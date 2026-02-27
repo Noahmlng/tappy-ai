@@ -64,7 +64,7 @@ curl -sS -X POST "$MEDIATION_API_BASE_URL/v2/bid" \
   }'
 ```
 
-默认不传 `placementId`。placement 由 Dashboard 配置解析。
+`/api/v2/bid` 不接受 `placementId`。placement 由 Dashboard 配置解析。
 
 ## 5. Behavior Contract
 

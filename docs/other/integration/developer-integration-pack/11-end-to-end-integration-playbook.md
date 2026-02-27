@@ -49,7 +49,7 @@ export async function runTurnWithAd({ appId, userId, chatId, messages, chatDoneP
 }
 ```
 
-注意：默认不传 `placementId`，由 Dashboard 配置决定。
+注意：`/api/v2/bid` 不接受 `placementId`，由 Dashboard 配置决定。
 
 ## 4. SLA & Reliability
 

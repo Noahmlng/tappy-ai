@@ -10,7 +10,7 @@
 2. `ADS_API_KEY` (runtime key from Dashboard)
 3. `APP_ID`
 
-默认不需要传 `placementId`。
+`/api/v2/bid` 不接受 `placementId`，由 Dashboard 配置决定 placement。
 
 ## 2. Recommended Integration
 

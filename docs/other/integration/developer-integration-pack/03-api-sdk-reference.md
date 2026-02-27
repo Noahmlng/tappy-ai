@@ -31,7 +31,7 @@ Request body (minimal):
 2. `userId` (optional, server can auto-generate)
 3. `chatId` (optional, server can default to user scope)
 
-`placementId` 不需要传。运行时按 Dashboard 配置决定 placement。
+`placementId` 不需要传，且该字段在 `/api/v2/bid` 会被拒绝。运行时按 Dashboard 配置决定 placement。
 
 Sample:
 

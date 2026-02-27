@@ -318,6 +318,20 @@ test('v2 bid API returns unified response on the single runtime path', async () 
     )
     assert.equal(tolerantMissingPlacement.payload?.diagnostics?.inputNormalization?.roleCoercions?.[0]?.to, 'assistant')
 
+    const placementOverrideRejected = await requestJson(baseUrl, '/api/v2/bid', {
+      method: 'POST',
+      headers: runtimeHeaders,
+      body: {
+        userId: 'user_with_explicit_placement',
+        chatId: 'chat_with_explicit_placement',
+        placementId: 'chat_from_answer_v1',
+        messages: [{ role: 'user', content: 'show me a cashback card deal' }],
+      },
+      timeoutMs: 12000,
+    })
+    assert.equal(placementOverrideRejected.status, 400, JSON.stringify(placementOverrideRejected.payload))
+    assert.equal(placementOverrideRejected.payload?.error?.code, 'V2_BID_PLACEMENT_ID_NOT_ALLOWED')
+
     const rawAuthBid = await requestJson(baseUrl, '/api/v2/bid', {
       method: 'POST',
       headers: { Authorization: runtimeCredential.secret },

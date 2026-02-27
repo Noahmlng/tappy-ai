@@ -2512,9 +2512,13 @@ function normalizeV2BidPayload(payload, routeName) {
   }
 
   const rawPlacementId = String(input.placementId || input.placement_id || '').trim()
-  const placementId = rawPlacementId
-    ? normalizePlacementIdWithMigration(rawPlacementId, PLACEMENT_ID_FROM_ANSWER)
-    : ''
+  if (rawPlacementId) {
+    const error = new Error('placementId is no longer accepted in /api/v2/bid. Configure placement in Dashboard.')
+    error.code = 'V2_BID_PLACEMENT_ID_NOT_ALLOWED'
+    error.statusCode = 400
+    throw error
+  }
+  const placementId = ''
 
   return {
     userId,
@@ -2530,9 +2534,7 @@ function normalizeV2BidPayload(payload, routeName) {
         placementIdResolvedFromDashboardDefault: false,
         placementIdFallbackApplied: false,
       },
-      placementMigration: rawPlacementId && rawPlacementId !== placementId
-        ? { from: rawPlacementId, to: placementId }
-        : null,
+      placementMigration: null,
       messagesSynthesized: !rawMessages || rawMessages.length === 0,
       messageSources: synthesizedMessageSources,
       roleCoercions: messageDiagnostics.roleCoercions,
