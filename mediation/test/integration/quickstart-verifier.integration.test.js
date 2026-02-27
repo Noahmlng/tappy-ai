@@ -181,7 +181,6 @@ test('quick start verifier runs config -> v2 bid -> events and returns evidence'
         accountId: scopedAccountId,
         appId: scopedAppId,
         environment: 'prod',
-        placementId: 'chat_from_answer_v1',
       },
     })
     assert.equal(verify.ok, true, `verify failed: ${JSON.stringify(verify.payload)}`)
@@ -193,7 +192,7 @@ test('quick start verifier runs config -> v2 bid -> events and returns evidence'
 
     assert.equal(verify.payload?.evidence?.config?.status, 200)
     assert.equal(verify.payload?.evidence?.events?.ok, true)
-    assert.equal(verify.payload?.evidence?.evaluate?.requestId, requestId)
+    assert.equal(verify.payload?.evidence?.bid?.requestId, requestId)
 
     const decisionRows = await requestJson(
       baseUrl,
@@ -275,7 +274,6 @@ test('quick start verifier returns precondition failed when app has no active ke
         accountId: scopedAccountId,
         appId: scopedAppId,
         environment: 'prod',
-        placementId: 'chat_from_answer_v1',
       },
     })
     assert.equal(verify.status, 409)
@@ -285,6 +283,35 @@ test('quick start verifier returns precondition failed when app has no active ke
     const message = error instanceof Error ? error.message : String(error)
     throw new Error(
       `[quickstart-verifier-precondition] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`,
+    )
+  } finally {
+    await stopGateway(gateway)
+  }
+})
+
+test('quick start verifier rejects placementId override in request body', async () => {
+  const port = 4250 + Math.floor(Math.random() * 200)
+  const baseUrl = `http://${HOST}:${port}`
+  const gateway = startGateway(port)
+
+  try {
+    await waitForGateway(baseUrl)
+    const verify = await requestJson(baseUrl, '/api/v1/public/quick-start/verify', {
+      method: 'POST',
+      body: {
+        accountId: 'org_demo',
+        appId: 'app_demo',
+        environment: 'prod',
+        placementId: 'chat_from_answer_v1',
+      },
+    })
+    assert.equal(verify.status, 400)
+    assert.equal(verify.payload?.error?.code, 'QUICKSTART_PLACEMENT_ID_NOT_ALLOWED')
+  } catch (error) {
+    const logs = gateway.getLogs()
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `[quickstart-verifier-placement] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`,
     )
   } finally {
     await stopGateway(gateway)

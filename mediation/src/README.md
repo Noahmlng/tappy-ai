@@ -60,9 +60,8 @@
 - 外部开发者前端 SDK shared client。
 - 入口：`sdk/client.js` -> `createAdsSdkClient(options)`。
 - 核心方法：
-  - `fetchConfig`（`/api/v1/mediation/config`）
   - `requestBid`（`/api/v2/bid`）
   - `reportEvent`（`/api/v1/sdk/events`）
   - `runChatTurnWithAd`（FastPath 默认开启；可通过 `fastPath=false` 改为等待 chat done 再触发）
-  - `runAttachFlow` / `runNextStepFlow`（内部统一执行 `config -> v2/bid -> events`，并内置 fail-open）。
+  - 默认不要求传 `placementId`，由 runtime 按 Dashboard 配置解析。
   - 诊断回调：`onDiagnostics(diagnostics, flow)`，输出 `stageDurationsMs`、`bidProbeStatus`、`outcomeCategory`。

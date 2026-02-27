@@ -288,7 +288,6 @@ export async function handleControlPlaneRoutes(context, deps) {
           : null
         const requestId = String(bidResult?.requestId || '').trim()
         const status = winnerBid ? 'served' : 'no_fill'
-        const statusReason = winnerBid ? 'runtime_eligible' : 'runtime_no_bid'
   
         const eventStartedAt = Date.now()
         await recordAttachSdkEvent({
@@ -324,13 +323,6 @@ export async function handleControlPlaneRoutes(context, deps) {
               bidId: winnerBid ? String(winnerBid.bidId || '') : '',
               dsp: winnerBid ? String(winnerBid.dsp || '') : '',
               price: winnerBid ? clampNumber(winnerBid.price, 0, Number.MAX_SAFE_INTEGER, 0) : 0,
-              latencyMs: bidLatencyMs,
-            },
-            evaluate: {
-              status: 200,
-              requestId,
-              result: status,
-              reasonDetail: statusReason,
               latencyMs: bidLatencyMs,
             },
             events: {

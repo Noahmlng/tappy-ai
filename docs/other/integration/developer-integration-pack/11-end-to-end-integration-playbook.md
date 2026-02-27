@@ -1,45 +1,30 @@
-# 11 - End-to-End Integration Playbook (External-Friendly)
+# 11 - End-to-End Playbook (Single Integration Path)
 
 - Owner: Integrations Team
 - Last Updated: 2026-02-27
-- Scope: production app integration (Dashboard-configured runtime)
 
-## 1. Design Principle
+## 1. Target State
 
-外部接入目标：
-1. 应用方只关心“配置接入 + 发送请求”
-2. 注册/账号初始化/key 发行属于 Dashboard 运营动作，不在应用请求链路里
-3. placement 默认由 Dashboard 配置决定，不要求应用每次手改请求体
+对外只保留一条接入链路：
+1. Dashboard 完成 key 与 placement 配置
+2. 应用侧调用 `runChatTurnWithAd`
+3. Runtime 统一走 `POST /api/v2/bid`
+4. 事件通过 `POST /api/v1/sdk/events` 回传
 
-## 2. Responsibility Split
+## 2. Responsibilities
 
-## 2.1 Dashboard / Platform side
-
-一次性完成：
+Platform side:
 1. account/app 初始化
-2. runtime key 生成与轮换
-3. placement 配置（启用状态、优先级、bidders、cap）
+2. runtime key 发行和轮换
+3. placement 配置和启用
 4. quick-start verify 与库存预检
 
-## 2.2 Application side
+App side:
+1. 初始化 SDK（`apiBaseUrl + apiKey`）
+2. 每轮调用 `runChatTurnWithAd`
+3. 渲染 sponsor card（有 fill 时）
 
-持续执行：
-1. SDK 初始化（baseUrl + apiKey + appId）
-2. 每轮调用广告 helper（FastPath）
-3. 渲染 fill 结果并上报事件
-
-## 3. Request Model (Simplified)
-
-默认路径下，应用请求不需要显式传 `placementId`。
-
-Runtime 会按以下顺序解析 placement：
-1. credential scope（若 token 限定了 placement）
-2. Dashboard 默认 placement（当前 app 的启用优先项）
-3. fallback placement（仅兜底）
-
-这保证了 Dashboard 配置对运行时真正生效。
-
-## 4. SDK Integration Template
+## 3. SDK Template
 
 ```ts
 import { createAdsSdkClient } from '@ai-network/tappy-ai-mediation/sdk/client'
@@ -50,12 +35,9 @@ const ads = createAdsSdkClient({
   fetchImpl: fetch,
   fastPath: true,
   timeouts: { config: 1200, bid: 1200, events: 800 },
-  onDiagnostics: (diagnostics, flow) => {
-    console.log('[ads diagnostics]', diagnostics, flow?.decision)
-  },
 })
 
-export async function runTurnWithAds({ appId, userId, chatId, messages, chatDonePromise }) {
+export async function runTurnWithAd({ appId, userId, chatId, messages, chatDonePromise }) {
   return ads.runChatTurnWithAd({
     appId,
     userId,
@@ -67,74 +49,37 @@ export async function runTurnWithAds({ appId, userId, chatId, messages, chatDone
 }
 ```
 
-## 5. API Direct Call Template (Optional)
+注意：默认不传 `placementId`，由 Dashboard 配置决定。
 
-```bash
-curl -sS -X POST "$MEDIATION_API_BASE_URL/v2/bid" \
-  -H "Authorization: Bearer $MEDIATION_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "userId": "user_001",
-    "chatId": "chat_001",
-    "messages": [
-      { "role": "user", "content": "best camera for vlogging" },
-      { "role": "assistant", "content": "consider sony zv-e10" }
-    ]
-  }'
-```
+## 4. SLA & Reliability
 
-只有在多 slot 明确路由时，才建议显式传 `placementId`。
+1. 主 SLA：`click -> bid response p95 <= 1000ms`
+2. `No bid` 是正常业务结果
+3. 广告链路 fail-open，不阻塞聊天主回答
 
-## 6. Timeout and Reliability
+## 5. Diagnostics
 
-默认建议：
-1. `config=1200ms`
-2. `bid=1200ms`
-3. `events=800ms`
-
-原则：
-1. 广告链路 fail-open
-2. 聊天主回答优先，不被广告失败阻塞
-
-## 7. Diagnostics and KPI
-
-## 7.1 Client-side
-
-采集：
+客户端：
 1. `stageDurationsMs`
 2. `bidProbeStatus`
 3. `outcomeCategory`
 
-## 7.2 Server-side diagnostics
+服务端：
+1. `diagnostics.timingsMs`
+2. `diagnostics.budgetExceeded`
+3. `diagnostics.timeoutSignal`
+4. `diagnostics.precheck`
 
-关注：
-1. `timingsMs`
-2. `budgetMs`
-3. `budgetExceeded`
-4. `timeoutSignal`
-5. `precheck`
-
-## 7.3 Dashboard KPI
-
-主 KPI：
+Dashboard 主 KPI：
 1. `bidFillRateKnown`
+2. `bidKnownCount / bidUnknownCount / unknownRate`
 
-诊断：
-1. `bidKnownCount` / `bidUnknownCount` / `unknownRate`
-2. `timeoutRelatedCount`
-3. `precheckInventoryNotReadyCount`
-4. `budgetExceededCount`
+## 6. E2E Validation
 
-## 8. Validation Checklist
+1. 聊天慢但 bid 快：1s 内返回 bid
+2. no-fill 路径：`HTTP 200 + bid=null`
+3. 上游慢：fail-open，不阻塞聊天
+4. Dashboard 可按 `requestId` 联查 decision/event
 
-- [ ] App 侧不依赖 register/key-create API
-- [ ] 不传 `placementId` 也能按 Dashboard 配置运行
-- [ ] `No bid` 路径正常
-- [ ] fail-open 路径正常
-- [ ] Dashboard 可按 requestId 回溯 decision/event
-
-## 9. CI / E2E Notes
-
-远程数据库场景建议：
+远程数据库 CI 建议：
 1. `MEDIATION_TEST_HEALTH_TIMEOUT_MS=45000`
-2. 避免 12s 固定超时导致冷启动误判

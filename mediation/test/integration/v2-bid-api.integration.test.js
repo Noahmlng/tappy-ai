@@ -162,7 +162,7 @@ async function issueRuntimeApiKeyHeaders(baseUrl, dashboardHeaders, input = {}) 
   return { secret }
 }
 
-test('v2 bid API returns unified response and legacy evaluate endpoint is removed', async () => {
+test('v2 bid API returns unified response on the single runtime path', async () => {
   const suffix = `${Date.now()}_${Math.floor(Math.random() * 1000)}`
   const scopedAccountId = `org_mediation_${suffix}`
   const scopedAppId = `sample-client-app-${suffix}`
@@ -208,7 +208,6 @@ test('v2 bid API returns unified response and legacy evaluate endpoint is remove
       body: {
         userId: 'user_v2_001',
         chatId: 'chat_v2_001',
-        placementId: 'chat_from_answer_v1',
         messages: [
           { role: 'user', content: 'i want to buy a gift to my girlfriend' },
           { role: 'assistant', content: 'what kind of gift do you prefer?' },
@@ -275,7 +274,6 @@ test('v2 bid API returns unified response and legacy evaluate endpoint is remove
       headers: runtimeHeaders,
       body: {
         userId: 'user_missing_chat',
-        placementId: 'chat_from_answer_v1',
         messages: [{ role: 'USER_INPUT', content: 'find me a running shoe deal' }],
         extraField: 'ignored',
       },
@@ -290,7 +288,6 @@ test('v2 bid API returns unified response and legacy evaluate endpoint is remove
       headers: runtimeHeaders,
       body: {
         chatId: 'chat_missing_user',
-        placementId: 'chat_from_answer_v1',
         query: 'suggest a vlogging camera',
       },
       timeoutMs: 12000,
@@ -321,48 +318,18 @@ test('v2 bid API returns unified response and legacy evaluate endpoint is remove
     )
     assert.equal(tolerantMissingPlacement.payload?.diagnostics?.inputNormalization?.roleCoercions?.[0]?.to, 'assistant')
 
-    const legacyPlacementMapped = await requestJson(baseUrl, '/api/v2/bid', {
-      method: 'POST',
-      headers: runtimeHeaders,
-      body: {
-        userId: 'user_legacy_placement',
-        messages: [{ role: 'user', content: 'legacy placement request' }],
-        placementId: 'chat_inline_v1',
-      },
-      timeoutMs: 12000,
-    })
-    assert.equal(legacyPlacementMapped.status, 200, JSON.stringify(legacyPlacementMapped.payload))
-    assert.equal(legacyPlacementMapped.payload?.diagnostics?.inputNormalization?.placementMigration?.from, 'chat_inline_v1')
-    assert.equal(legacyPlacementMapped.payload?.diagnostics?.inputNormalization?.placementMigration?.to, 'chat_from_answer_v1')
-
     const rawAuthBid = await requestJson(baseUrl, '/api/v2/bid', {
       method: 'POST',
       headers: { Authorization: runtimeCredential.secret },
       body: {
         userId: 'user_raw_auth',
         chatId: 'chat_raw_auth',
-        placementId: 'chat_from_answer_v1',
         messages: [{ role: 'user', content: 'raw auth header should pass' }],
       },
       timeoutMs: 12000,
     })
     assert.equal(rawAuthBid.status, 200, JSON.stringify(rawAuthBid.payload))
 
-    const legacyEvaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
-      method: 'POST',
-      body: {
-        sessionId: 'legacy_sess_001',
-        turnId: 'legacy_turn_001',
-        query: 'legacy evaluate request',
-        answerText: 'legacy answer',
-        intentScore: 0.8,
-        locale: 'en-US',
-        placementId: 'chat_from_answer_v1',
-      },
-    })
-
-    assert.equal(legacyEvaluate.status, 404)
-    assert.equal(legacyEvaluate.payload?.error?.code, 'NOT_FOUND')
   } catch (error) {
     const logs = gateway.getLogs()
     const message = error instanceof Error ? error.message : String(error)

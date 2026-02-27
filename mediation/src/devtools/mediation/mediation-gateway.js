@@ -7558,13 +7558,18 @@ function buildQuickStartVerifyRequest(input = {}) {
     '',
   )
   const environment = normalizeControlPlaneEnvironment(input.environment || 'prod')
-  const placementId = normalizePlacementIdWithMigration(
-    assertPlacementIdNotRenamed(
-      String(input.placementId || '').trim() || PLACEMENT_ID_FROM_ANSWER,
-      'placementId',
-    ),
-    PLACEMENT_ID_FROM_ANSWER,
-  )
+  if (String(input.placementId || '').trim()) {
+    const error = new Error('placementId is no longer accepted in quick-start verify. Configure default placement in Dashboard.')
+    error.code = 'QUICKSTART_PLACEMENT_ID_NOT_ALLOWED'
+    error.statusCode = 400
+    throw error
+  }
+  const placement = pickPlacementForRequest({
+    appId,
+    accountId,
+    event: 'answer_completed',
+  })
+  const placementId = String(placement?.placementId || '').trim() || PLACEMENT_ID_FROM_ANSWER
   return {
     appId,
     accountId,

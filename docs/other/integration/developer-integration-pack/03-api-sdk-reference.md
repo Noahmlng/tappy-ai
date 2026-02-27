@@ -1,101 +1,39 @@
-# 03 - API and SDK Reference (V2 Baseline)
+# 03 - API & SDK Reference (Single Runtime Contract)
 
 - Owner: Integrations Team
 - Last Updated: 2026-02-27
-- Scope: external runtime integration (`v2/bid` required, `events/config` optional)
+- Scope: external runtime integration
 
-## 1. Endpoint Summary
+## 1. Runtime Endpoints
 
-| Endpoint | Method | Purpose | Auth | Idempotency |
-| --- | --- | --- | --- | --- |
-| `/api/v2/bid` | `POST` | Request single winner bid | Bearer runtime credential | No hard idempotency guarantee |
-| `/api/v1/sdk/events` | `POST` | Report SDK events (attach/next-step/postback) | Bearer runtime credential | Postback supports dedup by semantic idempotency key |
-| `/api/v1/mediation/config` | `GET` | Read placement config snapshot (diagnostics) | Bearer runtime credential | N/A (read) |
+| Endpoint | Method | Required | Purpose |
+| --- | --- | --- | --- |
+| `/api/v2/bid` | `POST` | Yes | Request one bid decision |
+| `/api/v1/sdk/events` | `POST` | Optional | Report impression/click/postback |
 
-## 2. Authentication and Scope
+`/api/v1/mediation/config` 仅用于平台侧诊断，不是应用方接入必需步骤。
 
-Runtime endpoints accept either of the following headers:
-
-```http
-Authorization: Bearer <token>
-```
+## 2. Authentication
 
 ```http
-Authorization: <token>
+Authorization: Bearer <runtime_key>
 ```
 
-Common auth failures:
-1. `401 RUNTIME_AUTH_REQUIRED`
-2. `401 INVALID_API_KEY`
-3. `401 ACCESS_TOKEN_EXPIRED`
-4. `403 API_KEY_SCOPE_VIOLATION` / `403 ACCESS_TOKEN_SCOPE_VIOLATION`
+Common errors:
+1. `401 INVALID_API_KEY`
+2. `401 ACCESS_TOKEN_EXPIRED`
+3. `403 API_KEY_SCOPE_VIOLATION`
 
-## 3. Contracts
+## 3. `POST /api/v2/bid`
 
-## 3.1 `GET /api/v1/mediation/config`
+Request body (minimal):
+1. `messages` (required)
+2. `userId` (optional, server can auto-generate)
+3. `chatId` (optional, server can default to user scope)
 
-Required query params:
-1. `appId`
-2. `schemaVersion`
-3. `sdkVersion`
-4. `requestAt` (ISO-8601)
+`placementId` 不需要传。运行时按 Dashboard 配置决定 placement。
 
-Placement ID contract:
-1. Allowed IDs: `chat_from_answer_v1`, `chat_intent_recommendation_v1`
-2. Legacy (renamed) IDs are rejected with `400 PLACEMENT_ID_RENAMED`.
-3. `placementId` is optional; when omitted runtime resolves the default placement from Dashboard config.
-
-Optional query params:
-1. `environment` (defaults to `prod`; only `prod` is accepted)
-
-Sample request:
-
-```bash
-curl -sS -G "$BASE_URL/api/v1/mediation/config" \
-  -H "Authorization: Bearer $API_KEY" \
-  --data-urlencode "appId=$APP_ID" \
-  --data-urlencode "environment=prod" \
-  --data-urlencode "schemaVersion=schema_v1" \
-  --data-urlencode "sdkVersion=1.0.0" \
-  --data-urlencode "requestAt=2026-02-24T12:00:00Z"
-```
-
-Sample response (`200`):
-
-```json
-{
-  "appId": "app_demo",
-  "accountId": "org_demo",
-  "environment": "prod",
-  "placementId": "chat_from_answer_v1",
-  "placementKey": "attach.post_answer_render",
-  "schemaVersion": "schema_v1",
-  "sdkVersion": "1.0.0",
-  "requestAt": "2026-02-24T12:00:00.000Z",
-  "configVersion": 3,
-  "ttlSec": 300,
-  "placement": {
-    "placementId": "chat_from_answer_v1",
-    "enabled": true
-  }
-}
-```
-
-## 3.2 `POST /api/v2/bid`
-
-Required top-level fields:
-1. `messages` OR (`query` / `prompt`) must provide non-empty user intent text.
-
-Tolerance behavior:
-1. Missing `chatId` -> defaults to `userId`; if `userId` missing too, server generates stable `anon_*`.
-2. Missing `userId` -> server generates `anon_*`.
-3. Missing `placementId` -> resolve in order:
-`credential scoped placement` -> `Dashboard default placement` -> `fallback placement`.
-4. Legacy placement IDs are auto-mapped (no `PLACEMENT_ID_RENAMED` for `/api/v2/bid`).
-5. Extra fields are ignored.
-6. Invalid `messages[*].role` is coerced to `user` or `assistant` and surfaced in diagnostics.
-
-Sample request:
+Sample:
 
 ```bash
 curl -sS -X POST "$BASE_URL/api/v2/bid" \
@@ -111,166 +49,67 @@ curl -sS -X POST "$BASE_URL/api/v2/bid" \
   }'
 ```
 
-Sample success response:
+Success with fill:
 
 ```json
 {
   "requestId": "adreq_xxx",
-  "timestamp": "2026-02-24T10:31:24.787Z",
   "status": "success",
   "message": "Bid successful",
-  "filled": true,
-  "landingUrl": "https://example.com",
-  "data": {
-    "bid": {
-      "price": 12.34,
-      "advertiser": "Brand",
-      "headline": "Brand Camera",
-      "description": "Compact camera for creators.",
-      "cta_text": "Learn More",
-      "url": "https://example.com",
-      "dsp": "partnerstack",
-      "bidId": "v2_bid_xxx",
-      "placement": "block",
-      "variant": "base"
-    }
-  }
+  "data": { "bid": { "bidId": "v2_bid_xxx", "url": "https://example.com" } }
 }
 ```
 
-No-bid response (normal):
+Success with no-fill:
 
 ```json
 {
   "requestId": "adreq_xxx",
-  "timestamp": "2026-02-24T10:31:24.787Z",
   "status": "success",
   "message": "No bid",
-  "filled": false,
-  "landingUrl": null,
-  "data": {
-    "bid": null
-  }
+  "data": { "bid": null }
 }
 ```
 
-Legacy placement ID rejection example (`400`):
+## 4. `POST /api/v1/sdk/events`
+
+Attach impression minimal payload:
 
 ```json
 {
-  "error": {
-    "code": "PLACEMENT_ID_RENAMED",
-    "message": "placementId \"legacy_placement_id_v1\" has been renamed to \"chat_from_answer_v1\".",
-    "placementId": "legacy_placement_id_v1",
-    "replacementPlacementId": "chat_from_answer_v1",
-    "field": "placementId"
-  }
+  "requestId": "adreq_xxx",
+  "sessionId": "chat_001",
+  "turnId": "turn_001",
+  "query": "camera for vlogging",
+  "answerText": "Consider compact options",
+  "intentScore": 0.8,
+  "locale": "en-US",
+  "kind": "impression",
+  "adId": "v2_bid_xxx"
 }
 ```
 
-## 3.3 `POST /api/v1/sdk/events` (Attach)
-
-Attach payload required fields:
-1. `sessionId`
-2. `turnId`
-3. `query`
-4. `answerText`
-5. `intentScore` (`0~1`)
-6. `locale`
-
-Optional fields:
-1. `requestId`
-2. `appId`
-3. `kind` (`impression` | `click`, default `impression`)
-4. `adId`
-5. `placementId` (default `chat_from_answer_v1`)
-
-Sample response:
+Response:
 
 ```json
 { "ok": true }
 ```
 
-## 3.4 `POST /api/v1/sdk/events` (Next-Step)
+## 5. SDK Surface
 
-Next-step payload required fields:
-1. `sessionId`
-2. `turnId`
-3. `event` (`followup_generation` | `follow_up_generation`)
-4. `placementId`
-5. `placementKey` (must be `next_step.intent_card`)
-6. `context.query`
-7. `context.locale`
+`createAdsSdkClient(options)` 对外只保留：
+1. `requestBid(input, options?)`
+2. `reportEvent(payload, options?)`
+3. `runChatTurnWithAd(input)`
 
-Optional fields:
-1. `requestId`
-2. `userId`
-3. `kind` (`impression` | `click` | `dismiss`, default `impression`)
-4. `adId`
-5. `context.intent_class`
-6. `context.intent_score`
-7. `context.preference_facets`
+推荐默认只用 `runChatTurnWithAd`。
 
-Sample response:
+## 6. Error Model
 
-```json
-{ "ok": true }
-```
-
-## 3.5 `POST /api/v1/sdk/events` (Postback Conversion)
-
-Postback trigger condition:
-1. payload includes `eventType=postback`, or
-2. includes postback-specific fields (`postbackType`, `postbackStatus`, `conversionId`)
-
-Required fields:
-1. `requestId`
-2. `postbackType` (`conversion`, default `conversion`)
-3. `postbackStatus` (`pending | success | failed`, default `success`)
-4. if status is `success`, `cpaUsd` is required
-
-Sample response:
-
-```json
-{
-  "ok": true,
-  "duplicate": false,
-  "factId": "fact_xxx",
-  "revenueUsd": 12.34
-}
-```
-
-## 4. Validation Rules
-
-1. `v2/bid` only allows: `userId`, `chatId`, `placementId`, `messages`.
-`placementId` is optional in normal single-slot integration.
-2. `sdk/events` validates allowed fields by payload type.
-3. Unknown fields are rejected with `400`.
-
-## 5. Error Model
-
-| HTTP Code | Error Code (examples) | Retryable | Client Action |
-| --- | --- | --- | --- |
-| 400 | `INVALID_REQUEST`, `SDK_EVENTS_INVALID_PAYLOAD`, `PLACEMENT_ID_RENAMED` | No | Fix payload/schema mismatch, and migrate to canonical placement ID |
-| 401 | `RUNTIME_AUTH_REQUIRED`, `INVALID_API_KEY`, `ACCESS_TOKEN_EXPIRED` | No | Refresh/replace credential |
-| 403 | `API_KEY_SCOPE_VIOLATION`, `ACCESS_TOKEN_SCOPE_VIOLATION` | No | Use token with correct scope/app/placement |
-| 404 | `PLACEMENT_NOT_FOUND` (config) | No | Check appId + placementId mapping |
-| 409 | `PRECONDITION_FAILED`, `INVENTORY_EMPTY` (quick-start verify) | No | Provision runtime key or sync inventory before retry |
-| 5xx | runtime/upstream transient failure | Yes (limited) | Backoff retry + fail-open |
-
-No-bid boundary:
-1. `No bid` is only the `HTTP 200 + status=success + data.bid=null` case.
-2. Any `4xx/5xx` is integration/runtime error, not no-bid.
-
-## 6. Timeout and Retry Recommendations
-
-1. `v2/bid` timeout: `<= 1200ms` recommended on chat path
-2. `sdk/events` timeout: `<= 800ms` recommended
-3. Retry policy:
-- 4xx: do not retry automatically
-- 5xx/network timeout: short exponential backoff, max 1-2 retries
-
-## 7. Compatibility Notes
-
-1. Legacy evaluate endpoint is deprecated for new integrations.
-2. New integrations must use `config -> v2/bid -> events`.
+| HTTP | Code (example) | Client action |
+| --- | --- | --- |
+| 400 | `INVALID_REQUEST` | Fix payload |
+| 401 | `INVALID_API_KEY` | Rotate/replace key |
+| 403 | `API_KEY_SCOPE_VIOLATION` | Fix key scope |
+| 409 | `INVENTORY_EMPTY` (verify) | Sync inventory |
+| 5xx | upstream/runtime transient | Retry with backoff + fail-open |

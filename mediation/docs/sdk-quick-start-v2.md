@@ -1,55 +1,43 @@
-# Ads SDK Quick Start (Public, V2)
+# Ads SDK Quick Start (Single Path)
 
-- Version: v1.1
+- Version: v1.2
 - Last Updated: 2026-02-27
-- Audience: External developers integrating ads in AI chat applications
+- Audience: external app developers
 
-This guide helps you run first integration in 10-15 minutes:
-1. fetch placement config
-2. request one bid (`/api/v2/bid`)
-3. render ad with fail-open behavior
-4. report events (`/api/v1/sdk/events`)
+## 1. What You Need
 
-## 1. Prerequisites
-
-Required values:
-1. `ADS_BASE_URL` (example: `https://your-gateway.example.com/api`)
-2. `ADS_API_KEY` (runtime key; should have runtime scopes)
+1. `ADS_BASE_URL` (e.g. `https://your-domain/api`)
+2. `ADS_API_KEY` (runtime key from Dashboard)
 3. `APP_ID`
-4. `ENVIRONMENT` (`sandbox` | `staging` | `prod`)
-5. Dashboard should have placement config enabled for this app.
 
-## 2. API Flow (V2 Baseline)
+默认不需要传 `placementId`。
 
-1. `GET /api/v1/mediation/config`
-- returns current placement config and `configVersion`
+## 2. Recommended Integration
 
-2. `POST /api/v2/bid`
-- unified messages input
-- returns **single winner bid** or `data.bid=null`
+```ts
+import { createAdsSdkClient } from '@ai-network/tappy-ai-mediation/sdk/client'
 
-3. `POST /api/v1/sdk/events`
-- reports impression/click/dismiss/postback events
-- links events with `requestId`
+const ads = createAdsSdkClient({
+  apiBaseUrl: process.env.ADS_BASE_URL,
+  apiKey: process.env.ADS_API_KEY,
+  fetchImpl: fetch,
+  fastPath: true,
+  timeouts: { config: 1200, bid: 1200, events: 800 },
+})
 
-## 3. Step 1: Fetch Placement Config
-
-```bash
-curl -sS -G "$ADS_BASE_URL/v1/mediation/config" \
-  -H "Authorization: Bearer $ADS_API_KEY" \
-  --data-urlencode "appId=$APP_ID" \
-  --data-urlencode "environment=$ENVIRONMENT" \
-  --data-urlencode "schemaVersion=schema_v1" \
-  --data-urlencode "sdkVersion=1.0.0" \
-  --data-urlencode "requestAt=2026-02-24T12:00:00Z"
+export async function runTurnWithAd({ appId, userId, chatId, messages, chatDonePromise }) {
+  return ads.runChatTurnWithAd({
+    appId,
+    userId,
+    chatId,
+    messages,
+    chatDonePromise,
+    renderAd: (bid) => renderSponsorCard(bid),
+  })
+}
 ```
 
-Success response includes:
-1. `placementId` / `placementKey`
-2. `configVersion`
-3. `placement` object (enabled, thresholds, caps, etc.)
-
-## 4. Step 2: Request First Bid
+## 3. Direct API Example
 
 ```bash
 curl -sS -X POST "$ADS_BASE_URL/v2/bid" \
@@ -59,104 +47,19 @@ curl -sS -X POST "$ADS_BASE_URL/v2/bid" \
     "userId": "user_12139050",
     "chatId": "chat_8b5d9f5a",
     "messages": [
-      { "role": "user", "content": "I want to buy a gift for my girlfriend" },
-      { "role": "assistant", "content": "What kind of gift do you want?" },
-      { "role": "user", "content": "Camera for vlogging" }
+      { "role": "user", "content": "camera for vlogging" },
+      { "role": "assistant", "content": "consider compact options" }
     ]
   }'
 ```
 
-### Success with bid
+## 4. Response Handling
 
-```json
-{
-  "requestId": "adreq_xxx",
-  "timestamp": "2026-02-24T10:31:24.787Z",
-  "status": "success",
-  "message": "Bid successful",
-  "data": {
-    "bid": {
-      "price": 7.86,
-      "advertiser": "DJI",
-      "headline": "DJI",
-      "description": "Explore DJI's lineup for creators.",
-      "cta_text": "Learn More",
-      "url": "https://example.com",
-      "image_url": "https://example.com/cover.jpg",
-      "dsp": "partnerstack",
-      "bidId": "v2_bid_xxx",
-      "placement": "block",
-      "variant": "base",
-      "pricing": {
-        "modelVersion": "cpa_mock_v2",
-        "targetRpmUsd": 8,
-        "ecpmUsd": 7.86,
-        "cpaUsd": 3.21,
-        "pClick": 0.026,
-        "pConv": 0.0014,
-        "network": "partnerstack",
-        "rawSignal": {
-          "rawBidValue": 3.5,
-          "rawUnit": "base_rate_or_bid_value",
-          "normalizedFactor": 0.91
-        }
-      }
-    }
-  }
-}
-```
+1. `data.bid` is object: render sponsor card
+2. `data.bid` is `null`: no-fill (normal)
+3. request timeout/error: fail-open and continue chat
 
-### Success with no bid (normal)
-
-```json
-{
-  "requestId": "adreq_xxx",
-  "timestamp": "2026-02-24T10:31:24.787Z",
-  "status": "success",
-  "message": "No bid",
-  "data": {
-    "bid": null
-  }
-}
-```
-
-`No bid` is not an error. Your main chat flow should continue.
-
-## 5. Step 3: Render with Fail-Open
-
-```ts
-async function loadAd(messages) {
-  try {
-    const bidResp = await fetch(`${ADS_BASE_URL}/v2/bid`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${ADS_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        userId: 'user_12139050',
-        chatId: 'chat_8b5d9f5a',
-        messages,
-      }),
-    }).then((r) => r.json())
-
-    if (!bidResp?.data?.bid) return null
-    return bidResp.data.bid
-  } catch (err) {
-    console.warn('[ads] fail-open', err)
-    return null
-  }
-}
-```
-
-Recommended behavior:
-1. `data.bid == null`: skip rendering
-2. request timeout/failure: swallow ad error, do not block answer rendering
-3. If `placementId` is omitted, runtime resolves default placement from Dashboard config.
-
-## 6. Step 4: Report Events
-
-### 6.1 Attach impression (`chat_from_answer_v1`)
+## 5. Event Reporting (Optional but Recommended)
 
 ```bash
 curl -sS -X POST "$ADS_BASE_URL/v1/sdk/events" \
@@ -167,125 +70,16 @@ curl -sS -X POST "$ADS_BASE_URL/v1/sdk/events" \
     "sessionId": "chat_8b5d9f5a",
     "turnId": "turn_001",
     "query": "camera for vlogging",
-    "answerText": "You can compare Sony ZV-1 and DJI options.",
-    "intentScore": 0.80,
+    "answerText": "consider compact options",
+    "intentScore": 0.8,
     "locale": "en-US",
     "kind": "impression",
-    "placementId": "chat_from_answer_v1",
     "adId": "v2_bid_xxx"
   }'
 ```
 
-### 6.2 Attach click (`chat_from_answer_v1`)
+## 6. SLA Guidance
 
-Use the same payload and set `kind` to `click`.
-
-### 6.3 Attach postback conversion (`chat_from_answer_v1`)
-
-For mediation mode, use `bid.pricing.cpaUsd` from `/api/v2/bid` as `cpaUsd`.
-
-```bash
-curl -sS -X POST "$ADS_BASE_URL/v1/sdk/events" \
-  -H "Authorization: Bearer $ADS_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "eventType": "postback",
-    "requestId": "adreq_xxx",
-    "sessionId": "chat_8b5d9f5a",
-    "turnId": "turn_001",
-    "userId": "user_12139050",
-    "placementId": "chat_from_answer_v1",
-    "adId": "v2_bid_xxx",
-    "postbackType": "conversion",
-    "postbackStatus": "success",
-    "conversionId": "conv_adreq_xxx_v2_bid_xxx_turn_001",
-    "cpaUsd": 3.21,
-    "currency": "USD"
-  }'
-```
-
-### 6.4 Next-step event (`chat_intent_recommendation_v1`, optional)
-
-```bash
-curl -sS -X POST "$ADS_BASE_URL/v1/sdk/events" \
-  -H "Authorization: Bearer $ADS_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "requestId": "adreq_xxx",
-    "sessionId": "chat_8b5d9f5a",
-    "turnId": "turn_002",
-    "userId": "user_12139050",
-    "event": "followup_generation",
-    "kind": "impression",
-    "placementId": "chat_intent_recommendation_v1",
-    "placementKey": "next_step.intent_card",
-    "adId": "v2_bid_xxx",
-    "context": {
-      "query": "camera for travel vlogging",
-      "answerText": "Let's compare compact options.",
-      "locale": "en-US",
-      "intent_class": "shopping",
-      "intent_score": 0.77,
-      "preference_facets": [
-        { "facet_key": "use_case", "facet_value": "travel", "confidence": 0.9 }
-      ]
-    }
-  }'
-```
-
-## 7. Minimal Contract Rules
-
-1. `/api/v2/bid` only accepts fields: `userId`, `chatId`, `placementId`, `messages` (`placementId` optional in common path).
-2. `messages[*].role` must be `user | assistant | system`.
-3. `/api/v1/sdk/events` uses strict payload validation per event type.
-4. Unknown extra fields are rejected with `400`.
-
-## 8. Error Handling
-
-1. `400 INVALID_REQUEST` / `400 SDK_EVENTS_INVALID_PAYLOAD`
-- payload shape error or missing required fields
-
-2. `401`
-- missing/invalid/expired runtime credential
-
-3. `403`
-- token scope/app/environment/placement mismatch
-
-4. `5xx` (upstream/proxy/runtime transient failure)
-- retry with backoff and keep fail-open on UI path
-
-## 9. Production Checklist
-
-1. fail-open enabled for ad calls
-2. request timeout configured (`bid <= 1200ms` recommended)
-3. `requestId` persisted in app logs
-4. impression/click events use same `requestId`
-5. postback success payload uses `bid.pricing.cpaUsd` (mediation mode)
-6. no-bid path validated
-
-## 10. Migration Note
-
-Legacy `POST /api/v1/sdk/evaluate` is no longer the primary integration path.
-Use `GET /api/v1/mediation/config` + `POST /api/v2/bid` + `POST /api/v1/sdk/events`.
-
-## 11. Meyka Finance Validation Suite (Optional)
-
-For regression/performance/revenue simulation with Meyka finance conversations:
-
-```bash
-# local validation
-npm --prefix ./mediation run meyka:suite -- --env=local
-
-# staging validation
-npm --prefix ./mediation run meyka:suite -- \
-  --env=staging \
-  --gatewayUrl=https://<staging-gateway>/api \
-  --accountId=<account_id> \
-  --appId=<app_id> \
-  --runtimeKey=<runtime_api_key> \
-  --dashboardToken=<dashboard_access_token>
-```
-
-Revenue checks in this suite use mediation settlement rules:
-1. only `postback` with `postbackStatus=success` writes revenue
-2. `cpaUsd` must come from `bid.pricing.cpaUsd` (mediation model value), not random values
+1. `click -> bid response p95 <= 1000ms`
+2. bid timeout should fail-open
+3. keep chat experience as primary path

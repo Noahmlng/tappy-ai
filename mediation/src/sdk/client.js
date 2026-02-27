@@ -4,22 +4,6 @@ const DEFAULT_TIMEOUT_MS = Object.freeze({
   events: 800,
 })
 
-const ATTACH_DEFAULTS = Object.freeze({
-  placementId: 'chat_from_answer_v1',
-  placementKey: 'attach.post_answer_render',
-  environment: 'prod',
-  schemaVersion: 'schema_v1',
-  sdkVersion: '1.0.0',
-})
-
-const NEXT_STEP_DEFAULTS = Object.freeze({
-  placementId: 'chat_intent_recommendation_v1',
-  placementKey: 'next_step.intent_card',
-  environment: 'prod',
-  schemaVersion: 'schema_v1',
-  sdkVersion: '1.0.0',
-})
-
 function cleanText(value) {
   if (typeof value !== 'string') return ''
   return value.trim()
@@ -57,19 +41,19 @@ function toTimestamp(value) {
 }
 
 function classifyBidProbeStatus(flow) {
-  const evaluateEvidence = flow?.evidence?.evaluate && typeof flow.evidence.evaluate === 'object'
-    ? flow.evidence.evaluate
+  const bidEvidence = flow?.evidence?.bid && typeof flow.evidence.bid === 'object'
+    ? flow.evidence.bid
     : {}
-  if (evaluateEvidence.ok === true) return 'seen'
-  if (evaluateEvidence.ok === false) {
-    const errorHint = String(evaluateEvidence.error || '').toLowerCase()
+  if (bidEvidence.ok === true) return 'seen'
+  if (bidEvidence.ok === false) {
+    const errorHint = String(bidEvidence.error || '').toLowerCase()
     if (errorHint.includes('timeout') || errorHint.includes('timed out') || errorHint.includes('abort')) {
       return 'timeout'
     }
     return 'seen'
   }
   const timeoutHint = String(
-    evaluateEvidence.error
+    bidEvidence.error
     || flow?.error
     || flow?.decision?.reasonDetail
     || '',
@@ -260,7 +244,7 @@ function buildConfigEvidence() {
   }
 }
 
-function buildEvaluateEvidence() {
+function buildBidEvidence() {
   return {
     ok: false,
     status: 0,
@@ -383,7 +367,6 @@ export function createAdsSdkClient(options = {}) {
   async function requestBid(input = {}, reqOptions = {}) {
     const userId = cleanText(input.userId)
     const chatId = cleanText(input.chatId)
-    const placementId = cleanText(input.placementId)
     const messageSignals = deriveSignalsFromMessages(input.messages)
 
     if (!userId) {
@@ -400,9 +383,6 @@ export function createAdsSdkClient(options = {}) {
       userId,
       chatId,
       messages: messageSignals.normalized,
-    }
-    if (placementId) {
-      payload.placementId = placementId
     }
 
     const response = await requestJson('/v2/bid', {
@@ -495,7 +475,7 @@ export function createAdsSdkClient(options = {}) {
       ads: [],
       evidence: {
         config: buildConfigEvidence(),
-        evaluate: buildEvaluateEvidence(),
+        bid: buildBidEvidence(),
         events: buildEventsEvidence(),
       },
       error: '',
@@ -510,10 +490,7 @@ export function createAdsSdkClient(options = {}) {
     const schemaVersion = cleanText(input.schemaVersion)
     const sdkVersion = cleanText(input.sdkVersion)
     const configTimeoutMs = toFiniteNumber(input.configTimeoutMs, timeouts.config)
-    const bidTimeoutMs = toFiniteNumber(
-      input.bidTimeoutMs,
-      toFiniteNumber(input.evaluateTimeoutMs, timeouts.bid),
-    )
+    const bidTimeoutMs = toFiniteNumber(input.bidTimeoutMs, timeouts.bid)
     const eventsTimeoutMs = toFiniteNumber(input.eventsTimeoutMs, timeouts.events)
 
     const flow = buildDefaultFlowResult(placementId, placementKey)
@@ -610,9 +587,6 @@ export function createAdsSdkClient(options = {}) {
       bidPayload.messages = fallbackMessages
     }
 
-    const evaluatePayload = input.evaluatePayload && typeof input.evaluatePayload === 'object'
-      ? input.evaluatePayload
-      : null
     let bidResponse = null
     try {
       bidResponse = await requestBid(bidPayload, { timeoutMs: bidTimeoutMs })
@@ -635,7 +609,7 @@ export function createAdsSdkClient(options = {}) {
           intentScore: toFiniteNumber(input.intentScore, 0),
         })
       flow.ads = winnerBid ? normalizeFlowAdsFromBid(winnerBid) : []
-      flow.evidence.evaluate = {
+      flow.evidence.bid = {
         ok: true,
         status: toFiniteNumber(bidResponse?.evidence?.status, 200),
         latencyMs: toFiniteNumber(bidResponse?.evidence?.latencyMs, 0),
@@ -647,8 +621,8 @@ export function createAdsSdkClient(options = {}) {
     } catch (error) {
       flow.failOpenApplied = true
       flow.error = error instanceof Error ? error.message : 'bid_failed'
-      flow.evidence.evaluate = {
-        ...buildEvaluateEvidence(),
+      flow.evidence.bid = {
+        ...buildBidEvidence(),
         ok: false,
         error: flow.error,
       }
@@ -673,13 +647,6 @@ export function createAdsSdkClient(options = {}) {
       requestId: flow.requestId,
       bidPayload,
       bidResponse,
-      evaluatePayload: evaluatePayload || bidPayload,
-      evaluateResponse: {
-        requestId: flow.requestId,
-        decision: flow.decision,
-        ads: flow.ads,
-        data: bidResponse?.data || {},
-      },
       decision: flow.decision,
       ads: flow.ads,
     }
@@ -826,162 +793,9 @@ export function createAdsSdkClient(options = {}) {
     }
   }
 
-  async function runAttachFlow(input = {}) {
-    const appId = cleanText(input.appId)
-    const placementId = cleanText(input.placementId || ATTACH_DEFAULTS.placementId) || ATTACH_DEFAULTS.placementId
-    const placementKey = cleanText(input.placementKey || ATTACH_DEFAULTS.placementKey) || ATTACH_DEFAULTS.placementKey
-    const eventPayload = {
-      sessionId: cleanText(input.sessionId),
-      turnId: cleanText(input.turnId),
-      query: cleanText(input.query),
-      answerText: cleanText(input.answerText),
-      intentScore: toFiniteNumber(input.intentScore, 0),
-      locale: cleanText(input.locale) || 'en-US',
-    }
-    const bidPayload = {
-      userId: cleanText(input.userId || input.sessionId),
-      chatId: cleanText(input.chatId || input.sessionId),
-      placementId,
-      messages: Array.isArray(input.messages) ? input.messages : [],
-    }
-    if (bidPayload.messages.length === 0) {
-      const fallback = []
-      if (eventPayload.query) fallback.push({ role: 'user', content: eventPayload.query })
-      if (eventPayload.answerText) fallback.push({ role: 'assistant', content: eventPayload.answerText })
-      bidPayload.messages = fallback
-    }
-    if (appId) {
-      eventPayload.appId = appId
-    }
-
-    return runManagedFlow({
-      appId,
-      placementId,
-      placementKey,
-      environment: cleanText(input.environment || ATTACH_DEFAULTS.environment) || ATTACH_DEFAULTS.environment,
-      schemaVersion: cleanText(input.schemaVersion || ATTACH_DEFAULTS.schemaVersion) || ATTACH_DEFAULTS.schemaVersion,
-      sdkVersion: cleanText(input.sdkVersion || ATTACH_DEFAULTS.sdkVersion) || ATTACH_DEFAULTS.sdkVersion,
-      requestAt: cleanText(input.requestAt) || new Date().toISOString(),
-      bidPayload,
-      evaluatePayload: eventPayload,
-      intentScore: eventPayload.intentScore,
-      eventPayloadFactory: ({ requestId, decision, ads }) => {
-        const decisionResult = cleanText(decision?.result).toLowerCase()
-        const firstAdId = cleanText(Array.isArray(ads) ? ads[0]?.adId : '')
-        if (decisionResult !== 'served' || !firstAdId) {
-          return null
-        }
-        return {
-          ...eventPayload,
-          requestId,
-          kind: 'impression',
-          placementId,
-          adId: firstAdId,
-        }
-      },
-      configTimeoutMs: input.configTimeoutMs,
-      bidTimeoutMs: input.bidTimeoutMs || input.evaluateTimeoutMs,
-      eventsTimeoutMs: input.eventsTimeoutMs,
-    })
-  }
-
-  async function runNextStepFlow(input = {}) {
-    const appId = cleanText(input.appId)
-    const placementId = cleanText(input.placementId || NEXT_STEP_DEFAULTS.placementId) || NEXT_STEP_DEFAULTS.placementId
-    const placementKey = cleanText(input.placementKey || NEXT_STEP_DEFAULTS.placementKey) || NEXT_STEP_DEFAULTS.placementKey
-    const contextInput = input.context && typeof input.context === 'object' ? input.context : {}
-
-    const context = {
-      query: cleanText(contextInput.query),
-      answerText: cleanText(contextInput.answerText),
-      locale: cleanText(contextInput.locale) || 'en-US',
-      intent_class: cleanText(contextInput.intent_class),
-      intent_score: toFiniteNumber(contextInput.intent_score, 0),
-      preference_facets: Array.isArray(contextInput.preference_facets)
-        ? contextInput.preference_facets
-        : [],
-    }
-
-    if (Array.isArray(contextInput.recent_turns)) {
-      context.recent_turns = contextInput.recent_turns
-    }
-    if (contextInput.constraints && typeof contextInput.constraints === 'object') {
-      context.constraints = contextInput.constraints
-    }
-
-    const eventPayload = {
-      sessionId: cleanText(input.sessionId),
-      turnId: cleanText(input.turnId),
-      userId: cleanText(input.userId),
-      event: cleanText(input.event || 'followup_generation') || 'followup_generation',
-      placementId,
-      placementKey,
-      context,
-    }
-    const bidPayload = {
-      userId: cleanText(input.userId || input.sessionId),
-      chatId: cleanText(input.chatId || input.sessionId),
-      placementId,
-      messages: Array.isArray(input.messages) ? input.messages : [],
-    }
-    if (bidPayload.messages.length === 0 && Array.isArray(context.recent_turns)) {
-      bidPayload.messages = context.recent_turns
-    }
-    if (bidPayload.messages.length === 0) {
-      const fallback = []
-      if (context.query) fallback.push({ role: 'user', content: context.query })
-      if (context.answerText) fallback.push({ role: 'assistant', content: context.answerText })
-      bidPayload.messages = fallback
-    }
-    if (appId) {
-      eventPayload.appId = appId
-    }
-
-    return runManagedFlow({
-      appId,
-      placementId,
-      placementKey,
-      environment: cleanText(input.environment || NEXT_STEP_DEFAULTS.environment) || NEXT_STEP_DEFAULTS.environment,
-      schemaVersion: cleanText(input.schemaVersion || NEXT_STEP_DEFAULTS.schemaVersion) || NEXT_STEP_DEFAULTS.schemaVersion,
-      sdkVersion: cleanText(input.sdkVersion || NEXT_STEP_DEFAULTS.sdkVersion) || NEXT_STEP_DEFAULTS.sdkVersion,
-      requestAt: cleanText(input.requestAt) || new Date().toISOString(),
-      bidPayload,
-      evaluatePayload: eventPayload,
-      intentScore: context.intent_score,
-      eventPayloadFactory: ({ requestId, decision, ads }) => {
-        const decisionResult = cleanText(decision?.result).toLowerCase()
-        const firstAdId = cleanText(
-          ads[0]?.adId
-            || ads[0]?.item_id
-            || ads[0]?.itemId,
-        )
-
-        if (decisionResult !== 'served' || !firstAdId) {
-          return null
-        }
-
-        return {
-          ...eventPayload,
-          requestId,
-          kind: 'impression',
-          adId: firstAdId,
-          placementId,
-          placementKey,
-        }
-      },
-      configTimeoutMs: input.configTimeoutMs,
-      bidTimeoutMs: input.bidTimeoutMs || input.evaluateTimeoutMs,
-      eventsTimeoutMs: input.eventsTimeoutMs,
-    })
-  }
-
   return {
-    fetchConfig,
     requestBid,
     reportEvent,
-    runManagedFlow,
     runChatTurnWithAd,
-    runAttachFlow,
-    runNextStepFlow,
   }
 }
