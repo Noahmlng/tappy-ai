@@ -247,9 +247,11 @@ export async function handleRuntimeRoutes(context, deps) {
     }
 
     if (pathname === '/api/v2/bid' && req.method === 'POST') {
+      let request = null
+      let evaluationAttempted = false
       try {
         const payload = await readJsonBody(req)
-        const request = normalizeV2BidPayload(payload, 'v2/bid')
+        request = normalizeV2BidPayload(payload, 'v2/bid')
         const inputNormalization = request?.inputDiagnostics && typeof request.inputDiagnostics === 'object'
           ? {
               ...request.inputDiagnostics,
@@ -315,6 +317,7 @@ export async function handleRuntimeRoutes(context, deps) {
           request.inputDiagnostics = inputNormalization
         }
 
+        evaluationAttempted = true
         const result = await evaluateV2BidRequest({
           ...request,
           appId: scopedRequest.appId,
@@ -365,7 +368,45 @@ export async function handleRuntimeRoutes(context, deps) {
         })
         return
       } catch (error) {
-        const mapped = toRuntimeRouteError(error)
+        const mapped = evaluationAttempted
+          ? toRuntimeRouteError(error, {
+              defaultCode: 'INTERNAL_ERROR',
+              defaultStatus: 500,
+              defaultMessage: 'Bid evaluation failed',
+            })
+          : toRuntimeRouteError(error)
+        if (evaluationAttempted && mapped.status >= 500) {
+          const failOpenTimestamp = typeof nowIso === 'function' ? nowIso() : new Date().toISOString()
+          const failOpenRequestId = typeof createId === 'function' ? createId('bid') : ''
+          const upstreamCode = String(mapped?.error?.code || '').trim()
+          const upstreamMessage = String(mapped?.error?.message || '').trim()
+          sendJson(res, 200, {
+            requestId: failOpenRequestId,
+            timestamp: failOpenTimestamp,
+            status: 'success',
+            message: 'No bid',
+            opportunityId: '',
+            filled: false,
+            landingUrl: null,
+            decisionTrace: {
+              reasonCode: 'upstream_error',
+            },
+            diagnostics: {
+              reasonCode: 'upstream_non_2xx',
+              upstreamStatus: mapped.status,
+              upstreamCode,
+              upstreamMessage,
+              failOpenApplied: true,
+              ...(request?.inputDiagnostics && typeof request.inputDiagnostics === 'object'
+                ? { inputNormalization: request.inputDiagnostics }
+                : {}),
+            },
+            data: {
+              bid: null,
+            },
+          })
+          return
+        }
         sendJson(res, mapped.status, { error: mapped.error })
         return
       }

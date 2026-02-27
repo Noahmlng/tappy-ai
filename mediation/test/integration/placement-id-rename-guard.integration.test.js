@@ -110,6 +110,69 @@ test('runtime-routes allows legacy placementId for /api/v2/bid after payload nor
   assert.equal(result.payload?.landingUrl, null)
 })
 
+test('runtime-routes fail-opens /api/v2/bid when evaluator returns internal 5xx', async () => {
+  const { result, sendJson } = createSendJsonCapture()
+  const handled = await handleRuntimeRoutes({
+    req: { method: 'POST', headers: {} },
+    res: {},
+    pathname: '/api/v2/bid',
+    requestUrl: new URL('http://127.0.0.1/api/v2/bid'),
+  }, {
+    sendJson,
+    withCors: () => {},
+    assertPlacementIdNotRenamed,
+    readJsonBody: async () => ({
+      userId: 'user_internal_error',
+      chatId: 'chat_internal_error',
+      messages: [{ role: 'user', content: 'hello' }],
+    }),
+    normalizeV2BidPayload: (payload) => ({
+      userId: String(payload?.userId || '').trim(),
+      chatId: String(payload?.chatId || '').trim(),
+      placementId: '',
+      messages: Array.isArray(payload?.messages) ? payload.messages : [],
+      inputDiagnostics: {
+        defaultsApplied: {
+          userIdGenerated: false,
+          chatIdDefaultedToUserId: false,
+          placementIdDefaulted: true,
+          placementIdResolvedFromDashboardDefault: false,
+          placementIdFallbackApplied: true,
+        },
+      },
+    }),
+    authorizeRuntimeCredential: async () => ({ ok: true, mode: 'anonymous' }),
+    applyRuntimeCredentialScope: (scope) => scope,
+    DEFAULT_CONTROL_PLANE_APP_ID: 'sample-client-app',
+    normalizeControlPlaneAccountId: () => 'org_demo',
+    resolveAccountIdForApp: () => 'org_demo',
+    pickPlacementForRequest: () => null,
+    PLACEMENT_ID_FROM_ANSWER: 'chat_from_answer_v1',
+    evaluateV2BidRequest: async () => {
+      const error = new Error('upstream internal error')
+      error.code = 'INTERNAL_ERROR'
+      error.statusCode = 500
+      throw error
+    },
+    createId: () => 'req_fail_open_001',
+    nowIso: () => '2026-02-27T00:00:00.000Z',
+  })
+
+  assert.equal(handled, true)
+  assert.equal(result.status, 200)
+  assert.equal(result.payload?.requestId, 'req_fail_open_001')
+  assert.equal(result.payload?.status, 'success')
+  assert.equal(result.payload?.message, 'No bid')
+  assert.equal(result.payload?.filled, false)
+  assert.equal(result.payload?.landingUrl, null)
+  assert.equal(result.payload?.decisionTrace?.reasonCode, 'upstream_error')
+  assert.equal(result.payload?.diagnostics?.reasonCode, 'upstream_non_2xx')
+  assert.equal(result.payload?.diagnostics?.upstreamStatus, 500)
+  assert.equal(result.payload?.diagnostics?.failOpenApplied, true)
+  assert.equal(result.payload?.data?.bid, null)
+  assert.equal(result.payload?.diagnostics?.inputNormalization?.defaultsApplied?.placementIdFallbackApplied, true)
+})
+
 test('control-plane routes rejects legacy placementId for integration-token issue with structured error', async () => {
   const { result, sendJson } = createSendJsonCapture()
   const handled = await handleControlPlaneRoutes({
