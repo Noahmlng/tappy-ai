@@ -65,6 +65,22 @@ function parseCorsOriginList(input) {
   return origins
 }
 
+function parseRequiredCoreInventoryNetworks(input) {
+  const allowed = new Set(['partnerstack', 'cj', 'house'])
+  const fallback = ['partnerstack', 'house']
+  const raw = String(input || '')
+    .split(',')
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter(Boolean)
+  const dedup = []
+  for (const network of raw) {
+    if (!allowed.has(network)) continue
+    if (dedup.includes(network)) continue
+    dedup.push(network)
+  }
+  return dedup.length > 0 ? dedup : fallback
+}
+
 function loadProductionGatewayConfig(env = process.env, options = {}) {
   const strict = options?.strict !== false
   const supabaseDbUrl = readEnvValue(env, 'SUPABASE_DB_URL', '')
@@ -146,7 +162,9 @@ const DASHBOARD_AUTH_REQUIRED = true
 const RUNTIME_AUTH_REQUIRED = true
 const INVENTORY_FALLBACK_WHEN_UNAVAILABLE = true
 const INVENTORY_READINESS_CACHE_TTL_MS = 30_000
-const CORE_INVENTORY_NETWORKS = Object.freeze(['partnerstack', 'cj', 'house'])
+const CORE_INVENTORY_NETWORKS = Object.freeze(
+  parseRequiredCoreInventoryNetworks(process.env.MEDIATION_REQUIRED_CORE_NETWORKS),
+)
 const INVENTORY_SYNC_COMMAND = 'npm --prefix ./mediation run inventory:sync:all'
 const MIN_AGENT_ACCESS_TTL_SECONDS = 60
 const MAX_AGENT_ACCESS_TTL_SECONDS = 900
