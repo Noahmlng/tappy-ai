@@ -1,7 +1,7 @@
 # Developer Integration Pack
 
-- Version: v1.0
-- Last Updated: 2026-02-25
+- Version: v1.1
+- Last Updated: 2026-02-27
 - Audience: SDK integrators, product reviewers, release managers
 
 This folder tracks external integration docs for the MVP-first V2 baseline:
@@ -21,6 +21,7 @@ This folder tracks external integration docs for the MVP-first V2 baseline:
 8. `08-troubleshooting-playbook.md` - troubleshooting playbook (ready)
 9. `09-version-and-compatibility-policy.md` - compatibility policy (ready)
 10. `10-release-and-rollback-runbook.md` - release/rollback runbook (draft)
+11. `11-end-to-end-integration-playbook.md` - full-chain implementation playbook (ready)
 
 ## Publishing Order
 
@@ -31,6 +32,7 @@ This folder tracks external integration docs for the MVP-first V2 baseline:
 5. `08-troubleshooting-playbook.md`
 6. `09-version-and-compatibility-policy.md`
 7. `10-release-and-rollback-runbook.md`
+8. `11-end-to-end-integration-playbook.md`
 
 ## Completion Rule
 
@@ -38,3 +40,4 @@ This folder tracks external integration docs for the MVP-first V2 baseline:
 - [ ] Quickstart can produce first requestId in <= 15 minutes.
 - [ ] API examples are copy-paste runnable and aligned with current gateway behavior.
 - [ ] Troubleshooting includes no-bid, auth, scope mismatch, and payload validation failures.
+- [ ] Full-chain playbook covers Dashboard provisioning, FastPath SDK integration, and Known Fill observability.

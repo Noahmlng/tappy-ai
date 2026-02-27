@@ -153,6 +153,9 @@
 5. Integration Pack API 参考：
 - `docs/other/integration/developer-integration-pack/03-api-sdk-reference.md`
 
+6. Integration Pack 全链路接入手册：
+- `docs/other/integration/developer-integration-pack/11-end-to-end-integration-playbook.md`
+
 <a id="readme-mediation"></a>
 ## Mediation 设计文档入口（最新）
 
