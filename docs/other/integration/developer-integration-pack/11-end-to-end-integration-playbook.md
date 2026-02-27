@@ -1,36 +1,35 @@
-# 11 - End-to-End Playbook (Single Integration Path)
+# 11 - End-to-End Integration Playbook (External Only)
 
 - Owner: Integrations Team
 - Last Updated: 2026-02-27
+- Audience: external integration engineers
 
-## 1. Target State
+## 1. Preconditions
 
-对外只保留一条接入链路：
-1. Dashboard 完成 key 与 placement 配置
-2. 应用侧调用 `runChatTurnWithAd`
-3. Runtime 统一走 `POST /api/v2/bid`
-4. 事件通过 `POST /api/v1/sdk/events` 回传
+你需要提前拿到：
+1. `MEDIATION_RUNTIME_BASE_URL`（例如 `https://runtime.example.com/api`）
+2. `MEDIATION_API_KEY`（已激活）
+3. `APP_ID`
 
-## 2. Responsibilities
+本文档默认这些前置条件都已满足，不覆盖 key 管理流程。
 
-Platform side:
-1. account/app 初始化
-2. runtime key 发行和轮换
-3. placement 配置和启用
-4. quick-start verify 与库存预检
+## 2. Target Runtime Path
 
-App side:
-1. 初始化 SDK（`apiBaseUrl + apiKey`）
-2. 每轮调用 `runChatTurnWithAd`
-3. 渲染 sponsor card（有 fill 时）
+生产只保留以下外部链路：
+1. 应用调用 `POST /api/v2/bid`
+2. 有 fill 则渲染 Sponsored 卡片
+3. 事件通过 `POST /api/v1/sdk/events` 回传
+4. Dashboard 按 `requestId` 查看 decision/event/usage
 
-## 3. SDK Template
+## 3. Implementation Steps
+
+### Step A: Integrate SDK (recommended)
 
 ```ts
 import { createAdsSdkClient } from '@ai-network/tappy-ai-mediation/sdk/client'
 
 const ads = createAdsSdkClient({
-  apiBaseUrl: process.env.MEDIATION_API_BASE_URL,
+  apiBaseUrl: process.env.MEDIATION_RUNTIME_BASE_URL,
   apiKey: process.env.MEDIATION_API_KEY,
   fetchImpl: fetch,
   fastPath: true,
@@ -49,37 +48,32 @@ export async function runTurnWithAd({ appId, userId, chatId, messages, chatDoneP
 }
 ```
 
-注意：`/api/v2/bid` 不接受 `placementId`，由 Dashboard 配置决定。
+### Step B: Confirm runtime contract
 
-## 4. SLA & Reliability
+1. 不要传 `placementId`
+2. 对 `No bid` 做正常分支处理（不是异常）
+3. 对 5xx/超时做 fail-open，主回答优先
 
-1. 主 SLA：`click -> bid response p95 <= 1000ms`
-2. `No bid` 是正常业务结果
-3. 广告链路 fail-open，不阻塞聊天主回答
+### Step C: Report events
 
-## 5. Diagnostics
+至少回传 `impression`，建议补齐 `click` 与 `postback`。
 
-客户端：
-1. `stageDurationsMs`
-2. `bidProbeStatus`
-3. `outcomeCategory`
+### Step D: Verify on Dashboard
 
-服务端：
-1. `diagnostics.timingsMs`
-2. `diagnostics.budgetExceeded`
-3. `diagnostics.timeoutSignal`
-4. `diagnostics.precheck`
+1. `Decisions` 按 `requestId` 检查结果和 reason
+2. `Events` 检查 impression/click/postback 是否入库
+3. `Usage / Revenue` 检查聚合指标是否与预期一致
 
-Dashboard 主 KPI：
-1. `bidFillRateKnown`
-2. `bidKnownCount / bidUnknownCount / unknownRate`
+## 4. Acceptance Matrix
 
-## 6. E2E Validation
+- [ ] 标准请求：`/api/v2/bid` 返回 `200 + status=success`
+- [ ] no-fill 请求：`200 + data.bid=null`
+- [ ] placement 参数保护：传 `placementId` 会返回 `400 V2_BID_PLACEMENT_ID_NOT_ALLOWED`
+- [ ] fail-open：模拟超时/上游异常时，不阻塞主回答
+- [ ] traceability：Dashboard 可按同一 `requestId` 联查 decision + event
 
-1. 聊天慢但 bid 快：1s 内返回 bid
-2. no-fill 路径：`HTTP 200 + bid=null`
-3. 上游慢：fail-open，不阻塞聊天
-4. Dashboard 可按 `requestId` 联查 decision/event
+## 5. SLA & Reliability Baseline
 
-远程数据库 CI 建议：
-1. `MEDIATION_TEST_HEALTH_TIMEOUT_MS=45000`
+1. 目标：`click -> bid response p95 <= 1000ms`
+2. 事件上报采用 at-least-once，转化用幂等键去重
+3. impression/click 不计收益，只有 successful postback conversion 计收益

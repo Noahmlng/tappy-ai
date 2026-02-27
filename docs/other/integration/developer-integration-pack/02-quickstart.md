@@ -1,4 +1,4 @@
-# 02 - Quickstart (Single Path)
+# 02 - Quickstart (Existing API Key, External Only)
 
 - Owner: Integrations Team
 - Last Updated: 2026-02-27
@@ -6,22 +6,22 @@
 
 ## 1. Goal
 
-10 分钟内完成最小接入，只保留一条路径：
-1. Dashboard 发放 runtime key（平台侧）
-2. 应用侧初始化 SDK
-3. 每轮调用一次 `runChatTurnWithAd`（FastPath）
+10 分钟内完成最小接入，只有一条运行时路径：
+1. 初始化 SDK（推荐）或直连 Runtime API
+2. 每轮对话调用一次 `runChatTurnWithAd`（或 `POST /api/v2/bid`）
+3. 有广告则渲染，无广告继续主回答
 
-## 2. App Side Required Inputs
+## 2. Inputs You Need
 
-应用方只需要：
-1. `MEDIATION_API_BASE_URL`
-2. `MEDIATION_API_KEY`
+应用侧只需要：
+1. `MEDIATION_RUNTIME_BASE_URL`（示例：`https://runtime.example.com/api`）
+2. `MEDIATION_API_KEY`（已发放）
 3. `APP_ID`
 
-应用方不需要处理：
-1. register/login
-2. key 创建接口
-3. placementId 路由参数
+应用侧不需要处理：
+1. key 创建/轮换 API
+2. register/login
+3. `placementId` 参数
 
 ## 3. Minimal SDK Integration
 
@@ -29,7 +29,7 @@
 import { createAdsSdkClient } from '@ai-network/tappy-ai-mediation/sdk/client'
 
 const ads = createAdsSdkClient({
-  apiBaseUrl: process.env.MEDIATION_API_BASE_URL,
+  apiBaseUrl: process.env.MEDIATION_RUNTIME_BASE_URL,
   apiKey: process.env.MEDIATION_API_KEY,
   fetchImpl: fetch,
   fastPath: true,
@@ -48,10 +48,10 @@ export async function runTurnWithAd({ appId, userId, chatId, messages, chatDoneP
 }
 ```
 
-## 4. Direct API (If Not Using SDK)
+## 4. Direct API (Without SDK)
 
 ```bash
-curl -sS -X POST "$MEDIATION_API_BASE_URL/v2/bid" \
+curl -sS -X POST "$MEDIATION_RUNTIME_BASE_URL/v2/bid" \
   -H "Authorization: Bearer $MEDIATION_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -64,18 +64,35 @@ curl -sS -X POST "$MEDIATION_API_BASE_URL/v2/bid" \
   }'
 ```
 
-`/api/v2/bid` 不接受 `placementId`。placement 由 Dashboard 配置解析。
+可选事件上报（建议保留）：
 
-## 5. Behavior Contract
+```bash
+curl -sS -X POST "$MEDIATION_RUNTIME_BASE_URL/v1/sdk/events" \
+  -H "Authorization: Bearer $MEDIATION_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "requestId": "adreq_xxx",
+    "sessionId": "chat_001",
+    "turnId": "turn_001",
+    "query": "camera for vlogging",
+    "answerText": "Consider compact options",
+    "intentScore": 0.8,
+    "locale": "en-US",
+    "kind": "impression",
+    "adId": "v2_bid_xxx"
+  }'
+```
 
-1. `No bid` 为正常结果：`HTTP 200 + status=success + data.bid=null`
-2. 广告链路必须 fail-open，不阻塞聊天主回答
-3. 主 SLA：`click -> bid response p95 <= 1000ms`
+## 5. Non-Negotiable Contract
+
+1. `/api/v2/bid` 不接受 `placementId`，传入会返回 `400 V2_BID_PLACEMENT_ID_NOT_ALLOWED`
+2. `No bid` 是正常结果：`HTTP 200 + status=success + data.bid=null`
+3. 广告链路必须 fail-open，不阻塞聊天主回答
 
 ## 6. Pass Checklist
 
-- [ ] 应用侧仅使用单一路径（SDK helper 或 `POST /v2/bid`）
-- [ ] 不需要传 `placementId`
-- [ ] `No bid` 路径正常
-- [ ] fail-open 路径正常
-- [ ] Dashboard 能按 `requestId` 查到 decision/event
+- [ ] 只走 `runChatTurnWithAd` 或 `POST /v2/bid` 单一路径
+- [ ] 不传 `placementId`
+- [ ] `No bid` 路径按正常逻辑处理
+- [ ] 超时/上游异常时 fail-open
+- [ ] Dashboard 能按 `requestId` 查询到 decision/event

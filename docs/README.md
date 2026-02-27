@@ -27,7 +27,7 @@
 
 ## 3) 其他资料（`other/`）
 
-- `other/integration/`（quickstart、api reference、runbook）
+- `other/integration/`（外部接入入口与联调说明）
 - `other/integration/local-ads-debug-pipeline.md`（本地广告联调排障 Pipeline，含 no-bid 根因分型）
-- `other/integration/developer-integration-pack/`（10份接入内容模板）
+- `other/integration/developer-integration-pack/`（对外生效文档入口：00/02/03/11）
 - `other/project-structure.md`
