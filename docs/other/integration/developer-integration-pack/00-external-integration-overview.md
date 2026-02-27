@@ -40,16 +40,15 @@
 import { createAdsSdkClient } from '@ai-network/tappy-ai-mediation/sdk/client'
 
 const ads = createAdsSdkClient({
-  apiBaseUrl: process.env.MEDIATION_RUNTIME_BASE_URL, // 示例: https://runtime.example.com/api
+  apiBaseUrl: process.env.MEDIATION_RUNTIME_BASE_URL || '/api', // 独立域名时传 BASE_URL，同域可用 /api
   apiKey: process.env.MEDIATION_API_KEY,
   fetchImpl: fetch,
   fastPath: true,
   timeouts: { config: 1200, bid: 1200, events: 800 },
 })
 
-export async function runTurnWithAd({ appId, userId, chatId, messages, chatDonePromise }) {
+export async function runTurnWithAd({ userId, chatId, messages, chatDonePromise }) {
   return ads.runChatTurnWithAd({
-    appId,
     userId,
     chatId,
     messages,

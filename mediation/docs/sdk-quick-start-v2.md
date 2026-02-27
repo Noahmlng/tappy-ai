@@ -6,9 +6,13 @@
 
 ## 1. What You Need
 
-1. `ADS_BASE_URL` (e.g. `https://your-domain/api`)
-2. `ADS_API_KEY` (runtime key from Dashboard)
-3. `APP_ID`
+1. `ADS_API_KEY` (runtime key from Dashboard, required)
+2. `ADS_BASE_URL` (optional)
+
+Notes:
+1. If your app proxies runtime on same origin (`/api`), `ADS_BASE_URL` can be omitted.
+2. If runtime is on a separate domain, set `ADS_BASE_URL` (e.g. `https://your-domain/api`).
+3. `APP_ID` is not required in external runtime requests; runtime resolves scope from key.
 
 `/api/v2/bid` 不接受 `placementId`，由 Dashboard 配置决定 placement。
 
@@ -18,16 +22,15 @@
 import { createAdsSdkClient } from '@ai-network/tappy-ai-mediation/sdk/client'
 
 const ads = createAdsSdkClient({
-  apiBaseUrl: process.env.ADS_BASE_URL,
+  apiBaseUrl: process.env.ADS_BASE_URL || '/api',
   apiKey: process.env.ADS_API_KEY,
   fetchImpl: fetch,
   fastPath: true,
   timeouts: { config: 1200, bid: 1200, events: 800 },
 })
 
-export async function runTurnWithAd({ appId, userId, chatId, messages, chatDonePromise }) {
+export async function runTurnWithAd({ userId, chatId, messages, chatDonePromise }) {
   return ads.runChatTurnWithAd({
-    appId,
     userId,
     chatId,
     messages,

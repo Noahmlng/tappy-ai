@@ -19,9 +19,13 @@
 ## 2. 前置条件
 
 你需要提前拿到：
-1. `MEDIATION_RUNTIME_BASE_URL`（例如 `https://runtime.example.com/api`）
-2. `MEDIATION_API_KEY`
-3. `APP_ID`
+1. `MEDIATION_API_KEY`（必需）
+2. `MEDIATION_RUNTIME_BASE_URL`（可选）
+
+说明：
+1. 当你的应用通过同域 `/api` 转发到 runtime 时，可不显式配置 `MEDIATION_RUNTIME_BASE_URL`。
+2. 当 runtime 是独立域名时，必须配置 `MEDIATION_RUNTIME_BASE_URL`（例如 `https://runtime.example.com/api`）。
+3. `APP_ID` 不需要外部传入，运行时会按 key scope 解析。
 
 ## 3. 生产唯一接入链路
 
@@ -41,16 +45,15 @@
 import { createAdsSdkClient } from '@ai-network/tappy-ai-mediation/sdk/client'
 
 const ads = createAdsSdkClient({
-  apiBaseUrl: process.env.MEDIATION_RUNTIME_BASE_URL,
+  apiBaseUrl: process.env.MEDIATION_RUNTIME_BASE_URL || '/api',
   apiKey: process.env.MEDIATION_API_KEY,
   fetchImpl: fetch,
   fastPath: true,
   timeouts: { config: 1200, bid: 1200, events: 800 },
 })
 
-export async function runTurnWithAd({ appId, userId, chatId, messages, chatDonePromise }) {
+export async function runTurnWithAd({ userId, chatId, messages, chatDonePromise }) {
   return ads.runChatTurnWithAd({
-    appId,
     userId,
     chatId,
     messages,
