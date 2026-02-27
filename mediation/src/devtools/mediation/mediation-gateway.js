@@ -235,6 +235,13 @@ const ATTACH_MVP_PLACEMENT_KEY = 'attach.post_answer_render'
 const ATTACH_MVP_EVENT = 'answer_completed'
 const NEXT_STEP_INTENT_CARD_PLACEMENT_KEY = 'next_step.intent_card'
 const V2_BID_EVENT = 'v2_bid_request'
+const V2_BID_BUDGET_MS = Object.freeze({
+  intent: 300,
+  retrieval: 350,
+  ranking: 200,
+  delivery: 200,
+  total: 1000,
+})
 const V2_BID_ALLOWED_FIELDS = new Set([
   'userId',
   'chatId',
@@ -797,7 +804,15 @@ function mapOpportunityReasonToDecision(reasonCode = '', served = false) {
   if (served) return 'served'
   if (reasonCode === 'policy_blocked') return 'blocked'
   if (reasonCode === 'placement_unavailable') return 'blocked'
-  if (reasonCode === 'inventory_no_match' || reasonCode === 'rank_below_floor' || reasonCode === 'inventory_empty') return 'no_fill'
+  if (
+    reasonCode === 'inventory_no_match'
+    || reasonCode === 'rank_below_floor'
+    || reasonCode === 'inventory_empty'
+    || reasonCode === 'upstream_timeout'
+    || reasonCode === 'upstream_error'
+  ) {
+    return 'no_fill'
+  }
   return 'error'
 }
 
@@ -5892,6 +5907,45 @@ function resolveTriggerTypeByPlacementId(placementId = '') {
   return 'from_answer'
 }
 
+function isTimeoutLikeMessage(value) {
+  const text = String(value || '').trim().toLowerCase()
+  if (!text) return false
+  return text.includes('timeout') || text.includes('timed out') || text.includes('abort')
+}
+
+function normalizeInventoryPrecheck(value, errorMessage = '') {
+  const summary = value && typeof value === 'object' ? value : {}
+  return {
+    ready: typeof summary.ready === 'boolean' ? summary.ready : null,
+    totalOffers: toPositiveInteger(summary.totalOffers, 0),
+    missingNetworks: Array.isArray(summary.missingNetworks) ? summary.missingNetworks : [],
+    checkedAt: String(summary.checkedAt || '').trim(),
+    error: String(errorMessage || '').trim(),
+  }
+}
+
+function buildV2BidBudgetSignal(stageDurationsMs = {}, budgetMs = V2_BID_BUDGET_MS) {
+  const durations = stageDurationsMs && typeof stageDurationsMs === 'object' ? stageDurationsMs : {}
+  const exceeded = {
+    intent: toPositiveInteger(durations.intent, 0) > toPositiveInteger(budgetMs.intent, 0),
+    retrieval: toPositiveInteger(durations.retrieval, 0) > toPositiveInteger(budgetMs.retrieval, 0),
+    ranking: toPositiveInteger(durations.ranking, 0) > toPositiveInteger(budgetMs.ranking, 0),
+    delivery: toPositiveInteger(durations.delivery, 0) > toPositiveInteger(budgetMs.delivery, 0),
+    total: toPositiveInteger(durations.total, 0) > toPositiveInteger(budgetMs.total, 0),
+  }
+  const stage = ['intent', 'retrieval', 'ranking', 'delivery', 'total']
+    .find((item) => exceeded[item]) || ''
+  return {
+    budgetMs,
+    budgetExceeded: exceeded,
+    timeoutSignal: {
+      occurred: Boolean(stage),
+      stage,
+      budgetMs: stage ? toPositiveInteger(budgetMs[stage], 0) : 0,
+    },
+  }
+}
+
 async function evaluateV2BidOpportunityFirst(payload) {
   const request = payload && typeof payload === 'object' ? payload : {}
   request.appId = String(request.appId || DEFAULT_CONTROL_PLANE_APP_ID).trim()
@@ -5925,6 +5979,23 @@ async function evaluateV2BidOpportunityFirst(payload) {
     delivery: 'pending',
     attribution: 'pending',
   }
+  const stageDurationsMs = {
+    intent: 0,
+    retrieval: 0,
+    ranking: 0,
+    delivery: 0,
+    total: 0,
+  }
+  let precheckInventory = normalizeInventoryPrecheck()
+  try {
+    const inventoryReadiness = await getCachedInventoryReadinessSummary()
+    precheckInventory = normalizeInventoryPrecheck(inventoryReadiness)
+  } catch (error) {
+    precheckInventory = normalizeInventoryPrecheck(
+      null,
+      error instanceof Error ? error.message : 'inventory_precheck_failed',
+    )
+  }
 
   const blockedTopics = normalizeStringList(placement?.trigger?.blockedTopics)
   const intentThreshold = clampNumber(placement?.trigger?.intentThreshold, 0, 1, 0.6)
@@ -5943,6 +6014,7 @@ async function evaluateV2BidOpportunityFirst(payload) {
     source: 'rule',
     latencyMs: 0,
   }
+  let upstreamFailure = null
 
   if (!placement || placement.enabled === false) {
     reasonCode = 'placement_unavailable'
@@ -5952,18 +6024,30 @@ async function evaluateV2BidOpportunityFirst(payload) {
     stageStatusMap.ranking = 'skipped'
     stageStatusMap.delivery = 'pending'
   } else {
-    const runtimeConfig = loadRuntimeConfig(process.env, { strict: false })
-    intent = await scoreIntentOpportunityFirst({
-      query: messageContext.query,
-      answerText: messageContext.answerText,
-      locale: 'en-US',
-      recentTurns: messageContext.recentTurns,
-    }, {
-      runtimeConfig,
-      useLlmFallback: isLlmIntentFallbackEnabled(),
-      llmTimeoutMs: 300,
-    })
-    stageStatusMap.intent = 'ok'
+    const intentStartedAt = Date.now()
+    try {
+      const runtimeConfig = loadRuntimeConfig(process.env, { strict: false })
+      intent = await scoreIntentOpportunityFirst({
+        query: messageContext.query,
+        answerText: messageContext.answerText,
+        locale: 'en-US',
+        recentTurns: messageContext.recentTurns,
+      }, {
+        runtimeConfig,
+        useLlmFallback: isLlmIntentFallbackEnabled(),
+        llmTimeoutMs: 300,
+      })
+      stageStatusMap.intent = 'ok'
+    } catch (error) {
+      upstreamFailure = {
+        stage: 'intent',
+        error: error instanceof Error ? error.message : 'intent_failed',
+        timeout: isTimeoutLikeMessage(error instanceof Error ? error.message : ''),
+      }
+      stageStatusMap.intent = 'error'
+    } finally {
+      stageDurationsMs.intent = Math.max(0, Date.now() - intentStartedAt)
+    }
   }
 
   const decisionRequest = {
@@ -6010,6 +6094,13 @@ async function evaluateV2BidOpportunityFirst(payload) {
     reasonCode = 'placement_unavailable'
     stageStatusMap.retrieval = 'skipped'
     stageStatusMap.ranking = 'skipped'
+  } else if (upstreamFailure) {
+    reasonCode = upstreamFailure.timeout ? 'upstream_timeout' : 'upstream_error'
+    stageStatusMap.retrieval = 'skipped'
+    stageStatusMap.ranking = 'skipped'
+    rankingDebug = {
+      upstreamFailure,
+    }
   } else {
     const blockedTopic = matchBlockedTopic(
       {
@@ -6036,62 +6127,85 @@ async function evaluateV2BidOpportunityFirst(payload) {
         intentScore: intent.score,
       }
     } else {
-      const retrieval = await retrieveOpportunityCandidates({
-        query: messageContext.query,
-        filters: {
-          networks: deriveInventoryNetworksFromPlacement(placement),
-          market: 'US',
-          language: 'en-US',
-        },
-        lexicalTopK: 28,
-        vectorTopK: 28,
-        finalTopK: 24,
-      }, {
-        pool: isPostgresSettlementStore() ? settlementStore.pool : null,
-        enableFallbackWhenInventoryUnavailable: isInventoryFallbackEnabled(),
-        fallbackProvider: fetchLiveFallbackOpportunityCandidates,
-      })
-
-      retrievalDebug = retrieval?.debug && typeof retrieval.debug === 'object'
-        ? retrieval.debug
-        : retrievalDebug
-      stageStatusMap.retrieval = toPositiveInteger(retrievalDebug.fusedHitCount, 0) > 0 ? 'hit' : 'miss'
-
-      const ranking = rankOpportunityCandidates({
-        candidates: Array.isArray(retrieval?.candidates) ? retrieval.candidates : [],
-        query: messageContext.query,
-        answerText: messageContext.answerText,
-        blockedTopics,
-        intentScore: intent.score,
-        scoreFloor: 0.32,
-        placementId,
-        triggerType,
-        placement: 'block',
-      })
-
-      rankingDebug = ranking?.debug && typeof ranking.debug === 'object' ? ranking.debug : {}
-      reasonCode = String(ranking?.reasonCode || 'inventory_no_match')
-      stageStatusMap.ranking = ranking?.winner ? 'selected' : 'no_fill'
-      winnerBid = ranking?.winner?.bid && typeof ranking.winner.bid === 'object'
-        ? ranking.winner.bid
-        : null
-      if (winnerBid) {
-        winnerBid = injectTrackingScopeIntoBid(winnerBid, {
-          accountId: request.accountId,
+      try {
+        const retrievalStartedAt = Date.now()
+        const retrieval = await retrieveOpportunityCandidates({
+          query: messageContext.query,
+          filters: {
+            networks: deriveInventoryNetworksFromPlacement(placement),
+            market: 'US',
+            language: 'en-US',
+          },
+          lexicalTopK: 28,
+          vectorTopK: 28,
+          finalTopK: 24,
+        }, {
+          pool: isPostgresSettlementStore() ? settlementStore.pool : null,
+          enableFallbackWhenInventoryUnavailable: isInventoryFallbackEnabled(),
+          fallbackProvider: fetchLiveFallbackOpportunityCandidates,
         })
-      }
-      if (
-        !winnerBid
-        && reasonCode === 'inventory_no_match'
-        && toPositiveInteger(retrievalDebug?.fusedHitCount, 0) <= 0
-      ) {
-        const inventoryReadiness = await getCachedInventoryReadinessSummary()
+        stageDurationsMs.retrieval = Math.max(0, Date.now() - retrievalStartedAt)
+
+        retrievalDebug = retrieval?.debug && typeof retrieval.debug === 'object'
+          ? retrieval.debug
+          : retrievalDebug
+        stageStatusMap.retrieval = toPositiveInteger(retrievalDebug.fusedHitCount, 0) > 0 ? 'hit' : 'miss'
+
+        const rankingStartedAt = Date.now()
+        const ranking = rankOpportunityCandidates({
+          candidates: Array.isArray(retrieval?.candidates) ? retrieval.candidates : [],
+          query: messageContext.query,
+          answerText: messageContext.answerText,
+          blockedTopics,
+          intentScore: intent.score,
+          scoreFloor: 0.32,
+          placementId,
+          triggerType,
+          placement: 'block',
+        })
+        stageDurationsMs.ranking = Math.max(0, Date.now() - rankingStartedAt)
+
+        rankingDebug = ranking?.debug && typeof ranking.debug === 'object' ? ranking.debug : {}
+        reasonCode = String(ranking?.reasonCode || 'inventory_no_match')
+        stageStatusMap.ranking = ranking?.winner ? 'selected' : 'no_fill'
+        winnerBid = ranking?.winner?.bid && typeof ranking.winner.bid === 'object'
+          ? ranking.winner.bid
+          : null
+        if (winnerBid) {
+          winnerBid = injectTrackingScopeIntoBid(winnerBid, {
+            accountId: request.accountId,
+          })
+        }
+        if (
+          !winnerBid
+          && reasonCode === 'inventory_no_match'
+          && toPositiveInteger(retrievalDebug?.fusedHitCount, 0) <= 0
+          && precheckInventory.ready === false
+          && precheckInventory.totalOffers <= 0
+        ) {
+          reasonCode = 'inventory_empty'
+          rankingDebug = {
+            ...rankingDebug,
+            inventoryReadiness: {
+              ready: precheckInventory.ready,
+              totalOffers: precheckInventory.totalOffers,
+              missingNetworks: precheckInventory.missingNetworks,
+              checkedAt: precheckInventory.checkedAt,
+            },
+          }
+        }
+      } catch (error) {
+        upstreamFailure = {
+          stage: 'retrieval_or_ranking',
+          error: error instanceof Error ? error.message : 'retrieval_or_ranking_failed',
+          timeout: isTimeoutLikeMessage(error instanceof Error ? error.message : ''),
+        }
+        reasonCode = upstreamFailure.timeout ? 'upstream_timeout' : 'upstream_error'
+        stageStatusMap.retrieval = stageStatusMap.retrieval === 'pending' ? 'error' : stageStatusMap.retrieval
+        stageStatusMap.ranking = 'error'
         rankingDebug = {
           ...rankingDebug,
-          inventoryReadiness,
-        }
-        if (toPositiveInteger(inventoryReadiness?.totalOffers, 0) <= 0) {
-          reasonCode = 'inventory_empty'
+          upstreamFailure,
         }
       }
     }
@@ -6102,6 +6216,7 @@ async function evaluateV2BidOpportunityFirst(payload) {
     ? winnerBid.pricing
     : null
   const pricingVersion = String(pricingSnapshot?.modelVersion || rankingDebug?.pricingModel || 'cpa_mock_v2').trim()
+  const deliveryStartedAt = Date.now()
   await writer.writeDeliveryRecord({
     requestId,
     opportunityKey: opportunityRecord.opportunityKey,
@@ -6130,6 +6245,9 @@ async function evaluateV2BidOpportunityFirst(payload) {
       updatedAt: nowIso(),
     },
   )
+  stageDurationsMs.delivery = Math.max(0, Date.now() - deliveryStartedAt)
+  stageDurationsMs.total = Math.max(0, Date.now() - startedAt)
+  const budgetSignal = buildV2BidBudgetSignal(stageDurationsMs, V2_BID_BUDGET_MS)
   stageStatusMap.delivery = 'persisted'
 
   const decisionResult = mapOpportunityReasonToDecision(reasonCode, Boolean(winnerBid))
@@ -6143,6 +6261,18 @@ async function evaluateV2BidOpportunityFirst(payload) {
     bidV2: true,
     reasonCode,
     stageStatusMap,
+    stageDurationsMs,
+    budgetMs: budgetSignal.budgetMs,
+    budgetExceeded: budgetSignal.budgetExceeded,
+    timeoutSignal: budgetSignal.timeoutSignal,
+    precheck: {
+      placement: {
+        exists: Boolean(placement),
+        enabled: placement?.enabled !== false,
+        placementId,
+      },
+      inventory: precheckInventory,
+    },
     retrievalDebug,
     rankingDebug,
     intent,
@@ -6185,7 +6315,11 @@ async function evaluateV2BidOpportunityFirst(payload) {
     runtime: {
       ...runtimeDebug,
       metrics: {
-        bid_latency_ms: Math.max(0, Date.now() - startedAt),
+        bid_latency_ms: stageDurationsMs.total,
+        stage_intent_ms: stageDurationsMs.intent,
+        stage_retrieval_ms: stageDurationsMs.retrieval,
+        stage_ranking_ms: stageDurationsMs.ranking,
+        stage_delivery_ms: stageDurationsMs.delivery,
         retrieval_hit_count: toPositiveInteger(retrievalDebug?.fusedHitCount, 0),
         lexical_hit_count: toPositiveInteger(retrievalDebug?.lexicalHitCount, 0),
         vector_hit_count: toPositiveInteger(retrievalDebug?.vectorHitCount, 0),
@@ -6229,9 +6363,21 @@ async function evaluateV2BidOpportunityFirst(payload) {
           }
         : {}),
       stageStatusMap,
+      timingsMs: stageDurationsMs,
+      budgetMs: budgetSignal.budgetMs,
+      budgetExceeded: budgetSignal.budgetExceeded,
+      timeoutSignal: budgetSignal.timeoutSignal,
+      precheck: {
+        placement: {
+          exists: Boolean(placement),
+          enabled: placement?.enabled !== false,
+          placementId,
+        },
+        inventory: precheckInventory,
+      },
       retrievalDebug,
       rankingDebug,
-      bidLatencyMs: Math.max(0, Date.now() - startedAt),
+      bidLatencyMs: stageDurationsMs.total,
     },
   }
 }
@@ -6807,6 +6953,8 @@ function computeScopedMetricsSummary(decisionRows, eventRows, factRows, controlP
   const requests = decisionRows.length
   const servedRows = decisionRows.filter((row) => String(row?.result || '') === 'served')
   const served = servedRows.length
+  const bidKnownCount = decisionRows.filter((row) => String(row?.result || '') !== 'error').length
+  const bidUnknownCount = Math.max(0, requests - bidKnownCount)
   const impressions = served
   const clicks = eventRows.filter((row) => {
     if (String(row?.eventType || '') !== 'sdk_event') return false
@@ -6817,6 +6965,14 @@ function computeScopedMetricsSummary(decisionRows, eventRows, factRows, controlP
   const ctr = impressions > 0 ? clicks / impressions : 0
   const ecpm = impressions > 0 ? (revenueUsd / impressions) * 1000 : 0
   const fillRate = requests > 0 ? served / requests : 0
+  const bidFillRateKnown = bidKnownCount > 0 ? served / bidKnownCount : 0
+  const unknownRate = requests > 0 ? bidUnknownCount / requests : 0
+  const resultBreakdown = {
+    served: decisionRows.filter((row) => String(row?.result || '') === 'served').length,
+    noFill: decisionRows.filter((row) => String(row?.result || '') === 'no_fill').length,
+    blocked: decisionRows.filter((row) => String(row?.result || '') === 'blocked').length,
+    error: decisionRows.filter((row) => String(row?.result || '') === 'error').length,
+  }
   const placementUnavailableCount = decisionRows.filter((row) => (
     String(row?.reasonDetail || row?.reason || '').trim() === 'placement_unavailable'
   )).length
@@ -6827,6 +6983,25 @@ function computeScopedMetricsSummary(decisionRows, eventRows, factRows, controlP
     String(row?.action || '').trim() === 'agent_access_deny'
     && String(row?.metadata?.code || '').toUpperCase().includes('SCOPE_VIOLATION')
   )).length
+  const timeoutRelatedCount = decisionRows.filter((row) => {
+    const runtime = row?.runtime && typeof row.runtime === 'object' ? row.runtime : {}
+    if (runtime?.timeoutSignal?.occurred === true) return true
+    const reasonCode = String(runtime.reasonCode || row?.reasonDetail || row?.reason || '').toLowerCase()
+    if (reasonCode.includes('timeout')) return true
+    const upstreamMessage = String(runtime?.rankingDebug?.upstreamFailure?.error || '').toLowerCase()
+    return upstreamMessage.includes('timeout')
+  }).length
+  const precheckInventoryNotReadyCount = decisionRows.filter((row) => {
+    const runtime = row?.runtime && typeof row.runtime === 'object' ? row.runtime : {}
+    return runtime?.precheck?.inventory?.ready === false
+  }).length
+  const budgetExceededCount = decisionRows.filter((row) => {
+    const runtime = row?.runtime && typeof row.runtime === 'object' ? row.runtime : {}
+    const exceeded = runtime?.budgetExceeded && typeof runtime.budgetExceeded === 'object'
+      ? runtime.budgetExceeded
+      : {}
+    return Object.values(exceeded).some(Boolean)
+  }).length
 
   return {
     revenueUsd: round(revenueUsd, 2),
@@ -6835,6 +7010,14 @@ function computeScopedMetricsSummary(decisionRows, eventRows, factRows, controlP
     ctr: round(ctr, 4),
     ecpm: round(ecpm, 2),
     fillRate: round(fillRate, 4),
+    bidKnownCount,
+    bidUnknownCount,
+    bidFillRateKnown: round(bidFillRateKnown, 4),
+    unknownRate: round(unknownRate, 4),
+    resultBreakdown,
+    timeoutRelatedCount,
+    precheckInventoryNotReadyCount,
+    budgetExceededCount,
     reasonCounts: {
       placementUnavailable: placementUnavailableCount,
       inventoryEmpty: inventoryEmptyCount,

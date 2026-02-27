@@ -109,6 +109,18 @@ test('metrics summary exposes placement_unavailable/inventory_empty/scope_violat
       { result: 'blocked', reasonDetail: 'placement_unavailable' },
       { result: 'no_fill', reasonDetail: 'inventory_empty' },
       { result: 'no_fill', reasonDetail: 'inventory_no_match' },
+      {
+        result: 'error',
+        reasonDetail: 'runtime_pipeline_fail_open',
+        runtime: {
+          timeoutSignal: { occurred: true, stage: 'total', budgetMs: 1000 },
+          precheck: {
+            inventory: { ready: false },
+          },
+          budgetExceeded: { total: true },
+          reasonCode: 'upstream_timeout',
+        },
+      },
     ],
     [
       { eventType: 'sdk_event', kind: 'click' },
@@ -124,7 +136,16 @@ test('metrics summary exposes placement_unavailable/inventory_empty/scope_violat
   assert.equal(summary.reasonCounts?.placementUnavailable, 1)
   assert.equal(summary.reasonCounts?.inventoryEmpty, 1)
   assert.equal(summary.reasonCounts?.scopeViolation, 1)
-  assert.equal(summary.reasonRatios?.placementUnavailable, 0.25)
-  assert.equal(summary.reasonRatios?.inventoryEmpty, 0.25)
-  assert.equal(summary.reasonRatios?.scopeViolation, 0.25)
+  assert.equal(summary.reasonRatios?.placementUnavailable, 0.2)
+  assert.equal(summary.reasonRatios?.inventoryEmpty, 0.2)
+  assert.equal(summary.reasonRatios?.scopeViolation, 0.2)
+  assert.equal(summary.bidKnownCount, 4)
+  assert.equal(summary.bidUnknownCount, 1)
+  assert.equal(summary.bidFillRateKnown, 0.25)
+  assert.equal(summary.unknownRate, 0.2)
+  assert.equal(summary.resultBreakdown?.served, 1)
+  assert.equal(summary.resultBreakdown?.error, 1)
+  assert.equal(summary.timeoutRelatedCount, 1)
+  assert.equal(summary.precheckInventoryNotReadyCount, 1)
+  assert.equal(summary.budgetExceededCount, 1)
 })

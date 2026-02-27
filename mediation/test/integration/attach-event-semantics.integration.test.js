@@ -95,6 +95,16 @@ function createFetchMock({ decisionResult = 'no_fill', ads = [] } = {}) {
   }
 }
 
+function createDeferred() {
+  let resolve
+  let reject
+  const promise = new Promise((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 function buildAttachInput() {
   return {
     appId: 'sample-client-app',
@@ -279,4 +289,186 @@ test('sdk next_step flow: served decision reports impression with kind and adId'
   assert.equal(eventCalls[0].body.adId, 'next_item_001')
   assert.equal(eventCalls[0].body.placementId, 'chat_intent_recommendation_v1')
   assert.equal(eventCalls[0].body.placementKey, 'next_step.intent_card')
+})
+
+test('sdk managed flow: bid timeout defaults to fail-open no_fill', async () => {
+  const calls = []
+  const fetchImpl = async (url, init = {}) => {
+    const parsedUrl = new URL(url, 'http://localhost')
+    const method = String(init.method || 'GET').toUpperCase()
+    calls.push({ method, pathname: parsedUrl.pathname })
+
+    if (parsedUrl.pathname === '/api/v1/mediation/config') {
+      return createJsonResponse(200, {
+        placements: [
+          {
+            placementId: 'chat_from_answer_v1',
+            placementKey: 'attach.post_answer_render',
+            enabled: true,
+          },
+        ],
+      })
+    }
+    if (parsedUrl.pathname === '/api/v2/bid') {
+      throw new Error('network timeout while requesting bid')
+    }
+    throw new Error(`unexpected request: ${method} ${parsedUrl.pathname}`)
+  }
+
+  const sdkClient = createAdsSdkClient({
+    apiBaseUrl: '/api',
+    fetchImpl,
+  })
+
+  const flow = await sdkClient.runManagedFlow({
+    appId: 'sample-client-app',
+    placementId: 'chat_from_answer_v1',
+    placementKey: 'attach.post_answer_render',
+    userId: 'user_timeout_001',
+    chatId: 'chat_timeout_001',
+    bidPayload: {
+      userId: 'user_timeout_001',
+      chatId: 'chat_timeout_001',
+      placementId: 'chat_from_answer_v1',
+      messages: [{ role: 'user', content: 'best broker offer' }],
+    },
+  })
+
+  assert.equal(calls.some((item) => item.pathname === '/api/v2/bid'), true)
+  assert.equal(flow.failOpenApplied, true)
+  assert.equal(flow.decision.result, 'no_fill')
+  assert.equal(flow.decision.reasonDetail, 'bid_timeout_fail_open')
+})
+
+test('sdk runChatTurnWithAd: fastPath starts bid before chatDone promise resolves', async () => {
+  const callTimestamps = {
+    bidCalledAt: 0,
+    chatResolvedAt: 0,
+  }
+  const chatDone = createDeferred()
+
+  const fetchImpl = async (url) => {
+    const parsedUrl = new URL(url, 'http://localhost')
+    if (parsedUrl.pathname === '/api/v1/mediation/config') {
+      return createJsonResponse(200, {
+        placements: [
+          {
+            placementId: 'chat_from_answer_v1',
+            placementKey: 'attach.post_answer_render',
+            enabled: true,
+          },
+        ],
+      })
+    }
+    if (parsedUrl.pathname === '/api/v2/bid') {
+      callTimestamps.bidCalledAt = Date.now()
+      return createJsonResponse(200, {
+        requestId: 'adreq_fastpath_001',
+        status: 'success',
+        message: 'No bid',
+        data: { bid: null },
+      })
+    }
+    if (parsedUrl.pathname === '/api/v1/sdk/events') {
+      return createJsonResponse(200, { ok: true })
+    }
+    throw new Error(`unexpected request: ${parsedUrl.pathname}`)
+  }
+
+  const sdkClient = createAdsSdkClient({
+    apiBaseUrl: '/api',
+    fetchImpl,
+  })
+
+  const turnPromise = sdkClient.runChatTurnWithAd({
+    appId: 'sample-client-app',
+    placementId: 'chat_from_answer_v1',
+    placementKey: 'attach.post_answer_render',
+    userId: 'user_fastpath_001',
+    chatId: 'chat_fastpath_001',
+    bidPayload: {
+      userId: 'user_fastpath_001',
+      chatId: 'chat_fastpath_001',
+      placementId: 'chat_from_answer_v1',
+      messages: [{ role: 'user', content: 'best broker offer' }],
+    },
+    chatDonePromise: chatDone.promise,
+  })
+
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  callTimestamps.chatResolvedAt = Date.now()
+  chatDone.resolve()
+  const flow = await turnPromise
+
+  assert.equal(flow.diagnostics.fastPath, true)
+  assert.equal(flow.diagnostics.bidProbeStatus, 'seen')
+  assert.equal(callTimestamps.bidCalledAt > 0, true)
+  assert.equal(callTimestamps.bidCalledAt <= callTimestamps.chatResolvedAt, true)
+})
+
+test('sdk runChatTurnWithAd: fastPath=false waits for chatDone before bid', async () => {
+  const callTimestamps = {
+    bidCalledAt: 0,
+    chatResolvedAt: 0,
+  }
+  const chatDone = createDeferred()
+
+  const fetchImpl = async (url) => {
+    const parsedUrl = new URL(url, 'http://localhost')
+    if (parsedUrl.pathname === '/api/v1/mediation/config') {
+      return createJsonResponse(200, {
+        placements: [
+          {
+            placementId: 'chat_from_answer_v1',
+            placementKey: 'attach.post_answer_render',
+            enabled: true,
+          },
+        ],
+      })
+    }
+    if (parsedUrl.pathname === '/api/v2/bid') {
+      callTimestamps.bidCalledAt = Date.now()
+      return createJsonResponse(200, {
+        requestId: 'adreq_slowpath_001',
+        status: 'success',
+        message: 'No bid',
+        data: { bid: null },
+      })
+    }
+    if (parsedUrl.pathname === '/api/v1/sdk/events') {
+      return createJsonResponse(200, { ok: true })
+    }
+    throw new Error(`unexpected request: ${parsedUrl.pathname}`)
+  }
+
+  const sdkClient = createAdsSdkClient({
+    apiBaseUrl: '/api',
+    fetchImpl,
+  })
+
+  const turnPromise = sdkClient.runChatTurnWithAd({
+    appId: 'sample-client-app',
+    placementId: 'chat_from_answer_v1',
+    placementKey: 'attach.post_answer_render',
+    userId: 'user_slowpath_001',
+    chatId: 'chat_slowpath_001',
+    bidPayload: {
+      userId: 'user_slowpath_001',
+      chatId: 'chat_slowpath_001',
+      placementId: 'chat_from_answer_v1',
+      messages: [{ role: 'user', content: 'best broker offer' }],
+    },
+    fastPath: false,
+    chatDonePromise: chatDone.promise,
+  })
+
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  callTimestamps.chatResolvedAt = Date.now()
+  chatDone.resolve()
+  const flow = await turnPromise
+
+  assert.equal(flow.diagnostics.fastPath, false)
+  assert.equal(flow.diagnostics.bidProbeStatus, 'seen')
+  assert.equal(callTimestamps.bidCalledAt > 0, true)
+  assert.equal(callTimestamps.bidCalledAt >= callTimestamps.chatResolvedAt, true)
 })

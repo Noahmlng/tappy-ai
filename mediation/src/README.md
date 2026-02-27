@@ -63,4 +63,6 @@
   - `fetchConfig`（`/api/v1/mediation/config`）
   - `requestBid`（`/api/v2/bid`）
   - `reportEvent`（`/api/v1/sdk/events`）
+  - `runChatTurnWithAd`（FastPath 默认开启；可通过 `fastPath=false` 改为等待 chat done 再触发）
   - `runAttachFlow` / `runNextStepFlow`（内部统一执行 `config -> v2/bid -> events`，并内置 fail-open）。
+  - 诊断回调：`onDiagnostics(diagnostics, flow)`，输出 `stageDurationsMs`、`bidProbeStatus`、`outcomeCategory`。

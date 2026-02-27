@@ -196,6 +196,16 @@ test('v2 bid API returns unified response and legacy evaluate endpoint is remove
     assert.equal(Boolean(bid.payload?.decisionTrace?.stageStatus), true)
     assert.equal(typeof bid.payload?.diagnostics?.triggerType, 'string')
     assert.equal(bid.payload?.diagnostics?.pricingVersion, 'cpa_mock_v2')
+    assert.equal(typeof bid.payload?.diagnostics?.timingsMs?.total, 'number')
+    assert.equal(typeof bid.payload?.diagnostics?.budgetMs?.total, 'number')
+    assert.equal(typeof bid.payload?.diagnostics?.budgetExceeded?.total, 'boolean')
+    assert.equal(typeof bid.payload?.diagnostics?.timeoutSignal?.occurred, 'boolean')
+    assert.equal(typeof bid.payload?.diagnostics?.precheck?.placement?.exists, 'boolean')
+    assert.equal(
+      bid.payload?.diagnostics?.precheck?.inventory?.ready === null
+      || typeof bid.payload?.diagnostics?.precheck?.inventory?.ready === 'boolean',
+      true,
+    )
     assert.equal(Boolean(bid.payload?.data), true)
 
     const winner = bid.payload?.data?.bid

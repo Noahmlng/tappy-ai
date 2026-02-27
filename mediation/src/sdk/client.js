@@ -1,7 +1,7 @@
 const DEFAULT_TIMEOUT_MS = Object.freeze({
-  config: 3000,
-  bid: 5000,
-  events: 2500,
+  config: 1200,
+  bid: 1200,
+  events: 800,
 })
 
 const ATTACH_DEFAULTS = Object.freeze({
@@ -32,6 +32,67 @@ function toFiniteNumber(value, fallback = 0) {
     if (Number.isFinite(parsed)) return parsed
   }
   return fallback
+}
+
+function isPromiseLike(value) {
+  return Boolean(value && typeof value.then === 'function')
+}
+
+function isTimeoutLikeError(error) {
+  if (!error || typeof error !== 'object') return false
+  if (error.name === 'AbortError') return true
+  const message = String(error.message || '').toLowerCase()
+  return message.includes('timeout') || message.includes('timed out') || message.includes('abort')
+}
+
+function toTimestamp(value) {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value)
+    if (Number.isFinite(parsed) && parsed > 0) return parsed
+    const asNumber = Number(value)
+    if (Number.isFinite(asNumber) && asNumber > 0) return asNumber
+  }
+  return 0
+}
+
+function classifyBidProbeStatus(flow) {
+  const evaluateEvidence = flow?.evidence?.evaluate && typeof flow.evidence.evaluate === 'object'
+    ? flow.evidence.evaluate
+    : {}
+  if (evaluateEvidence.ok === true) return 'seen'
+  if (evaluateEvidence.ok === false) {
+    const errorHint = String(evaluateEvidence.error || '').toLowerCase()
+    if (errorHint.includes('timeout') || errorHint.includes('timed out') || errorHint.includes('abort')) {
+      return 'timeout'
+    }
+    return 'seen'
+  }
+  const timeoutHint = String(
+    evaluateEvidence.error
+    || flow?.error
+    || flow?.decision?.reasonDetail
+    || '',
+  ).toLowerCase()
+  if (timeoutHint.includes('timeout') || timeoutHint.includes('timed out') || timeoutHint.includes('abort')) {
+    return 'timeout'
+  }
+  return 'not_started_before_case_end'
+}
+
+function classifyOutcomeCategory(flow, bidProbeStatus, diagnostics) {
+  const decisionResult = cleanText(flow?.decision?.result).toLowerCase()
+  const hasAd = Array.isArray(flow?.ads) && flow.ads.length > 0
+  if (decisionResult === 'served' && hasAd) {
+    return diagnostics?.timestamps?.uiRenderTs ? 'ui_fill' : 'bid_fill_only'
+  }
+  if (decisionResult === 'no_fill') {
+    return bidProbeStatus === 'timeout' ? 'pre_bid_timeout' : 'no_fill_confirmed'
+  }
+  if (decisionResult === 'error') {
+    return bidProbeStatus === 'timeout' ? 'pre_bid_timeout' : 'other_error'
+  }
+  return 'other_error'
 }
 
 function normalizeApiBaseUrl(value) {
@@ -239,6 +300,10 @@ export function createAdsSdkClient(options = {}) {
     bid: toFiniteNumber(options.timeouts?.bid, DEFAULT_TIMEOUT_MS.bid) || DEFAULT_TIMEOUT_MS.bid,
     events: toFiniteNumber(options.timeouts?.events, DEFAULT_TIMEOUT_MS.events) || DEFAULT_TIMEOUT_MS.events,
   }
+  const defaultFastPath = options.fastPath !== false
+  const defaultOnDiagnostics = typeof options.onDiagnostics === 'function'
+    ? options.onDiagnostics
+    : null
 
   if (typeof fetchImpl !== 'function') {
     throw new Error('createAdsSdkClient requires a fetch implementation')
@@ -588,12 +653,20 @@ export function createAdsSdkClient(options = {}) {
         ok: false,
         error: flow.error,
       }
-      flow.decision = normalizeDecision({
-        result: 'error',
-        reason: 'error',
-        reasonDetail: 'bid_failed',
-        intentScore: toFiniteNumber(input.intentScore, 0),
-      })
+      const failOpenOnBidError = input.failOpenOnBidError !== false
+      flow.decision = normalizeDecision(failOpenOnBidError
+        ? {
+          result: 'no_fill',
+          reason: 'no_fill',
+          reasonDetail: isTimeoutLikeError(error) ? 'bid_timeout_fail_open' : 'bid_error_fail_open',
+          intentScore: toFiniteNumber(input.intentScore, 0),
+        }
+        : {
+          result: 'error',
+          reason: 'error',
+          reasonDetail: 'bid_failed',
+          intentScore: toFiniteNumber(input.intentScore, 0),
+        })
       return flow
     }
 
@@ -654,6 +727,103 @@ export function createAdsSdkClient(options = {}) {
         error: error instanceof Error ? error.message : 'events_failed',
       }
       return flow
+    }
+  }
+
+  async function runChatTurnWithAd(input = {}) {
+    const clickTs = toTimestamp(input.clickTs) || Date.now()
+    const fastPath = typeof input.fastPath === 'boolean'
+      ? input.fastPath
+      : defaultFastPath !== false
+    const chatDonePromise = isPromiseLike(input.chatDonePromise) ? input.chatDonePromise : null
+    const diagnostics = {
+      fastPath,
+      bidProbeStatus: 'not_started_before_case_end',
+      outcomeCategory: 'other_error',
+      timestamps: {
+        clickTs,
+        bidStartTs: 0,
+        bidEndTs: 0,
+        uiRenderTs: 0,
+        chatDoneTs: toTimestamp(input.chatDoneTs),
+      },
+      stageDurationsMs: {
+        ttfAssistantPlaceholder: 0,
+        ttfFirstToken: 0,
+        chatDone: 0,
+        bidStartDeltaFromClick: 0,
+        bidLatency: 0,
+        uiCardRender: 0,
+      },
+    }
+
+    const placeholderTs = toTimestamp(input.assistantPlaceholderTs)
+    const firstTokenTs = toTimestamp(input.firstTokenTs)
+    if (placeholderTs > 0) {
+      diagnostics.stageDurationsMs.ttfAssistantPlaceholder = Math.max(0, placeholderTs - clickTs)
+    }
+    if (firstTokenTs > 0) {
+      diagnostics.stageDurationsMs.ttfFirstToken = Math.max(0, firstTokenTs - clickTs)
+    }
+
+    if (!fastPath && chatDonePromise) {
+      try {
+        await chatDonePromise
+      } catch {
+        // Chat promise failure should not block ad flow.
+      } finally {
+        diagnostics.timestamps.chatDoneTs = diagnostics.timestamps.chatDoneTs || Date.now()
+      }
+    }
+
+    diagnostics.timestamps.bidStartTs = Date.now()
+    const flow = await runManagedFlow({
+      ...input,
+      failOpenOnBidError: input.failOpenOnBidError,
+    })
+    diagnostics.timestamps.bidEndTs = Date.now()
+
+    diagnostics.stageDurationsMs.bidStartDeltaFromClick = Math.max(0, diagnostics.timestamps.bidStartTs - clickTs)
+    diagnostics.stageDurationsMs.bidLatency = Math.max(
+      0,
+      diagnostics.timestamps.bidEndTs - diagnostics.timestamps.bidStartTs,
+    )
+
+    if (flow?.decision?.result === 'served' && Array.isArray(flow?.ads) && flow.ads.length > 0) {
+      const renderCallback = typeof input.renderAd === 'function' ? input.renderAd : null
+      if (renderCallback) {
+        await Promise.resolve(renderCallback(flow.ads[0], flow))
+        diagnostics.timestamps.uiRenderTs = Date.now()
+        diagnostics.stageDurationsMs.uiCardRender = Math.max(0, diagnostics.timestamps.uiRenderTs - clickTs)
+      }
+    }
+
+    if (chatDonePromise && diagnostics.timestamps.chatDoneTs === 0) {
+      try {
+        await chatDonePromise
+      } catch {
+        // Chat promise failure should not block ad diagnostics.
+      } finally {
+        diagnostics.timestamps.chatDoneTs = Date.now()
+      }
+    }
+    if (diagnostics.timestamps.chatDoneTs > 0) {
+      diagnostics.stageDurationsMs.chatDone = Math.max(0, diagnostics.timestamps.chatDoneTs - clickTs)
+    }
+
+    diagnostics.bidProbeStatus = classifyBidProbeStatus(flow)
+    diagnostics.outcomeCategory = classifyOutcomeCategory(flow, diagnostics.bidProbeStatus, diagnostics)
+
+    const onDiagnostics = typeof input.onDiagnostics === 'function'
+      ? input.onDiagnostics
+      : defaultOnDiagnostics
+    if (onDiagnostics) {
+      await Promise.resolve(onDiagnostics(diagnostics, flow))
+    }
+
+    return {
+      ...flow,
+      diagnostics,
     }
   }
 
@@ -811,6 +981,7 @@ export function createAdsSdkClient(options = {}) {
     requestBid,
     reportEvent,
     runManagedFlow,
+    runChatTurnWithAd,
     runAttachFlow,
     runNextStepFlow,
   }
