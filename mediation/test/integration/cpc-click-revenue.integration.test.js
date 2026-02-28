@@ -254,11 +254,15 @@ test('cpc click settlement: redirect + sdk click both write revenue facts from b
     const winner = served.winner
     const requestId = String(served.response?.requestId || '').trim()
     const winnerPrice = Number(winner.price || 0)
+    const winnerCpcUsd = Number(winner.pricing?.cpcUsd || 0)
     const winnerAdId = String(winner.bidId || '').trim()
     const winnerPlacementId = String(served.response?.diagnostics?.precheck?.placement?.placementId || '').trim()
 
     assert.equal(Boolean(requestId), true)
     assert.equal(Number.isFinite(winnerPrice) && winnerPrice > 0, true)
+    assert.equal(winnerPrice, winnerCpcUsd)
+    assert.equal(String(winner.pricing?.billingUnit || ''), 'cpc')
+    assert.equal(String(winner.pricing?.pricingSemanticsVersion || ''), 'cpc_v1')
     assert.equal(typeof winner.url, 'string')
     assert.equal(winner.url.includes('/api/v1/sdk/click?'), true)
 

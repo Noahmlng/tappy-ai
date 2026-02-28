@@ -3,6 +3,8 @@ import pricingMediationDefaults from '../../config/pricing-mediation.defaults.js
 const DEFAULT_PLACEMENT_ID = 'chat_from_answer_v1'
 const DEFAULT_NETWORK = 'house'
 const DEFAULT_TRIGGER_TYPE = 'from_answer'
+const DEFAULT_PRICING_SEMANTICS_VERSION = 'cpc_v1'
+const DEFAULT_BILLING_UNIT = 'cpc'
 const KNOWN_TRIGGER_TYPES = new Set(['from_answer', 'intent_recommendation'])
 const TRIGGER_TYPE_BY_PLACEMENT = Object.freeze({
   chat_from_answer_v1: 'from_answer',
@@ -84,6 +86,8 @@ function normalizeDefaults(input = {}) {
 
   return Object.freeze({
     modelVersion: cleanText(input.modelVersion) || 'cpa_mock_v2',
+    pricingSemanticsVersion: cleanText(input.pricingSemanticsVersion) || DEFAULT_PRICING_SEMANTICS_VERSION,
+    billingUnit: cleanText(input.billingUnit).toLowerCase() === 'cpc' ? 'cpc' : DEFAULT_BILLING_UNIT,
     rankWeight: weights.rankWeight,
     economicWeight: weights.economicWeight,
     rankDominanceFloor: clamp(toFiniteNumber(input.rankDominanceFloor, 0.5), 0, 1),
@@ -280,13 +284,21 @@ export function computeCandidateEconomicPricing(input = {}) {
   const pClick = clamp(baseCtr * relevanceFactor, 1e-6, 0.6)
   const pConv = clamp(pConvBase * relevanceFactor * qualityFactor * triggerFactor, 1e-6, 0.2)
   const ecpmUsd = clamp(1000 * pConv * cpaUsd, 1e-6, 100000)
+  const cpcUsd = clamp(
+    ecpmUsd / Math.max(1000 * pClick, 1e-6),
+    1e-6,
+    100000,
+  )
   const economicScore = ecpmUsd / (ecpmUsd + targetRpmUsd)
 
   return {
     modelVersion: defaults.modelVersion,
+    pricingSemanticsVersion: defaults.pricingSemanticsVersion || DEFAULT_PRICING_SEMANTICS_VERSION,
+    billingUnit: defaults.billingUnit || DEFAULT_BILLING_UNIT,
     triggerType,
     targetRpmUsd: round(targetRpmUsd, 4),
     ecpmUsd: round(ecpmUsd, 4),
+    cpcUsd: round(cpcUsd, 4),
     cpaUsd: round(cpaUsd, 4),
     pClick: round(pClick, 6),
     pConv: round(pConv, 6),

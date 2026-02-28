@@ -5435,9 +5435,12 @@ function resolvePlacementKeyById(placementId, appId = '') {
 function normalizeBidPricingSnapshot(raw = {}) {
   if (!raw || typeof raw !== 'object') return null
   const modelVersion = String(raw.modelVersion || '').trim()
+  const pricingSemanticsVersion = String(raw.pricingSemanticsVersion || '').trim()
+  const billingUnit = String(raw.billingUnit || '').trim().toLowerCase()
   const triggerType = String(raw.triggerType || '').trim()
   const targetRpmUsd = clampNumber(raw.targetRpmUsd, 0, Number.MAX_SAFE_INTEGER, NaN)
   const ecpmUsd = clampNumber(raw.ecpmUsd, 0, Number.MAX_SAFE_INTEGER, NaN)
+  const cpcUsd = clampNumber(raw.cpcUsd, 0, Number.MAX_SAFE_INTEGER, NaN)
   const cpaUsd = clampNumber(raw.cpaUsd, 0, Number.MAX_SAFE_INTEGER, NaN)
   const pClick = clampNumber(raw.pClick, 0, 1, NaN)
   const pConv = clampNumber(raw.pConv, 0, 1, NaN)
@@ -5450,12 +5453,15 @@ function normalizeBidPricingSnapshot(raw = {}) {
       }
     : null
 
-  if (!modelVersion && !Number.isFinite(cpaUsd) && !Number.isFinite(ecpmUsd)) return null
+  if (!modelVersion && !Number.isFinite(cpaUsd) && !Number.isFinite(ecpmUsd) && !Number.isFinite(cpcUsd)) return null
   return {
     modelVersion,
+    pricingSemanticsVersion,
+    billingUnit: billingUnit === 'cpc' ? 'cpc' : '',
     triggerType,
     targetRpmUsd: Number.isFinite(targetRpmUsd) ? round(targetRpmUsd, 4) : 0,
     ecpmUsd: Number.isFinite(ecpmUsd) ? round(ecpmUsd, 4) : 0,
+    cpcUsd: Number.isFinite(cpcUsd) ? round(cpcUsd, 4) : 0,
     cpaUsd: Number.isFinite(cpaUsd) ? round(cpaUsd, 4) : 0,
     pClick: Number.isFinite(pClick) ? round(pClick, 6) : 0,
     pConv: Number.isFinite(pConv) ? round(pConv, 6) : 0,
@@ -5624,7 +5630,7 @@ async function recordClickRevenueFactFromBid(payload = {}) {
   )
   const bidPriceUsd = round(
     clampNumber(
-      request.bidPriceUsd ?? request.bidPrice ?? pricingSnapshot?.ecpmUsd,
+      request.bidPriceUsd ?? request.bidPrice ?? pricingSnapshot?.cpcUsd,
       0,
       Number.MAX_SAFE_INTEGER,
       0,
@@ -6503,6 +6509,7 @@ async function evaluateSinglePlacementOpportunity({
     ? winnerBid.pricing
     : null
   const pricingVersion = String(pricingSnapshot?.modelVersion || rankingDebug?.pricingModel || 'cpa_mock_v2').trim()
+  const pricingSemanticsVersion = String(pricingSnapshot?.pricingSemanticsVersion || 'cpc_v1').trim() || 'cpc_v1'
   const deliveryStartedAt = Date.now()
 
   await writer.writeDeliveryRecord({
@@ -6524,6 +6531,7 @@ async function evaluateSinglePlacementOpportunity({
       pricingSnapshot,
       triggerType,
       pricingVersion,
+      pricingSemanticsVersion,
     },
   })
   await writer.updateOpportunityState(
@@ -6557,6 +6565,7 @@ async function evaluateSinglePlacementOpportunity({
     upstreamFailure,
     pricingSnapshot,
     pricingVersion,
+    pricingSemanticsVersion,
   }
 }
 
@@ -6734,6 +6743,11 @@ async function evaluateV2BidOpportunityFirst(payload) {
     || rankingDebug?.pricingModel
     || 'cpa_mock_v2',
   ).trim()
+  const pricingSemanticsVersion = String(
+    selectedPlacementResult?.pricingSemanticsVersion
+    || pricingSnapshot?.pricingSemanticsVersion
+    || 'cpc_v1',
+  ).trim() || 'cpc_v1'
   const intentThreshold = clampNumber(selectedPlacementResult?.intentThreshold, 0, 1, 0.6)
 
   for (const item of placementResults) {
@@ -6802,6 +6816,7 @@ async function evaluateV2BidOpportunityFirst(payload) {
     intent,
     triggerType,
     pricingVersion,
+    pricingSemanticsVersion,
     pricingSnapshot,
     multiPlacement: multiPlacementDiagnostics,
     networkErrors: [],
@@ -6887,6 +6902,7 @@ async function evaluateV2BidOpportunityFirst(payload) {
       reasonCode,
       triggerType,
       pricingVersion,
+      pricingSemanticsVersion,
       intentThreshold,
       retrievalMode: String(retrievalDebug?.mode || '').trim(),
       retrievalHitCount: toPositiveInteger(retrievalDebug?.fusedHitCount, 0),
@@ -7916,7 +7932,7 @@ function computeSettlementAggregates(scope = {}, factRowsInput = null, options =
   )
 
   return {
-    settlementModel: 'CPA',
+    settlementModel: 'MIXED_CPA_CPC',
     currency: 'USD',
     totals: finalizeSettlementAggregateRow(maps.totals),
     byAccount,

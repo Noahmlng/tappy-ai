@@ -27,6 +27,7 @@
                 "url",
                 "dsp",
                 "bidId",
+                "campaignId",
                 "placement",
                 "variant"
               ],
@@ -40,8 +41,50 @@
                 "image_url": { "type": "string", "format": "uri" },
                 "dsp": { "type": "string", "minLength": 1 },
                 "bidId": { "type": "string", "minLength": 1 },
+                "campaignId": { "type": "string", "minLength": 1 },
                 "placement": { "type": "string", "minLength": 1 },
-                "variant": { "type": "string", "minLength": 1 }
+                "variant": { "type": "string", "minLength": 1 },
+                "pricing": {
+                  "type": "object",
+                  "required": [
+                    "modelVersion",
+                    "pricingSemanticsVersion",
+                    "billingUnit",
+                    "targetRpmUsd",
+                    "ecpmUsd",
+                    "cpcUsd",
+                    "cpaUsd",
+                    "pClick",
+                    "pConv",
+                    "triggerType",
+                    "network",
+                    "rawSignal"
+                  ],
+                  "properties": {
+                    "modelVersion": { "type": "string", "minLength": 1 },
+                    "pricingSemanticsVersion": { "type": "string", "const": "cpc_v1" },
+                    "billingUnit": { "type": "string", "const": "cpc" },
+                    "targetRpmUsd": { "type": "number", "minimum": 0 },
+                    "ecpmUsd": { "type": "number", "minimum": 0 },
+                    "cpcUsd": { "type": "number", "minimum": 0 },
+                    "cpaUsd": { "type": "number", "minimum": 0 },
+                    "pClick": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "pConv": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "triggerType": { "type": "string", "minLength": 1 },
+                    "network": { "type": "string", "minLength": 1 },
+                    "rawSignal": {
+                      "type": "object",
+                      "required": ["rawBidValue", "rawUnit", "normalizedFactor"],
+                      "properties": {
+                        "rawBidValue": { "type": "number", "minimum": 0 },
+                        "rawUnit": { "type": "string", "minLength": 1 },
+                        "normalizedFactor": { "type": "number", "minimum": 0 }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "additionalProperties": false
+                }
               },
               "additionalProperties": false
             }

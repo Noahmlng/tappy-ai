@@ -73,6 +73,18 @@ function resolveBidImageUrl(candidate = {}) {
   )
 }
 
+function resolveCampaignId(candidate = {}) {
+  const metadata = candidate?.metadata && typeof candidate.metadata === 'object' ? candidate.metadata : {}
+  return cleanText(
+    metadata.campaignId
+    || metadata.campaign_id
+    || metadata.programId
+    || metadata.program_id
+    || metadata.advertiserId
+    || metadata.advertiser_id,
+  )
+}
+
 function toBid(candidate = {}, context = {}) {
   const title = cleanText(candidate.title)
   const targetUrl = cleanText(candidate.targetUrl)
@@ -80,7 +92,8 @@ function toBid(candidate = {}, context = {}) {
 
   const bidId = cleanText(candidate.offerId) || `bid_${Date.now()}`
   const pricing = candidate?.pricing && typeof candidate.pricing === 'object' ? candidate.pricing : null
-  const price = Math.max(0, toFiniteNumber(pricing?.ecpmUsd ?? candidate.bidHint, 0))
+  const price = Math.max(0, toFiniteNumber(pricing?.cpcUsd ?? candidate.bidHint, 0))
+  const campaignId = resolveCampaignId(candidate)
 
   return {
     price,
@@ -92,13 +105,17 @@ function toBid(candidate = {}, context = {}) {
     image_url: resolveBidImageUrl(candidate),
     dsp: cleanText(candidate.network),
     bidId,
+    ...(campaignId ? { campaignId } : {}),
     placement: cleanText(context.placement || 'block') || 'block',
     variant: 'opportunity_first_v1',
     pricing: pricing
       ? {
           modelVersion: cleanText(pricing.modelVersion),
+          pricingSemanticsVersion: cleanText(pricing.pricingSemanticsVersion),
+          billingUnit: cleanText(pricing.billingUnit).toLowerCase() || 'cpc',
           targetRpmUsd: toFiniteNumber(pricing.targetRpmUsd, 0),
           ecpmUsd: toFiniteNumber(pricing.ecpmUsd, 0),
+          cpcUsd: toFiniteNumber(pricing.cpcUsd, 0),
           cpaUsd: toFiniteNumber(pricing.cpaUsd, 0),
           pClick: toFiniteNumber(pricing.pClick, 0),
           pConv: toFiniteNumber(pricing.pConv, 0),
