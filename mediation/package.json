@@ -42,7 +42,8 @@
     "inventory:sync:house": "node --env-file-if-exists=.env ./scripts/inventory/sync-house.js",
     "inventory:embeddings": "node --env-file-if-exists=.env ./scripts/inventory/build-embeddings.js",
     "inventory:snapshot": "node --env-file-if-exists=.env ./scripts/inventory/materialize-serving-snapshot.js",
-    "inventory:sync:all": "npm run inventory:sync:partnerstack && npm run inventory:sync:cj && npm run inventory:sync:house && npm run inventory:embeddings && npm run inventory:snapshot"
+    "inventory:sync:all": "npm run inventory:sync:partnerstack && npm run inventory:sync:cj && npm run inventory:sync:house && npm run inventory:embeddings && npm run inventory:snapshot",
+    "pilot:content:enrich": "node --env-file-if-exists=.env ./scripts/pilot/enrich-content-cases.js"
   },
   "dependencies": {
     "pg": "^8.16.3"
