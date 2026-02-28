@@ -1,6 +1,5 @@
 const REQUIRED_ENV_VARS = [
   'DEEPSEEK_API_KEY',
-  'DEEPSEEK_MODEL',
   'OPENROUTER_API_KEY',
   'OPENROUTER_MODEL',
   'CJ_TOKEN',
@@ -30,7 +29,7 @@ export function loadRuntimeConfig(env = process.env, options = {}) {
   return {
     deepseek: {
       apiKey: readEnv(env, 'DEEPSEEK_API_KEY', { required: strict }),
-      model: readEnv(env, 'DEEPSEEK_MODEL', { required: strict }),
+      model: readEnv(env, 'DEEPSEEK_MODEL', { required: false }) || 'deepseek-chat',
       baseUrl: readEnv(env, 'DEEPSEEK_BASE_URL', { required: false }) || 'https://api.deepseek.com/chat/completions',
       intentMaxTokens: toPositiveInteger(readEnv(env, 'DEEPSEEK_INTENT_MAX_TOKENS', { required: false }), 96),
     },

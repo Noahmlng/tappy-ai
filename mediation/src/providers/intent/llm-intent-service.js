@@ -9,6 +9,7 @@ import {
 import { buildIntentInferenceUserPrompt, INTENT_INFERENCE_SYSTEM_PROMPT } from './prompt.js'
 
 const DEFAULT_DEEPSEEK_CHAT_URL = 'https://api.deepseek.com/chat/completions'
+const DEFAULT_DEEPSEEK_MODEL = 'deepseek-chat'
 const DEFAULT_TIMEOUT_MS = 5000
 
 function normalizeText(value) {
@@ -227,8 +228,8 @@ export async function inferIntentWithLlm(input, options = {}) {
     ? runtimeConfig.deepseek.apiKey.trim()
     : ''
   const model = typeof runtimeConfig?.deepseek?.model === 'string'
-    ? runtimeConfig.deepseek.model.trim()
-    : ''
+    ? (runtimeConfig.deepseek.model.trim() || DEFAULT_DEEPSEEK_MODEL)
+    : DEFAULT_DEEPSEEK_MODEL
   const endpoint = options.endpoint
     || (typeof runtimeConfig?.deepseek?.baseUrl === 'string' ? runtimeConfig.deepseek.baseUrl.trim() : '')
     || DEFAULT_DEEPSEEK_CHAT_URL
