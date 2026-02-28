@@ -231,6 +231,8 @@ test('v2 bid API returns unified response on the single runtime path', async () 
     assert.equal(typeof bid.payload?.decisionTrace?.reasonCode, 'string')
     assert.equal(Boolean(bid.payload?.decisionTrace?.stageStatus), true)
     assert.equal(typeof bid.payload?.diagnostics?.triggerType, 'string')
+    assert.equal(typeof bid.payload?.diagnostics?.budgetDecision, 'object')
+    assert.equal(typeof bid.payload?.diagnostics?.riskDecision, 'object')
     assert.equal(typeof bid.payload?.diagnostics?.multiPlacement?.evaluatedCount, 'number')
     assert.equal(bid.payload?.diagnostics?.multiPlacement?.evaluatedCount >= 2, true)
     const retrievalFilters = bid.payload?.diagnostics?.retrievalDebug?.filters

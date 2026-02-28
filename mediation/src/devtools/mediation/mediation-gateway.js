@@ -9,7 +9,7 @@ import { getAllNetworkHealth } from '../../runtime/network-health-state.js'
 import { inferIntentWithLlm } from '../../providers/intent/index.js'
 import { scoreIntentOpportunityFirst } from '../../runtime/intent-scoring.js'
 import { retrieveOpportunityCandidates } from '../../runtime/opportunity-retrieval.js'
-import { rankOpportunityCandidates } from '../../runtime/opportunity-ranking.js'
+import { rankOpportunityCandidates, mapRankedCandidateToBid } from '../../runtime/opportunity-ranking.js'
 import { runGlobalPlacementAuction } from '../../runtime/global-placement-auction.js'
 import { createOpportunityWriter } from '../../runtime/opportunity-writer.js'
 import {
@@ -33,6 +33,23 @@ function readEnvValue(env, key, fallback = '') {
     return value.trim()
   }
   return String(fallback || '').trim()
+}
+
+function parseFeatureSwitch(value, fallback = true) {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (!normalized) return fallback
+  if (['1', 'true', 'on', 'yes', 'enabled'].includes(normalized)) return true
+  if (['0', 'false', 'off', 'no', 'disabled'].includes(normalized)) return false
+  return fallback
+}
+
+function parseEnforcementMode(value, fallback = 'on') {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (!normalized) return fallback
+  if (normalized === 'on' || normalized === 'enabled') return 'on'
+  if (normalized === 'off' || normalized === 'disabled') return 'off'
+  if (normalized === 'monitor' || normalized === 'monitor_only' || normalized === 'observe') return 'monitor_only'
+  return fallback
 }
 
 function normalizeCorsOrigin(value) {
@@ -127,6 +144,10 @@ const CONTROL_PLANE_DASHBOARD_SESSIONS_TABLE = 'control_plane_dashboard_sessions
 const CONTROL_PLANE_INTEGRATION_TOKENS_TABLE = 'control_plane_integration_tokens'
 const CONTROL_PLANE_AGENT_ACCESS_TOKENS_TABLE = 'control_plane_agent_access_tokens'
 const CONTROL_PLANE_ALLOWED_ORIGINS_TABLE = 'control_plane_allowed_origins'
+const CAMPAIGNS_TABLE = 'campaigns'
+const CAMPAIGN_BUDGET_LIMITS_TABLE = 'campaign_budget_limits'
+const BUDGET_RESERVATIONS_TABLE = 'budget_reservations'
+const BUDGET_LEDGER_TABLE = 'budget_ledger'
 const PLACEMENT_ID_MIGRATION_TABLES = Object.freeze([
   { table: CONTROL_PLANE_INTEGRATION_TOKENS_TABLE, column: 'placement_id' },
   { table: CONTROL_PLANE_AGENT_ACCESS_TOKENS_TABLE, column: 'placement_id' },
@@ -256,6 +277,10 @@ const ATTACH_MVP_PLACEMENT_KEY = 'attach.post_answer_render'
 const ATTACH_MVP_EVENT = 'answer_completed'
 const NEXT_STEP_INTENT_CARD_PLACEMENT_KEY = 'next_step.intent_card'
 const V2_BID_EVENT = 'v2_bid_request'
+const CPC_SEMANTICS_ENABLED = parseFeatureSwitch(process.env.CPC_SEMANTICS, true)
+const BUDGET_ENFORCEMENT_MODE = parseEnforcementMode(process.env.BUDGET_ENFORCEMENT, 'on')
+const RISK_ENFORCEMENT_MODE = parseEnforcementMode(process.env.RISK_ENFORCEMENT, 'on')
+const BUDGET_RESERVATION_TTL_MS = 15 * 60 * 1000
 const V2_BID_BUDGET_MS = Object.freeze({
   intent: 300,
   retrieval: 350,
@@ -297,6 +322,15 @@ const NEXT_STEP_INTENT_POST_RULES = Object.freeze({
   cooldownSeconds: 20,
   maxPerSession: 2,
   maxPerUserPerDay: 5,
+})
+const DEFAULT_RISK_RULES = Object.freeze({
+  clickBurstWindowSec: 30,
+  clickBurstLimit: 6,
+  duplicateClickWindowSec: 300,
+  ctrWarnThreshold: 0.25,
+  ctrBlockThreshold: 0.45,
+  ctrMinImpressions: 12,
+  degradeMultiplier: 0.7,
 })
 const NEXT_STEP_SENSITIVE_TOPICS = [
   'medical',
@@ -423,6 +457,12 @@ const runtimeMemory = {
   opportunityContextByRequest: new Map(),
   inventoryReadinessSummary: null,
   inventoryReadinessCheckedAtMs: 0,
+  risk: {
+    config: { ...DEFAULT_RISK_RULES },
+    clickBurstByActor: new Map(),
+    clickSeenByRequestAd: new Map(),
+    campaignPerfById: new Map(),
+  },
 }
 
 function nowIso() {
@@ -753,7 +793,11 @@ const SIMULATED_LIVE_FALLBACK_OFFERS = Object.freeze([
     availability: 'active',
     qualityScore: 0.88,
     bidValue: 7.1,
-    metadata: { policyWeight: 0.2, tags: ['broker', 'etf', 'options', 'fees'] },
+    metadata: {
+      campaignId: 'cmp_house_broker_low_fee',
+      policyWeight: 0.2,
+      tags: ['broker', 'etf', 'options', 'fees'],
+    },
   },
   {
     offerId: 'house:research_scanner',
@@ -768,7 +812,11 @@ const SIMULATED_LIVE_FALLBACK_OFFERS = Object.freeze([
     availability: 'active',
     qualityScore: 0.84,
     bidValue: 6.6,
-    metadata: { policyWeight: 0.18, tags: ['research', 'earnings', 'analyst'] },
+    metadata: {
+      campaignId: 'cmp_house_research_scanner',
+      policyWeight: 0.18,
+      tags: ['research', 'earnings', 'analyst'],
+    },
   },
   {
     offerId: 'house:crypto_exchange',
@@ -783,7 +831,11 @@ const SIMULATED_LIVE_FALLBACK_OFFERS = Object.freeze([
     availability: 'active',
     qualityScore: 0.83,
     bidValue: 6.2,
-    metadata: { policyWeight: 0.16, tags: ['crypto', 'exchange', 'fees', 'trading'] },
+    metadata: {
+      campaignId: 'cmp_house_crypto_exchange',
+      policyWeight: 0.16,
+      tags: ['crypto', 'exchange', 'fees', 'trading'],
+    },
   },
   {
     offerId: 'partnerstack:budget_app',
@@ -798,7 +850,11 @@ const SIMULATED_LIVE_FALLBACK_OFFERS = Object.freeze([
     availability: 'active',
     qualityScore: 0.79,
     bidValue: 2.9,
-    metadata: { policyWeight: 0.14, tags: ['budget', 'finance app', 'credit', 'savings'] },
+    metadata: {
+      campaignId: 'cmp_partnerstack_budget_app',
+      policyWeight: 0.14,
+      tags: ['budget', 'finance app', 'credit', 'savings'],
+    },
   },
   {
     offerId: 'cj:hardware_wallet',
@@ -813,7 +869,11 @@ const SIMULATED_LIVE_FALLBACK_OFFERS = Object.freeze([
     availability: 'active',
     qualityScore: 0.77,
     bidValue: 2.4,
-    metadata: { policyWeight: 0.1, tags: ['hardware wallet', 'crypto', 'security'] },
+    metadata: {
+      campaignId: 'cmp_cj_hardware_wallet',
+      policyWeight: 0.1,
+      tags: ['hardware wallet', 'crypto', 'security'],
+    },
   },
 ])
 
@@ -825,6 +885,53 @@ function buildSimulatedFallbackOffers(networks = []) {
   return SIMULATED_LIVE_FALLBACK_OFFERS.filter((offer) => (
     allowAll || normalizedNetworks.includes(String(offer.sourceNetwork || '').trim().toLowerCase())
   ))
+}
+
+const DEFAULT_CAMPAIGN_BUDGET_SEEDS = Object.freeze([
+  'cmp_house_broker_low_fee',
+  'cmp_house_research_scanner',
+  'cmp_house_crypto_exchange',
+  'cmp_partnerstack_budget_app',
+  'cmp_cj_hardware_wallet',
+])
+
+async function seedDefaultCampaignBudgets(pool) {
+  const db = pool || settlementStore.pool
+  if (!db) return
+  for (const campaignId of DEFAULT_CAMPAIGN_BUDGET_SEEDS) {
+    await db.query(
+      `
+        INSERT INTO ${CAMPAIGNS_TABLE} (
+          campaign_id,
+          account_id,
+          app_id,
+          status,
+          metadata,
+          created_at,
+          updated_at
+        )
+        VALUES ($1, '', '', 'active', '{"seed":"default_catalog"}'::jsonb, NOW(), NOW())
+        ON CONFLICT (campaign_id) DO NOTHING
+      `,
+      [campaignId],
+    )
+    await db.query(
+      `
+        INSERT INTO ${CAMPAIGN_BUDGET_LIMITS_TABLE} (
+          campaign_id,
+          daily_budget_usd,
+          lifetime_budget_usd,
+          currency,
+          timezone,
+          created_at,
+          updated_at
+        )
+        VALUES ($1, 500, 5000, 'USD', 'UTC', NOW(), NOW())
+        ON CONFLICT (campaign_id) DO NOTHING
+      `,
+      [campaignId],
+    )
+  }
 }
 
 async function fetchLiveFallbackOpportunityCandidates(input = {}) {
@@ -848,10 +955,13 @@ function mapOpportunityReasonToDecision(reasonCode = '', served = false) {
   if (served) return 'served'
   if (reasonCode === 'policy_blocked') return 'blocked'
   if (reasonCode === 'placement_unavailable') return 'blocked'
+  if (reasonCode === 'risk_blocked') return 'blocked'
   if (
     reasonCode === 'inventory_no_match'
     || reasonCode === 'rank_below_floor'
     || reasonCode === 'inventory_empty'
+    || reasonCode === 'budget_unconfigured'
+    || reasonCode === 'budget_exhausted'
     || reasonCode === 'upstream_timeout'
     || reasonCode === 'upstream_error'
   ) {
@@ -3786,6 +3896,93 @@ async function ensureControlPlaneTables(pool) {
   `)
 }
 
+async function ensureCampaignBudgetTables(pool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ${CAMPAIGNS_TABLE} (
+      campaign_id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL DEFAULT '',
+      app_id TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active',
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (status IN ('active', 'paused', 'archived'))
+    )
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_campaigns_account_app
+      ON ${CAMPAIGNS_TABLE} (account_id, app_id, updated_at DESC)
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ${CAMPAIGN_BUDGET_LIMITS_TABLE} (
+      campaign_id TEXT PRIMARY KEY REFERENCES ${CAMPAIGNS_TABLE}(campaign_id) ON DELETE CASCADE ON UPDATE CASCADE,
+      daily_budget_usd NUMERIC(18, 4),
+      lifetime_budget_usd NUMERIC(18, 4) NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      timezone TEXT NOT NULL DEFAULT 'UTC',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (lifetime_budget_usd > 0),
+      CHECK (daily_budget_usd IS NULL OR daily_budget_usd > 0)
+    )
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ${BUDGET_RESERVATIONS_TABLE} (
+      reservation_id TEXT PRIMARY KEY,
+      campaign_id TEXT NOT NULL REFERENCES ${CAMPAIGNS_TABLE}(campaign_id) ON DELETE CASCADE ON UPDATE CASCADE,
+      account_id TEXT NOT NULL DEFAULT '',
+      app_id TEXT NOT NULL DEFAULT '',
+      request_id TEXT NOT NULL,
+      ad_id TEXT NOT NULL DEFAULT '',
+      reserved_cpc_usd NUMERIC(18, 4) NOT NULL,
+      pricing_semantics_version TEXT NOT NULL DEFAULT 'cpc_v1',
+      status TEXT NOT NULL DEFAULT 'reserved',
+      reason_code TEXT NOT NULL DEFAULT '',
+      expires_at TIMESTAMPTZ NOT NULL,
+      settled_fact_id TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (status IN ('reserved', 'settled', 'released', 'expired')),
+      CHECK (reserved_cpc_usd > 0)
+    )
+  `)
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_budget_reservation_request_campaign_ad
+      ON ${BUDGET_RESERVATIONS_TABLE} (request_id, campaign_id, ad_id)
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_budget_reservation_campaign_status
+      ON ${BUDGET_RESERVATIONS_TABLE} (campaign_id, status, expires_at DESC)
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ${BUDGET_LEDGER_TABLE} (
+      ledger_id TEXT PRIMARY KEY,
+      campaign_id TEXT NOT NULL REFERENCES ${CAMPAIGNS_TABLE}(campaign_id) ON DELETE CASCADE ON UPDATE CASCADE,
+      reservation_id TEXT NOT NULL DEFAULT '',
+      request_id TEXT NOT NULL DEFAULT '',
+      fact_id TEXT NOT NULL DEFAULT '',
+      entry_type TEXT NOT NULL,
+      amount_usd NUMERIC(18, 4) NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (entry_type IN ('reserve', 'release', 'settle')),
+      CHECK (amount_usd >= 0)
+    )
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_budget_ledger_campaign_created
+      ON ${BUDGET_LEDGER_TABLE} (campaign_id, created_at DESC)
+  `)
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_budget_ledger_request
+      ON ${BUDGET_LEDGER_TABLE} (request_id, created_at DESC)
+  `)
+}
+
 async function migrateLegacyPlacementIdsInSupabase(pool) {
   const db = pool || settlementStore.pool
   if (!db) {
@@ -4629,6 +4826,8 @@ async function ensureSettlementStoreReady() {
       await ensureSettlementFactTable(pool)
       await ensureRuntimeLogTables(pool)
       await ensureControlPlaneTables(pool)
+      await ensureCampaignBudgetTables(pool)
+      await seedDefaultCampaignBudgets(pool)
       const migration = await migrateLegacyPlacementIdsInSupabase(pool)
       if (migration.executed) {
         const rowsByTable = migration.updatedRowsByTable && typeof migration.updatedRowsByTable === 'object'
@@ -5513,6 +5712,880 @@ function findPricingSnapshotByRequestId(requestId = '') {
   return null
 }
 
+function normalizeCampaignId(value = '') {
+  return String(value || '').trim()
+}
+
+function resolveCampaignIdFromMetadata(metadata = {}) {
+  const source = metadata && typeof metadata === 'object' ? metadata : {}
+  return normalizeCampaignId(
+    source.campaignId
+    || source.campaign_id
+    || source.programId
+    || source.program_id
+    || source.advertiserId
+    || source.advertiser_id,
+  )
+}
+
+function resolveCampaignIdFromCandidate(candidate = {}) {
+  return resolveCampaignIdFromMetadata(candidate?.metadata)
+}
+
+function resolveCampaignIdFromBid(bid = {}) {
+  const source = bid && typeof bid === 'object' ? bid : {}
+  const direct = normalizeCampaignId(source.campaignId || source.campaign_id)
+  if (direct) return direct
+  return resolveCampaignIdFromMetadata(source.metadata)
+}
+
+function isCpcSemanticsActive() {
+  return CPC_SEMANTICS_ENABLED
+}
+
+function isBudgetEnforced() {
+  return BUDGET_ENFORCEMENT_MODE === 'on'
+}
+
+function isBudgetMonitorOnly() {
+  return BUDGET_ENFORCEMENT_MODE === 'monitor_only'
+}
+
+function isRiskEnforced() {
+  return RISK_ENFORCEMENT_MODE === 'on'
+}
+
+function isRiskMonitorOnly() {
+  return RISK_ENFORCEMENT_MODE === 'monitor_only'
+}
+
+function trimRecentTimestamps(rows = [], windowMs = 0, nowMs = Date.now()) {
+  const list = Array.isArray(rows) ? rows : []
+  const minTs = nowMs - Math.max(0, Math.floor(windowMs))
+  return list.filter((ts) => Number.isFinite(ts) && ts >= minTs)
+}
+
+function getRiskConfigSnapshot() {
+  const config = runtimeMemory?.risk?.config && typeof runtimeMemory.risk.config === 'object'
+    ? runtimeMemory.risk.config
+    : {}
+  return {
+    clickBurstWindowSec: toPositiveInteger(config.clickBurstWindowSec, DEFAULT_RISK_RULES.clickBurstWindowSec),
+    clickBurstLimit: toPositiveInteger(config.clickBurstLimit, DEFAULT_RISK_RULES.clickBurstLimit),
+    duplicateClickWindowSec: toPositiveInteger(config.duplicateClickWindowSec, DEFAULT_RISK_RULES.duplicateClickWindowSec),
+    ctrWarnThreshold: clampNumber(config.ctrWarnThreshold, 0, 1, DEFAULT_RISK_RULES.ctrWarnThreshold),
+    ctrBlockThreshold: clampNumber(config.ctrBlockThreshold, 0, 1, DEFAULT_RISK_RULES.ctrBlockThreshold),
+    ctrMinImpressions: toPositiveInteger(config.ctrMinImpressions, DEFAULT_RISK_RULES.ctrMinImpressions),
+    degradeMultiplier: clampNumber(config.degradeMultiplier, 0.1, 1, DEFAULT_RISK_RULES.degradeMultiplier),
+  }
+}
+
+function normalizeRiskConfigPayload(payload = {}) {
+  const input = payload && typeof payload === 'object' ? payload : {}
+  const existing = getRiskConfigSnapshot()
+  return {
+    clickBurstWindowSec: toPositiveInteger(input.clickBurstWindowSec, existing.clickBurstWindowSec),
+    clickBurstLimit: toPositiveInteger(input.clickBurstLimit, existing.clickBurstLimit),
+    duplicateClickWindowSec: toPositiveInteger(input.duplicateClickWindowSec, existing.duplicateClickWindowSec),
+    ctrWarnThreshold: clampNumber(input.ctrWarnThreshold, 0, 1, existing.ctrWarnThreshold),
+    ctrBlockThreshold: clampNumber(input.ctrBlockThreshold, 0, 1, existing.ctrBlockThreshold),
+    ctrMinImpressions: toPositiveInteger(input.ctrMinImpressions, existing.ctrMinImpressions),
+    degradeMultiplier: clampNumber(input.degradeMultiplier, 0.1, 1, existing.degradeMultiplier),
+  }
+}
+
+function updateRiskConfig(payload = {}) {
+  const next = normalizeRiskConfigPayload(payload)
+  runtimeMemory.risk.config = { ...next }
+  return getRiskConfigSnapshot()
+}
+
+function getCampaignPerfState(campaignId = '') {
+  const normalizedCampaignId = normalizeCampaignId(campaignId)
+  if (!normalizedCampaignId) return null
+  if (!(runtimeMemory?.risk?.campaignPerfById instanceof Map)) {
+    runtimeMemory.risk.campaignPerfById = new Map()
+  }
+  const map = runtimeMemory.risk.campaignPerfById
+  if (!map.has(normalizedCampaignId)) {
+    map.set(normalizedCampaignId, {
+      impressionTs: [],
+      clickTs: [],
+    })
+  }
+  return map.get(normalizedCampaignId)
+}
+
+function getCampaignCtrSnapshot(campaignId = '', nowMs = Date.now()) {
+  const perf = getCampaignPerfState(campaignId)
+  if (!perf) {
+    return {
+      impressions: 0,
+      clicks: 0,
+      ctr: 0,
+    }
+  }
+  const windowMs = 15 * 60 * 1000
+  perf.impressionTs = trimRecentTimestamps(perf.impressionTs, windowMs, nowMs)
+  perf.clickTs = trimRecentTimestamps(perf.clickTs, windowMs, nowMs)
+  const impressions = perf.impressionTs.length
+  const clicks = perf.clickTs.length
+  return {
+    impressions,
+    clicks,
+    ctr: impressions > 0 ? clicks / impressions : 0,
+  }
+}
+
+function recordCampaignImpressionForRisk(campaignId = '', nowMs = Date.now()) {
+  const perf = getCampaignPerfState(campaignId)
+  if (!perf) return
+  perf.impressionTs.push(nowMs)
+  perf.impressionTs = trimRecentTimestamps(perf.impressionTs, 15 * 60 * 1000, nowMs)
+}
+
+function recordCampaignClickForRisk(campaignId = '', nowMs = Date.now()) {
+  const perf = getCampaignPerfState(campaignId)
+  if (!perf) return
+  perf.clickTs.push(nowMs)
+  perf.clickTs = trimRecentTimestamps(perf.clickTs, 15 * 60 * 1000, nowMs)
+}
+
+function buildRiskActorKey(input = {}) {
+  const accountId = normalizeControlPlaneAccountId(input.accountId || '', '')
+  const appId = String(input.appId || '').trim()
+  const userId = String(input.userId || '').trim()
+  const sessionId = String(input.sessionId || '').trim()
+  return [accountId, appId, userId, sessionId].join('|')
+}
+
+function evaluateBidRisk(input = {}) {
+  const campaignId = normalizeCampaignId(input.campaignId)
+  const config = getRiskConfigSnapshot()
+  if (!campaignId) {
+    return {
+      decision: 'allow',
+      reasonCode: 'risk_campaign_missing',
+      multiplier: 1,
+      enforced: isRiskEnforced(),
+      mode: RISK_ENFORCEMENT_MODE,
+    }
+  }
+  const ctrSnapshot = getCampaignCtrSnapshot(campaignId, Date.now())
+  if (ctrSnapshot.impressions >= config.ctrMinImpressions && ctrSnapshot.ctr >= config.ctrBlockThreshold) {
+    return {
+      decision: 'block',
+      reasonCode: 'risk_ctr_spike_block',
+      multiplier: 1,
+      ctrSnapshot,
+      enforced: isRiskEnforced(),
+      mode: RISK_ENFORCEMENT_MODE,
+    }
+  }
+  if (ctrSnapshot.impressions >= config.ctrMinImpressions && ctrSnapshot.ctr >= config.ctrWarnThreshold) {
+    return {
+      decision: 'degrade',
+      reasonCode: 'risk_ctr_spike_degrade',
+      multiplier: config.degradeMultiplier,
+      ctrSnapshot,
+      enforced: isRiskEnforced(),
+      mode: RISK_ENFORCEMENT_MODE,
+    }
+  }
+  return {
+    decision: 'allow',
+    reasonCode: 'risk_allow',
+    multiplier: 1,
+    ctrSnapshot,
+    enforced: isRiskEnforced(),
+    mode: RISK_ENFORCEMENT_MODE,
+  }
+}
+
+function evaluateClickRisk(input = {}) {
+  const nowMs = Date.now()
+  const config = getRiskConfigSnapshot()
+  const requestId = String(input.requestId || '').trim()
+  const adId = String(input.adId || '').trim()
+  const actorKey = buildRiskActorKey(input)
+  const requestAdKey = requestId && adId ? `${requestId}|${adId}` : ''
+  const campaignId = normalizeCampaignId(input.campaignId)
+
+  if (!(runtimeMemory?.risk?.clickSeenByRequestAd instanceof Map)) {
+    runtimeMemory.risk.clickSeenByRequestAd = new Map()
+  }
+  if (requestAdKey) {
+    const lastSeenMs = toPositiveInteger(runtimeMemory.risk.clickSeenByRequestAd.get(requestAdKey), 0)
+    if (lastSeenMs > 0 && (nowMs - lastSeenMs) <= (config.duplicateClickWindowSec * 1000)) {
+      return {
+        decision: 'block',
+        reasonCode: 'risk_duplicate_click',
+        multiplier: 1,
+        mode: RISK_ENFORCEMENT_MODE,
+        enforced: isRiskEnforced(),
+      }
+    }
+    runtimeMemory.risk.clickSeenByRequestAd.set(requestAdKey, nowMs)
+  }
+
+  if (!(runtimeMemory?.risk?.clickBurstByActor instanceof Map)) {
+    runtimeMemory.risk.clickBurstByActor = new Map()
+  }
+  const burstRows = runtimeMemory.risk.clickBurstByActor.get(actorKey) || []
+  const nextRows = [...trimRecentTimestamps(burstRows, config.clickBurstWindowSec * 1000, nowMs), nowMs]
+  runtimeMemory.risk.clickBurstByActor.set(actorKey, nextRows)
+  if (nextRows.length > config.clickBurstLimit) {
+    return {
+      decision: 'block',
+      reasonCode: 'risk_click_burst',
+      multiplier: 1,
+      burstCount: nextRows.length,
+      mode: RISK_ENFORCEMENT_MODE,
+      enforced: isRiskEnforced(),
+    }
+  }
+
+  const ctrSnapshot = getCampaignCtrSnapshot(campaignId, nowMs)
+  if (campaignId && ctrSnapshot.impressions >= config.ctrMinImpressions && ctrSnapshot.ctr >= config.ctrBlockThreshold) {
+    return {
+      decision: 'block',
+      reasonCode: 'risk_ctr_spike_block',
+      multiplier: 1,
+      ctrSnapshot,
+      mode: RISK_ENFORCEMENT_MODE,
+      enforced: isRiskEnforced(),
+    }
+  }
+  if (campaignId && ctrSnapshot.impressions >= config.ctrMinImpressions && ctrSnapshot.ctr >= config.ctrWarnThreshold) {
+    return {
+      decision: 'degrade',
+      reasonCode: 'risk_ctr_spike_degrade',
+      multiplier: config.degradeMultiplier,
+      ctrSnapshot,
+      mode: RISK_ENFORCEMENT_MODE,
+      enforced: isRiskEnforced(),
+    }
+  }
+
+  return {
+    decision: 'allow',
+    reasonCode: 'risk_allow',
+    multiplier: 1,
+    mode: RISK_ENFORCEMENT_MODE,
+    enforced: isRiskEnforced(),
+  }
+}
+
+async function cleanupExpiredBudgetReservations(options = {}) {
+  const db = options.pool || settlementStore.pool
+  if (!db) return 0
+  const nowAt = normalizeIsoTimestamp(options.nowAt, nowIso())
+  const result = await db.query(
+    `
+      WITH expired AS (
+        UPDATE ${BUDGET_RESERVATIONS_TABLE}
+        SET
+          status = 'released',
+          reason_code = CASE WHEN reason_code = '' THEN 'expired' ELSE reason_code END,
+          updated_at = $1::timestamptz
+        WHERE status = 'reserved'
+          AND expires_at <= $1::timestamptz
+        RETURNING reservation_id, campaign_id, request_id, reserved_cpc_usd
+      )
+      INSERT INTO ${BUDGET_LEDGER_TABLE} (
+        ledger_id,
+        campaign_id,
+        reservation_id,
+        request_id,
+        entry_type,
+        amount_usd,
+        currency,
+        metadata,
+        created_at
+      )
+      SELECT
+        'bled_' || md5(expired.reservation_id || '|release|' || $1::text),
+        expired.campaign_id,
+        expired.reservation_id,
+        expired.request_id,
+        'release',
+        expired.reserved_cpc_usd,
+        'USD',
+        '{"reason":"expired"}'::jsonb,
+        $1::timestamptz
+      FROM expired
+      ON CONFLICT (ledger_id) DO NOTHING
+    `,
+    [nowAt],
+  )
+  return toPositiveInteger(result.rowCount, 0)
+}
+
+async function getCampaignBudgetSnapshot(campaignId = '', options = {}) {
+  const normalizedCampaignId = normalizeCampaignId(campaignId)
+  if (!normalizedCampaignId) {
+    return {
+      configured: false,
+      reasonCode: 'budget_unconfigured',
+      campaignId: '',
+    }
+  }
+  const db = options.pool || settlementStore.pool
+  if (!db) {
+    return {
+      configured: false,
+      reasonCode: 'budget_store_unavailable',
+      campaignId: normalizedCampaignId,
+    }
+  }
+
+  await cleanupExpiredBudgetReservations({ pool: db })
+  const result = await db.query(
+    `
+      SELECT
+        c.campaign_id,
+        c.account_id,
+        c.app_id,
+        c.status,
+        l.daily_budget_usd,
+        l.lifetime_budget_usd,
+        l.currency,
+        l.timezone,
+        COALESCE((
+          SELECT SUM(entry.amount_usd)
+          FROM ${BUDGET_LEDGER_TABLE} entry
+          WHERE entry.campaign_id = c.campaign_id
+            AND entry.entry_type = 'settle'
+        ), 0) AS spent_lifetime_usd,
+        COALESCE((
+          SELECT SUM(entry.amount_usd)
+          FROM ${BUDGET_LEDGER_TABLE} entry
+          WHERE entry.campaign_id = c.campaign_id
+            AND entry.entry_type = 'settle'
+            AND entry.created_at >= date_trunc('day', NOW())
+        ), 0) AS spent_daily_usd,
+        COALESCE((
+          SELECT SUM(reserved.reserved_cpc_usd)
+          FROM ${BUDGET_RESERVATIONS_TABLE} reserved
+          WHERE reserved.campaign_id = c.campaign_id
+            AND reserved.status = 'reserved'
+            AND reserved.expires_at > NOW()
+        ), 0) AS reserved_open_usd
+      FROM ${CAMPAIGNS_TABLE} c
+      LEFT JOIN ${CAMPAIGN_BUDGET_LIMITS_TABLE} l
+        ON l.campaign_id = c.campaign_id
+      WHERE c.campaign_id = $1
+      LIMIT 1
+    `,
+    [normalizedCampaignId],
+  )
+  const row = Array.isArray(result.rows) ? result.rows[0] : null
+  if (!row) {
+    return {
+      configured: false,
+      reasonCode: 'budget_unconfigured',
+      campaignId: normalizedCampaignId,
+    }
+  }
+  const lifetimeBudgetUsd = clampNumber(row.lifetime_budget_usd, 0, Number.MAX_SAFE_INTEGER, 0)
+  if (!(lifetimeBudgetUsd > 0)) {
+    return {
+      configured: false,
+      reasonCode: 'budget_unconfigured',
+      campaignId: normalizedCampaignId,
+    }
+  }
+  const dailyBudgetUsd = clampNumber(row.daily_budget_usd, 0, Number.MAX_SAFE_INTEGER, NaN)
+  const spentLifetimeUsd = clampNumber(row.spent_lifetime_usd, 0, Number.MAX_SAFE_INTEGER, 0)
+  const spentDailyUsd = clampNumber(row.spent_daily_usd, 0, Number.MAX_SAFE_INTEGER, 0)
+  const reservedOpenUsd = clampNumber(row.reserved_open_usd, 0, Number.MAX_SAFE_INTEGER, 0)
+  const remainingLifetimeUsd = Math.max(0, lifetimeBudgetUsd - spentLifetimeUsd - reservedOpenUsd)
+  const remainingDailyUsd = Number.isFinite(dailyBudgetUsd)
+    ? Math.max(0, dailyBudgetUsd - spentDailyUsd - reservedOpenUsd)
+    : Number.MAX_SAFE_INTEGER
+  const remainingUsd = Math.max(0, Math.min(remainingLifetimeUsd, remainingDailyUsd))
+  const active = String(row.status || '').trim().toLowerCase() === 'active'
+
+  return {
+    configured: true,
+    active,
+    campaignId: normalizedCampaignId,
+    accountId: String(row.account_id || '').trim(),
+    appId: String(row.app_id || '').trim(),
+    currency: String(row.currency || 'USD').trim() || 'USD',
+    timezone: String(row.timezone || 'UTC').trim() || 'UTC',
+    dailyBudgetUsd: Number.isFinite(dailyBudgetUsd) ? round(dailyBudgetUsd, 4) : null,
+    lifetimeBudgetUsd: round(lifetimeBudgetUsd, 4),
+    spentDailyUsd: round(spentDailyUsd, 4),
+    spentLifetimeUsd: round(spentLifetimeUsd, 4),
+    reservedOpenUsd: round(reservedOpenUsd, 4),
+    remainingUsd: round(remainingUsd, 4),
+    reasonCode: active ? (remainingUsd > 0 ? 'budget_ok' : 'budget_exhausted') : 'budget_campaign_inactive',
+  }
+}
+
+async function tryReserveCampaignBudget(input = {}) {
+  const campaignId = normalizeCampaignId(input.campaignId)
+  const requestId = String(input.requestId || '').trim()
+  const adId = String(input.adId || '').trim()
+  const accountId = normalizeControlPlaneAccountId(input.accountId || '', '')
+  const appId = String(input.appId || '').trim()
+  const reserveUsd = round(clampNumber(input.reserveUsd, 0, Number.MAX_SAFE_INTEGER, 0), 4)
+  if (!campaignId) {
+    return {
+      allowed: false,
+      reserved: false,
+      reasonCode: 'budget_unconfigured',
+      reservation: null,
+      budgetSnapshot: null,
+    }
+  }
+  if (!(reserveUsd > 0)) {
+    return {
+      allowed: false,
+      reserved: false,
+      reasonCode: 'budget_invalid_amount',
+      reservation: null,
+      budgetSnapshot: null,
+    }
+  }
+  const db = input.pool || settlementStore.pool
+  if (!db) {
+    return {
+      allowed: false,
+      reserved: false,
+      reasonCode: 'budget_store_unavailable',
+      reservation: null,
+      budgetSnapshot: null,
+    }
+  }
+
+  const client = typeof db.connect === 'function' ? await db.connect() : null
+  const runner = client || db
+  const nowAt = nowIso()
+  const expiresAt = new Date(Date.now() + BUDGET_RESERVATION_TTL_MS).toISOString()
+  const reservationId = createId('bres')
+  const ledgerId = createId('bled')
+
+  try {
+    await runner.query('BEGIN')
+    await cleanupExpiredBudgetReservations({ pool: runner, nowAt })
+
+    const existingReservationResult = await runner.query(
+      `
+        SELECT *
+        FROM ${BUDGET_RESERVATIONS_TABLE}
+        WHERE request_id = $1
+          AND campaign_id = $2
+          AND ad_id = $3
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      [requestId, campaignId, adId],
+    )
+    const existingReservation = Array.isArray(existingReservationResult.rows)
+      ? existingReservationResult.rows[0]
+      : null
+    if (
+      existingReservation
+      && String(existingReservation.status || '') === 'reserved'
+      && Date.parse(String(existingReservation.expires_at || '')) > Date.now()
+    ) {
+      await runner.query('COMMIT')
+      return {
+        allowed: true,
+        reserved: true,
+        reasonCode: 'budget_already_reserved',
+        reservation: {
+          reservationId: String(existingReservation.reservation_id || '').trim(),
+          campaignId,
+          requestId,
+          adId,
+          reservedCpcUsd: round(clampNumber(existingReservation.reserved_cpc_usd, 0, Number.MAX_SAFE_INTEGER, 0), 4),
+          expiresAt: normalizeIsoTimestamp(existingReservation.expires_at, expiresAt),
+        },
+        budgetSnapshot: await getCampaignBudgetSnapshot(campaignId, { pool: runner }),
+      }
+    }
+
+    const snapshot = await getCampaignBudgetSnapshot(campaignId, { pool: runner })
+    if (!snapshot.configured) {
+      await runner.query('ROLLBACK')
+      return {
+        allowed: false,
+        reserved: false,
+        reasonCode: snapshot.reasonCode || 'budget_unconfigured',
+        reservation: null,
+        budgetSnapshot: snapshot,
+      }
+    }
+    if (!snapshot.active) {
+      await runner.query('ROLLBACK')
+      return {
+        allowed: false,
+        reserved: false,
+        reasonCode: 'budget_campaign_inactive',
+        reservation: null,
+        budgetSnapshot: snapshot,
+      }
+    }
+    if (snapshot.remainingUsd < reserveUsd) {
+      await runner.query('ROLLBACK')
+      return {
+        allowed: false,
+        reserved: false,
+        reasonCode: 'budget_exhausted',
+        reservation: null,
+        budgetSnapshot: snapshot,
+      }
+    }
+
+    await runner.query(
+      `
+        INSERT INTO ${BUDGET_RESERVATIONS_TABLE} (
+          reservation_id,
+          campaign_id,
+          account_id,
+          app_id,
+          request_id,
+          ad_id,
+          reserved_cpc_usd,
+          pricing_semantics_version,
+          status,
+          reason_code,
+          expires_at,
+          settled_fact_id,
+          created_at,
+          updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'cpc_v1', 'reserved', '', $8::timestamptz, '', $9::timestamptz, $9::timestamptz)
+      `,
+      [
+        reservationId,
+        campaignId,
+        accountId,
+        appId,
+        requestId,
+        adId,
+        reserveUsd,
+        expiresAt,
+        nowAt,
+      ],
+    )
+
+    await runner.query(
+      `
+        INSERT INTO ${BUDGET_LEDGER_TABLE} (
+          ledger_id,
+          campaign_id,
+          reservation_id,
+          request_id,
+          fact_id,
+          entry_type,
+          amount_usd,
+          currency,
+          metadata,
+          created_at
+        )
+        VALUES ($1, $2, $3, $4, '', 'reserve', $5, 'USD', $6::jsonb, $7::timestamptz)
+      `,
+      [
+        ledgerId,
+        campaignId,
+        reservationId,
+        requestId,
+        reserveUsd,
+        JSON.stringify({
+          adId,
+          appId,
+          accountId,
+          source: String(input.source || 'v2_bid').trim() || 'v2_bid',
+        }),
+        nowAt,
+      ],
+    )
+    await runner.query('COMMIT')
+
+    return {
+      allowed: true,
+      reserved: true,
+      reasonCode: 'budget_reserved',
+      reservation: {
+        reservationId,
+        campaignId,
+        requestId,
+        adId,
+        reservedCpcUsd: reserveUsd,
+        expiresAt,
+      },
+      budgetSnapshot: await getCampaignBudgetSnapshot(campaignId, { pool: db }),
+    }
+  } catch (error) {
+    await runner.query('ROLLBACK').catch(() => {})
+    return {
+      allowed: false,
+      reserved: false,
+      reasonCode: 'budget_reservation_error',
+      reservation: null,
+      budgetSnapshot: null,
+      error: error instanceof Error ? error.message : 'budget_reservation_error',
+    }
+  } finally {
+    if (client) client.release()
+  }
+}
+
+async function settleCampaignBudgetReservation(input = {}) {
+  const campaignId = normalizeCampaignId(input.campaignId)
+  const requestId = String(input.requestId || '').trim()
+  const adId = String(input.adId || '').trim()
+  const factId = String(input.factId || '').trim()
+  const amountUsd = round(clampNumber(input.amountUsd, 0, Number.MAX_SAFE_INTEGER, 0), 4)
+  if (!campaignId || !requestId || !factId || !(amountUsd > 0)) {
+    return {
+      settled: false,
+      reasonCode: 'budget_settlement_invalid',
+    }
+  }
+
+  const db = input.pool || settlementStore.pool
+  if (!db) {
+    return {
+      settled: false,
+      reasonCode: 'budget_store_unavailable',
+    }
+  }
+
+  const client = typeof db.connect === 'function' ? await db.connect() : null
+  const runner = client || db
+  const nowAt = nowIso()
+  try {
+    await runner.query('BEGIN')
+    const reservationResult = await runner.query(
+      `
+        SELECT *
+        FROM ${BUDGET_RESERVATIONS_TABLE}
+        WHERE request_id = $1
+          AND campaign_id = $2
+          AND ad_id = $3
+        ORDER BY created_at DESC
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [requestId, campaignId, adId],
+    )
+    const reservation = Array.isArray(reservationResult.rows) ? reservationResult.rows[0] : null
+    if (!reservation) {
+      await runner.query('ROLLBACK')
+      return {
+        settled: false,
+        reasonCode: 'budget_reservation_missing',
+      }
+    }
+
+    const reservationId = String(reservation.reservation_id || '').trim()
+    const status = String(reservation.status || '').trim()
+    if (status === 'settled') {
+      await runner.query('COMMIT')
+      return {
+        settled: true,
+        reasonCode: 'budget_already_settled',
+        reservationId,
+      }
+    }
+    if (status !== 'reserved') {
+      await runner.query('ROLLBACK')
+      return {
+        settled: false,
+        reasonCode: 'budget_reservation_not_active',
+        reservationId,
+      }
+    }
+
+    await runner.query(
+      `
+        UPDATE ${BUDGET_RESERVATIONS_TABLE}
+        SET
+          status = 'settled',
+          reason_code = 'settled',
+          settled_fact_id = $2,
+          updated_at = $3::timestamptz
+        WHERE reservation_id = $1
+      `,
+      [reservationId, factId, nowAt],
+    )
+
+    await runner.query(
+      `
+        INSERT INTO ${BUDGET_LEDGER_TABLE} (
+          ledger_id,
+          campaign_id,
+          reservation_id,
+          request_id,
+          fact_id,
+          entry_type,
+          amount_usd,
+          currency,
+          metadata,
+          created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, 'settle', $6, 'USD', $7::jsonb, $8::timestamptz)
+      `,
+      [
+        createId('bled'),
+        campaignId,
+        reservationId,
+        requestId,
+        factId,
+        amountUsd,
+        JSON.stringify({
+          adId,
+          source: String(input.source || 'click').trim() || 'click',
+        }),
+        nowAt,
+      ],
+    )
+    await runner.query('COMMIT')
+    return {
+      settled: true,
+      reasonCode: 'budget_settled',
+      reservationId,
+    }
+  } catch (error) {
+    await runner.query('ROLLBACK').catch(() => {})
+    return {
+      settled: false,
+      reasonCode: 'budget_settlement_error',
+      error: error instanceof Error ? error.message : 'budget_settlement_error',
+    }
+  } finally {
+    if (client) client.release()
+  }
+}
+
+async function upsertCampaignBudgetConfig(input = {}) {
+  const campaignId = normalizeCampaignId(input.campaignId)
+  const appId = String(input.appId || '').trim()
+  const accountId = normalizeControlPlaneAccountId(input.accountId || resolveAccountIdForApp(appId), '')
+  const status = String(input.status || 'active').trim().toLowerCase()
+  const normalizedStatus = ['active', 'paused', 'archived'].includes(status) ? status : 'active'
+  const lifetimeBudgetUsd = round(clampNumber(input.lifetimeBudgetUsd, 0, Number.MAX_SAFE_INTEGER, 0), 4)
+  const dailyBudgetValue = clampNumber(input.dailyBudgetUsd, 0, Number.MAX_SAFE_INTEGER, NaN)
+  const dailyBudgetUsd = Number.isFinite(dailyBudgetValue) && dailyBudgetValue > 0
+    ? round(dailyBudgetValue, 4)
+    : null
+  if (!campaignId) throw new Error('campaignId is required.')
+  if (!(lifetimeBudgetUsd > 0)) throw new Error('lifetimeBudgetUsd must be greater than 0.')
+
+  const db = settlementStore.pool
+  if (!db) throw new Error('budget store unavailable.')
+
+  const nowAt = nowIso()
+  await db.query(
+    `
+      INSERT INTO ${CAMPAIGNS_TABLE} (
+        campaign_id,
+        account_id,
+        app_id,
+        status,
+        metadata,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5::jsonb, $6::timestamptz, $6::timestamptz)
+      ON CONFLICT (campaign_id) DO UPDATE
+      SET
+        account_id = EXCLUDED.account_id,
+        app_id = EXCLUDED.app_id,
+        status = EXCLUDED.status,
+        metadata = EXCLUDED.metadata,
+        updated_at = EXCLUDED.updated_at
+    `,
+    [
+      campaignId,
+      accountId,
+      appId,
+      normalizedStatus,
+      JSON.stringify(input.metadata && typeof input.metadata === 'object' ? input.metadata : {}),
+      nowAt,
+    ],
+  )
+  await db.query(
+    `
+      INSERT INTO ${CAMPAIGN_BUDGET_LIMITS_TABLE} (
+        campaign_id,
+        daily_budget_usd,
+        lifetime_budget_usd,
+        currency,
+        timezone,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, $3, 'USD', $4, $5::timestamptz, $5::timestamptz)
+      ON CONFLICT (campaign_id) DO UPDATE
+      SET
+        daily_budget_usd = EXCLUDED.daily_budget_usd,
+        lifetime_budget_usd = EXCLUDED.lifetime_budget_usd,
+        timezone = EXCLUDED.timezone,
+        updated_at = EXCLUDED.updated_at
+    `,
+    [
+      campaignId,
+      dailyBudgetUsd,
+      lifetimeBudgetUsd,
+      String(input.timezone || 'UTC').trim() || 'UTC',
+      nowAt,
+    ],
+  )
+
+  return await getCampaignBudgetSnapshot(campaignId)
+}
+
+async function listCampaignBudgetStatuses(scope = {}, options = {}) {
+  const db = settlementStore.pool
+  if (!db) return []
+  await cleanupExpiredBudgetReservations({ pool: db })
+
+  const clauses = []
+  const values = []
+  let cursor = 1
+  if (scope.accountId) {
+    clauses.push(`c.account_id = $${cursor}`)
+    values.push(scope.accountId)
+    cursor += 1
+  }
+  if (scope.appId) {
+    clauses.push(`c.app_id = $${cursor}`)
+    values.push(scope.appId)
+    cursor += 1
+  }
+  const campaignId = normalizeCampaignId(options.campaignId)
+  if (campaignId) {
+    clauses.push(`c.campaign_id = $${cursor}`)
+    values.push(campaignId)
+    cursor += 1
+  }
+  const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : ''
+
+  const result = await db.query(
+    `
+      SELECT c.campaign_id
+      FROM ${CAMPAIGNS_TABLE} c
+      ${whereClause}
+      ORDER BY c.updated_at DESC
+      LIMIT 500
+    `,
+    values,
+  )
+  const campaignRows = Array.isArray(result.rows) ? result.rows : []
+  const snapshots = []
+  for (const row of campaignRows) {
+    const snapshot = await getCampaignBudgetSnapshot(String(row.campaign_id || '').trim(), { pool: db })
+    if (snapshot?.campaignId) snapshots.push(snapshot)
+  }
+  return snapshots
+}
+
 function buildConversionFactIdempotencyKey(payload = {}) {
   const appId = String(payload.appId || '').trim()
   const requestId = String(payload.requestId || '').trim()
@@ -5589,6 +6662,9 @@ async function recordClickRevenueFactFromBid(payload = {}) {
       placementKey: '',
       appId: '',
       accountId: '',
+      campaignId: '',
+      riskDecision: null,
+      budgetDecision: null,
     }
   }
 
@@ -5606,6 +6682,9 @@ async function recordClickRevenueFactFromBid(payload = {}) {
       placementKey: '',
       appId: '',
       accountId: '',
+      campaignId: '',
+      riskDecision: null,
+      budgetDecision: null,
     }
   }
 
@@ -5620,6 +6699,11 @@ async function recordClickRevenueFactFromBid(payload = {}) {
   )
   const placementKey = String(request.placementKey || decision.placementKey || '').trim()
     || resolvePlacementKeyById(placementId, appId)
+  const campaignId = normalizeCampaignId(
+    request.campaignId
+    || decision?.runtime?.winnerBid?.campaignId
+    || resolveCampaignIdFromBid(decision?.runtime?.winnerBid),
+  )
   const adLookup = normalizeDecisionAdSnapshotByRequest(decision, request.adId)
   const targetUrl = String(
     request.targetUrl
@@ -5643,15 +6727,65 @@ async function recordClickRevenueFactFromBid(payload = {}) {
       placementKey,
       appId,
       accountId,
+      campaignId,
+      riskDecision: null,
+      budgetDecision: null,
     }
   }
 
   const pricingSnapshot = normalizeBidPricingSnapshot(
     decision?.runtime?.pricingSnapshot || findPricingSnapshotByRequestId(requestId),
   )
+  const rawBidPriceUsd = round(
+    clampNumber(
+      request.bidPriceUsd
+      ?? request.bidPrice
+      ?? (isCpcSemanticsActive()
+        ? pricingSnapshot?.cpcUsd
+        : (pricingSnapshot?.ecpmUsd ?? pricingSnapshot?.cpcUsd)),
+      0,
+      Number.MAX_SAFE_INTEGER,
+      0,
+    ),
+    4,
+  )
+  const riskDecision = evaluateClickRisk({
+    requestId,
+    adId,
+    campaignId,
+    appId,
+    accountId,
+    userId: String(request.userId || decision.userId || '').trim(),
+    sessionId: String(request.sessionId || decision.sessionId || '').trim(),
+  })
+  if (isRiskEnforced() && riskDecision.decision === 'block') {
+    return {
+      recorded: false,
+      duplicate: false,
+      fact: null,
+      reason: riskDecision.reasonCode || 'risk_blocked',
+      bidPriceUsd: 0,
+      targetUrl,
+      pricingSnapshot,
+      placementId,
+      placementKey,
+      appId,
+      accountId,
+      campaignId,
+      riskDecision,
+      budgetDecision: null,
+    }
+  }
+  const riskMultiplier = (
+    isRiskEnforced()
+    && riskDecision.decision === 'degrade'
+    && riskDecision.multiplier > 0
+  )
+    ? riskDecision.multiplier
+    : 1
   const bidPriceUsd = round(
     clampNumber(
-      request.bidPriceUsd ?? request.bidPrice ?? pricingSnapshot?.cpcUsd,
+      rawBidPriceUsd * riskMultiplier,
       0,
       Number.MAX_SAFE_INTEGER,
       0,
@@ -5671,6 +6805,32 @@ async function recordClickRevenueFactFromBid(payload = {}) {
       placementKey,
       appId,
       accountId,
+      campaignId,
+      riskDecision,
+      budgetDecision: null,
+    }
+  }
+
+  if (!campaignId && isBudgetEnforced()) {
+    return {
+      recorded: false,
+      duplicate: false,
+      fact: null,
+      reason: 'budget_unconfigured',
+      bidPriceUsd,
+      targetUrl,
+      pricingSnapshot,
+      placementId,
+      placementKey,
+      appId,
+      accountId,
+      campaignId: '',
+      riskDecision,
+      budgetDecision: {
+        mode: BUDGET_ENFORCEMENT_MODE,
+        decision: 'block',
+        reasonCode: 'budget_unconfigured',
+      },
     }
   }
 
@@ -5711,6 +6871,44 @@ async function recordClickRevenueFactFromBid(payload = {}) {
     idempotencyKey,
   })
   const { duplicate, fact: persistedFact } = await writeConversionFact(fact)
+  let budgetDecision = null
+  if (campaignId && !duplicate) {
+    const settlement = await settleCampaignBudgetReservation({
+      campaignId,
+      requestId,
+      adId,
+      factId: String(persistedFact?.factId || fact.factId || '').trim(),
+      amountUsd: bidPriceUsd,
+      source,
+    })
+    budgetDecision = {
+      mode: BUDGET_ENFORCEMENT_MODE,
+      decision: settlement.settled ? 'settled' : 'blocked',
+      reasonCode: settlement.reasonCode || (settlement.settled ? 'budget_settled' : 'budget_reservation_missing'),
+      reservationId: settlement.reservationId || '',
+    }
+    if (isBudgetEnforced() && !settlement.settled) {
+      return {
+        recorded: false,
+        duplicate,
+        fact: persistedFact,
+        reason: budgetDecision.reasonCode,
+        bidPriceUsd,
+        targetUrl,
+        pricingSnapshot,
+        placementId,
+        placementKey,
+        appId,
+        accountId,
+        campaignId,
+        riskDecision,
+        budgetDecision,
+      }
+    }
+  }
+  if (!duplicate && campaignId) {
+    recordCampaignClickForRisk(campaignId)
+  }
 
   return {
     recorded: !duplicate,
@@ -5724,6 +6922,9 @@ async function recordClickRevenueFactFromBid(payload = {}) {
     placementKey,
     appId,
     accountId,
+    campaignId,
+    riskDecision,
+    budgetDecision,
   }
 }
 
@@ -6339,6 +7540,176 @@ function createV2BidStageStatusMap() {
   }
 }
 
+function applyRiskMultiplierToBidPrice(bid, multiplier = 1) {
+  const safeMultiplier = clampNumber(multiplier, 0.1, 1, 1)
+  if (!bid || typeof bid !== 'object') return bid
+  const next = {
+    ...bid,
+    price: round(clampNumber(bid.price, 0, Number.MAX_SAFE_INTEGER, 0) * safeMultiplier, 4),
+  }
+  if (next.pricing && typeof next.pricing === 'object') {
+    const pricing = { ...next.pricing }
+    if (Number.isFinite(Number(pricing.cpcUsd))) {
+      pricing.cpcUsd = round(clampNumber(pricing.cpcUsd, 0, Number.MAX_SAFE_INTEGER, 0) * safeMultiplier, 4)
+    }
+    next.pricing = pricing
+  }
+  return next
+}
+
+async function selectWinnerWithBudgetAndRisk({
+  rankedCandidates = [],
+  request = {},
+  requestId = '',
+  placementId = '',
+  scoreFloor = 0.32,
+}) {
+  const ranked = Array.isArray(rankedCandidates) ? rankedCandidates : []
+  const diagnostics = {
+    evaluatedCount: 0,
+    eligibleCount: 0,
+    budgetRejectedCount: 0,
+    budgetUnconfiguredCount: 0,
+    riskBlockedCount: 0,
+    selectedCampaignId: '',
+  }
+  for (const candidate of ranked) {
+    diagnostics.evaluatedCount += 1
+    if (clampNumber(candidate?.rankScore, 0, 1, 0) < clampNumber(scoreFloor, 0, 1, 0.32)) {
+      continue
+    }
+    const candidateBid = mapRankedCandidateToBid(candidate, { placement: 'block' })
+    if (!candidateBid) continue
+    diagnostics.eligibleCount += 1
+
+    const campaignId = resolveCampaignIdFromBid(candidateBid) || resolveCampaignIdFromCandidate(candidate)
+    if (!campaignId) {
+      diagnostics.budgetUnconfiguredCount += 1
+      continue
+    }
+    const normalizedBid = {
+      ...candidateBid,
+      campaignId,
+    }
+
+    if (!isCpcSemanticsActive() && Number.isFinite(Number(normalizedBid?.pricing?.ecpmUsd))) {
+      normalizedBid.price = round(clampNumber(normalizedBid.pricing.ecpmUsd, 0, Number.MAX_SAFE_INTEGER, 0), 4)
+    }
+
+    const riskDecision = evaluateBidRisk({
+      campaignId,
+      appId: request.appId,
+      accountId: request.accountId,
+      userId: request.userId,
+      sessionId: request.chatId,
+      placementId,
+    })
+    if (isRiskEnforced() && riskDecision.decision === 'block') {
+      diagnostics.riskBlockedCount += 1
+      continue
+    }
+    const riskMultiplier = (
+      isRiskEnforced()
+      && riskDecision.decision === 'degrade'
+      && riskDecision.multiplier > 0
+    )
+      ? riskDecision.multiplier
+      : 1
+    const riskAdjustedBid = applyRiskMultiplierToBidPrice(normalizedBid, riskMultiplier)
+
+    const reserveUsd = round(
+      clampNumber(
+        riskAdjustedBid?.pricing?.cpcUsd ?? riskAdjustedBid?.price,
+        0,
+        Number.MAX_SAFE_INTEGER,
+        0,
+      ),
+      4,
+    )
+    let budgetDecision = {
+      mode: BUDGET_ENFORCEMENT_MODE,
+      decision: 'skipped',
+      reasonCode: 'budget_off',
+      reservationId: '',
+    }
+    if (isBudgetEnforced() || isBudgetMonitorOnly()) {
+      const reservation = await tryReserveCampaignBudget({
+        campaignId,
+        requestId,
+        adId: String(riskAdjustedBid.bidId || '').trim(),
+        reserveUsd,
+        accountId: request.accountId,
+        appId: request.appId,
+        source: 'v2_bid',
+      })
+      budgetDecision = {
+        mode: BUDGET_ENFORCEMENT_MODE,
+        decision: reservation.allowed ? 'reserved' : (isBudgetMonitorOnly() ? 'monitor_would_block' : 'blocked'),
+        reasonCode: reservation.reasonCode || (reservation.allowed ? 'budget_reserved' : 'budget_exhausted'),
+        reservationId: reservation.reservation?.reservationId || '',
+        budgetSnapshot: reservation.budgetSnapshot || null,
+      }
+      if (!reservation.allowed) {
+        diagnostics.budgetRejectedCount += 1
+        if (isBudgetEnforced()) continue
+      }
+    }
+
+    diagnostics.selectedCampaignId = campaignId
+    return {
+      winnerCandidate: candidate,
+      winnerBid: {
+        ...riskAdjustedBid,
+        campaignId,
+        pricing: riskAdjustedBid.pricing && typeof riskAdjustedBid.pricing === 'object'
+          ? {
+              ...riskAdjustedBid.pricing,
+              pricingSemanticsVersion: 'cpc_v1',
+              billingUnit: 'cpc',
+            }
+          : riskAdjustedBid.pricing,
+      },
+      reasonCode: 'served',
+      budgetDecision,
+      riskDecision: {
+        ...riskDecision,
+        multiplierApplied: riskMultiplier,
+      },
+      diagnostics,
+    }
+  }
+
+  let reasonCode = 'inventory_no_match'
+  if (isBudgetEnforced() && diagnostics.budgetUnconfiguredCount > 0 && diagnostics.eligibleCount === diagnostics.budgetUnconfiguredCount) {
+    reasonCode = 'budget_unconfigured'
+  } else if (isBudgetEnforced() && diagnostics.budgetRejectedCount > 0) {
+    reasonCode = 'budget_exhausted'
+  } else if (isRiskEnforced() && diagnostics.riskBlockedCount > 0 && diagnostics.eligibleCount === diagnostics.riskBlockedCount) {
+    reasonCode = 'risk_blocked'
+  }
+
+  return {
+    winnerCandidate: null,
+    winnerBid: null,
+    reasonCode,
+    budgetDecision: {
+      mode: BUDGET_ENFORCEMENT_MODE,
+      decision: 'none',
+      reasonCode: reasonCode === 'budget_unconfigured' || reasonCode === 'budget_exhausted'
+        ? reasonCode
+        : 'budget_not_selected',
+      reservationId: '',
+    },
+    riskDecision: {
+      mode: RISK_ENFORCEMENT_MODE,
+      decision: reasonCode === 'risk_blocked' ? 'block' : 'allow',
+      reasonCode: reasonCode === 'risk_blocked' ? 'risk_blocked' : 'risk_allow',
+      multiplierApplied: 1,
+    },
+    diagnostics,
+  }
+}
+
 async function evaluateSinglePlacementOpportunity({
   request = {},
   requestId = '',
@@ -6384,6 +7755,18 @@ async function evaluateSinglePlacementOpportunity({
   }
   let rankingDebug = {}
   let gatePassed = false
+  let budgetDecision = {
+    mode: BUDGET_ENFORCEMENT_MODE,
+    decision: 'skipped',
+    reasonCode: 'budget_not_evaluated',
+    reservationId: '',
+  }
+  let riskDecision = {
+    mode: RISK_ENFORCEMENT_MODE,
+    decision: 'allow',
+    reasonCode: 'risk_not_evaluated',
+    multiplierApplied: 1,
+  }
 
   const opportunityRecord = await writer.createOpportunityRecord({
     requestId,
@@ -6479,13 +7862,49 @@ async function evaluateSinglePlacementOpportunity({
         stageDurationsMs.ranking = Math.max(0, Date.now() - rankingStartedAt)
 
         rankingDebug = ranking?.debug && typeof ranking.debug === 'object' ? ranking.debug : {}
-        winnerCandidate = ranking?.winner && typeof ranking.winner === 'object' ? ranking.winner : null
-        reasonCode = String(ranking?.reasonCode || 'inventory_no_match')
-        stageStatusMap.ranking = winnerCandidate ? 'selected' : 'no_fill'
-        winnerBid = winnerCandidate?.bid && typeof winnerCandidate.bid === 'object'
-          ? winnerCandidate.bid
+        const budgetRiskSelection = await selectWinnerWithBudgetAndRisk({
+          rankedCandidates: ranking?.ranked,
+          request,
+          requestId,
+          placementId,
+          scoreFloor: clampNumber(ranking?.debug?.scoreFloor, 0, 1, 0.32),
+        })
+        winnerCandidate = budgetRiskSelection?.winnerCandidate && typeof budgetRiskSelection.winnerCandidate === 'object'
+          ? budgetRiskSelection.winnerCandidate
           : null
+        winnerBid = budgetRiskSelection?.winnerBid && typeof budgetRiskSelection.winnerBid === 'object'
+          ? budgetRiskSelection.winnerBid
+          : null
+        reasonCode = winnerCandidate
+          ? 'served'
+          : String(budgetRiskSelection?.reasonCode || ranking?.reasonCode || 'inventory_no_match')
+        budgetDecision = budgetRiskSelection?.budgetDecision && typeof budgetRiskSelection.budgetDecision === 'object'
+          ? budgetRiskSelection.budgetDecision
+          : budgetDecision
+        riskDecision = budgetRiskSelection?.riskDecision && typeof budgetRiskSelection.riskDecision === 'object'
+          ? budgetRiskSelection.riskDecision
+          : riskDecision
+        rankingDebug = {
+          ...rankingDebug,
+          budgetDiagnostics: budgetRiskSelection?.diagnostics || null,
+          budgetDecision,
+          riskDecision,
+        }
+        stageStatusMap.ranking = winnerCandidate ? 'selected' : (
+          reasonCode === 'budget_unconfigured'
+          || reasonCode === 'budget_exhausted'
+          || reasonCode === 'risk_blocked'
+            ? 'blocked'
+            : 'no_fill'
+        )
         if (winnerBid) {
+          if (!isCpcSemanticsActive() && Number.isFinite(Number(winnerBid?.pricing?.ecpmUsd))) {
+            winnerBid.price = round(clampNumber(winnerBid.pricing.ecpmUsd, 0, Number.MAX_SAFE_INTEGER, 0), 4)
+          }
+          const winnerCampaignId = resolveCampaignIdFromBid(winnerBid)
+          if (winnerCampaignId) {
+            recordCampaignImpressionForRisk(winnerCampaignId)
+          }
           winnerBid = injectTrackingScopeIntoBid(winnerBid, {
             accountId: request.accountId,
           })
@@ -6547,6 +7966,8 @@ async function evaluateSinglePlacementOpportunity({
       reasonCode,
       retrievalDebug,
       rankingDebug,
+      budgetDecision,
+      riskDecision,
       intent,
       winnerBid: winnerBid || null,
       pricingSnapshot,
@@ -6581,6 +8002,8 @@ async function evaluateSinglePlacementOpportunity({
     winnerCandidate,
     retrievalDebug,
     rankingDebug,
+    budgetDecision,
+    riskDecision,
     opportunityRecord,
     gatePassed,
     upstreamFailure,
@@ -6673,6 +8096,8 @@ async function evaluateV2BidOpportunityFirst(payload) {
     gatePassed: item.gatePassed,
     reasonCode: item.reasonCode,
     bid: item.winnerBid,
+    budgetDecision: item.budgetDecision || null,
+    riskDecision: item.riskDecision || null,
     bidPrice: clampNumber(item.winnerBid?.price, 0, Number.MAX_SAFE_INTEGER, 0),
     ecpmUsd: clampNumber(
       item.winnerBid?.pricing?.ecpmUsd ?? item.winnerCandidate?.pricing?.ecpmUsd,
@@ -6770,6 +8195,20 @@ async function evaluateV2BidOpportunityFirst(payload) {
     || 'cpc_v1',
   ).trim() || 'cpc_v1'
   const intentThreshold = clampNumber(selectedPlacementResult?.intentThreshold, 0, 1, 0.6)
+  const budgetDecision = selectedPlacementResult?.budgetDecision && typeof selectedPlacementResult.budgetDecision === 'object'
+    ? selectedPlacementResult.budgetDecision
+    : {
+        mode: BUDGET_ENFORCEMENT_MODE,
+        decision: 'skipped',
+        reasonCode: 'budget_not_evaluated',
+      }
+  const riskDecision = selectedPlacementResult?.riskDecision && typeof selectedPlacementResult.riskDecision === 'object'
+    ? selectedPlacementResult.riskDecision
+    : {
+        mode: RISK_ENFORCEMENT_MODE,
+        decision: 'allow',
+        reasonCode: 'risk_not_evaluated',
+      }
 
   for (const item of placementResults) {
     const counterPlacement = item.placement || { placementId: item.placementId }
@@ -6809,6 +8248,8 @@ async function evaluateV2BidOpportunityFirst(payload) {
       ecpmUsd: item.ecpmUsd,
       rankScore: item.rankScore,
       auctionScore: item.auctionScore,
+      budgetDecision: item?.budgetDecision || null,
+      riskDecision: item?.riskDecision || null,
       stageStatusMap: item.stageStatusMap,
     })),
     loserSummary: globalAuction?.loserSummary && typeof globalAuction.loserSummary === 'object'
@@ -6839,6 +8280,8 @@ async function evaluateV2BidOpportunityFirst(payload) {
     pricingVersion,
     pricingSemanticsVersion,
     pricingSnapshot,
+    budgetDecision,
+    riskDecision,
     multiPlacement: multiPlacementDiagnostics,
     networkErrors: [],
     snapshotUsage: {},
@@ -6924,6 +8367,8 @@ async function evaluateV2BidOpportunityFirst(payload) {
       triggerType,
       pricingVersion,
       pricingSemanticsVersion,
+      budgetDecision,
+      riskDecision,
       intentThreshold,
       retrievalMode: String(retrievalDebug?.mode || '').trim(),
       retrievalHitCount: toPositiveInteger(retrievalDebug?.fusedHitCount, 0),
@@ -7573,6 +9018,24 @@ function computeScopedMetricsSummary(decisionRows, eventRows, factRows, controlP
       : {}
     return Object.values(exceeded).some(Boolean)
   }).length
+  const budgetBlockedCount = decisionRows.filter((row) => {
+    const runtime = row?.runtime && typeof row.runtime === 'object' ? row.runtime : {}
+    const reasonCode = String(runtime.reasonCode || row?.reasonDetail || row?.reason || '').trim().toLowerCase()
+    if (reasonCode === 'budget_exhausted' || reasonCode === 'budget_unconfigured') return true
+    const budgetDecision = runtime?.budgetDecision && typeof runtime.budgetDecision === 'object'
+      ? runtime.budgetDecision
+      : {}
+    return String(budgetDecision.decision || '').trim().toLowerCase().includes('block')
+  }).length
+  const riskBlockedCount = decisionRows.filter((row) => {
+    const runtime = row?.runtime && typeof row.runtime === 'object' ? row.runtime : {}
+    const reasonCode = String(runtime.reasonCode || row?.reasonDetail || row?.reason || '').trim().toLowerCase()
+    if (reasonCode === 'risk_blocked') return true
+    const riskDecision = runtime?.riskDecision && typeof runtime.riskDecision === 'object'
+      ? runtime.riskDecision
+      : {}
+    return String(riskDecision.decision || '').trim().toLowerCase() === 'block'
+  }).length
 
   return {
     revenueUsd: round(revenueUsd, 2),
@@ -7589,6 +9052,8 @@ function computeScopedMetricsSummary(decisionRows, eventRows, factRows, controlP
     timeoutRelatedCount,
     precheckInventoryNotReadyCount,
     budgetExceededCount,
+    budgetBlockedCount,
+    riskBlockedCount,
     reasonCounts: {
       placementUnavailable: placementUnavailableCount,
       inventoryEmpty: inventoryEmptyCount,
@@ -8832,6 +10297,13 @@ function createControlPlaneRouteDeps() {
     refreshAllowedCorsOriginsFromSupabase,
     normalizeAllowedCorsOriginsPayload,
     getAllowedCorsOrigins,
+    upsertCampaignBudgetConfig,
+    listCampaignBudgetStatuses,
+    getRiskConfigSnapshot,
+    updateRiskConfig,
+    cleanupExpiredBudgetReservations,
+    BUDGET_ENFORCEMENT_MODE,
+    RISK_ENFORCEMENT_MODE,
   }
 }
 
