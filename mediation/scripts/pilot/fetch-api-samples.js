@@ -52,11 +52,10 @@ async function writeJson(filePath, payload) {
 function buildBidPayload(caseRow = {}, options = {}) {
   const caseId = cleanText(caseRow.case_id || 'pilot_case')
   const query = cleanText(caseRow.query || `${caseRow.case_name || caseId} offers`)
-  return {
+  const payload = {
     appId: cleanText(options.appId || 'sample-client-app'),
     sessionId: `pilot_session_${caseId}`,
     turnId: `pilot_turn_${caseId}`,
-    placementId: cleanText(options.placementId || 'chat_intent_recommendation_v1'),
     messages: [
       {
         role: 'user',
@@ -70,6 +69,11 @@ function buildBidPayload(caseRow = {}, options = {}) {
       },
     ],
   }
+  const includePlacementId = toBoolean(options.includePlacementId, false)
+  if (includePlacementId) {
+    payload.placementId = cleanText(options.placementId || 'chat_intent_recommendation_v1')
+  }
+  return payload
 }
 
 async function callBidApi(runtimeUrl, payload, options = {}) {
@@ -131,6 +135,7 @@ async function main() {
     const payload = buildBidPayload(item, {
       appId: args.appId,
       placementId: args.placementId || args['placement-id'],
+      includePlacementId: args.includePlacementId || args['include-placement-id'],
     })
     const response = await callBidApi(runtimeUrl, payload, {
       runtimeKey: args.runtimeKey || args['runtime-key'] || process.env.RUNTIME_API_KEY,
