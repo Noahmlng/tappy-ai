@@ -28,7 +28,7 @@
         "networkId": "cj",
         "endpoint": "",
         "timeoutMs": 800,
-        "enabled": true,
+        "enabled": false,
         "policyWeight": 0
       }
     ],
@@ -70,7 +70,7 @@
         "networkId": "cj",
         "endpoint": "",
         "timeoutMs": 800,
-        "enabled": true,
+        "enabled": false,
         "policyWeight": 0.1
       }
     ],

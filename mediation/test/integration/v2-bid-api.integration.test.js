@@ -86,6 +86,7 @@ function startGateway(port) {
       MEDIATION_ENABLE_LOCAL_SERVER: 'true',
       MEDIATION_GATEWAY_HOST: HOST,
       MEDIATION_GATEWAY_PORT: String(port),
+      MEDIATION_ENABLED_NETWORKS: process.env.MEDIATION_ENABLED_NETWORKS || 'partnerstack,house',
       OPENROUTER_API_KEY: '',
       OPENROUTER_MODEL: 'glm-5',
       CJ_TOKEN: 'mock-cj-token',
@@ -232,6 +233,14 @@ test('v2 bid API returns unified response on the single runtime path', async () 
     assert.equal(typeof bid.payload?.diagnostics?.triggerType, 'string')
     assert.equal(typeof bid.payload?.diagnostics?.multiPlacement?.evaluatedCount, 'number')
     assert.equal(bid.payload?.diagnostics?.multiPlacement?.evaluatedCount >= 2, true)
+    const retrievalFilters = bid.payload?.diagnostics?.retrievalDebug?.filters
+      && typeof bid.payload?.diagnostics?.retrievalDebug?.filters === 'object'
+      ? bid.payload.diagnostics.retrievalDebug.filters
+      : {}
+    const retrievalNetworks = Array.isArray(retrievalFilters.networks) ? retrievalFilters.networks : []
+    assert.equal(retrievalNetworks.includes('partnerstack'), true)
+    assert.equal(retrievalNetworks.includes('house'), true)
+    assert.equal(retrievalNetworks.includes('cj'), false)
     assert.equal(bid.payload?.diagnostics?.pricingVersion, 'cpa_mock_v2')
     assert.equal(typeof bid.payload?.diagnostics?.timingsMs?.total, 'number')
     assert.equal(typeof bid.payload?.diagnostics?.budgetMs?.total, 'number')

@@ -30,12 +30,15 @@
 - Runtime 检索链路（`query/answerText -> LLM-NER -> 多网络检索 -> 合并 -> ads[]`）。
 - 入口：`runtime/index.js` -> `runAdsRetrievalPipeline(adRequest, options)`。
 - `testAllOffers=true` 时走旁路：跳过匹配过滤与排序截断，仅保留 URL/ID/状态合法性校验。
-- 对 `next_step.intent_card`：默认使用 Affiliate links catalog（PartnerStack `listLinksByPartnership` + CJ `listLinks`）作为商品库来源。
+- 默认网络白名单：`partnerstack,house`（可通过 `MEDIATION_ENABLED_NETWORKS` 覆盖，按需启用 `cj`）。
+- 对 `attach.post_answer_render` 与 `next_step.intent_card`：均可加载 House Product Offers Catalog。
+- 对 `next_step.intent_card`：默认使用 Affiliate links catalog（PartnerStack `listLinksByPartnership` + CJ `listLinks`）作为商品库来源（当网络白名单包含对应网络时）。
 - 对 `next_step.intent_card`：在检索前先构建 `IntentCardCatalog`（统一 `item_id/title/url/network/category/tags`），再回填给候选用于匹配与追踪。
 - `adResponse.placementId` 与输入 placement 对齐返回（例如 `attach.post_answer_render` / `next_step.intent_card`）。
-- 输出顺序：`next_step.intent_card` 按排序结果直接输出；其他 placement 仍按网络分组（默认 `partnerstack -> cj -> 其他`）。
+- 输出顺序：各 placement 均按排序结果直接输出，不再按网络分组重排。
 - 非 `testAllOffers` 模式下 v1 排序：相关性优先，其次质量（`qualityScore`），再次商业信号（`bidValue/epc/cpc`），最后可用性与新鲜度作为平局兜底。
 - 最小可观测日志事件：`ads_pipeline_result`（字段：`requestId`、`entities`、`networkHits`、`adCount`、`errorCodes`）。
+- House 故障可通过 `networkErrors`、`networkFetchState`、`networkPolicy.enabledNetworks` 快速定位（仅告警，不自动切换数据源）。
 - 内置健康检查与降级：单网失败不影响总返回，支持熔断冷却与快照回退。
 - 可通过 runtime 参数调节：`healthFailureThreshold`、`circuitOpenMs`、`healthCheckIntervalMs`，或用 `disableNetworkDegradation=true` 关闭。
 

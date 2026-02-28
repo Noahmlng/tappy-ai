@@ -61,7 +61,12 @@ test.beforeEach(() => {
 })
 
 test('fallback baseline: one network failure still serves from healthy network', async () => {
-  const runtimeConfig = createRuntimeConfig()
+  const runtimeConfig = {
+    ...createRuntimeConfig(),
+    networkPolicy: {
+      enabledNetworks: ['partnerstack', 'cj', 'house'],
+    },
+  }
   const request = buildRequest('single_failover')
 
   const result = await runAdsRetrievalPipeline(request, {
@@ -82,6 +87,16 @@ test('fallback baseline: one network failure still serves from healthy network',
         }
       },
     },
+    houseConnector: {
+      async fetchProductOffersCatalog() {
+        return {
+          offers: [],
+          debug: {
+            mode: 'house_mock',
+          },
+        }
+      },
+    },
   })
 
   assert.equal(Array.isArray(result?.adResponse?.ads), true)
@@ -98,7 +113,12 @@ test('fallback baseline: one network failure still serves from healthy network',
 })
 
 test('fallback baseline: all network failures return empty ads without throwing', async () => {
-  const runtimeConfig = createRuntimeConfig()
+  const runtimeConfig = {
+    ...createRuntimeConfig(),
+    networkPolicy: {
+      enabledNetworks: ['partnerstack', 'cj', 'house'],
+    },
+  }
   const request = buildRequest('all_fail_open')
 
   const result = await runAdsRetrievalPipeline(request, {
@@ -112,6 +132,16 @@ test('fallback baseline: all network failures return empty ads without throwing'
     cjConnector: {
       async fetchOffers() {
         throw createFailingError('cj timeout', 'CJ_TIMEOUT')
+      },
+    },
+    houseConnector: {
+      async fetchProductOffersCatalog() {
+        return {
+          offers: [],
+          debug: {
+            mode: 'house_mock',
+          },
+        }
       },
     },
   })

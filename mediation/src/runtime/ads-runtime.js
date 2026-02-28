@@ -24,11 +24,12 @@ import {
 
 const DEFAULT_MAX_ADS = 20
 const DEFAULT_PLACEMENT_ID = 'attach.post_answer_render'
-const DEFAULT_NETWORK_ORDER = ['partnerstack', 'cj']
 const DEFAULT_QUERY_CACHE_TTL_MS = 15000
 const DEFAULT_SNAPSHOT_CACHE_TTL_MS = 120000
 const DEFAULT_INTENT_CARD_RETRIEVAL_MIN_SCORE = 0.08
 const QUERY_CACHE_VERSION = 'v1'
+const SUPPORTED_NETWORKS = Object.freeze(['partnerstack', 'cj', 'house'])
+const DEFAULT_ENABLED_NETWORKS = Object.freeze(['partnerstack', 'house'])
 const INACTIVE_OFFER_STATUSES = new Set([
   'inactive',
   'disabled',
@@ -224,6 +225,35 @@ function toPositiveInteger(value, fallback) {
     return Math.floor(numeric)
   }
   return fallback
+}
+
+function normalizeEnabledNetworks(value) {
+  if (!Array.isArray(value)) return [...DEFAULT_ENABLED_NETWORKS]
+  const parsed = value
+    .map((item) => cleanText(item).toLowerCase())
+    .filter((item) => SUPPORTED_NETWORKS.includes(item))
+  const deduped = Array.from(new Set(parsed))
+  return deduped.length > 0 ? deduped : [...DEFAULT_ENABLED_NETWORKS]
+}
+
+function createNetworkMetricMap(defaultValue) {
+  return {
+    partnerstack: defaultValue,
+    cj: defaultValue,
+    house: defaultValue,
+  }
+}
+
+function createDisabledNetworkFetchResult() {
+  return {
+    offers: [],
+    snapshotUsed: false,
+    cacheStatus: 'disabled_by_policy',
+    error: null,
+    sourceDebug: {
+      mode: 'disabled_by_policy',
+    },
+  }
 }
 
 function normalizeAdRequest(adRequest) {
@@ -460,26 +490,6 @@ function toAdRecord(offer, options = {}) {
   }
 }
 
-function networkRank(network) {
-  const normalized = cleanText(network).toLowerCase()
-  const index = DEFAULT_NETWORK_ORDER.indexOf(normalized)
-  if (index === -1) return DEFAULT_NETWORK_ORDER.length
-  return index
-}
-
-function groupAdsByNetworkOrder(ads = []) {
-  const list = Array.isArray(ads) ? ads : []
-  return list
-    .map((ad, index) => ({ ad, index }))
-    .sort((a, b) => {
-      const aRank = networkRank(a.ad.sourceNetwork)
-      const bRank = networkRank(b.ad.sourceNetwork)
-      if (aRank !== bRank) return aRank - bRank
-      return a.index - b.index
-    })
-    .map((item) => item.ad)
-}
-
 function isValidUrl(value) {
   const url = cleanText(value)
   if (!url) return false
@@ -556,41 +566,7 @@ function commercialSignalRank(offer) {
   return -1
 }
 
-function selectMatchedOffersWithNetworkDiversity(matched = [], maxAds = 0) {
-  const limit = toPositiveInteger(maxAds, DEFAULT_MAX_ADS)
-  if (!Array.isArray(matched) || matched.length <= limit) {
-    return Array.isArray(matched) ? matched.slice(0, limit) : []
-  }
-
-  const buckets = new Map()
-  const networkOrder = []
-
-  for (const item of matched) {
-    const network = cleanText(item?.offer?.sourceNetwork).toLowerCase() || 'unknown'
-    if (!buckets.has(network)) {
-      buckets.set(network, [])
-      networkOrder.push(network)
-    }
-    buckets.get(network).push(item)
-  }
-
-  const selected = []
-  while (selected.length < limit) {
-    let consumed = false
-    for (const network of networkOrder) {
-      const bucket = buckets.get(network)
-      if (!Array.isArray(bucket) || bucket.length === 0) continue
-      selected.push(bucket.shift())
-      consumed = true
-      if (selected.length >= limit) break
-    }
-    if (!consumed) break
-  }
-
-  return selected
-}
-
-function rankAndSelectOffers(offers, entities, requestContext, maxAds, options = {}) {
+function rankAndSelectOffers(offers, entities, requestContext, maxAds) {
   if (requestContext.testAllOffers) {
     const selected = []
     let invalidForTestAll = 0
@@ -637,12 +613,8 @@ function rankAndSelectOffers(offers, entities, requestContext, maxAds, options =
     ? withScore.filter((item) => item.score > 0 && !item.semanticAllowed).length
     : 0
 
-  const selected = options.enableNetworkDiversity === false
-    ? matched.slice(0, maxAds)
-    : selectMatchedOffersWithNetworkDiversity(matched, maxAds)
-
   return {
-    selected,
+    selected: matched.slice(0, maxAds),
     invalidForTestAll: 0,
     matchedCandidates: matched.length,
     unmatchedOffers: Math.max(0, withScore.length - matched.length),
@@ -753,7 +725,7 @@ function resolveErrorCode(error) {
   return 'UNKNOWN'
 }
 
-function buildQueryCacheKey(request, maxAds, entitySignature = '') {
+function buildQueryCacheKey(request, maxAds, entitySignature = '', enabledNetworks = []) {
   const debug = request.context.debug || {}
   const payload = {
     v: QUERY_CACHE_VERSION,
@@ -778,8 +750,9 @@ function buildQueryCacheKey(request, maxAds, entitySignature = '') {
       disableNetworkDegradation: debug.disableNetworkDegradation,
       healthFailureThreshold: debug.healthFailureThreshold,
       circuitOpenMs: debug.circuitOpenMs,
-      healthCheckIntervalMs: debug.healthCheckIntervalMs
-    }
+      healthCheckIntervalMs: debug.healthCheckIntervalMs,
+    },
+    networkPolicyEnabledNetworks: normalizeEnabledNetworks(enabledNetworks),
   }
   return JSON.stringify(payload)
 }
@@ -926,6 +899,8 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
   const placementId = request.placementId || DEFAULT_PLACEMENT_ID
   const isNextStepIntentCard = placementId === 'next_step.intent_card'
   const runtimeConfig = options.runtimeConfig || loadRuntimeConfig(process.env, { strict: false })
+  const enabledNetworks = normalizeEnabledNetworks(runtimeConfig?.networkPolicy?.enabledNetworks)
+  const enabledNetworkSet = new Set(enabledNetworks)
   const maxAds = Number.isInteger(options.maxAds) ? options.maxAds : DEFAULT_MAX_ADS
   const requestId = createRequestId()
   const logger = getLogger(options)
@@ -1043,6 +1018,15 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     .join('|')
 
   if (strictEntityMode && entities.length === 0) {
+    const networkHits = createNetworkMetricMap(0)
+    const snapshotCacheStatus = createNetworkMetricMap('skipped')
+    const networkFetchState = createNetworkMetricMap('skipped_no_entities')
+    for (const network of SUPPORTED_NETWORKS) {
+      if (!enabledNetworkSet.has(network)) {
+        snapshotCacheStatus[network] = 'disabled_by_policy'
+        networkFetchState[network] = 'disabled_by_policy'
+      }
+    }
     const debug = {
       entities,
       ner: nerInfo,
@@ -1051,14 +1035,15 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
       totalOffers: 0,
       selectedOffers: 0,
       invalidOffersDroppedByTestAllValidation: 0,
-      networkOrder: DEFAULT_NETWORK_ORDER,
-      networkHits: { partnerstack: 0, cj: 0 },
-      networkErrors: [],
-      snapshotUsage: {},
-      snapshotCacheStatus: {
-        partnerstack: 'skipped',
-        cj: 'skipped'
+      networkOrder: enabledNetworks,
+      networkPolicy: {
+        enabledNetworks,
       },
+      networkHits,
+      networkFetchState,
+      networkErrors: [],
+      snapshotUsage: createNetworkMetricMap(false),
+      snapshotCacheStatus,
       networkHealth: getAllNetworkHealth(),
       cache: {
         queryCacheHit: false,
@@ -1077,7 +1062,7 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
       requestId,
       placementId,
       entities: [],
-      networkHits: { partnerstack: 0, cj: 0 },
+      networkHits,
       adCount: 0,
       errorCodes: [],
       queryCacheHit: false
@@ -1093,7 +1078,7 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     }
   }
 
-  const queryCacheKey = buildQueryCacheKey(request, maxAds, entitySignature)
+  const queryCacheKey = buildQueryCacheKey(request, maxAds, entitySignature, enabledNetworks)
 
   if (queryCacheEnabled) {
     const cached = queryCache.get(queryCacheKey)
@@ -1111,6 +1096,12 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
         degradationEnabled,
         healthPolicy
       }
+      debug.networkPolicy = {
+        enabledNetworks,
+      }
+      if (!debug.networkFetchState || typeof debug.networkFetchState !== 'object') {
+        debug.networkFetchState = createNetworkMetricMap('unknown')
+      }
       debug.networkHealth = getAllNetworkHealth()
 
       const entitySummaries = Array.isArray(debug.entities)
@@ -1125,7 +1116,7 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
         requestId,
         placementId,
         entities: entitySummaries,
-        networkHits: debug.networkHits || { partnerstack: 0, cj: 0 },
+        networkHits: debug.networkHits || createNetworkMetricMap(0),
         adCount: adResponse.ads.length,
         errorCodes: (debug.networkErrors || []).map((item) => item.errorCode),
         queryCacheHit: true
@@ -1156,91 +1147,72 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     limit: request.context.debug.houseLimit
   }
 
+  const loadNetworkOffers = async (network, queryParams, fetcher, healthCheck) => {
+    if (!enabledNetworkSet.has(network)) {
+      return createDisabledNetworkFetchResult()
+    }
+    return await fetchOffersWithSnapshot({
+      network,
+      queryParams,
+      fetcher,
+      healthCheck,
+      snapshotCacheEnabled,
+      snapshotCacheTtlMs,
+      degradationEnabled,
+      healthPolicy,
+    })
+  }
+
   const [partnerstackResult, cjResult, houseResult] = await Promise.all([
-    fetchOffersWithSnapshot({
-      network: 'partnerstack',
-      queryParams: partnerstackQueryParams,
-      fetcher: () => (
+    loadNetworkOffers(
+      'partnerstack',
+      partnerstackQueryParams,
+      () => (
         isNextStepIntentCard && typeof partnerstackConnector.fetchLinksCatalog === 'function'
           ? partnerstackConnector.fetchLinksCatalog(partnerstackQueryParams)
           : partnerstackConnector.fetchOffers(partnerstackQueryParams)
       ),
-      healthCheck: partnerstackConnector.healthCheck,
-      snapshotCacheEnabled,
-      snapshotCacheTtlMs,
-      degradationEnabled,
-      healthPolicy
-    }),
-    fetchOffersWithSnapshot({
-      network: 'cj',
-      queryParams: cjQueryParams,
-      fetcher: () => (
+      partnerstackConnector.healthCheck,
+    ),
+    loadNetworkOffers(
+      'cj',
+      cjQueryParams,
+      () => (
         isNextStepIntentCard && typeof cjConnector.fetchLinksCatalog === 'function'
           ? cjConnector.fetchLinksCatalog(cjQueryParams)
           : cjConnector.fetchOffers(cjQueryParams)
       ),
-      healthCheck: cjConnector.healthCheck,
-      snapshotCacheEnabled,
-      snapshotCacheTtlMs,
-      degradationEnabled,
-      healthPolicy
-    }),
-    isNextStepIntentCard
-      ? fetchOffersWithSnapshot({
-          network: 'house',
-          queryParams: houseQueryParams,
-          fetcher: () => (
-            typeof houseConnector.fetchProductOffersCatalog === 'function'
-              ? houseConnector.fetchProductOffersCatalog(houseQueryParams)
-              : houseConnector.fetchOffers(houseQueryParams)
-          ),
-          healthCheck: houseConnector.healthCheck,
-          snapshotCacheEnabled,
-          snapshotCacheTtlMs,
-          degradationEnabled,
-          healthPolicy
-        })
-      : Promise.resolve({
-          offers: [],
-          snapshotUsed: false,
-          cacheStatus: 'skipped',
-          error: null,
-          sourceDebug: null
-        })
+      cjConnector.healthCheck,
+    ),
+    loadNetworkOffers(
+      'house',
+      houseQueryParams,
+      () => (
+        typeof houseConnector.fetchProductOffersCatalog === 'function'
+          ? houseConnector.fetchProductOffersCatalog(houseQueryParams)
+          : houseConnector.fetchOffers(houseQueryParams)
+      ),
+      houseConnector.healthCheck,
+    ),
   ])
 
-  const networkHits = isNextStepIntentCard
-    ? {
-        partnerstack: 0,
-        cj: 0,
-        house: 0
-      }
-    : {
-        partnerstack: 0,
-        cj: 0
-      }
-  const snapshotUsage = isNextStepIntentCard
-    ? {
-        partnerstack: partnerstackResult.snapshotUsed,
-        cj: cjResult.snapshotUsed,
-        house: houseResult.snapshotUsed
-      }
-    : {
-        partnerstack: partnerstackResult.snapshotUsed,
-        cj: cjResult.snapshotUsed
-      }
+  const networkHits = createNetworkMetricMap(0)
+  const snapshotUsage = createNetworkMetricMap(false)
+  const networkFetchState = createNetworkMetricMap('unknown')
 
   const rawOffers = []
   const networkErrors = []
 
   networkHits.partnerstack = partnerstackResult.offers.length
   networkHits.cj = cjResult.offers.length
-  rawOffers.push(...partnerstackResult.offers, ...cjResult.offers)
-
-  if (isNextStepIntentCard) {
-    networkHits.house = houseResult.offers.length
-    rawOffers.push(...houseResult.offers)
-  }
+  networkHits.house = houseResult.offers.length
+  rawOffers.push(...partnerstackResult.offers, ...cjResult.offers, ...houseResult.offers)
+  snapshotUsage.partnerstack = Boolean(partnerstackResult.snapshotUsed)
+  snapshotUsage.cj = Boolean(cjResult.snapshotUsed)
+  snapshotUsage.house = Boolean(houseResult.snapshotUsed)
+  networkFetchState.partnerstack = String(partnerstackResult.cacheStatus || 'unknown')
+  networkFetchState.cj = String(cjResult.cacheStatus || 'unknown')
+  networkFetchState.house = String(houseResult.cacheStatus || 'unknown')
 
   if (partnerstackResult.error) {
     networkErrors.push({
@@ -1256,9 +1228,16 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
       message: cjResult.error.message
     })
   }
-  if (isNextStepIntentCard && houseResult.error) {
+  if (houseResult.error) {
     networkErrors.push({
       network: 'house',
+      errorCode: houseResult.error.errorCode,
+      message: houseResult.error.message
+    })
+    safeLog(logger, 'warn', {
+      event: 'ads_pipeline_house_error',
+      requestId,
+      placementId,
       errorCode: houseResult.error.errorCode,
       message: houseResult.error.message
     })
@@ -1269,9 +1248,7 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
   const offersForRanking = isNextStepIntentCard
     ? enrichOffersWithIntentCardCatalog(offers, intentCardCatalog)
     : offers
-  const selection = rankAndSelectOffers(offersForRanking, entities, request.context, maxAds, {
-    enableNetworkDiversity: !isNextStepIntentCard,
-  })
+  const selection = rankAndSelectOffers(offersForRanking, entities, request.context, maxAds)
   let selected = Array.isArray(selection.selected) ? selection.selected : []
   const invalidForTestAll = Number.isFinite(selection.invalidForTestAll) ? selection.invalidForTestAll : 0
   const matchedCandidates = Number.isFinite(selection.matchedCandidates) ? selection.matchedCandidates : 0
@@ -1317,7 +1294,7 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
       entityText: item.matchedEntityText
     })
   )
-  const orderedAds = isNextStepIntentCard ? ads : groupAdsByNetworkOrder(ads)
+  const orderedAds = ads
   const entitySummaries = entities.map((entity) => ({
     entityText: entity.entityText,
     entityType: entity.entityType,
@@ -1351,40 +1328,29 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
     intentCardVectorFallbackSelected,
     intentCardVectorFallbackMeta,
     invalidOffersDroppedByTestAllValidation: invalidForTestAll,
-    networkOrder: DEFAULT_NETWORK_ORDER,
+    networkOrder: enabledNetworks,
+    networkPolicy: {
+      enabledNetworks,
+    },
     networkHits,
+    networkFetchState,
     networkErrors,
     snapshotUsage,
-    snapshotCacheStatus: isNextStepIntentCard
-      ? {
-          partnerstack: partnerstackResult.cacheStatus,
-          cj: cjResult.cacheStatus,
-          house: houseResult.cacheStatus
-        }
-      : {
-          partnerstack: partnerstackResult.cacheStatus,
-          cj: cjResult.cacheStatus
-        },
-    sourceModes: isNextStepIntentCard
-      ? {
-          partnerstack: 'links_catalog',
-          cj: 'links_catalog',
-          house: 'product_offers_catalog'
-        }
-      : {
-          partnerstack: 'offers_catalog',
-          cj: 'offers_catalog'
-        },
-    sourceDebug: isNextStepIntentCard
-      ? {
-          partnerstack: partnerstackResult.sourceDebug || {},
-          cj: cjResult.sourceDebug || {},
-          house: houseResult.sourceDebug || {}
-        }
-      : {
-          partnerstack: partnerstackResult.sourceDebug || {},
-          cj: cjResult.sourceDebug || {}
-        },
+    snapshotCacheStatus: {
+      partnerstack: partnerstackResult.cacheStatus,
+      cj: cjResult.cacheStatus,
+      house: houseResult.cacheStatus
+    },
+    sourceModes: {
+      partnerstack: isNextStepIntentCard ? 'links_catalog' : 'offers_catalog',
+      cj: isNextStepIntentCard ? 'links_catalog' : 'offers_catalog',
+      house: 'product_offers_catalog'
+    },
+    sourceDebug: {
+      partnerstack: partnerstackResult.sourceDebug || {},
+      cj: cjResult.sourceDebug || {},
+      house: houseResult.sourceDebug || {}
+    },
     intentCardCatalog: isNextStepIntentCard ? summarizeIntentCardCatalog(intentCardCatalog) : null,
     networkHealth: getAllNetworkHealth(),
     cache: {
