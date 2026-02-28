@@ -13,6 +13,17 @@ const OUTPUT_ROOT = path.join(PROJECT_ROOT, 'output', 'pilot-content')
 const DEFAULT_FETCH_TIMEOUT_MS = 6500
 const DESCRIPTION_MIN_LEN = 40
 const DESCRIPTION_MAX_LEN = 180
+const DEFAULT_DESCRIPTION_PROMPT = 'Create a concise and compelling product description for [Brand]\'s [Product Category]. Focus on the most relevant aspects of the product, considering its unique features, benefits, or target audience. If the product is part of an offer or promotion, mention the special deal or value. If not, emphasize the product\'s key qualities and the problems it solves. Adapt the tone and language to match the brand\'s voice and make sure the description is engaging and drives action. Keep the language simple, direct, and aligned with the user\'s intent.'
+const IMAGE_METADATA_KEYS = Object.freeze([
+  'image_url',
+  'imageUrl',
+  'brand_image_url',
+  'brandImageUrl',
+  'icon_url',
+  'iconUrl',
+  'logo_url',
+  'logoUrl',
+])
 const COMMON_TWO_PART_TLDS = new Set([
   'co.uk',
   'org.uk',
@@ -68,7 +79,7 @@ function toHttpUrl(value, base = '') {
 }
 
 function normalizeDescription(value) {
-  const text = cleanText(value)
+  const text = cleanText(decodeHtmlEntities(value))
   if (!text) return ''
   if (text.length <= DESCRIPTION_MAX_LEN) return text
   return `${text.slice(0, DESCRIPTION_MAX_LEN - 3)}...`
@@ -89,6 +100,88 @@ function pickFirstNonEmpty(...values) {
     if (text) return text
   }
   return ''
+}
+
+function decodeHtmlEntities(value) {
+  return String(value || '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, '\'')
+    .replace(/&apos;/gi, '\'')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+}
+
+function toTitleCase(value) {
+  const text = cleanText(value).replace(/[_-]+/g, ' ')
+  if (!text) return ''
+  return text
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ')
+}
+
+function deriveBrandFromUrl(url = '') {
+  const domain = getUrlDomain(url)
+  if (!domain) return ''
+  const root = cleanText(domain.split('.')[0] || '')
+  if (!root) return ''
+  return toTitleCase(root)
+}
+
+function deriveBrandName(input = {}) {
+  const metadata = input?.metadata && typeof input.metadata === 'object' ? input.metadata : {}
+  const metadataBrand = pickFirstNonEmpty(
+    metadata.brand,
+    metadata.brandName,
+    metadata.merchant,
+    metadata.merchantName,
+  )
+  if (metadataBrand) return metadataBrand
+  const domainBrand = pickFirstNonEmpty(
+    deriveBrandFromUrl(metadata.destinationUrl || metadata.destination_url),
+    deriveBrandFromUrl(metadata.merchantUrl || metadata.merchant_url),
+    deriveBrandFromUrl(metadata.programUrl || metadata.program_url),
+    deriveBrandFromUrl(input.targetUrl),
+  )
+  if (domainBrand) return domainBrand
+  const normalizedTitle = cleanText(input.title)
+    .replace(/\b(affiliate program|limited deal|new arrival|best seller)\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+  if (normalizedTitle) return normalizedTitle.split(' ').slice(0, 2).join(' ')
+  return cleanText(metadata.teamName)
+}
+
+function deriveCategoryName(input = {}) {
+  const metadata = input?.metadata && typeof input.metadata === 'object' ? input.metadata : {}
+  return pickFirstNonEmpty(
+    toTitleCase(metadata.category),
+    toTitleCase(metadata.verticalL2),
+    toTitleCase(metadata.verticalL1),
+    'Product',
+  )
+}
+
+function isGenericDescription(value) {
+  const text = cleanText(value).toLowerCase()
+  if (!text) return false
+  const patterns = [
+    'option with strong category relevance and direct shopping intent',
+    'direct shopping intent',
+    'featured offer from',
+    'sponsored recommendation support',
+  ]
+  return patterns.some((pattern) => text.includes(pattern))
+}
+
+function isLowQualityDescription(value) {
+  const text = cleanText(value)
+  if (!text) return true
+  if (!hasPreferredDescriptionLength(text)) return true
+  if (/\b([a-z0-9]{3,})\b\s+\1\b/i.test(text)) return true
+  return false
 }
 
 function getRegistrableDomain(hostname = '') {
@@ -112,14 +205,61 @@ function getUrlDomain(value = '') {
   }
 }
 
+function getDomainLabel(domain = '') {
+  const normalized = cleanText(domain).toLowerCase()
+  if (!normalized) return ''
+  return cleanText(normalized.split('.')[0] || '')
+}
+
 function isImageAllowedForTarget(imageUrl = '', targetUrl = '') {
+  return isImageAllowedForDomains(imageUrl, resolveAllowedImageDomains(targetUrl))
+}
+
+function resolveAllowedImageDomains(targetUrl = '', metadata = {}, extraUrls = []) {
+  const urls = [
+    targetUrl,
+    metadata?.destinationUrl,
+    metadata?.destination_url,
+    metadata?.merchantUrl,
+    metadata?.merchant_url,
+    metadata?.programUrl,
+    metadata?.program_url,
+    metadata?.website,
+    ...(Array.isArray(extraUrls) ? extraUrls : []),
+  ]
+  const allowed = new Set()
+  for (const source of urls) {
+    const normalized = toHttpUrl(source)
+    if (!normalized) continue
+    const domain = getUrlDomain(normalized)
+    if (domain) allowed.add(domain)
+  }
+  return allowed
+}
+
+function isImageAllowedForDomains(imageUrl = '', allowedDomains = new Set()) {
   const image = toHttpUrl(imageUrl)
-  const target = toHttpUrl(targetUrl)
-  if (!image || !target) return false
+  if (!image) return false
   const imageDomain = getUrlDomain(image)
-  const targetDomain = getUrlDomain(target)
-  if (!imageDomain || !targetDomain) return false
-  return imageDomain === targetDomain
+  if (!imageDomain) return false
+  if (allowedDomains.has(imageDomain)) return true
+  const imageLabel = getDomainLabel(imageDomain)
+  if (!imageLabel) return false
+  const allowedLabels = new Set(Array.from(allowedDomains).map((domain) => getDomainLabel(domain)).filter(Boolean))
+  return allowedLabels.has(imageLabel)
+}
+
+function parseTagAttributes(tag = '') {
+  const attributes = {}
+  const pattern = /([^\s=/>]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/g
+  let matched = pattern.exec(tag)
+  while (matched) {
+    const key = cleanText(matched[1]).toLowerCase()
+    const value = cleanText(matched[3] || matched[4] || matched[5] || '')
+    if (key && value) attributes[key] = value
+    matched = pattern.exec(tag)
+  }
+  return attributes
 }
 
 function extractMetaContent(html = '', attr = 'name', key = '') {
@@ -143,6 +283,52 @@ function extractFirstParagraph(html = '') {
   if (!matched || !matched[1]) return ''
   const text = cleanText(String(matched[1]).replace(/<[^>]+>/g, ' '))
   return text
+}
+
+function extractIconImage(html = '', baseUrl = '') {
+  const links = html.match(/<link\b[^>]*>/gi) || []
+  for (const link of links) {
+    const attrs = parseTagAttributes(link)
+    const rel = cleanText(attrs.rel).toLowerCase()
+    if (!rel) continue
+    if (!rel.includes('icon') && !rel.includes('apple-touch-icon')) continue
+    const href = toHttpUrl(attrs.href, baseUrl)
+    if (href) return href
+  }
+  return ''
+}
+
+function extractLogoImage(html = '', baseUrl = '') {
+  const images = html.match(/<img\b[^>]*>/gi) || []
+  let best = ''
+  let bestScore = -1
+  for (const imageTag of images) {
+    const attrs = parseTagAttributes(imageTag)
+    const src = toHttpUrl(attrs.src || attrs['data-src'] || attrs['data-original'], baseUrl)
+    if (!src) continue
+    if (src.startsWith('data:')) continue
+    let score = 0
+    const alt = cleanText(decodeHtmlEntities(attrs.alt)).toLowerCase()
+    const className = cleanText(attrs.class).toLowerCase()
+    const id = cleanText(attrs.id).toLowerCase()
+    const srcLower = src.toLowerCase()
+    if (alt.includes('logo')) score += 8
+    if (className.includes('logo') || id.includes('logo')) score += 10
+    if (srcLower.includes('logo') || srcLower.includes('brand') || srcLower.includes('icon')) score += 6
+    if (attrs.width && Number.isFinite(Number(attrs.width))) {
+      const width = Number(attrs.width)
+      if (width >= 40 && width <= 1024) score += 2
+    }
+    if (attrs.height && Number.isFinite(Number(attrs.height))) {
+      const height = Number(attrs.height)
+      if (height >= 40 && height <= 1024) score += 2
+    }
+    if (score > bestScore) {
+      best = src
+      bestScore = score
+    }
+  }
+  return best
 }
 
 function extractJsonLdDescription(html = '') {
@@ -190,9 +376,28 @@ function extractJsonLdImage(html = '', baseUrl = '') {
           continue
         }
         if (typeof node !== 'object') continue
-        const image = Array.isArray(node.image) ? node.image[0] : node.image
-        const normalized = toHttpUrl(image, baseUrl)
-        if (normalized) return normalized
+        const candidates = []
+        const pushCandidate = (item) => {
+          if (!item) return
+          if (typeof item === 'string') {
+            candidates.push(item)
+            return
+          }
+          if (Array.isArray(item)) {
+            for (const nested of item) pushCandidate(nested)
+            return
+          }
+          if (typeof item !== 'object') return
+          candidates.push(item.url)
+          candidates.push(item.contentUrl)
+          candidates.push(item.thumbnailUrl)
+        }
+        pushCandidate(node.image)
+        pushCandidate(node.logo)
+        for (const candidate of candidates) {
+          const normalized = toHttpUrl(candidate, baseUrl)
+          if (normalized) return normalized
+        }
         for (const value of Object.values(node)) {
           if (value && typeof value === 'object') queue.push(value)
         }
@@ -202,6 +407,45 @@ function extractJsonLdImage(html = '', baseUrl = '') {
     }
   }
   return ''
+}
+
+function toSiteRootUrl(url = '') {
+  const normalized = toHttpUrl(url)
+  if (!normalized) return ''
+  try {
+    const parsed = new URL(normalized)
+    return `${parsed.origin}/`
+  } catch {
+    return ''
+  }
+}
+
+function buildFallbackFetchUrls(targetUrl = '', metadata = {}, primaryFinalUrl = '') {
+  const candidates = [
+    toSiteRootUrl(primaryFinalUrl || targetUrl),
+    toHttpUrl(metadata?.destinationUrl),
+    toSiteRootUrl(metadata?.destinationUrl),
+    toHttpUrl(metadata?.destination_url),
+    toSiteRootUrl(metadata?.destination_url),
+    toHttpUrl(metadata?.merchantUrl),
+    toSiteRootUrl(metadata?.merchantUrl),
+    toHttpUrl(metadata?.merchant_url),
+    toSiteRootUrl(metadata?.merchant_url),
+    toHttpUrl(metadata?.programUrl),
+    toSiteRootUrl(metadata?.programUrl),
+    toHttpUrl(metadata?.program_url),
+    toSiteRootUrl(metadata?.program_url),
+  ].map((item) => toHttpUrl(item)).filter(Boolean)
+
+  const primaryCanonical = toHttpUrl(primaryFinalUrl || targetUrl)
+  const dedup = new Set()
+  const output = []
+  for (const candidate of candidates) {
+    if (!candidate || candidate === primaryCanonical || dedup.has(candidate)) continue
+    dedup.add(candidate)
+    output.push(candidate)
+  }
+  return output
 }
 
 async function fetchHtml(url, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS) {
@@ -271,7 +515,9 @@ function enrichFromHtml(targetUrl, html = '') {
   const ogImage = toHttpUrl(extractMetaContent(html, 'property', 'og:image'), targetUrl)
   const twitterImage = toHttpUrl(extractMetaContent(html, 'name', 'twitter:image'), targetUrl)
   const jsonLdImage = extractJsonLdImage(html, targetUrl)
-  const imageUrl = pickFirstNonEmpty(ogImage, twitterImage, jsonLdImage)
+  const logoImage = extractLogoImage(html, targetUrl)
+  const iconImage = extractIconImage(html, targetUrl)
+  const imageUrl = pickFirstNonEmpty(ogImage, twitterImage, jsonLdImage, logoImage, iconImage)
 
   return {
     description,
@@ -287,6 +533,8 @@ function enrichFromHtml(targetUrl, html = '') {
         ogImage: cleanText(ogImage),
         twitterImage: cleanText(twitterImage),
         jsonLdImage: cleanText(jsonLdImage),
+        logoImage: cleanText(logoImage),
+        iconImage: cleanText(iconImage),
       },
     },
   }
@@ -298,18 +546,33 @@ async function generateDescriptionWithLlm(input = {}) {
   const model = cleanText(process.env.OPENROUTER_MODEL) || 'openai/gpt-4o-mini'
   const title = cleanText(input.title)
   const merchant = cleanText(input.merchant || input.network)
+  const brand = cleanText(input.brand) || merchant || title.split(' ')[0] || 'the brand'
+  const category = cleanText(input.category) || 'product'
+  const offer = cleanText(input.offer)
+  const hint = cleanText(input.sourceDescription)
+  const userIntent = cleanText(input.query)
+  const promptTemplate = cleanText(input.promptTemplate) || DEFAULT_DESCRIPTION_PROMPT
+  const basePrompt = promptTemplate
+    .replaceAll('[Brand]', brand)
+    .replaceAll('[Product Category]', category)
   const targetUrl = cleanText(input.targetUrl)
   if (!title || !targetUrl) return { text: '', source: '' }
 
   const prompt = [
-    'Write one concise ad product description in English.',
+    basePrompt,
+    'Output language: English.',
     'Length: 40-180 characters.',
-    'Do not include prices or unverifiable claims.',
+    'Do not include unverifiable claims.',
+    'Use plain text only. No markdown or quotes.',
     `Title: ${title}`,
+    `Brand: ${brand}`,
+    `Product Category: ${category}`,
     `Merchant: ${merchant}`,
+    offer ? `Offer Context: ${offer}` : '',
+    hint ? `Supporting Context: ${hint}` : '',
+    userIntent ? `User Intent: ${userIntent}` : '',
     `URL: ${targetUrl}`,
-    'Output plain text only.',
-  ].join('\n')
+  ].filter(Boolean).join('\n')
 
   try {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -338,8 +601,15 @@ async function generateDescriptionWithLlm(input = {}) {
 
 function buildDeterministicFallbackDescription(input = {}) {
   const title = cleanText(input.title) || 'Featured offer'
-  const merchant = cleanText(input.merchant || input.network || 'trusted merchant')
-  const sentence = `${title} from ${merchant}, with direct access to the official destination and sponsored recommendation support.`
+  const brand = cleanText(input.brand || input.merchant || input.network || 'trusted brand')
+  const category = toTitleCase(input.category) || 'Product'
+  const offer = cleanText(input.offer)
+  const normalizedTitle = title.toLowerCase().startsWith(brand.toLowerCase())
+    ? title
+    : `${brand} ${title}`
+  const sentence = offer
+    ? `Discover ${normalizedTitle} in ${category}. ${offer}. Visit the official site to learn more.`
+    : `Discover ${normalizedTitle} in ${category}. Explore key features and current offers on the official site.`
   return normalizeDescription(sentence)
 }
 
@@ -398,6 +668,7 @@ async function loadCases(filePath) {
       id: cleanText(item.id) || `case_${index + 1}`,
       name: cleanText(item.name) || `Pilot case ${index + 1}`,
       network,
+      offerId: cleanText(item.offer_id || item.offerId),
       query: cleanText(item.query),
       keywords: Array.isArray(item.keywords) ? item.keywords.map((v) => cleanText(v)).filter(Boolean) : [],
       descriptionState: cleanText(item.description_state || 'any').toLowerCase() || 'any',
@@ -433,6 +704,29 @@ async function fetchNetworkRows(pool, network, limit) {
 }
 
 function chooseCaseOffer(rows = [], caseSpec = {}, usedOfferIds = new Set()) {
+  if (caseSpec.offerId) {
+    const fixed = rows.find((row) => cleanText(row.offer_id) === cleanText(caseSpec.offerId))
+    if (!fixed) {
+      return {
+        picked: null,
+        keywordScore: 0,
+        fallbackMode: 'fixed_offer_not_found',
+      }
+    }
+    if (usedOfferIds.has(cleanText(fixed.offer_id))) {
+      return {
+        picked: null,
+        keywordScore: 0,
+        fallbackMode: 'fixed_offer_reused',
+      }
+    }
+    return {
+      picked: fixed,
+      keywordScore: scoreKeywordMatch(fixed, caseSpec.keywords),
+      fallbackMode: 'fixed_offer_id',
+    }
+  }
+
   const candidates = rows
     .filter((row) => !usedOfferIds.has(cleanText(row.offer_id)))
     .filter((row) => isDescriptionStateMatch(row.description, caseSpec.descriptionState))
@@ -493,23 +787,60 @@ async function enrichCaseOffer(caseSpec, row, options = {}) {
   const metadataBefore = sanitizeMetadata(row.metadata)
   const descriptionBefore = cleanText(row.description)
   const imageBefore = extractMetadataImage(metadataBefore)
-  const needsDescription = !hasDescription(descriptionBefore)
+  const needsDescription =
+    !hasDescription(descriptionBefore)
+    || isGenericDescription(descriptionBefore)
+    || isLowQualityDescription(descriptionBefore)
   const needsImage = !imageBefore
   const fetchTimeoutMs = toPositiveInteger(options.fetchTimeoutMs, DEFAULT_FETCH_TIMEOUT_MS)
 
   let crawl = { ok: false, status: 0, finalUrl: targetUrl, html: '' }
+  let crawlFallback = { ok: false, status: 0, finalUrl: '', html: '' }
   let extracted = { description: '', imageUrl: '', extractionMeta: {} }
   if ((needsDescription || needsImage) && targetUrl) {
     crawl = await fetchHtml(targetUrl, fetchTimeoutMs)
     if (crawl.ok && crawl.html) {
       extracted = enrichFromHtml(crawl.finalUrl || targetUrl, crawl.html)
     }
+    const fallbackUrls = buildFallbackFetchUrls(targetUrl, metadataBefore, crawl.finalUrl)
+    const shouldTryFallback = !hasDescription(extracted.description) || !cleanText(extracted.imageUrl)
+    if (shouldTryFallback) {
+      for (const fallbackUrl of fallbackUrls) {
+        crawlFallback = await fetchHtml(fallbackUrl, fetchTimeoutMs)
+        if (!crawlFallback.ok || !crawlFallback.html) continue
+        const rootExtracted = enrichFromHtml(crawlFallback.finalUrl || fallbackUrl, crawlFallback.html)
+        extracted = {
+          description: pickFirstNonEmpty(extracted.description, rootExtracted.description),
+          imageUrl: pickFirstNonEmpty(extracted.imageUrl, rootExtracted.imageUrl),
+          extractionMeta: {
+            primary: extracted.extractionMeta || {},
+            fallback_root: rootExtracted.extractionMeta || {},
+          },
+        }
+        if (hasDescription(extracted.description) && cleanText(extracted.imageUrl)) break
+      }
+    }
   }
+
+  const brand = deriveBrandName({
+    title: cleanText(row.title),
+    metadata: metadataBefore,
+    targetUrl,
+  })
+  const category = deriveCategoryName({ metadata: metadataBefore })
+  const offerContext = cleanText(
+    metadataBefore.offer
+    || metadataBefore.offerText
+    || metadataBefore.promotion
+    || metadataBefore.offer_value,
+  )
 
   let descriptionAfter = descriptionBefore
   let descriptionSource = ''
   if (needsDescription) {
-    if (hasDescription(extracted.description)) {
+    if (hasDescription(extracted.description)
+      && !isGenericDescription(extracted.description)
+      && !isLowQualityDescription(extracted.description)) {
       descriptionAfter = extracted.description
       descriptionSource = 'crawl'
     } else {
@@ -517,6 +848,11 @@ async function enrichCaseOffer(caseSpec, row, options = {}) {
         ? await generateDescriptionWithLlm({
             title: cleanText(row.title),
             merchant: cleanText(metadataBefore.merchant || metadataBefore.merchantName),
+            brand,
+            category,
+            offer: offerContext,
+            sourceDescription: extracted.description,
+            query: caseSpec.query,
             network: cleanText(row.network),
             targetUrl,
           })
@@ -528,6 +864,9 @@ async function enrichCaseOffer(caseSpec, row, options = {}) {
         descriptionAfter = buildDeterministicFallbackDescription({
           title: cleanText(row.title),
           merchant: cleanText(metadataBefore.merchant || metadataBefore.merchantName),
+          brand,
+          category,
+          offer: offerContext,
           network: cleanText(row.network),
         })
         descriptionSource = 'deterministic'
@@ -537,9 +876,13 @@ async function enrichCaseOffer(caseSpec, row, options = {}) {
 
   let imageAfter = imageBefore
   let imageSource = ''
+  const allowedImageDomains = resolveAllowedImageDomains(targetUrl, metadataBefore, [
+    crawl.finalUrl,
+    crawlFallback.finalUrl,
+  ])
   if (needsImage && !caseSpec.simulateNoImageForPilot) {
     const candidateImage = cleanText(extracted.imageUrl)
-    if (candidateImage && isImageAllowedForTarget(candidateImage, targetUrl)) {
+    if (candidateImage && isImageAllowedForDomains(candidateImage, allowedImageDomains)) {
       imageAfter = candidateImage
       imageSource = 'crawl'
     }
@@ -550,7 +893,9 @@ async function enrichCaseOffer(caseSpec, row, options = {}) {
   }
 
   const metadataAfter = {
-    ...metadataBefore,
+    ...Object.fromEntries(
+      Object.entries(metadataBefore).filter(([key]) => !IMAGE_METADATA_KEYS.includes(key)),
+    ),
     ...(imageAfter
       ? {
           image_url: imageAfter,
@@ -597,6 +942,12 @@ async function enrichCaseOffer(caseSpec, row, options = {}) {
       extraction: extracted.extractionMeta || {},
       description_source: descriptionSource,
       image_source: imageSource,
+      allowed_image_domains: Array.from(allowedImageDomains),
+      crawl_fallback: {
+        ok: crawlFallback.ok,
+        status: crawlFallback.status,
+        final_url: crawlFallback.finalUrl,
+      },
     },
   }
 }
@@ -625,7 +976,11 @@ function evaluateAcceptance(caseSpec, after = {}, evidence = {}) {
   const description = cleanText(after.description)
   const targetUrl = toHttpUrl(after.target_url)
   const imageUrl = toHttpUrl(after.image_url)
-  const imagePolicyOk = !imageUrl || isImageAllowedForTarget(imageUrl, targetUrl)
+  const allowedDomains = resolveAllowedImageDomains(targetUrl, after.metadata, [
+    evidence?.crawl?.final_url,
+    evidence?.crawl_fallback?.final_url,
+  ])
+  const imagePolicyOk = !imageUrl || isImageAllowedForDomains(imageUrl, allowedDomains)
 
   const checks = {
     has_title: Boolean(title),
@@ -647,6 +1002,11 @@ function evaluateAcceptance(caseSpec, after = {}, evidence = {}) {
       image_source: cleanText(evidence?.image_source),
     },
   }
+}
+
+function isDirectExecution() {
+  if (!process.argv[1]) return false
+  return path.resolve(process.argv[1]) === __filename
 }
 
 async function ensureDir(dirPath) {
@@ -758,7 +1118,18 @@ async function main() {
   })
 }
 
-main().catch((error) => {
-  console.error('[pilot-enrich-content-cases] failed:', error instanceof Error ? error.message : error)
-  process.exit(1)
+if (isDirectExecution()) {
+  main().catch((error) => {
+    console.error('[pilot-enrich-content-cases] failed:', error instanceof Error ? error.message : error)
+    process.exit(1)
+  })
+}
+
+export const __pilotContentInternal = Object.freeze({
+  resolveAllowedImageDomains,
+  isImageAllowedForDomains,
+  enrichFromHtml,
+  isGenericDescription,
+  isLowQualityDescription,
+  DEFAULT_DESCRIPTION_PROMPT,
 })

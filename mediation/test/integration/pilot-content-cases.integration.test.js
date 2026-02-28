@@ -11,6 +11,7 @@ test('pilot content cases: validates six-case contract for PartnerStack + House'
   assert.equal(payload.length, 6)
 
   const ids = new Set()
+  const offerIds = new Set()
   const networks = new Set()
   const allowedStates = new Set(['present', 'missing', 'any'])
 
@@ -19,6 +20,7 @@ test('pilot content cases: validates six-case contract for PartnerStack + House'
     const network = String(row?.network || '').trim().toLowerCase()
     const descriptionState = String(row?.description_state || '').trim().toLowerCase()
     const imageState = String(row?.image_state || '').trim().toLowerCase()
+    const offerId = String(row?.offer_id || '').trim()
 
     assert.equal(Boolean(id), true)
     assert.equal(ids.has(id), false)
@@ -29,6 +31,10 @@ test('pilot content cases: validates six-case contract for PartnerStack + House'
 
     assert.equal(allowedStates.has(descriptionState), true)
     assert.equal(allowedStates.has(imageState), true)
+    if (offerId) {
+      assert.equal(offerIds.has(offerId), false)
+      offerIds.add(offerId)
+    }
   }
 
   assert.equal(networks.has('house'), true)
