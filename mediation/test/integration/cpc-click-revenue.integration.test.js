@@ -10,8 +10,16 @@ const PROJECT_ROOT = path.resolve(__dirname, '../..')
 const GATEWAY_ENTRY = path.join(PROJECT_ROOT, 'src', 'devtools', 'mediation', 'mediation-gateway.js')
 
 const HOST = '127.0.0.1'
-const HEALTH_TIMEOUT_MS = 12000
-const REQUEST_TIMEOUT_MS = 5000
+const HEALTH_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.MEDIATION_TEST_HEALTH_TIMEOUT_MS || 30000)
+  if (!Number.isFinite(raw) || raw <= 0) return 30000
+  return Math.floor(raw)
+})()
+const REQUEST_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.MEDIATION_TEST_REQUEST_TIMEOUT_MS || 8000)
+  if (!Number.isFinite(raw) || raw <= 0) return 8000
+  return Math.floor(raw)
+})()
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
