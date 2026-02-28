@@ -5,19 +5,12 @@ import { parseArgs, printJson, toPositiveInteger, withDbPool } from './common.js
 const args = parseArgs(process.argv.slice(2))
 
 withDbPool(async (pool) => {
-  const fullRebuild = String(args.full || args.all || '').trim().toLowerCase() === 'true'
-  const offerIds = String(args.offerIds || args['offer-ids'] || '')
-    .split(',')
-    .map((item) => String(item || '').trim())
-    .filter(Boolean)
   const result = await buildInventoryEmbeddings(pool, {
-    limit: toPositiveInteger(args.limit, 6000),
-    fullRebuild,
+    fullRebuild: true,
     batchSize: toPositiveInteger(args.batchSize || args['batch-size'], 5000),
-    offerIds,
   })
   printJson(result)
 }).catch((error) => {
-  console.error('[build-embeddings] failed:', error instanceof Error ? error.message : error)
+  console.error('[rebuild-embeddings-full] failed:', error instanceof Error ? error.message : error)
   process.exit(1)
 })
