@@ -5860,6 +5860,12 @@ function buildRuntimeAdRequest(request, placement, intentScore, requestId = '') 
   }
 }
 
+function detectLocaleHintFromText(value = '') {
+  const text = String(value || '')
+  if (/[\u3400-\u9fff]/.test(text)) return 'zh-CN'
+  return 'en-US'
+}
+
 function deriveBidMessageContext(messages = []) {
   const rows = Array.isArray(messages) ? messages : []
   const normalized = rows
@@ -5897,10 +5903,12 @@ function deriveBidMessageContext(messages = []) {
     }
   }
 
+  const localeHint = detectLocaleHintFromText(`${query} ${answerText}`)
   return {
     query: clipText(query, 1200),
     answerText: clipText(answerText, 1200),
     recentTurns,
+    localeHint,
   }
 }
 
@@ -6054,7 +6062,7 @@ async function evaluateV2BidOpportunityFirst(payload) {
       intent = await scoreIntentOpportunityFirst({
         query: messageContext.query,
         answerText: messageContext.answerText,
-        locale: 'en-US',
+        locale: messageContext.localeHint || 'en-US',
         recentTurns: messageContext.recentTurns,
       }, {
         runtimeConfig,
@@ -6086,7 +6094,7 @@ async function evaluateV2BidOpportunityFirst(payload) {
     context: {
       query: messageContext.query,
       answerText: messageContext.answerText,
-      locale: 'en-US',
+      locale: messageContext.localeHint || 'en-US',
       intentScore: intent.score,
       intentClass: intent.class,
       intentInferenceMeta: {

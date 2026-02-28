@@ -352,3 +352,60 @@ test('v2 bid API returns unified response on the single runtime path', async () 
     await stopGateway(gateway)
   }
 })
+
+test('v2 bid API: chinese commerce query should pass intent gate and enter retrieval stage', async () => {
+  const suffix = `${Date.now()}_${Math.floor(Math.random() * 1000)}`
+  const scopedAccountId = `org_mediation_cn_${suffix}`
+  const scopedAppId = `sample-client-app-cn-${suffix}`
+  const port = 4080 + Math.floor(Math.random() * 120)
+  const baseUrl = `http://${HOST}:${port}`
+  const gateway = startGateway(port)
+
+  try {
+    await waitForGateway(baseUrl)
+
+    const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
+      email: `v2_bid_cn_${suffix}@example.com`,
+      accountId: scopedAccountId,
+      appId: scopedAppId,
+    })
+    const runtimeCredential = await issueRuntimeApiKeyHeaders(baseUrl, dashboardHeaders, {
+      accountId: scopedAccountId,
+      appId: scopedAppId,
+    })
+    const runtimeHeaders = {
+      Authorization: `Bearer ${runtimeCredential.secret}`,
+    }
+
+    const bid = await requestJson(baseUrl, '/api/v2/bid', {
+      method: 'POST',
+      headers: runtimeHeaders,
+      body: {
+        userId: 'user_cn_intent',
+        chatId: 'chat_cn_intent',
+        messages: [
+          { role: 'user', content: '我想给女朋友买会员，帮我对比价格并推荐哪个平台工具更好' },
+          { role: 'assistant', content: '可以先按预算、优惠和功能做比较。' },
+        ],
+      },
+      timeoutMs: 12000,
+    })
+
+    assert.equal(bid.status, 200, JSON.stringify(bid.payload))
+    assert.equal(bid.payload?.status, 'success')
+    assert.equal(typeof bid.payload?.intent?.score, 'number')
+    assert.equal(
+      bid.payload?.decisionTrace?.stageStatus?.retrieval === 'hit'
+      || bid.payload?.decisionTrace?.stageStatus?.retrieval === 'miss',
+      true,
+      JSON.stringify(bid.payload?.decisionTrace || {}),
+    )
+    assert.notEqual(bid.payload?.decisionTrace?.reasonCode, 'policy_blocked')
+  } catch (error) {
+    const logs = gateway.getLogs()
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`[v2-bid-api-cn] ${message}\n[gateway stdout]\n${logs.stdout}\n[gateway stderr]\n${logs.stderr}`)
+  } finally {
+    await stopGateway(gateway)
+  }
+})

@@ -33,6 +33,15 @@ test('opportunity-first intent: commerce query is scored by rules and supports n
   })
   assert.equal(financeRule.class !== 'non_commercial', true)
   assert.equal(financeRule.score >= 0.34, true)
+
+  const chineseRule = inferIntentByRules({
+    query: '我想给女朋友买会员，帮我对比一下哪个平台工具更推荐',
+    answerText: '你可以比较价格和优惠再决定购买。',
+  })
+  assert.equal(chineseRule.class !== 'non_commercial', true)
+  assert.equal(chineseRule.score >= 0.22, true)
+  assert.equal(Array.isArray(chineseRule.ruleMeta?.matchedKeywords), true)
+  assert.equal(chineseRule.ruleMeta?.matchedKeywords?.length > 0, true)
 })
 
 test('opportunity retrieval: connector fallback returns sortable candidates without postgres pool', async () => {

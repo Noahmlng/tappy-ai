@@ -18,6 +18,21 @@ const RULE_CLASS_KEYWORDS = {
   ]),
 }
 
+const RULE_CLASS_KEYWORDS_ZH = {
+  gifting: [
+    '送礼', '礼物', '女朋友', '男朋友', '老婆', '老公', '生日', '纪念日',
+  ],
+  shopping: [
+    '购买', '买', '下单', '价格', '多少钱', '优惠', '折扣', '会员', '订阅',
+  ],
+  purchase_intent: [
+    '对比', '比较', '推荐', '哪个好', '评测', '测评',
+  ],
+  product_exploration: [
+    '平台', '工具', '方案', '软件',
+  ],
+}
+
 const DEFAULT_OPTIONS = {
   llmTimeoutMs: 300,
   ruleBudgetMs: 120,
@@ -55,6 +70,7 @@ function inferIntentByRules(input = {}) {
   const query = cleanText(input.query)
   const answerText = cleanText(input.answerText)
   const joined = `${query} ${answerText}`.trim()
+  const lowerJoined = joined.toLowerCase()
   const tokens = tokenize(joined)
   const tokenSet = new Set(tokens)
 
@@ -64,11 +80,29 @@ function inferIntentByRules(input = {}) {
     purchase_intent: 0,
     product_exploration: 0,
   }
+  const matchedKeywords = []
+  const matchedKeywordSet = new Set()
 
   for (const [intentClass, keywords] of Object.entries(RULE_CLASS_KEYWORDS)) {
     for (const keyword of keywords) {
       if (tokenSet.has(keyword)) {
         hitCount[intentClass] += 1
+        if (!matchedKeywordSet.has(keyword)) {
+          matchedKeywordSet.add(keyword)
+          matchedKeywords.push(keyword)
+        }
+      }
+    }
+  }
+
+  for (const [intentClass, keywords] of Object.entries(RULE_CLASS_KEYWORDS_ZH)) {
+    for (const keyword of keywords) {
+      if (lowerJoined.includes(keyword)) {
+        hitCount[intentClass] += 1
+        if (!matchedKeywordSet.has(keyword)) {
+          matchedKeywordSet.add(keyword)
+          matchedKeywords.push(keyword)
+        }
       }
     }
   }
@@ -86,6 +120,7 @@ function inferIntentByRules(input = {}) {
     ruleMeta: {
       tokenCount: tokens.length,
       commerceHits,
+      matchedKeywords: matchedKeywords.slice(0, 20),
     },
   }
 }

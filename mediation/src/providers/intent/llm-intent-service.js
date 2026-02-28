@@ -8,7 +8,7 @@ import {
 } from './intent-schema.js'
 import { buildIntentInferenceUserPrompt, INTENT_INFERENCE_SYSTEM_PROMPT } from './prompt.js'
 
-const DEFAULT_GLM_CHAT_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
+const DEFAULT_DEEPSEEK_CHAT_URL = 'https://api.deepseek.com/chat/completions'
 const DEFAULT_TIMEOUT_MS = 5000
 
 function normalizeText(value) {
@@ -222,14 +222,19 @@ export async function inferIntentWithLlm(input, options = {}) {
 
   const requestId = options.requestId || `intent_${Date.now()}`
   const timeoutMs = Number.isFinite(options.timeoutMs) ? Math.max(500, options.timeoutMs) : DEFAULT_TIMEOUT_MS
-  const endpoint = options.endpoint || DEFAULT_GLM_CHAT_URL
   const runtimeConfig = options.runtimeConfig || loadRuntimeConfig(process.env, { strict: false })
-  const apiKey = typeof runtimeConfig?.openrouter?.apiKey === 'string'
-    ? runtimeConfig.openrouter.apiKey.trim()
+  const apiKey = typeof runtimeConfig?.deepseek?.apiKey === 'string'
+    ? runtimeConfig.deepseek.apiKey.trim()
     : ''
-  const model = typeof runtimeConfig?.openrouter?.model === 'string'
-    ? runtimeConfig.openrouter.model.trim()
+  const model = typeof runtimeConfig?.deepseek?.model === 'string'
+    ? runtimeConfig.deepseek.model.trim()
     : ''
+  const endpoint = options.endpoint
+    || (typeof runtimeConfig?.deepseek?.baseUrl === 'string' ? runtimeConfig.deepseek.baseUrl.trim() : '')
+    || DEFAULT_DEEPSEEK_CHAT_URL
+  const maxTokens = Number.isFinite(runtimeConfig?.deepseek?.intentMaxTokens)
+    ? Math.max(32, Math.min(256, Math.floor(runtimeConfig.deepseek.intentMaxTokens)))
+    : 96
 
   if (!query) {
     return createFallbackIntent({
@@ -261,6 +266,7 @@ export async function inferIntentWithLlm(input, options = {}) {
         model,
         temperature: 0,
         thinking: { type: 'disabled' },
+        max_tokens: maxTokens,
         messages: [
           { role: 'system', content: INTENT_INFERENCE_SYSTEM_PROMPT },
           {
@@ -281,8 +287,8 @@ export async function inferIntentWithLlm(input, options = {}) {
 
     const payload = await readResponseJson(response)
     if (!response.ok) {
-      const message = payload?.error?.message || payload?.message || response.statusText || 'GLM request failed'
-      throw new Error(`[intent] GLM error (${response.status}): ${message}`)
+      const message = payload?.error?.message || payload?.message || response.statusText || 'DeepSeek request failed'
+      throw new Error(`[intent] DeepSeek error (${response.status}): ${message}`)
     }
 
     const content = payload?.choices?.[0]?.message?.content
@@ -307,8 +313,6 @@ export async function inferIntentWithLlm(input, options = {}) {
       intent_class: candidate.intent_class,
       intent_score: clamp01(candidate.intent_score),
       preference_facets: candidate.preference_facets,
-      ...(candidate.constraints ? { constraints: candidate.constraints } : {}),
-      ...(Array.isArray(candidate.inference_trace) ? { inference_trace: candidate.inference_trace } : {}),
       fallbackUsed: false,
       fallbackReason: '',
       validationErrors: [],

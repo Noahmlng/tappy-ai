@@ -29,7 +29,9 @@ try {
     `[config] SUPABASE_DB_URL=${maskSecret(supabaseDbUrl)}, MEDIATION_ALLOWED_ORIGINS=${allowedOrigins.join(',')}`
   )
   console.log(
-    `[config] Optional providers -> OPENROUTER_MODEL=${config.openrouter.model || '<empty>'}, OPENROUTER_API_KEY=${maskSecret(
+    `[config] Optional providers -> DEEPSEEK_MODEL=${config.deepseek.model || '<empty>'}, DEEPSEEK_API_KEY=${maskSecret(
+      config.deepseek.apiKey
+    )}, OPENROUTER_MODEL=${config.openrouter.model || '<empty>'}, OPENROUTER_API_KEY=${maskSecret(
       config.openrouter.apiKey
     )}, CJ_TOKEN=${maskSecret(config.cj.token)}, PARTNERSTACK_API_KEY=${maskSecret(config.partnerstack.apiKey)}`
   )
