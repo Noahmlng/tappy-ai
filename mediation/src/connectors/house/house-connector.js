@@ -192,6 +192,7 @@ function createCatalogEntryFromFile(row) {
   const verticalL2 = cleanText(item.vertical_l2)
   const qualityScore = toNumber(item.confidence_score, 0)
   const discountScore = toNumber(item.discount_pct, 0)
+  const imageUrl = cleanText(item.image_url || item.imageUrl)
 
   const corpus = [
     title,
@@ -243,6 +244,8 @@ function createCatalogEntryFromFile(row) {
         sourceType: cleanText(item.source_type),
         placementKey: placementKey || 'next_step.intent_card',
         disclosure: cleanText(item.disclosure),
+        image_url: imageUrl,
+        imageUrl,
       },
       raw: item,
     },
@@ -271,6 +274,7 @@ function createCatalogEntryFromDb(row) {
   const discountScore = toNumber(item.discount_pct, 0)
   const merchant = cleanText(item.merchant)
   const productId = cleanText(item.product_id)
+  const imageUrl = cleanText(item.image_url)
 
   const corpus = [title, description, merchant, targetUrl, verticalL1, verticalL2, ...matchTags]
     .filter(Boolean)
@@ -314,6 +318,8 @@ function createCatalogEntryFromDb(row) {
         sourceType: cleanText(item.source_type),
         placementKey: 'next_step.intent_card',
         disclosure: cleanText(item.disclosure),
+        image_url: imageUrl,
+        imageUrl,
       },
       raw: item,
     },

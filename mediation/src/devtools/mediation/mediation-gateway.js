@@ -3038,6 +3038,19 @@ async function resolveIntentInferenceForNextStep(request) {
   }
 }
 
+function toHttpUrl(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  try {
+    const parsed = new URL(raw)
+    const protocol = String(parsed.protocol || '').toLowerCase()
+    if (protocol !== 'http:' && protocol !== 'https:') return ''
+    return parsed.toString()
+  } catch {
+    return ''
+  }
+}
+
 function mapRuntimeAdToNextStepCardItem(ad, index) {
   if (!ad || typeof ad !== 'object') return null
   const title = String(ad.title || '').trim()
@@ -3059,6 +3072,12 @@ function mapRuntimeAdToNextStepCardItem(ad, index) {
   if (typeof tracking.dismissUrl === 'string' && tracking.dismissUrl.trim()) {
     normalizedTracking.dismiss_url = tracking.dismissUrl.trim()
   }
+  const imageUrl = toHttpUrl(
+    ad.image_url
+    || ad.imageUrl
+    || ad.icon_url
+    || ad.iconUrl,
+  )
 
   const cardItem = {
     item_id: itemId,
@@ -3077,6 +3096,9 @@ function mapRuntimeAdToNextStepCardItem(ad, index) {
   }
   if (typeof ad.relevanceScore === 'number' && Number.isFinite(ad.relevanceScore)) {
     cardItem.relevance_score = clampNumber(ad.relevanceScore, 0, 1, 0)
+  }
+  if (imageUrl) {
+    cardItem.image_url = imageUrl
   }
   if (Object.keys(normalizedTracking).length > 0) {
     cardItem.tracking = normalizedTracking
@@ -6212,6 +6234,10 @@ function toDecisionAdFromBid(bid) {
   if (!bid || typeof bid !== 'object') return null
   const adId = String(bid.bidId || '').trim() || String(bid.url || '').trim()
   if (!adId) return null
+  const imageUrl = toHttpUrl(
+    bid.image_url
+    || bid.imageUrl,
+  )
 
   return {
     adId,
@@ -6224,6 +6250,7 @@ function toDecisionAdFromBid(bid) {
       clickUrl: String(bid.url || '').trim(),
     },
     bidValue: clampNumber(bid.price, 0, Number.MAX_SAFE_INTEGER, 0),
+    ...(imageUrl ? { image_url: imageUrl } : {}),
   }
 }
 

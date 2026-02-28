@@ -117,6 +117,7 @@
           "item_id": { "type": "string", "minLength": 1 },
           "title": { "type": "string", "minLength": 1 },
           "snippet": { "type": "string" },
+          "image_url": { "type": "string", "format": "uri" },
           "target_url": { "type": "string", "format": "uri" },
           "merchant_or_network": { "type": "string", "minLength": 1 },
           "price_hint": { "type": "string" },

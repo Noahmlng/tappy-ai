@@ -154,6 +154,9 @@ test('opportunity-first ranking: emits stable reason codes for miss and low-rank
         lexicalScore: 0.6,
         vectorScore: 0.7,
         fusedScore: 0.75,
+        metadata: {
+          image_url: 'https://cdn.example.com/canva.png',
+        },
       },
     ],
     query: 'canva pro discount',
@@ -170,6 +173,7 @@ test('opportunity-first ranking: emits stable reason codes for miss and low-rank
   assert.equal(typeof served.winner.bid.pricing.cpaUsd, 'number')
   assert.equal(typeof served.winner.bid.pricing.ecpmUsd, 'number')
   assert.equal(typeof served.winner.bid.pricing.pConv, 'number')
+  assert.equal(served.winner.bid.image_url, 'https://cdn.example.com/canva.png')
 })
 
 test('opportunity-first ranking: economic score can break close rank ties', () => {

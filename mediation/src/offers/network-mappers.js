@@ -18,6 +18,25 @@ function normalizeMaybeUrl(...values) {
   return ''
 }
 
+function pickPartnerStackImageUrl(record = {}) {
+  return normalizeMaybeUrl(
+    record?.image_url,
+    record?.imageUrl,
+    record?.logo_url,
+    record?.logoUrl,
+    record?.icon_url,
+    record?.iconUrl,
+    record?.company?.image_url,
+    record?.company?.imageUrl,
+    record?.company?.logo_url,
+    record?.company?.logoUrl,
+    record?.company?.icon_url,
+    record?.company?.iconUrl,
+    record?.program?.image_url,
+    record?.program?.imageUrl,
+  )
+}
+
 export function mapPartnerStackToUnifiedOffer(record, options = {}) {
   const sourceType = options.sourceType || 'offer'
   const sourceId = pickFirst(
@@ -27,6 +46,7 @@ export function mapPartnerStackToUnifiedOffer(record, options = {}) {
     record?.uuid,
     record?.offerId
   )
+  const imageUrl = pickPartnerStackImageUrl(record)
 
   return normalizeUnifiedOffer({
     sourceNetwork: 'partnerstack',
@@ -34,7 +54,12 @@ export function mapPartnerStackToUnifiedOffer(record, options = {}) {
     sourceId,
     offerId: sourceId ? `partnerstack:${sourceType}:${sourceId}` : '',
     title: pickFirst(record?.name, record?.title, record?.campaign_name, record?.program_name),
-    description: pickFirst(record?.description, record?.campaign_description),
+    description: pickFirst(
+      record?.description,
+      record?.campaign_description,
+      record?.program_description,
+      record?.company?.description,
+    ),
     targetUrl: normalizeMaybeUrl(
       record?.destination_url,
       record?.destinationUrl,
@@ -63,7 +88,9 @@ export function mapPartnerStackToUnifiedOffer(record, options = {}) {
     metadata: {
       partnershipIdentifier: pickFirst(options.partnershipIdentifier, record?.partnership_identifier),
       programId: pickFirst(record?.program_id),
-      campaignId: pickFirst(record?.campaign_id)
+      campaignId: pickFirst(record?.campaign_id),
+      image_url: imageUrl,
+      imageUrl,
     },
     raw: record
   })
@@ -72,6 +99,7 @@ export function mapPartnerStackToUnifiedOffer(record, options = {}) {
 export function mapPartnerStackPartnershipToUnifiedOffer(record, options = {}) {
   const sourceType = options.sourceType || 'link'
   const sourceId = pickFirst(record?.key, record?.id, record?.company?.key, record?.company?.id)
+  const imageUrl = pickPartnerStackImageUrl(record)
 
   return normalizeUnifiedOffer({
     sourceNetwork: 'partnerstack',
@@ -79,7 +107,12 @@ export function mapPartnerStackPartnershipToUnifiedOffer(record, options = {}) {
     sourceId,
     offerId: sourceId ? `partnerstack:${sourceType}:${sourceId}` : '',
     title: pickFirst(record?.company?.name, record?.name, record?.title),
-    description: pickFirst(record?.offers?.description),
+    description: pickFirst(
+      record?.offers?.description,
+      record?.description,
+      record?.company?.description,
+      record?.program?.description,
+    ),
     targetUrl: normalizeMaybeUrl(
       record?.link?.url,
       record?.link?.destination,
@@ -103,6 +136,8 @@ export function mapPartnerStackPartnershipToUnifiedOffer(record, options = {}) {
       stackKey: pickFirst(record?.link?.stack_key),
       destinationUrl: normalizeMaybeUrl(record?.link?.destination),
       teamName: pickFirst(record?.team?.name),
+      image_url: imageUrl,
+      imageUrl,
     },
     raw: record
   })
