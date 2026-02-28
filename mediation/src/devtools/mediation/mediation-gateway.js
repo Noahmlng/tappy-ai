@@ -10,6 +10,7 @@ import { inferIntentWithLlm } from '../../providers/intent/index.js'
 import { scoreIntentOpportunityFirst } from '../../runtime/intent-scoring.js'
 import { retrieveOpportunityCandidates } from '../../runtime/opportunity-retrieval.js'
 import { rankOpportunityCandidates } from '../../runtime/opportunity-ranking.js'
+import { runGlobalPlacementAuction } from '../../runtime/global-placement-auction.js'
 import { createOpportunityWriter } from '../../runtime/opportunity-writer.js'
 import {
   syncInventoryNetworks,
@@ -5744,6 +5745,25 @@ function pickPlacementForRequest(request) {
     .sort((a, b) => a.priority - b.priority)[0] || null
 }
 
+function pickPlacementsForV2BidRequest(request) {
+  const placements = getPlacementsForApp(
+    request?.appId,
+    request?.accountId,
+    { createIfMissing: true, clone: false },
+  )
+  const scopedPlacementId = String(request?.placementId || '').trim()
+  const candidates = placements
+    .filter((placement) => placementMatchesSelector(placement, {
+      placementId: scopedPlacementId,
+    }))
+    .sort((a, b) => a.priority - b.priority)
+
+  if (scopedPlacementId) {
+    return candidates
+  }
+  return candidates.filter((placement) => placement?.enabled !== false)
+}
+
 function getSessionPlacementKey(sessionId, placementId) {
   return `${sessionId}::${placementId}`
 }
@@ -5978,32 +5998,8 @@ function buildV2BidBudgetSignal(stageDurationsMs = {}, budgetMs = V2_BID_BUDGET_
   }
 }
 
-async function evaluateV2BidOpportunityFirst(payload) {
-  const request = payload && typeof payload === 'object' ? payload : {}
-  request.appId = String(request.appId || DEFAULT_CONTROL_PLANE_APP_ID).trim()
-  request.accountId = normalizeControlPlaneAccountId(
-    request.accountId || resolveAccountIdForApp(request.appId),
-    '',
-  )
-
-  const startedAt = Date.now()
-  const requestId = createId('adreq')
-  const timestamp = nowIso()
-  const placement = pickPlacementForRequest({
-    appId: request.appId,
-    accountId: request.accountId,
-    placementId: request.placementId,
-  })
-  const placementId = normalizePlacementIdWithMigration(
-    String(placement?.placementId || request.placementId || '').trim(),
-    PLACEMENT_ID_FROM_ANSWER,
-  )
-  const placementKey = String(placement?.placementKey || PLACEMENT_KEY_BY_ID[placementId] || '').trim()
-  const triggerType = resolveTriggerTypeByPlacementId(placementId)
-  const messageContext = deriveBidMessageContext(request.messages)
-  const writer = createOpportunityChainWriter()
-
-  const stageStatusMap = {
+function createV2BidStageStatusMap() {
+  return {
     intent: 'pending',
     opportunity: 'pending',
     retrieval: 'pending',
@@ -6011,101 +6007,55 @@ async function evaluateV2BidOpportunityFirst(payload) {
     delivery: 'pending',
     attribution: 'pending',
   }
+}
+
+async function evaluateSinglePlacementOpportunity({
+  request = {},
+  requestId = '',
+  placement = null,
+  messageContext = {},
+  intent = {},
+  intentUpstreamFailure = null,
+  precheckInventory = {},
+  writer,
+}) {
+  const placementId = normalizePlacementIdWithMigration(
+    String(placement?.placementId || '').trim(),
+    PLACEMENT_ID_FROM_ANSWER,
+  )
+  const placementKey = String(placement?.placementKey || PLACEMENT_KEY_BY_ID[placementId] || '').trim()
+  const triggerType = resolveTriggerTypeByPlacementId(placementId)
+  const blockedTopics = normalizeStringList(placement?.trigger?.blockedTopics)
+  const intentThreshold = clampNumber(placement?.trigger?.intentThreshold, 0, 1, 0.6)
+
+  const stageStatusMap = createV2BidStageStatusMap()
+  if (placement?.enabled === false) {
+    stageStatusMap.intent = 'skipped'
+  } else if (intentUpstreamFailure) {
+    stageStatusMap.intent = 'error'
+  } else {
+    stageStatusMap.intent = 'ok'
+  }
+
   const stageDurationsMs = {
-    intent: 0,
     retrieval: 0,
     ranking: 0,
     delivery: 0,
-    total: 0,
-  }
-  let precheckInventory = normalizeInventoryPrecheck()
-  try {
-    const inventoryReadiness = await getCachedInventoryReadinessSummary()
-    precheckInventory = normalizeInventoryPrecheck(inventoryReadiness)
-  } catch (error) {
-    precheckInventory = normalizeInventoryPrecheck(
-      null,
-      error instanceof Error ? error.message : 'inventory_precheck_failed',
-    )
   }
 
-  const blockedTopics = normalizeStringList(placement?.trigger?.blockedTopics)
-  const intentThreshold = clampNumber(placement?.trigger?.intentThreshold, 0, 1, 0.6)
   let reasonCode = 'inventory_no_match'
   let winnerBid = null
-  let opportunityRecord = null
+  let winnerCandidate = null
+  let upstreamFailure = intentUpstreamFailure
   let retrievalDebug = {
     lexicalHitCount: 0,
     vectorHitCount: 0,
     fusedHitCount: 0,
   }
   let rankingDebug = {}
-  let intent = {
-    score: 0,
-    class: 'non_commercial',
-    source: 'rule',
-    latencyMs: 0,
-  }
-  let upstreamFailure = null
+  let gatePassed = false
 
-  if (!placement || placement.enabled === false) {
-    reasonCode = 'placement_unavailable'
-    stageStatusMap.intent = 'skipped'
-    stageStatusMap.opportunity = 'pending'
-    stageStatusMap.retrieval = 'skipped'
-    stageStatusMap.ranking = 'skipped'
-    stageStatusMap.delivery = 'pending'
-  } else {
-    const intentStartedAt = Date.now()
-    try {
-      const runtimeConfig = loadRuntimeConfig(process.env, { strict: false })
-      intent = await scoreIntentOpportunityFirst({
-        query: messageContext.query,
-        answerText: messageContext.answerText,
-        locale: messageContext.localeHint || 'en-US',
-        recentTurns: messageContext.recentTurns,
-      }, {
-        runtimeConfig,
-        useLlmFallback: isLlmIntentFallbackEnabled(),
-        llmTimeoutMs: 300,
-      })
-      stageStatusMap.intent = 'ok'
-    } catch (error) {
-      upstreamFailure = {
-        stage: 'intent',
-        error: error instanceof Error ? error.message : 'intent_failed',
-        timeout: isTimeoutLikeMessage(error instanceof Error ? error.message : ''),
-      }
-      stageStatusMap.intent = 'error'
-    } finally {
-      stageDurationsMs.intent = Math.max(0, Date.now() - intentStartedAt)
-    }
-  }
-
-  const decisionRequest = {
-    appId: request.appId,
-    accountId: request.accountId,
-    sessionId: request.chatId,
-    userId: request.userId,
-    turnId: '',
-    event: V2_BID_EVENT,
-    placementId,
-    placementKey,
-    context: {
-      query: messageContext.query,
-      answerText: messageContext.answerText,
-      locale: messageContext.localeHint || 'en-US',
-      intentScore: intent.score,
-      intentClass: intent.class,
-      intentInferenceMeta: {
-        inferenceModel: intent?.llm?.model || '',
-        inferenceFallbackReason: intent?.llm?.fallbackReason || '',
-        inferenceLatencyMs: toPositiveInteger(intent.llmLatencyMs, 0),
-      },
-    },
-  }
-
-  opportunityRecord = await writer.createOpportunityRecord({
+  const opportunityRecord = await writer.createOpportunityRecord({
     requestId,
     appId: request.appId,
     placementId,
@@ -6122,16 +6072,16 @@ async function evaluateV2BidOpportunityFirst(payload) {
   })
   stageStatusMap.opportunity = 'persisted'
 
-  if (!placement || placement.enabled === false) {
+  if (placement?.enabled === false) {
     reasonCode = 'placement_unavailable'
     stageStatusMap.retrieval = 'skipped'
     stageStatusMap.ranking = 'skipped'
-  } else if (upstreamFailure) {
-    reasonCode = upstreamFailure.timeout ? 'upstream_timeout' : 'upstream_error'
+  } else if (intentUpstreamFailure) {
+    reasonCode = intentUpstreamFailure.timeout ? 'upstream_timeout' : 'upstream_error'
     stageStatusMap.retrieval = 'skipped'
     stageStatusMap.ranking = 'skipped'
     rankingDebug = {
-      upstreamFailure,
+      upstreamFailure: intentUpstreamFailure,
     }
   } else {
     const blockedTopic = matchBlockedTopic(
@@ -6159,6 +6109,7 @@ async function evaluateV2BidOpportunityFirst(payload) {
         intentScore: intent.score,
       }
     } else {
+      gatePassed = true
       try {
         const retrievalStartedAt = Date.now()
         const retrieval = await retrieveOpportunityCandidates({
@@ -6198,10 +6149,11 @@ async function evaluateV2BidOpportunityFirst(payload) {
         stageDurationsMs.ranking = Math.max(0, Date.now() - rankingStartedAt)
 
         rankingDebug = ranking?.debug && typeof ranking.debug === 'object' ? ranking.debug : {}
+        winnerCandidate = ranking?.winner && typeof ranking.winner === 'object' ? ranking.winner : null
         reasonCode = String(ranking?.reasonCode || 'inventory_no_match')
-        stageStatusMap.ranking = ranking?.winner ? 'selected' : 'no_fill'
-        winnerBid = ranking?.winner?.bid && typeof ranking.winner.bid === 'object'
-          ? ranking.winner.bid
+        stageStatusMap.ranking = winnerCandidate ? 'selected' : 'no_fill'
+        winnerBid = winnerCandidate?.bid && typeof winnerCandidate.bid === 'object'
+          ? winnerCandidate.bid
           : null
         if (winnerBid) {
           winnerBid = injectTrackingScopeIntoBid(winnerBid, {
@@ -6249,9 +6201,12 @@ async function evaluateV2BidOpportunityFirst(payload) {
     : null
   const pricingVersion = String(pricingSnapshot?.modelVersion || rankingDebug?.pricingModel || 'cpa_mock_v2').trim()
   const deliveryStartedAt = Date.now()
+
   await writer.writeDeliveryRecord({
     requestId,
     opportunityKey: opportunityRecord.opportunityKey,
+    responseReference: `${requestId}:${placementId}`,
+    renderAttemptId: 'render_primary',
     appId: request.appId,
     placementId,
     deliveryStatus,
@@ -6278,9 +6233,224 @@ async function evaluateV2BidOpportunityFirst(payload) {
     },
   )
   stageDurationsMs.delivery = Math.max(0, Date.now() - deliveryStartedAt)
+  stageStatusMap.delivery = 'persisted'
+
+  return {
+    placement,
+    placementId,
+    placementKey,
+    triggerType,
+    blockedTopics,
+    intentThreshold,
+    stageStatusMap,
+    stageDurationsMs,
+    reasonCode,
+    winnerBid,
+    winnerCandidate,
+    retrievalDebug,
+    rankingDebug,
+    opportunityRecord,
+    gatePassed,
+    upstreamFailure,
+    pricingSnapshot,
+    pricingVersion,
+  }
+}
+
+async function evaluateV2BidOpportunityFirst(payload) {
+  const request = payload && typeof payload === 'object' ? payload : {}
+  request.appId = String(request.appId || DEFAULT_CONTROL_PLANE_APP_ID).trim()
+  request.accountId = normalizeControlPlaneAccountId(
+    request.accountId || resolveAccountIdForApp(request.appId),
+    '',
+  )
+
+  const startedAt = Date.now()
+  const requestId = createId('adreq')
+  const timestamp = nowIso()
+  const placements = pickPlacementsForV2BidRequest({
+    appId: request.appId,
+    accountId: request.accountId,
+    placementId: request.placementId,
+  })
+  const messageContext = deriveBidMessageContext(request.messages)
+  const writer = createOpportunityChainWriter()
+
+  let precheckInventory = normalizeInventoryPrecheck()
+  try {
+    const inventoryReadiness = await getCachedInventoryReadinessSummary()
+    precheckInventory = normalizeInventoryPrecheck(inventoryReadiness)
+  } catch (error) {
+    precheckInventory = normalizeInventoryPrecheck(
+      null,
+      error instanceof Error ? error.message : 'inventory_precheck_failed',
+    )
+  }
+
+  let intent = {
+    score: 0,
+    class: 'non_commercial',
+    source: 'rule',
+    latencyMs: 0,
+  }
+  let intentUpstreamFailure = null
+  let intentLatencyMs = 0
+  if (placements.length > 0) {
+    const intentStartedAt = Date.now()
+    try {
+      const runtimeConfig = loadRuntimeConfig(process.env, { strict: false })
+      intent = await scoreIntentOpportunityFirst({
+        query: messageContext.query,
+        answerText: messageContext.answerText,
+        locale: messageContext.localeHint || 'en-US',
+        recentTurns: messageContext.recentTurns,
+      }, {
+        runtimeConfig,
+        useLlmFallback: isLlmIntentFallbackEnabled(),
+        llmTimeoutMs: 300,
+      })
+    } catch (error) {
+      intentUpstreamFailure = {
+        stage: 'intent',
+        error: error instanceof Error ? error.message : 'intent_failed',
+        timeout: isTimeoutLikeMessage(error instanceof Error ? error.message : ''),
+      }
+    } finally {
+      intentLatencyMs = Math.max(0, Date.now() - intentStartedAt)
+    }
+  }
+
+  const placementResults = placements.length > 0
+    ? await Promise.all(
+      placements.map((placement) => evaluateSinglePlacementOpportunity({
+        request,
+        requestId,
+        placement,
+        messageContext,
+        intent,
+        intentUpstreamFailure,
+        precheckInventory,
+        writer,
+      })),
+    )
+    : []
+
+  const placementOptions = placementResults.map((item) => ({
+    placementId: item.placementId,
+    gatePassed: item.gatePassed,
+    reasonCode: item.reasonCode,
+    bid: item.winnerBid,
+    bidPrice: clampNumber(item.winnerBid?.price, 0, Number.MAX_SAFE_INTEGER, 0),
+    ecpmUsd: clampNumber(
+      item.winnerBid?.pricing?.ecpmUsd ?? item.winnerCandidate?.pricing?.ecpmUsd,
+      0,
+      Number.MAX_SAFE_INTEGER,
+      0,
+    ),
+    rankScore: clampNumber(item.winnerCandidate?.rankScore, 0, 1, 0),
+    auctionScore: clampNumber(item.winnerCandidate?.auctionScore, 0, 1, 0),
+    priority: toPositiveInteger(item.placement?.priority, Number.MAX_SAFE_INTEGER),
+    stageStatusMap: item.stageStatusMap,
+  }))
+
+  const globalAuction = runGlobalPlacementAuction({
+    options: placementOptions,
+  })
+  const winnerPlacementId = String(globalAuction?.winnerPlacementId || '').trim()
+  const winnerBid = globalAuction?.winner?.bid && typeof globalAuction.winner.bid === 'object'
+    ? globalAuction.winner.bid
+    : null
+  const selectedPlacementId = String(
+    winnerPlacementId
+    || globalAuction?.selectedOption?.placementId
+    || '',
+  ).trim()
+  const selectedPlacementResult = placementResults.find((item) => item.placementId === selectedPlacementId) || null
+  const selectedPlacement = selectedPlacementResult?.placement || placements[0] || null
+  const normalizedPlacementId = normalizePlacementIdWithMigration(
+    String(selectedPlacement?.placementId || selectedPlacementId || request.placementId || '').trim(),
+    PLACEMENT_ID_FROM_ANSWER,
+  )
+  const placementKey = String(
+    selectedPlacement?.placementKey
+    || selectedPlacementResult?.placementKey
+    || PLACEMENT_KEY_BY_ID[normalizedPlacementId]
+    || '',
+  ).trim()
+  const triggerType = selectedPlacementResult?.triggerType || resolveTriggerTypeByPlacementId(normalizedPlacementId)
+  const reasonCode = winnerBid
+    ? 'served'
+    : String(
+      globalAuction?.noBidReasonCode
+      || selectedPlacementResult?.reasonCode
+      || (placements.length === 0 ? 'placement_unavailable' : 'inventory_no_match'),
+    ).trim()
+
+  const stageStatusMap = selectedPlacementResult?.stageStatusMap
+    ? { ...selectedPlacementResult.stageStatusMap }
+    : {
+      intent: placements.length > 0
+        ? (intentUpstreamFailure ? 'error' : 'ok')
+        : 'skipped',
+      opportunity: placements.length > 0 ? 'pending' : 'skipped',
+      retrieval: placements.length > 0 ? 'pending' : 'skipped',
+      ranking: placements.length > 0 ? 'pending' : 'skipped',
+      delivery: placements.length > 0 ? 'pending' : 'skipped',
+      attribution: 'pending',
+    }
+
+  const stageDurationsMs = {
+    intent: intentLatencyMs,
+    retrieval: placementResults.length > 0
+      ? Math.max(...placementResults.map((item) => toPositiveInteger(item?.stageDurationsMs?.retrieval, 0)))
+      : 0,
+    ranking: placementResults.length > 0
+      ? Math.max(...placementResults.map((item) => toPositiveInteger(item?.stageDurationsMs?.ranking, 0)))
+      : 0,
+    delivery: placementResults.length > 0
+      ? Math.max(...placementResults.map((item) => toPositiveInteger(item?.stageDurationsMs?.delivery, 0)))
+      : 0,
+    total: 0,
+  }
+
+  const retrievalDebug = selectedPlacementResult?.retrievalDebug && typeof selectedPlacementResult.retrievalDebug === 'object'
+    ? selectedPlacementResult.retrievalDebug
+    : {
+      lexicalHitCount: 0,
+      vectorHitCount: 0,
+      fusedHitCount: 0,
+    }
+  const rankingDebug = selectedPlacementResult?.rankingDebug && typeof selectedPlacementResult.rankingDebug === 'object'
+    ? selectedPlacementResult.rankingDebug
+    : {}
+  const pricingSnapshot = selectedPlacementResult?.pricingSnapshot
+    || (winnerBid?.pricing && typeof winnerBid.pricing === 'object' ? winnerBid.pricing : null)
+  const pricingVersion = String(
+    selectedPlacementResult?.pricingVersion
+    || pricingSnapshot?.modelVersion
+    || rankingDebug?.pricingModel
+    || 'cpa_mock_v2',
+  ).trim()
+  const intentThreshold = clampNumber(selectedPlacementResult?.intentThreshold, 0, 1, 0.6)
+
+  for (const item of placementResults) {
+    const counterPlacement = item.placement || { placementId: item.placementId }
+    const isWinner = Boolean(winnerBid && item.placementId === winnerPlacementId)
+    if (isWinner) {
+      recordServeCounters(counterPlacement, {
+        sessionId: request.chatId,
+        userId: request.userId,
+      })
+    } else {
+      recordBlockedOrNoFill(counterPlacement)
+    }
+  }
+  if (placementResults.length === 0) {
+    recordBlockedOrNoFill({ placementId: normalizedPlacementId })
+  }
+
   stageDurationsMs.total = Math.max(0, Date.now() - startedAt)
   const budgetSignal = buildV2BidBudgetSignal(stageDurationsMs, V2_BID_BUDGET_MS)
-  stageStatusMap.delivery = 'persisted'
 
   const decisionResult = mapOpportunityReasonToDecision(reasonCode, Boolean(winnerBid))
   const decision = createDecision(
@@ -6288,6 +6458,25 @@ async function evaluateV2BidOpportunityFirst(payload) {
     winnerBid ? 'runtime_eligible' : reasonCode,
     clampNumber(intent.score, 0, 1, 0),
   )
+
+  const multiPlacementDiagnostics = {
+    evaluatedCount: placementOptions.length,
+    winnerPlacementId,
+    selectionReason: String(globalAuction?.selectionReason || '').trim(),
+    options: placementOptions.map((item) => ({
+      placementId: item.placementId,
+      gatePassed: item.gatePassed,
+      reasonCode: item.reasonCode,
+      bidPrice: item.bidPrice,
+      ecpmUsd: item.ecpmUsd,
+      rankScore: item.rankScore,
+      auctionScore: item.auctionScore,
+      stageStatusMap: item.stageStatusMap,
+    })),
+    loserSummary: globalAuction?.loserSummary && typeof globalAuction.loserSummary === 'object'
+      ? globalAuction.loserSummary
+      : { totalOptions: placementOptions.length, reasonCount: {} },
+  }
 
   const runtimeDebug = {
     bidV2: true,
@@ -6299,9 +6488,9 @@ async function evaluateV2BidOpportunityFirst(payload) {
     timeoutSignal: budgetSignal.timeoutSignal,
     precheck: {
       placement: {
-        exists: Boolean(placement),
-        enabled: placement?.enabled !== false,
-        placementId,
+        exists: Boolean(selectedPlacement),
+        enabled: selectedPlacement ? selectedPlacement.enabled !== false : false,
+        placementId: normalizedPlacementId,
       },
       inventory: precheckInventory,
     },
@@ -6311,35 +6500,47 @@ async function evaluateV2BidOpportunityFirst(payload) {
     triggerType,
     pricingVersion,
     pricingSnapshot,
+    multiPlacement: multiPlacementDiagnostics,
     networkErrors: [],
     snapshotUsage: {},
     networkHealth: getAllNetworkHealth(),
-  }
-
-  const counterPlacement = placement || {
-    placementId,
-  }
-  if (winnerBid) {
-    recordServeCounters(counterPlacement, {
-      sessionId: request.chatId,
-      userId: request.userId,
-    })
-  } else {
-    recordBlockedOrNoFill(counterPlacement)
   }
 
   recordRuntimeNetworkStats(decision.result, runtimeDebug, {
     requestId,
     appId: request.appId,
     accountId: request.accountId,
-    placementId,
+    placementId: normalizedPlacementId,
   })
+
+  const decisionRequest = {
+    appId: request.appId,
+    accountId: request.accountId,
+    sessionId: request.chatId,
+    userId: request.userId,
+    turnId: '',
+    event: V2_BID_EVENT,
+    placementId: normalizedPlacementId,
+    placementKey,
+    context: {
+      query: messageContext.query,
+      answerText: messageContext.answerText,
+      locale: messageContext.localeHint || 'en-US',
+      intentScore: intent.score,
+      intentClass: intent.class,
+      intentInferenceMeta: {
+        inferenceModel: intent?.llm?.model || '',
+        inferenceFallbackReason: intent?.llm?.fallbackReason || '',
+        inferenceLatencyMs: toPositiveInteger(intent.llmLatencyMs, 0),
+      },
+    },
+  }
 
   const decisionAd = winnerBid ? toDecisionAdFromBid(winnerBid) : null
   await recordDecisionForRequest({
     request: decisionRequest,
-    placement: placement || {
-      placementId,
+    placement: selectedPlacement || {
+      placementId: normalizedPlacementId,
       placementKey,
     },
     requestId,
@@ -6366,7 +6567,7 @@ async function evaluateV2BidOpportunityFirst(payload) {
     timestamp,
     status: 'success',
     message: winnerBid ? 'Bid successful' : 'No bid',
-    opportunityId: opportunityRecord.opportunityKey,
+    opportunityId: selectedPlacementResult?.opportunityRecord?.opportunityKey || '',
     intent: {
       score: clampNumber(intent.score, 0, 1, 0),
       class: String(intent.class || 'non_commercial'),
@@ -6401,14 +6602,15 @@ async function evaluateV2BidOpportunityFirst(payload) {
       timeoutSignal: budgetSignal.timeoutSignal,
       precheck: {
         placement: {
-          exists: Boolean(placement),
-          enabled: placement?.enabled !== false,
-          placementId,
+          exists: Boolean(selectedPlacement),
+          enabled: selectedPlacement ? selectedPlacement.enabled !== false : false,
+          placementId: normalizedPlacementId,
         },
         inventory: precheckInventory,
       },
       retrievalDebug,
       rankingDebug,
+      multiPlacement: multiPlacementDiagnostics,
       bidLatencyMs: stageDurationsMs.total,
     },
   }

@@ -230,6 +230,8 @@ test('v2 bid API returns unified response on the single runtime path', async () 
     assert.equal(typeof bid.payload?.decisionTrace?.reasonCode, 'string')
     assert.equal(Boolean(bid.payload?.decisionTrace?.stageStatus), true)
     assert.equal(typeof bid.payload?.diagnostics?.triggerType, 'string')
+    assert.equal(typeof bid.payload?.diagnostics?.multiPlacement?.evaluatedCount, 'number')
+    assert.equal(bid.payload?.diagnostics?.multiPlacement?.evaluatedCount >= 2, true)
     assert.equal(bid.payload?.diagnostics?.pricingVersion, 'cpa_mock_v2')
     assert.equal(typeof bid.payload?.diagnostics?.timingsMs?.total, 'number')
     assert.equal(typeof bid.payload?.diagnostics?.budgetMs?.total, 'number')
@@ -310,11 +312,15 @@ test('v2 bid API returns unified response on the single runtime path', async () 
     assert.equal(tolerantMissingPlacement.payload?.diagnostics?.inputNormalization?.defaultsApplied?.placementIdDefaulted, true)
     assert.equal(
       tolerantMissingPlacement.payload?.diagnostics?.inputNormalization?.defaultsApplied?.placementIdResolvedFromDashboardDefault,
-      true,
+      false,
+    )
+    assert.equal(
+      tolerantMissingPlacement.payload?.diagnostics?.inputNormalization?.defaultsApplied?.placementIdFallbackApplied,
+      false,
     )
     assert.equal(
       tolerantMissingPlacement.payload?.diagnostics?.inputNormalization?.placementResolution?.source,
-      'dashboard_default',
+      'all_enabled_placements',
     )
     assert.equal(tolerantMissingPlacement.payload?.diagnostics?.inputNormalization?.roleCoercions?.[0]?.to, 'assistant')
 

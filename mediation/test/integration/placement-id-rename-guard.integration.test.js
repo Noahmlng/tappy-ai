@@ -170,7 +170,80 @@ test('runtime-routes fail-opens /api/v2/bid when evaluator returns internal 5xx'
   assert.equal(result.payload?.diagnostics?.upstreamStatus, 500)
   assert.equal(result.payload?.diagnostics?.failOpenApplied, true)
   assert.equal(result.payload?.data?.bid, null)
-  assert.equal(result.payload?.diagnostics?.inputNormalization?.defaultsApplied?.placementIdFallbackApplied, true)
+  assert.equal(result.payload?.diagnostics?.inputNormalization?.defaultsApplied?.placementIdFallbackApplied, false)
+})
+
+test('runtime-routes keeps placement scope for /api/v2/bid and does not fan out outside credential scope', async () => {
+  const { result, sendJson } = createSendJsonCapture()
+  let evaluatedPlacementId = ''
+  const handled = await handleRuntimeRoutes({
+    req: { method: 'POST', headers: {} },
+    res: {},
+    pathname: '/api/v2/bid',
+    requestUrl: new URL('http://127.0.0.1/api/v2/bid'),
+  }, {
+    sendJson,
+    withCors: () => {},
+    assertPlacementIdNotRenamed,
+    readJsonBody: async () => ({
+      userId: 'user_scoped',
+      chatId: 'chat_scoped',
+      messages: [{ role: 'user', content: 'hello' }],
+    }),
+    normalizeV2BidPayload: (payload) => ({
+      userId: String(payload?.userId || '').trim(),
+      chatId: String(payload?.chatId || '').trim(),
+      placementId: '',
+      messages: Array.isArray(payload?.messages) ? payload.messages : [],
+      inputDiagnostics: {
+        defaultsApplied: {
+          userIdGenerated: false,
+          chatIdDefaultedToUserId: false,
+          placementIdDefaulted: true,
+          placementIdResolvedFromDashboardDefault: false,
+          placementIdFallbackApplied: false,
+        },
+      },
+    }),
+    authorizeRuntimeCredential: async () => ({
+      ok: true,
+      mode: 'agent_access_token',
+      credential: {
+        appId: 'sample-client-app',
+        accountId: 'org_demo',
+        placementId: 'chat_intent_recommendation_v1',
+      },
+    }),
+    applyRuntimeCredentialScope: (scope, auth) => ({
+      ...scope,
+      appId: auth.credential.appId,
+      accountId: auth.credential.accountId,
+      placementId: auth.credential.placementId,
+    }),
+    DEFAULT_CONTROL_PLANE_APP_ID: 'sample-client-app',
+    normalizeControlPlaneAccountId: () => 'org_demo',
+    resolveAccountIdForApp: () => 'org_demo',
+    evaluateV2BidRequest: async (request) => {
+      evaluatedPlacementId = String(request?.placementId || '').trim()
+      return {
+        requestId: 'req_scoped_eval',
+        timestamp: '2026-02-27T00:00:00.000Z',
+        message: 'No bid',
+        opportunityId: 'opp_scoped_eval',
+        diagnostics: { reasonCode: 'inventory_no_match' },
+        data: { bid: null },
+      }
+    },
+    nowIso: () => '2026-02-27T00:00:00.000Z',
+  })
+
+  assert.equal(handled, true)
+  assert.equal(result.status, 200)
+  assert.equal(evaluatedPlacementId, 'chat_intent_recommendation_v1')
+  assert.equal(
+    result.payload?.diagnostics?.inputNormalization?.placementResolution?.source,
+    'credential_scope',
+  )
 })
 
 test('control-plane routes rejects legacy placementId for integration-token issue with structured error', async () => {

@@ -286,33 +286,16 @@ export async function handleRuntimeRoutes(context, deps) {
               placementId: request.placementId,
             }, auth)
 
-        const placementDefaultedByClient = inputNormalization?.defaultsApplied?.placementIdDefaulted === true
-        let resolvedPlacementId = String(scopedRequest.placementId || request.placementId || '').trim()
-        let placementResolutionSource = scopedRequest.placementId
-          ? 'credential_scope'
-          : (placementDefaultedByClient ? 'request_defaulted' : 'request')
-
-        if ((!resolvedPlacementId || placementDefaultedByClient) && !String(scopedRequest.placementId || '').trim()) {
-          const dashboardDefaultPlacementId = pickDefaultPlacementIdForRequest({
-            appId: scopedRequest.appId,
-            accountId: scopedRequest.accountId || resolveAccountIdForApp(scopedRequest.appId),
-            event: 'answer_completed',
-          }, { pickPlacementForRequest })
-          if (dashboardDefaultPlacementId) {
-            resolvedPlacementId = dashboardDefaultPlacementId
-            placementResolutionSource = 'dashboard_default'
-          }
-        }
-        if (!resolvedPlacementId) {
-          resolvedPlacementId = PLACEMENT_ID_FROM_ANSWER
-          placementResolutionSource = 'hardcoded_fallback'
-        }
+        const resolvedPlacementId = String(scopedRequest.placementId || request.placementId || '').trim()
+        const placementResolutionSource = resolvedPlacementId
+          ? (scopedRequest.placementId ? 'credential_scope' : 'request')
+          : 'all_enabled_placements'
         if (inputNormalization) {
-          inputNormalization.defaultsApplied.placementIdResolvedFromDashboardDefault = placementResolutionSource === 'dashboard_default'
-          inputNormalization.defaultsApplied.placementIdFallbackApplied = placementResolutionSource === 'hardcoded_fallback'
+          inputNormalization.defaultsApplied.placementIdResolvedFromDashboardDefault = false
+          inputNormalization.defaultsApplied.placementIdFallbackApplied = false
           inputNormalization.placementResolution = {
             source: placementResolutionSource,
-            placementId: resolvedPlacementId,
+            placementId: resolvedPlacementId || null,
           }
           request.inputDiagnostics = inputNormalization
         }
