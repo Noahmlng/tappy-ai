@@ -5,6 +5,8 @@ const REQUIRED_ENV_VARS = [
   'CJ_TOKEN',
   'PARTNERSTACK_API_KEY'
 ]
+const SUPPORTED_MEDIATION_NETWORKS = new Set(['partnerstack', 'cj', 'house'])
+const DEFAULT_ENABLED_MEDIATION_NETWORKS = ['partnerstack', 'house']
 
 function readEnv(env, key, { required = false } = {}) {
   const value = env[key]
@@ -21,6 +23,15 @@ function toPositiveInteger(value, fallback) {
   const numeric = Number(value)
   if (!Number.isFinite(numeric) || numeric <= 0) return fallback
   return Math.floor(numeric)
+}
+
+function parseEnabledNetworks(rawValue) {
+  const parsed = String(rawValue || '')
+    .split(',')
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter((item) => item && SUPPORTED_MEDIATION_NETWORKS.has(item))
+  const deduped = Array.from(new Set(parsed))
+  return deduped.length > 0 ? deduped : [...DEFAULT_ENABLED_MEDIATION_NETWORKS]
 }
 
 export function loadRuntimeConfig(env = process.env, options = {}) {
@@ -48,6 +59,9 @@ export function loadRuntimeConfig(env = process.env, options = {}) {
       dbCacheTtlMs: toPositiveInteger(readEnv(env, 'HOUSE_ADS_DB_CACHE_TTL_MS', { required: false }), 15000),
       dbFetchLimit: toPositiveInteger(readEnv(env, 'HOUSE_ADS_DB_FETCH_LIMIT', { required: false }), 1500),
       dbUrl: readEnv(env, 'SUPABASE_DB_URL', { required: false })
+    },
+    networkPolicy: {
+      enabledNetworks: parseEnabledNetworks(readEnv(env, 'MEDIATION_ENABLED_NETWORKS', { required: false }))
     }
   }
 }

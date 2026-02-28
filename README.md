@@ -130,7 +130,8 @@
 - Gateway 统一产出 `served | no_fill | blocked | error` 的标准决策。
 
 3. 检索面（Retrieval Plane）
-- Runtime 并发聚合多网络（CJ / PartnerStack / house），执行召回、归一化、排序、降级。
+- Runtime 并发聚合多网络（PartnerStack / house；CJ 默认关闭），执行召回、归一化、排序、降级。
+- 可通过 `MEDIATION_ENABLED_NETWORKS` 覆盖默认网络白名单（默认：`partnerstack,house`）。
 
 4. 体验面（Experience Plane）
 - 客户端负责 SDK 调用和渲染；广告链路全部 fail-open，不阻塞主回答。

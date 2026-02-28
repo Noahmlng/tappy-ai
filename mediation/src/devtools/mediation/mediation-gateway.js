@@ -166,6 +166,8 @@ const INVENTORY_READINESS_CACHE_TTL_MS = 30_000
 const CORE_INVENTORY_NETWORKS = Object.freeze(
   parseRequiredCoreInventoryNetworks(process.env.MEDIATION_REQUIRED_CORE_NETWORKS),
 )
+const SUPPORTED_MEDIATION_NETWORKS = new Set(['partnerstack', 'cj', 'house'])
+const DEFAULT_ENABLED_MEDIATION_NETWORKS = Object.freeze(['partnerstack', 'house'])
 const INVENTORY_SYNC_COMMAND = 'npm --prefix ./mediation run inventory:sync:all'
 const MIN_AGENT_ACCESS_TTL_SECONDS = 60
 const MAX_AGENT_ACCESS_TTL_SECONDS = 900
@@ -648,22 +650,41 @@ function isLlmIntentFallbackEnabled() {
   return true
 }
 
+function resolveRuntimeEnabledNetworks() {
+  const runtimeConfig = loadRuntimeConfig(process.env, { strict: false })
+  const configured = Array.isArray(runtimeConfig?.networkPolicy?.enabledNetworks)
+    ? runtimeConfig.networkPolicy.enabledNetworks
+    : []
+  const normalized = Array.from(
+    new Set(
+      configured
+        .map((item) => String(item || '').trim().toLowerCase())
+        .filter((item) => SUPPORTED_MEDIATION_NETWORKS.has(item))
+    )
+  )
+  return normalized.length > 0 ? normalized : [...DEFAULT_ENABLED_MEDIATION_NETWORKS]
+}
+
 function deriveInventoryNetworksFromPlacement(placement = {}) {
+  const runtimeEnabledNetworks = resolveRuntimeEnabledNetworks()
+  const runtimeEnabledSet = new Set(runtimeEnabledNetworks)
   const bidders = Array.isArray(placement?.bidders) ? placement.bidders : []
   const enabled = bidders
     .filter((item) => item?.enabled !== false)
     .map((item) => String(item?.networkId || '').trim().toLowerCase())
     .filter((item) => ['partnerstack', 'cj', 'house'].includes(item))
-  if (enabled.length === 0) {
-    return ['partnerstack', 'cj', 'house']
-  }
+  const candidates = enabled.length === 0
+    ? ['partnerstack', 'cj', 'house']
+    : [...enabled]
   if (
     placement?.fallback?.store?.enabled === true
-    && !enabled.includes('house')
+    && !candidates.includes('house')
   ) {
-    return [...enabled, 'house']
+    candidates.push('house')
   }
-  return enabled
+  const filtered = candidates.filter((item) => runtimeEnabledSet.has(item))
+  if (filtered.length > 0) return filtered
+  return runtimeEnabledNetworks
 }
 
 function isInventoryFallbackEnabled() {
