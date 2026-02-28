@@ -364,6 +364,8 @@ export async function handleRuntimeRoutes(context, deps) {
           targetUrl: redirectTarget,
           pricingSnapshot: clickBilling?.pricingSnapshot || null,
           reasonCode: String(clickBilling?.reason || '').trim(),
+          riskDecision: clickBilling?.riskDecision || null,
+          budgetDecision: clickBilling?.budgetDecision || null,
         })
 
         await opportunityWriter.writeEventRecord({
@@ -382,6 +384,8 @@ export async function handleRuntimeRoutes(context, deps) {
             duplicate: Boolean(clickBilling?.duplicate),
             targetUrl: redirectTarget,
             reasonCode: String(clickBilling?.reason || '').trim(),
+            riskDecision: clickBilling?.riskDecision || null,
+            budgetDecision: clickBilling?.budgetDecision || null,
           },
         })
 
@@ -735,6 +739,8 @@ export async function handleRuntimeRoutes(context, deps) {
             revenueUsd: clickBilling?.fact?.revenueUsd || 0,
             duplicate: Boolean(clickBilling?.duplicate),
             reasonCode: String(clickBilling?.reason || '').trim(),
+            riskDecision: clickBilling?.riskDecision || null,
+            budgetDecision: clickBilling?.budgetDecision || null,
           })
           await opportunityWriter.writeEventRecord({
             requestId: request.requestId || '',
@@ -757,6 +763,8 @@ export async function handleRuntimeRoutes(context, deps) {
               revenueUsd: clickBilling?.fact?.revenueUsd || 0,
               duplicate: Boolean(clickBilling?.duplicate),
               reasonCode: String(clickBilling?.reason || '').trim(),
+              riskDecision: clickBilling?.riskDecision || null,
+              budgetDecision: clickBilling?.budgetDecision || null,
             },
           })
           if (request.kind === 'click' && clickBilling?.fact) {
@@ -820,6 +828,8 @@ export async function handleRuntimeRoutes(context, deps) {
             revenueUsd: clickBilling?.fact?.revenueUsd || 0,
             duplicate: Boolean(clickBilling?.duplicate),
             reasonCode: String(clickBilling?.reason || '').trim(),
+            riskDecision: clickBilling?.riskDecision || null,
+            budgetDecision: clickBilling?.budgetDecision || null,
           })
           await opportunityWriter.writeEventRecord({
             requestId: request.requestId || '',
@@ -842,6 +852,8 @@ export async function handleRuntimeRoutes(context, deps) {
               revenueUsd: clickBilling?.fact?.revenueUsd || 0,
               duplicate: Boolean(clickBilling?.duplicate),
               reasonCode: String(clickBilling?.reason || '').trim(),
+              riskDecision: clickBilling?.riskDecision || null,
+              budgetDecision: clickBilling?.budgetDecision || null,
             },
           })
           if (request.kind === 'click' && clickBilling?.fact) {

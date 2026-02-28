@@ -73,3 +73,32 @@ test('global placement auction keeps best gate-passed no-fill reason when all pl
   assert.equal(result.noBidReasonCode, 'rank_below_floor')
   assert.equal(result.selectedOption?.placementId, 'chat_other_v1')
 })
+
+test('global placement auction prioritizes budget and risk no-fill reasons', () => {
+  const result = runGlobalPlacementAuction({
+    options: [
+      {
+        placementId: 'chat_from_answer_v1',
+        gatePassed: true,
+        reasonCode: 'inventory_no_match',
+        priority: 5,
+      },
+      {
+        placementId: 'chat_intent_recommendation_v1',
+        gatePassed: true,
+        reasonCode: 'budget_exhausted',
+        priority: 20,
+      },
+      {
+        placementId: 'chat_other_v1',
+        gatePassed: true,
+        reasonCode: 'risk_blocked',
+        priority: 30,
+      },
+    ],
+  })
+
+  assert.equal(result.winner, null)
+  assert.equal(result.noBidReasonCode, 'budget_exhausted')
+  assert.equal(result.selectedOption?.placementId, 'chat_intent_recommendation_v1')
+})

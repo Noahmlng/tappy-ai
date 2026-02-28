@@ -42,13 +42,16 @@ function compareWinnerOptions(left, right) {
 }
 
 const NO_BID_REASON_PRIORITY = Object.freeze({
+  budget_unconfigured: 0,
+  budget_exhausted: 1,
+  risk_blocked: 2,
   inventory_empty: 0,
-  rank_below_floor: 1,
-  inventory_no_match: 2,
-  upstream_timeout: 3,
-  upstream_error: 4,
-  policy_blocked: 5,
-  placement_unavailable: 6,
+  rank_below_floor: 3,
+  inventory_no_match: 4,
+  upstream_timeout: 5,
+  upstream_error: 6,
+  policy_blocked: 7,
+  placement_unavailable: 8,
 })
 
 function compareNoBidOptions(left, right) {
