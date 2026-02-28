@@ -19,11 +19,16 @@ test('pricing-model: returns deterministic pricing for same candidate', () => {
 
   assert.deepEqual(second, first)
   assert.equal(first.modelVersion, 'cpa_mock_v2')
+  assert.equal(first.pricingSemanticsVersion, 'cpc_v1')
+  assert.equal(first.billingUnit, 'cpc')
   assert.equal(first.triggerType, 'from_answer')
   assert.equal(typeof first.cpaUsd, 'number')
   assert.equal(typeof first.ecpmUsd, 'number')
+  assert.equal(typeof first.cpcUsd, 'number')
   assert.equal(typeof first.pConv, 'number')
   assert.equal(typeof first.pClick, 'number')
+  assert.equal(first.cpcUsd > 0, true)
+  assert.equal(first.cpcUsd, Number((first.ecpmUsd / (1000 * Math.max(first.pClick, 1e-6))).toFixed(4)))
 })
 
 test('pricing-model: keeps network raw-signal factors within configured bounds', () => {
