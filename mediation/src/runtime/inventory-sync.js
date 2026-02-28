@@ -390,7 +390,107 @@ export async function buildInventoryEmbeddings(pool, input = {}) {
     throw new Error('buildInventoryEmbeddings requires a postgres pool')
   }
 
+  const normalizedOfferIds = Array.isArray(input.offerIds)
+    ? Array.from(new Set(input.offerIds.map((item) => cleanText(item)).filter(Boolean)))
+    : []
+  const fullRebuild = input.fullRebuild === true
+  const batchSize = Math.max(100, Math.floor(toFiniteNumber(input.batchSize, 5000)))
   const limit = Math.max(1, Math.floor(toFiniteNumber(input.limit, 5000)))
+
+  async function upsertEmbeddingRows(rows = []) {
+    let upserted = 0
+    for (const row of rows) {
+      const embedding = buildTextEmbedding({
+        title: row.title,
+        description: row.description,
+        tags: Array.isArray(row.tags) ? row.tags : [],
+      })
+
+      await pool.query(
+        `
+          INSERT INTO offer_inventory_embeddings (
+            offer_id,
+            embedding_model,
+            embedding,
+            embedding_updated_at,
+            created_at
+          )
+          VALUES ($1, $2, $3::vector, NOW(), NOW())
+          ON CONFLICT (offer_id) DO UPDATE
+          SET
+            embedding_model = EXCLUDED.embedding_model,
+            embedding = EXCLUDED.embedding,
+            embedding_updated_at = NOW()
+        `,
+        [
+          cleanText(row.offer_id),
+          embedding.model,
+          vectorToSqlLiteral(embedding.vector),
+        ],
+      )
+      upserted += 1
+    }
+    return upserted
+  }
+
+  if (normalizedOfferIds.length > 0) {
+    const result = await pool.query(
+      `
+        SELECT offer_id, title, description, tags
+        FROM offer_inventory_norm
+        WHERE availability = 'active'
+          AND offer_id = ANY($1::text[])
+      `,
+      [normalizedOfferIds],
+    )
+    const rows = Array.isArray(result.rows) ? result.rows : []
+    const upserted = await upsertEmbeddingRows(rows)
+    return {
+      ok: true,
+      mode: 'offer_ids',
+      scanned: rows.length,
+      upserted,
+      embeddedAt: nowIso(),
+    }
+  }
+
+  if (fullRebuild) {
+    let cursor = cleanText(input.cursor)
+    let scanned = 0
+    let upserted = 0
+    let batches = 0
+
+    while (true) {
+      const result = await pool.query(
+        `
+          SELECT offer_id, title, description, tags
+          FROM offer_inventory_norm
+          WHERE availability = 'active'
+            AND ($1::text = '' OR offer_id > $1::text)
+          ORDER BY offer_id ASC
+          LIMIT $2
+        `,
+        [cursor, batchSize],
+      )
+      const rows = Array.isArray(result.rows) ? result.rows : []
+      if (rows.length === 0) break
+      batches += 1
+      scanned += rows.length
+      upserted += await upsertEmbeddingRows(rows)
+      cursor = cleanText(rows[rows.length - 1]?.offer_id)
+      if (!cursor) break
+    }
+
+    return {
+      ok: true,
+      mode: 'full_rebuild',
+      scanned,
+      upserted,
+      batches,
+      embeddedAt: nowIso(),
+    }
+  }
+
   const result = await pool.query(
     `
       SELECT offer_id, title, description, tags
@@ -402,42 +502,11 @@ export async function buildInventoryEmbeddings(pool, input = {}) {
     [limit],
   )
   const rows = Array.isArray(result.rows) ? result.rows : []
-
-  let upserted = 0
-  for (const row of rows) {
-    const embedding = buildTextEmbedding({
-      title: row.title,
-      description: row.description,
-      tags: Array.isArray(row.tags) ? row.tags : [],
-    })
-
-    await pool.query(
-      `
-        INSERT INTO offer_inventory_embeddings (
-          offer_id,
-          embedding_model,
-          embedding,
-          embedding_updated_at,
-          created_at
-        )
-        VALUES ($1, $2, $3::vector, NOW(), NOW())
-        ON CONFLICT (offer_id) DO UPDATE
-        SET
-          embedding_model = EXCLUDED.embedding_model,
-          embedding = EXCLUDED.embedding,
-          embedding_updated_at = NOW()
-      `,
-      [
-        cleanText(row.offer_id),
-        embedding.model,
-        vectorToSqlLiteral(embedding.vector),
-      ],
-    )
-    upserted += 1
-  }
+  const upserted = await upsertEmbeddingRows(rows)
 
   return {
     ok: true,
+    mode: 'recent_limit',
     scanned: rows.length,
     upserted,
     embeddedAt: nowIso(),

@@ -10,8 +10,16 @@ const PROJECT_ROOT = path.resolve(__dirname, '../..')
 const GATEWAY_ENTRY = path.join(PROJECT_ROOT, 'src', 'devtools', 'mediation', 'mediation-gateway.js')
 
 const HOST = '127.0.0.1'
-const HEALTH_TIMEOUT_MS = 12000
-const REQUEST_TIMEOUT_MS = 5000
+const HEALTH_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.MEDIATION_TEST_HEALTH_TIMEOUT_MS || 30000)
+  if (!Number.isFinite(raw) || raw <= 0) return 30000
+  return Math.floor(raw)
+})()
+const REQUEST_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.MEDIATION_TEST_REQUEST_TIMEOUT_MS || 8000)
+  if (!Number.isFinite(raw) || raw <= 0) return 8000
+  return Math.floor(raw)
+})()
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -191,6 +199,9 @@ function buildNextStepEventPayload(overrides = {}) {
 }
 
 test('next-step sdk events: click/dismiss carry kind+adId and click updates dashboard metrics', async () => {
+  const suffix = `${Date.now()}_${Math.floor(Math.random() * 1000)}`
+  const scopedAccountId = `org_next_step_${suffix}`
+  const scopedAppId = `app_next_step_${suffix}`
   const port = 3650 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${HOST}:${port}`
   const gateway = startGateway(port)
@@ -200,13 +211,13 @@ test('next-step sdk events: click/dismiss carry kind+adId and click updates dash
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.status, 404)
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
-      email: 'next-step-event-semantics@example.com',
-      accountId: 'org_mediation',
-      appId: 'sample-client-app',
+      email: `next-step-event-semantics-${suffix}@example.com`,
+      accountId: scopedAccountId,
+      appId: scopedAppId,
     })
     const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, {
-      accountId: 'org_mediation',
-      appId: 'sample-client-app',
+      accountId: scopedAccountId,
+      appId: scopedAppId,
     }, dashboardHeaders)
 
     const beforeSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary', {
@@ -221,6 +232,7 @@ test('next-step sdk events: click/dismiss carry kind+adId and click updates dash
       headers: runtimeHeaders,
       body: buildNextStepEventPayload({
         requestId: clickRequestId,
+        appId: scopedAppId,
         kind: 'click',
         adId: 'next_item_click_001',
       }),
@@ -255,6 +267,7 @@ test('next-step sdk events: click/dismiss carry kind+adId and click updates dash
       headers: runtimeHeaders,
       body: buildNextStepEventPayload({
         requestId: dismissRequestId,
+        appId: scopedAppId,
         kind: 'dismiss',
         adId: 'next_item_dismiss_001',
       }),

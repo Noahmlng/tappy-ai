@@ -278,6 +278,10 @@ const NEXT_STEP_INTENT_CARD_EVENTS = new Set(['followup_generation', 'follow_up_
 const POSTBACK_EVENT_TYPES = new Set(['postback'])
 const POSTBACK_TYPES = new Set(['conversion'])
 const POSTBACK_STATUS = new Set(['pending', 'success', 'failed'])
+const CONVERSION_FACT_TYPES = Object.freeze({
+  CPA: 'cpa_conversion',
+  CPC: 'cpc_click',
+})
 const NEXT_STEP_INTENT_CLASSES = new Set([
   'shopping',
   'purchase_intent',
@@ -3034,6 +3038,19 @@ async function resolveIntentInferenceForNextStep(request) {
   }
 }
 
+function toHttpUrl(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  try {
+    const parsed = new URL(raw)
+    const protocol = String(parsed.protocol || '').toLowerCase()
+    if (protocol !== 'http:' && protocol !== 'https:') return ''
+    return parsed.toString()
+  } catch {
+    return ''
+  }
+}
+
 function mapRuntimeAdToNextStepCardItem(ad, index) {
   if (!ad || typeof ad !== 'object') return null
   const title = String(ad.title || '').trim()
@@ -3055,6 +3072,12 @@ function mapRuntimeAdToNextStepCardItem(ad, index) {
   if (typeof tracking.dismissUrl === 'string' && tracking.dismissUrl.trim()) {
     normalizedTracking.dismiss_url = tracking.dismissUrl.trim()
   }
+  const imageUrl = toHttpUrl(
+    ad.image_url
+    || ad.imageUrl
+    || ad.icon_url
+    || ad.iconUrl,
+  )
 
   const cardItem = {
     item_id: itemId,
@@ -3073,6 +3096,9 @@ function mapRuntimeAdToNextStepCardItem(ad, index) {
   }
   if (typeof ad.relevanceScore === 'number' && Number.isFinite(ad.relevanceScore)) {
     cardItem.relevance_score = clampNumber(ad.relevanceScore, 0, 1, 0)
+  }
+  if (imageUrl) {
+    cardItem.image_url = imageUrl
   }
   if (Object.keys(normalizedTracking).length > 0) {
     cardItem.tracking = normalizedTracking
@@ -3372,7 +3398,12 @@ function normalizeConversionFact(raw) {
   const statusRaw = String(item.postbackStatus || '').trim().toLowerCase()
   const postbackType = POSTBACK_TYPES.has(typeRaw) ? typeRaw : 'conversion'
   const postbackStatus = POSTBACK_STATUS.has(statusRaw) ? statusRaw : 'success'
+  const factTypeRaw = String(item.factType || '').trim().toLowerCase()
+  const factType = factTypeRaw === CONVERSION_FACT_TYPES.CPC
+    ? CONVERSION_FACT_TYPES.CPC
+    : CONVERSION_FACT_TYPES.CPA
   const cpaUsd = round(clampNumber(item.cpaUsd ?? item.revenueUsd, 0, Number.MAX_SAFE_INTEGER, 0), 4)
+  const revenueUsd = round(clampNumber(item.revenueUsd ?? item.cpaUsd, 0, Number.MAX_SAFE_INTEGER, cpaUsd), 4)
   const fallbackFactId = `fact_${createHash('sha1').update(`${appId}|${requestId}|${conversionId}|${createdAt}`).digest('hex').slice(0, 16)}`
 
   const placementId = normalizePlacementIdWithMigration(String(item.placementId || '').trim())
@@ -3380,7 +3411,7 @@ function normalizeConversionFact(raw) {
 
   return {
     factId: String(item.factId || '').trim() || fallbackFactId,
-    factType: 'cpa_conversion',
+    factType,
     appId,
     accountId: normalizeControlPlaneAccountId(item.accountId || resolveAccountIdForApp(appId), ''),
     requestId,
@@ -3397,7 +3428,7 @@ function normalizeConversionFact(raw) {
     occurredAt,
     createdAt,
     cpaUsd,
-    revenueUsd: postbackStatus === 'success' ? cpaUsd : 0,
+    revenueUsd: postbackStatus === 'success' ? revenueUsd : 0,
     currency: 'USD',
     idempotencyKey: String(item.idempotencyKey || '').trim(),
   }
@@ -5330,6 +5361,65 @@ async function findPlacementIdByRequestId(requestId) {
   return ''
 }
 
+async function findRuntimeDecisionByRequestId(requestId = '') {
+  const targetRequestId = String(requestId || '').trim()
+  if (!targetRequestId) return null
+
+  for (const row of state.decisionLogs) {
+    if (String(row?.requestId || '').trim() !== targetRequestId) continue
+    return row
+  }
+
+  if (!isPostgresSettlementStore()) return null
+  try {
+    const result = await settlementStore.pool.query(
+      `
+        SELECT *
+        FROM ${RUNTIME_DECISION_LOG_TABLE}
+        WHERE request_id = $1
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      [targetRequestId],
+    )
+    const row = Array.isArray(result.rows) ? result.rows[0] : null
+    return row ? mapPostgresRowToRuntimeDecisionLog(row) : null
+  } catch (error) {
+    console.error(
+      '[mediation-gateway] failed to resolve runtime decision by requestId:',
+      error instanceof Error ? error.message : String(error),
+    )
+  }
+  return null
+}
+
+function normalizeDecisionAdSnapshotByRequest(decisionRecord = {}, adId = '') {
+  const decision = decisionRecord && typeof decisionRecord === 'object' ? decisionRecord : {}
+  const targetAdId = String(adId || '').trim()
+  const ads = Array.isArray(decision.ads) ? decision.ads : []
+  const normalizedAds = ads
+    .map((item) => {
+      const ad = item && typeof item === 'object' ? item : null
+      if (!ad) return null
+      return {
+        adId: String(ad.adId || '').trim(),
+        targetUrl: String(ad.targetUrl || '').trim(),
+      }
+    })
+    .filter((item) => item && (item.adId || item.targetUrl))
+
+  const exact = targetAdId
+    ? normalizedAds.find((item) => item.adId === targetAdId)
+    : null
+  const fallback = normalizedAds[0] || null
+
+  return {
+    matched: exact || null,
+    fallback,
+    found: Boolean(exact || fallback),
+  }
+}
+
 function resolvePlacementKeyById(placementId, appId = '') {
   const normalizedPlacementId = normalizePlacementIdWithMigration(String(placementId || '').trim())
   if (!normalizedPlacementId) return ''
@@ -5410,6 +5500,26 @@ function buildConversionFactIdempotencyKey(payload = {}) {
   return `fact_${createHash('sha256').update(semantic).digest('hex').slice(0, 24)}`
 }
 
+function buildClickFactIdempotencyKey(payload = {}) {
+  const appId = String(payload.appId || '').trim()
+  const requestId = String(payload.requestId || '').trim()
+  const placementId = normalizePlacementIdWithMigration(String(payload.placementId || '').trim())
+  const adId = String(payload.adId || '').trim()
+  const source = String(payload.source || '').trim().toLowerCase() || 'sdk'
+  const clickId = String(payload.clickId || payload.eventSeq || '').trim()
+
+  if (!requestId) {
+    return `fact_${createHash('sha256').update(`${createId('clk')}|${Date.now()}`).digest('hex').slice(0, 24)}`
+  }
+
+  if (!clickId) {
+    return `fact_${createHash('sha256').update(`${appId}|${requestId}|${placementId}|${adId}|${source}|${createId('clk')}`).digest('hex').slice(0, 24)}`
+  }
+
+  const semantic = [appId, requestId, placementId, adId, source, clickId].join('|')
+  return `fact_${createHash('sha256').update(semantic).digest('hex').slice(0, 24)}`
+}
+
 async function recordConversionFact(payload) {
   const request = payload && typeof payload === 'object' ? payload : {}
   if (!Array.isArray(state.conversionFacts)) {
@@ -5434,6 +5544,160 @@ async function recordConversionFact(payload) {
     createdAt: nowIso(),
   })
   return writeConversionFact(fact)
+}
+
+async function recordClickRevenueFactFromBid(payload = {}) {
+  const request = payload && typeof payload === 'object' ? payload : {}
+  const requestId = String(request.requestId || '').trim()
+  if (!requestId) {
+    return {
+      recorded: false,
+      duplicate: false,
+      fact: null,
+      reason: 'missing_request_id',
+      bidPriceUsd: 0,
+      targetUrl: '',
+      pricingSnapshot: null,
+      placementId: '',
+      placementKey: '',
+      appId: '',
+      accountId: '',
+    }
+  }
+
+  const decision = await findRuntimeDecisionByRequestId(requestId)
+  if (!decision) {
+    return {
+      recorded: false,
+      duplicate: false,
+      fact: null,
+      reason: 'request_not_found',
+      bidPriceUsd: 0,
+      targetUrl: '',
+      pricingSnapshot: null,
+      placementId: '',
+      placementKey: '',
+      appId: '',
+      accountId: '',
+    }
+  }
+
+  const appId = String(decision.appId || request.appId || '').trim()
+  const accountId = normalizeControlPlaneAccountId(
+    decision.accountId || request.accountId || resolveAccountIdForApp(appId),
+    '',
+  )
+  const placementId = normalizePlacementIdWithMigration(
+    String(request.placementId || decision.placementId || '').trim(),
+    PLACEMENT_ID_FROM_ANSWER,
+  )
+  const placementKey = String(request.placementKey || decision.placementKey || '').trim()
+    || resolvePlacementKeyById(placementId, appId)
+  const adLookup = normalizeDecisionAdSnapshotByRequest(decision, request.adId)
+  const targetUrl = String(
+    request.targetUrl
+    || adLookup.matched?.targetUrl
+    || adLookup.fallback?.targetUrl
+    || '',
+  ).trim()
+  const requestedAdId = String(request.adId || '').trim()
+  const adId = requestedAdId || String(adLookup.matched?.adId || adLookup.fallback?.adId || '').trim()
+  const hasDecisionAds = adLookup.found
+  if (requestedAdId && hasDecisionAds && !adLookup.matched) {
+    return {
+      recorded: false,
+      duplicate: false,
+      fact: null,
+      reason: 'ad_not_matched',
+      bidPriceUsd: 0,
+      targetUrl,
+      pricingSnapshot: null,
+      placementId,
+      placementKey,
+      appId,
+      accountId,
+    }
+  }
+
+  const pricingSnapshot = normalizeBidPricingSnapshot(
+    decision?.runtime?.pricingSnapshot || findPricingSnapshotByRequestId(requestId),
+  )
+  const bidPriceUsd = round(
+    clampNumber(
+      request.bidPriceUsd ?? request.bidPrice ?? pricingSnapshot?.ecpmUsd,
+      0,
+      Number.MAX_SAFE_INTEGER,
+      0,
+    ),
+    4,
+  )
+  if (bidPriceUsd <= 0) {
+    return {
+      recorded: false,
+      duplicate: false,
+      fact: null,
+      reason: 'missing_bid_price',
+      bidPriceUsd,
+      targetUrl,
+      pricingSnapshot,
+      placementId,
+      placementKey,
+      appId,
+      accountId,
+    }
+  }
+
+  const source = String(request.source || 'sdk').trim().toLowerCase() || 'sdk'
+  const occurredAt = normalizeIsoTimestamp(request.occurredAt || request.eventAt, nowIso())
+  const eventSeq = String(request.eventSeq || '').trim()
+  const clickId = String(request.clickId || '').trim()
+  const idempotencyKey = buildClickFactIdempotencyKey({
+    appId,
+    requestId,
+    placementId,
+    adId,
+    source,
+    clickId,
+    eventSeq,
+  })
+
+  const fact = normalizeConversionFact({
+    factType: CONVERSION_FACT_TYPES.CPC,
+    appId,
+    accountId,
+    requestId,
+    sessionId: String(request.sessionId || decision.sessionId || '').trim(),
+    turnId: String(request.turnId || decision.turnId || '').trim(),
+    userId: String(request.userId || '').trim(),
+    placementId,
+    placementKey,
+    adId,
+    postbackType: 'conversion',
+    postbackStatus: 'success',
+    conversionId: clickId || `click_${source}_${createId('conv')}`,
+    eventSeq,
+    occurredAt,
+    createdAt: nowIso(),
+    cpaUsd: bidPriceUsd,
+    revenueUsd: bidPriceUsd,
+    currency: 'USD',
+    idempotencyKey,
+  })
+  const { duplicate, fact: persistedFact } = await writeConversionFact(fact)
+
+  return {
+    recorded: !duplicate,
+    duplicate,
+    fact: persistedFact,
+    reason: duplicate ? 'duplicate' : 'recorded',
+    bidPriceUsd,
+    targetUrl,
+    pricingSnapshot,
+    placementId,
+    placementKey,
+    appId,
+    accountId,
+  }
 }
 
 function recordPlacementAudit(payload) {
@@ -5586,7 +5850,36 @@ function isSettledConversionFact(row) {
 
 function conversionFactRevenueUsd(row) {
   if (!isSettledConversionFact(row)) return 0
-  return round(clampNumber(row?.cpaUsd ?? row?.revenueUsd, 0, Number.MAX_SAFE_INTEGER, 0), 4)
+  return round(clampNumber(row?.revenueUsd ?? row?.cpaUsd, 0, Number.MAX_SAFE_INTEGER, 0), 4)
+}
+
+function computeRevenueBreakdownFromFacts(factRows = []) {
+  const rows = Array.isArray(factRows) ? factRows : []
+  let cpaRevenueUsd = 0
+  let cpcRevenueUsd = 0
+
+  for (const row of rows) {
+    const revenue = conversionFactRevenueUsd(row)
+    if (revenue <= 0) continue
+    if (String(row?.factType || '').trim().toLowerCase() === CONVERSION_FACT_TYPES.CPC) {
+      cpcRevenueUsd += revenue
+      continue
+    }
+    cpaRevenueUsd += revenue
+  }
+
+  return {
+    cpaRevenueUsd: round(cpaRevenueUsd, 4),
+    cpcRevenueUsd: round(cpcRevenueUsd, 4),
+  }
+}
+
+function isClickEventLogRow(row = {}) {
+  const item = row && typeof row === 'object' ? row : {}
+  const kind = String(item.kind || item.event || '').trim().toLowerCase()
+  if (kind !== 'click') return false
+  const eventType = String(item.eventType || '').trim().toLowerCase()
+  return eventType === 'sdk_event' || eventType === 'redirect_click'
 }
 
 function conversionFactDateKey(row) {
@@ -5643,6 +5936,7 @@ function computeMetricsSummary(factRows = []) {
   const impressions = state.globalStats.impressions
   const clicks = state.globalStats.clicks
   const revenueUsd = computeRevenueFromFacts(factRows)
+  const revenueBreakdown = computeRevenueBreakdownFromFacts(factRows)
   const requests = state.globalStats.requests
   const served = state.globalStats.served
 
@@ -5657,6 +5951,10 @@ function computeMetricsSummary(factRows = []) {
     ctr: round(ctr, 4),
     ecpm: round(ecpm, 2),
     fillRate: round(fillRate, 4),
+    revenueBreakdown: {
+      cpaRevenueUsd: round(revenueBreakdown.cpaRevenueUsd, 2),
+      cpcRevenueUsd: round(revenueBreakdown.cpcRevenueUsd, 2),
+    },
   }
 }
 
@@ -5936,6 +6234,10 @@ function toDecisionAdFromBid(bid) {
   if (!bid || typeof bid !== 'object') return null
   const adId = String(bid.bidId || '').trim() || String(bid.url || '').trim()
   if (!adId) return null
+  const imageUrl = toHttpUrl(
+    bid.image_url
+    || bid.imageUrl,
+  )
 
   return {
     adId,
@@ -5948,6 +6250,7 @@ function toDecisionAdFromBid(bid) {
       clickUrl: String(bid.url || '').trim(),
     },
     bidValue: clampNumber(bid.price, 0, Number.MAX_SAFE_INTEGER, 0),
+    ...(imageUrl ? { image_url: imageUrl } : {}),
   }
 }
 
@@ -7190,12 +7493,9 @@ function computeScopedMetricsSummary(decisionRows, eventRows, factRows, controlP
   const bidKnownCount = decisionRows.filter((row) => String(row?.result || '') !== 'error').length
   const bidUnknownCount = Math.max(0, requests - bidKnownCount)
   const impressions = served
-  const clicks = eventRows.filter((row) => {
-    if (String(row?.eventType || '') !== 'sdk_event') return false
-    const kind = String(row?.kind || row?.event || '').toLowerCase()
-    return kind === 'click'
-  }).length
+  const clicks = eventRows.filter((row) => isClickEventLogRow(row)).length
   const revenueUsd = computeRevenueFromFacts(factRows)
+  const revenueBreakdown = computeRevenueBreakdownFromFacts(factRows)
   const ctr = impressions > 0 ? clicks / impressions : 0
   const ecpm = impressions > 0 ? (revenueUsd / impressions) * 1000 : 0
   const fillRate = requests > 0 ? served / requests : 0
@@ -7262,6 +7562,10 @@ function computeScopedMetricsSummary(decisionRows, eventRows, factRows, controlP
       inventoryEmpty: requests > 0 ? round(inventoryEmptyCount / requests, 4) : 0,
       scopeViolation: requests > 0 ? round(scopeViolationCount / requests, 4) : 0,
     },
+    revenueBreakdown: {
+      cpaRevenueUsd: round(revenueBreakdown.cpaRevenueUsd, 2),
+      cpcRevenueUsd: round(revenueBreakdown.cpcRevenueUsd, 2),
+    },
   }
 }
 
@@ -7279,9 +7583,7 @@ function computeScopedMetricsByDay(decisionRows, eventRows, factRows) {
   }
 
   for (const row of eventRows) {
-    if (String(row?.eventType || '') !== 'sdk_event') continue
-    const kind = String(row?.kind || row?.event || '').toLowerCase()
-    if (kind !== 'click') continue
+    if (!isClickEventLogRow(row)) continue
     const dateKey = String(row?.createdAt || '').slice(0, 10)
     const target = byDate.get(dateKey)
     if (!target) continue
@@ -7328,9 +7630,7 @@ function computeScopedMetricsByPlacement(decisionRows, eventRows, factRows, scop
 
   const clicksByPlacement = new Map()
   for (const row of eventRows) {
-    if (String(row?.eventType || '') !== 'sdk_event') continue
-    const kind = String(row?.kind || row?.event || '').toLowerCase()
-    if (kind !== 'click') continue
+    if (!isClickEventLogRow(row)) continue
     const placementId = String(row?.placementId || '').trim()
     if (!placementId) continue
     clicksByPlacement.set(placementId, (clicksByPlacement.get(placementId) || 0) + 1)
@@ -7510,9 +7810,7 @@ function upsertSettlementForDecision(row, maps) {
 }
 
 function upsertSettlementForClick(row, maps) {
-  if (String(row?.eventType || '') !== 'sdk_event') return
-  const kind = String(row?.kind || row?.event || '').trim().toLowerCase()
-  if (kind !== 'click') return
+  if (!isClickEventLogRow(row)) return
 
   const appId = String(row?.appId || '').trim()
   const accountId = normalizeControlPlaneAccountId(row?.accountId || resolveAccountIdForApp(appId), '')
@@ -8376,6 +8674,7 @@ function createRuntimeRouteDeps() {
     findPlacementIdByRequestId,
     PLACEMENT_ID_FROM_ANSWER,
     recordConversionFact,
+    recordClickRevenueFactFromBid,
     findPricingSnapshotByRequestId,
     recordEvent,
     isNextStepIntentCardPayload,

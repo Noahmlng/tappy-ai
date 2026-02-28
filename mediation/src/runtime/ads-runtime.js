@@ -556,7 +556,41 @@ function commercialSignalRank(offer) {
   return -1
 }
 
-function rankAndSelectOffers(offers, entities, requestContext, maxAds) {
+function selectMatchedOffersWithNetworkDiversity(matched = [], maxAds = 0) {
+  const limit = toPositiveInteger(maxAds, DEFAULT_MAX_ADS)
+  if (!Array.isArray(matched) || matched.length <= limit) {
+    return Array.isArray(matched) ? matched.slice(0, limit) : []
+  }
+
+  const buckets = new Map()
+  const networkOrder = []
+
+  for (const item of matched) {
+    const network = cleanText(item?.offer?.sourceNetwork).toLowerCase() || 'unknown'
+    if (!buckets.has(network)) {
+      buckets.set(network, [])
+      networkOrder.push(network)
+    }
+    buckets.get(network).push(item)
+  }
+
+  const selected = []
+  while (selected.length < limit) {
+    let consumed = false
+    for (const network of networkOrder) {
+      const bucket = buckets.get(network)
+      if (!Array.isArray(bucket) || bucket.length === 0) continue
+      selected.push(bucket.shift())
+      consumed = true
+      if (selected.length >= limit) break
+    }
+    if (!consumed) break
+  }
+
+  return selected
+}
+
+function rankAndSelectOffers(offers, entities, requestContext, maxAds, options = {}) {
   if (requestContext.testAllOffers) {
     const selected = []
     let invalidForTestAll = 0
@@ -603,8 +637,12 @@ function rankAndSelectOffers(offers, entities, requestContext, maxAds) {
     ? withScore.filter((item) => item.score > 0 && !item.semanticAllowed).length
     : 0
 
+  const selected = options.enableNetworkDiversity === false
+    ? matched.slice(0, maxAds)
+    : selectMatchedOffersWithNetworkDiversity(matched, maxAds)
+
   return {
-    selected: matched.slice(0, maxAds),
+    selected,
     invalidForTestAll: 0,
     matchedCandidates: matched.length,
     unmatchedOffers: Math.max(0, withScore.length - matched.length),
@@ -1231,7 +1269,9 @@ export async function runAdsRetrievalPipeline(adRequest, options = {}) {
   const offersForRanking = isNextStepIntentCard
     ? enrichOffersWithIntentCardCatalog(offers, intentCardCatalog)
     : offers
-  const selection = rankAndSelectOffers(offersForRanking, entities, request.context, maxAds)
+  const selection = rankAndSelectOffers(offersForRanking, entities, request.context, maxAds, {
+    enableNetworkDiversity: !isNextStepIntentCard,
+  })
   let selected = Array.isArray(selection.selected) ? selection.selected : []
   const invalidForTestAll = Number.isFinite(selection.invalidForTestAll) ? selection.invalidForTestAll : 0
   const matchedCandidates = Number.isFinite(selection.matchedCandidates) ? selection.matchedCandidates : 0

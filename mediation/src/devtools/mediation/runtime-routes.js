@@ -60,6 +60,104 @@ function pickDefaultPlacementIdForRequest(input = {}, deps = {}) {
   return String(placement?.placementId || '').trim()
 }
 
+function resolveRuntimeRequestOrigin(req) {
+  const headers = req?.headers && typeof req.headers === 'object' ? req.headers : {}
+  const forwardedHost = String(headers['x-forwarded-host'] || '').split(',')[0].trim()
+  const host = forwardedHost || String(headers.host || '').split(',')[0].trim()
+  if (!host) return ''
+
+  const forwardedProto = String(headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase()
+  const protocol = forwardedProto === 'https' || forwardedProto === 'http'
+    ? forwardedProto
+    : (req?.socket?.encrypted ? 'https' : 'http')
+  return `${protocol}://${host}`
+}
+
+function normalizeHttpUrl(value) {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  let parsed
+  try {
+    parsed = new URL(text)
+  } catch {
+    return ''
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return ''
+  return parsed.toString()
+}
+
+function buildSdkClickTrackingUrl(req, payload = {}) {
+  const requestId = String(payload.requestId || '').trim()
+  if (!requestId) return ''
+
+  const origin = resolveRuntimeRequestOrigin(req)
+  if (!origin) return ''
+
+  const trackingUrl = new URL('/api/v1/sdk/click', origin)
+  trackingUrl.searchParams.set('requestId', requestId)
+
+  const adId = String(payload.adId || '').trim()
+  if (adId) trackingUrl.searchParams.set('adId', adId)
+  const placementId = String(payload.placementId || '').trim()
+  if (placementId) trackingUrl.searchParams.set('placementId', placementId)
+
+  const targetUrl = normalizeHttpUrl(payload.targetUrl)
+  if (targetUrl) trackingUrl.searchParams.set('target', targetUrl)
+
+  return trackingUrl.toString()
+}
+
+function decorateWinnerBidWithClickTracking(req, winnerBid, payload = {}) {
+  if (!winnerBid || typeof winnerBid !== 'object') {
+    return {
+      bid: null,
+      landingUrl: '',
+      trackingUrl: '',
+    }
+  }
+
+  const originalLandingUrl = normalizeHttpUrl(
+    winnerBid.url
+      || winnerBid.targetUrl
+      || winnerBid.trackingUrl
+      || winnerBid.clickUrl
+      || '',
+  )
+  if (!originalLandingUrl) {
+    return {
+      bid: winnerBid,
+      landingUrl: '',
+      trackingUrl: '',
+    }
+  }
+
+  const trackingUrl = buildSdkClickTrackingUrl(req, {
+    requestId: payload.requestId,
+    placementId: payload.placementId,
+    adId: payload.adId || winnerBid.bidId,
+    targetUrl: originalLandingUrl,
+  })
+  if (!trackingUrl) {
+    return {
+      bid: winnerBid,
+      landingUrl: originalLandingUrl,
+      trackingUrl: '',
+    }
+  }
+
+  return {
+    bid: {
+      ...winnerBid,
+      targetUrl: String(winnerBid.targetUrl || '').trim() || originalLandingUrl,
+      url: trackingUrl,
+      clickUrl: trackingUrl,
+      trackingUrl,
+    },
+    landingUrl: originalLandingUrl,
+    trackingUrl,
+  }
+}
+
 export async function handleRuntimeRoutes(context, deps) {
   const { req, res, pathname, requestUrl } = context
   const {
@@ -90,6 +188,7 @@ export async function handleRuntimeRoutes(context, deps) {
     findPlacementIdByRequestId,
     PLACEMENT_ID_FROM_ANSWER,
     recordConversionFact,
+    recordClickRevenueFactFromBid,
     findPricingSnapshotByRequestId,
     recordEvent,
     isNextStepIntentCardPayload,
@@ -109,6 +208,7 @@ export async function handleRuntimeRoutes(context, deps) {
   const isRuntimeRouteRequest = (
     (pathname === '/api/v1/mediation/config' && req.method === 'GET')
     || (pathname === '/api/v1/sdk/config' && req.method === 'GET')
+    || (pathname === '/api/v1/sdk/click' && req.method === 'GET')
     || (pathname === '/api/v1/intent-card/retrieve' && req.method === 'POST')
     || (pathname === '/api/v2/bid' && req.method === 'POST')
     || (pathname === '/api/v1/sdk/events' && req.method === 'POST')
@@ -200,6 +300,97 @@ export async function handleRuntimeRoutes(context, deps) {
           accountId: resolveAccountIdForApp(appId),
           placements,
         })
+        return
+      } catch (error) {
+        const mapped = toRuntimeRouteError(error)
+        sendJson(res, mapped.status, { error: mapped.error })
+        return
+      }
+    }
+
+    if (pathname === '/api/v1/sdk/click' && req.method === 'GET') {
+      try {
+        const requestId = requiredNonEmptyString(requestUrl.searchParams.get('requestId'), 'requestId')
+        const adId = String(requestUrl.searchParams.get('adId') || '').trim()
+        const rawPlacementId = String(requestUrl.searchParams.get('placementId') || '').trim()
+        const placementId = rawPlacementId
+          ? normalizePlacementIdWithMigration(rawPlacementId)
+          : ''
+        const targetFallback = normalizeHttpUrl(requestUrl.searchParams.get('target'))
+        const source = 'redirect'
+        const opportunityWriter = createOpportunityChainWriter()
+
+        const clickBilling = await recordClickRevenueFactFromBid({
+          requestId,
+          adId,
+          placementId,
+          targetUrl: targetFallback,
+          source,
+        })
+
+        const normalizedPlacementId = normalizePlacementIdWithMigration(
+          clickBilling?.placementId || placementId || '',
+          PLACEMENT_ID_FROM_ANSWER,
+        )
+        if (normalizedPlacementId) {
+          recordClickCounters(normalizedPlacementId)
+        }
+
+        const redirectTarget = normalizeHttpUrl(clickBilling?.targetUrl || targetFallback)
+        if (!redirectTarget) {
+          sendJson(res, 400, {
+            error: {
+              code: 'CLICK_TARGET_MISSING',
+              message: 'Unable to resolve click redirect target.',
+            },
+          })
+          return
+        }
+
+        await recordEvent({
+          eventType: 'redirect_click',
+          event: 'click',
+          kind: 'click',
+          requestId,
+          appId: clickBilling?.appId || '',
+          accountId: clickBilling?.accountId || '',
+          placementId: normalizedPlacementId,
+          placementKey: clickBilling?.placementKey || '',
+          adId: adId || clickBilling?.fact?.adId || '',
+          factId: clickBilling?.fact?.factId || '',
+          revenueUsd: clickBilling?.fact?.revenueUsd || 0,
+          duplicate: Boolean(clickBilling?.duplicate),
+          source,
+          targetUrl: redirectTarget,
+          pricingSnapshot: clickBilling?.pricingSnapshot || null,
+          reasonCode: String(clickBilling?.reason || '').trim(),
+        })
+
+        await opportunityWriter.writeEventRecord({
+          requestId,
+          appId: clickBilling?.appId || '',
+          placementId: normalizedPlacementId,
+          eventType: 'redirect_click',
+          eventLayer: 'sdk',
+          eventStatus: clickBilling?.fact ? 'recorded' : 'no_revenue',
+          kind: 'click',
+          event: 'click',
+          occurredAt: nowIso(),
+          payload: {
+            factId: clickBilling?.fact?.factId || '',
+            revenueUsd: clickBilling?.fact?.revenueUsd || 0,
+            duplicate: Boolean(clickBilling?.duplicate),
+            targetUrl: redirectTarget,
+            reasonCode: String(clickBilling?.reason || '').trim(),
+          },
+        })
+
+        persistState(state)
+
+        withCors(res)
+        res.statusCode = 302
+        res.setHeader('Location', redirectTarget)
+        res.end()
         return
       } catch (error) {
         const mapped = toRuntimeRouteError(error)
@@ -307,21 +498,25 @@ export async function handleRuntimeRoutes(context, deps) {
           accountId: scopedRequest.accountId,
           placementId: resolvedPlacementId,
         })
-        const winnerBid = result?.data?.bid && typeof result.data.bid === 'object'
+        const rawWinnerBid = result?.data?.bid && typeof result.data.bid === 'object'
           ? result.data.bid
           : null
-        const landingUrl = winnerBid
-          ? String(
-            winnerBid.url
-            || winnerBid.targetUrl
-            || winnerBid.trackingUrl
-            || winnerBid.clickUrl
-            || '',
-          ).trim()
-          : ''
+        const winnerPlacementId = String(
+          result?.diagnostics?.precheck?.placement?.placementId
+          || resolvedPlacementId
+          || '',
+        ).trim()
+        const trackedWinner = decorateWinnerBidWithClickTracking(req, rawWinnerBid, {
+          requestId: String(result?.requestId || ''),
+          placementId: winnerPlacementId,
+          adId: rawWinnerBid?.bidId || '',
+        })
+        const winnerBid = trackedWinner.bid
+        const landingUrl = trackedWinner.landingUrl
         const responseDiagnostics = result?.diagnostics && typeof result.diagnostics === 'object'
           ? {
               ...result.diagnostics,
+              ...(trackedWinner.trackingUrl ? { clickTrackingUrl: trackedWinner.trackingUrl } : {}),
               ...(request?.inputDiagnostics && typeof request.inputDiagnostics === 'object'
                 ? { inputNormalization: request.inputDiagnostics }
                 : {}),
@@ -499,8 +694,21 @@ export async function handleRuntimeRoutes(context, deps) {
             request.placementId,
             PLACEMENT_ID_INTENT_RECOMMENDATION,
           )
+          let clickBilling = null
           if (request.kind === 'click') {
             recordClickCounters(normalizedPlacementId)
+            clickBilling = await recordClickRevenueFactFromBid({
+              requestId: request.requestId,
+              appId: request.appId,
+              accountId: request.accountId,
+              sessionId: request.sessionId,
+              turnId: request.turnId,
+              userId: request.userId,
+              placementId: normalizedPlacementId,
+              placementKey: request.placementKey,
+              adId: request.adId || '',
+              source: 'sdk',
+            })
           }
   
           await recordEvent({
@@ -523,6 +731,10 @@ export async function handleRuntimeRoutes(context, deps) {
             placementId: normalizedPlacementId,
             placementKey: request.placementKey,
             pricingSnapshot,
+            factId: clickBilling?.fact?.factId || '',
+            revenueUsd: clickBilling?.fact?.revenueUsd || 0,
+            duplicate: Boolean(clickBilling?.duplicate),
+            reasonCode: String(clickBilling?.reason || '').trim(),
           })
           await opportunityWriter.writeEventRecord({
             requestId: request.requestId || '',
@@ -530,7 +742,9 @@ export async function handleRuntimeRoutes(context, deps) {
             placementId: normalizedPlacementId,
             eventType: 'sdk_event',
             eventLayer: 'sdk',
-            eventStatus: 'recorded',
+            eventStatus: request.kind === 'click'
+              ? (clickBilling?.fact ? 'recorded' : 'no_revenue')
+              : 'recorded',
             kind: request.kind,
             event: request.event,
             occurredAt: nowIso(),
@@ -539,8 +753,20 @@ export async function handleRuntimeRoutes(context, deps) {
               intentClass: inferredIntentClass || '',
               intentScore: Number.isFinite(inferredIntentScore) ? inferredIntentScore : 0,
               pricingSnapshot,
+              factId: clickBilling?.fact?.factId || '',
+              revenueUsd: clickBilling?.fact?.revenueUsd || 0,
+              duplicate: Boolean(clickBilling?.duplicate),
+              reasonCode: String(clickBilling?.reason || '').trim(),
             },
           })
+          if (request.kind === 'click' && clickBilling?.fact) {
+            responsePayload = {
+              ...responsePayload,
+              factId: clickBilling.fact.factId,
+              revenueUsd: round(clickBilling.fact.revenueUsd, 2),
+              duplicate: Boolean(clickBilling.duplicate),
+            }
+          }
         } else {
           const request = normalizeAttachMvpPayload(payload, 'sdk/events')
           const auth = await authorizeRuntimeCredential(req, {
@@ -557,8 +783,20 @@ export async function handleRuntimeRoutes(context, deps) {
           applyRuntimeCredentialScope(request, auth)
           const pricingSnapshot = findPricingSnapshotByRequestId(request.requestId)
   
+          let clickBilling = null
           if (request.kind === 'click') {
             recordClickCounters(request.placementId || PLACEMENT_ID_FROM_ANSWER)
+            clickBilling = await recordClickRevenueFactFromBid({
+              requestId: request.requestId,
+              appId: request.appId,
+              accountId: request.accountId,
+              sessionId: request.sessionId,
+              turnId: request.turnId,
+              placementId: normalizePlacementIdWithMigration(request.placementId, PLACEMENT_ID_FROM_ANSWER),
+              placementKey: ATTACH_MVP_PLACEMENT_KEY,
+              adId: request.adId || '',
+              source: 'sdk',
+            })
           }
   
           await recordEvent({
@@ -578,6 +816,10 @@ export async function handleRuntimeRoutes(context, deps) {
             placementId: normalizePlacementIdWithMigration(request.placementId, PLACEMENT_ID_FROM_ANSWER),
             placementKey: ATTACH_MVP_PLACEMENT_KEY,
             pricingSnapshot,
+            factId: clickBilling?.fact?.factId || '',
+            revenueUsd: clickBilling?.fact?.revenueUsd || 0,
+            duplicate: Boolean(clickBilling?.duplicate),
+            reasonCode: String(clickBilling?.reason || '').trim(),
           })
           await opportunityWriter.writeEventRecord({
             requestId: request.requestId || '',
@@ -585,7 +827,9 @@ export async function handleRuntimeRoutes(context, deps) {
             placementId: normalizePlacementIdWithMigration(request.placementId, PLACEMENT_ID_FROM_ANSWER),
             eventType: 'sdk_event',
             eventLayer: 'sdk',
-            eventStatus: 'recorded',
+            eventStatus: request.kind === 'click'
+              ? (clickBilling?.fact ? 'recorded' : 'no_revenue')
+              : 'recorded',
             kind: request.kind,
             event: request.kind === 'click' ? 'click' : ATTACH_MVP_EVENT,
             occurredAt: nowIso(),
@@ -594,8 +838,20 @@ export async function handleRuntimeRoutes(context, deps) {
               locale: request.locale,
               adId: request.adId || '',
               pricingSnapshot,
+              factId: clickBilling?.fact?.factId || '',
+              revenueUsd: clickBilling?.fact?.revenueUsd || 0,
+              duplicate: Boolean(clickBilling?.duplicate),
+              reasonCode: String(clickBilling?.reason || '').trim(),
             },
           })
+          if (request.kind === 'click' && clickBilling?.fact) {
+            responsePayload = {
+              ...responsePayload,
+              factId: clickBilling.fact.factId,
+              revenueUsd: round(clickBilling.fact.revenueUsd, 2),
+              duplicate: Boolean(clickBilling.duplicate),
+            }
+          }
         }
   
         persistState(state)

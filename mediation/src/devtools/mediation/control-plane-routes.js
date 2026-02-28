@@ -1911,6 +1911,11 @@ export async function handleControlPlaneRoutes(context, deps) {
           ? null
           : await buildInventoryEmbeddings(settlementStore.pool, {
             limit: toPositiveInteger(body.embeddingLimit, 6000),
+            fullRebuild: body.fullRebuildEmbeddings === true,
+            batchSize: toPositiveInteger(body.embeddingBatchSize, 5000),
+            offerIds: Array.isArray(body.embeddingOfferIds)
+              ? body.embeddingOfferIds.map((item) => String(item || '').trim()).filter(Boolean)
+              : [],
           })
         const snapshotResult = body.materializeSnapshot === false
           ? null

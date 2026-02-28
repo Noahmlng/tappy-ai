@@ -201,6 +201,7 @@ function normalizeAds(items) {
         itemId: adId,
         title: cleanText(item.title),
         description: cleanText(item.description || item.snippet),
+        image_url: cleanText(item.image_url || item.imageUrl || item.iconUrl || item.icon_url),
         targetUrl,
         disclosure: cleanText(item.disclosure) || 'Sponsored',
         reason: cleanText(item.reason),

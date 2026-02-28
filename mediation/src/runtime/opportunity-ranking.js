@@ -61,6 +61,18 @@ function containsBlockedTopic(text, blockedTopics = []) {
   return ''
 }
 
+function resolveBidImageUrl(candidate = {}) {
+  const metadata = candidate?.metadata && typeof candidate.metadata === 'object' ? candidate.metadata : {}
+  return cleanText(
+    metadata.image_url
+    || metadata.imageUrl
+    || metadata.brand_image_url
+    || metadata.brandImageUrl
+    || metadata.icon_url
+    || metadata.iconUrl,
+  )
+}
+
 function toBid(candidate = {}, context = {}) {
   const title = cleanText(candidate.title)
   const targetUrl = cleanText(candidate.targetUrl)
@@ -77,6 +89,7 @@ function toBid(candidate = {}, context = {}) {
     description: cleanText(candidate.description) || title,
     cta_text: 'Learn More',
     url: targetUrl,
+    image_url: resolveBidImageUrl(candidate),
     dsp: cleanText(candidate.network),
     bidId,
     placement: cleanText(context.placement || 'block') || 'block',

@@ -1,0 +1,64 @@
+[
+  {
+    "id": "house-1",
+    "name": "House-1 baseline (has description + image)",
+    "network": "house",
+    "offer_id": "house:product:offer_8f65d3b06a60",
+    "query": "house baseline product",
+    "keywords": ["deal", "product", "shop"],
+    "description_state": "present",
+    "image_state": "present"
+  },
+  {
+    "id": "house-2",
+    "name": "House-2 fill description (keep image)",
+    "network": "house",
+    "offer_id": "house:product:offer_3d2e3a280bcc",
+    "query": "house fill missing description",
+    "keywords": ["sale", "offer", "shop"],
+    "description_state": "missing",
+    "image_state": "present"
+  },
+  {
+    "id": "house-3",
+    "name": "House-3 no-image degradation",
+    "network": "house",
+    "offer_id": "house:product:offer_fa0d3f6efa8e",
+    "query": "house no image fallback",
+    "keywords": ["product", "deals"],
+    "description_state": "missing",
+    "image_state": "missing",
+    "simulate_no_image_for_pilot": true
+  },
+  {
+    "id": "partnerstack-1",
+    "name": "PartnerStack-1 baseline (merchant text + image)",
+    "network": "partnerstack",
+    "offer_id": "partnerstack:link:part_xs9mm9QuFMRRFH",
+    "query": "partnerstack baseline",
+    "keywords": ["software", "saas", "affiliate"],
+    "description_state": "present",
+    "image_state": "present"
+  },
+  {
+    "id": "partnerstack-2",
+    "name": "PartnerStack-2 fill description (image allowed)",
+    "network": "partnerstack",
+    "offer_id": "partnerstack:link:part_iJg0XiQLedmYP5",
+    "query": "partnerstack fill description",
+    "keywords": ["discount", "offer", "program"],
+    "description_state": "missing",
+    "image_state": "any"
+  },
+  {
+    "id": "partnerstack-3",
+    "name": "PartnerStack-3 fill description + no-image card",
+    "network": "partnerstack",
+    "offer_id": "partnerstack:link:part_0UyMmSfYigWLNj",
+    "query": "partnerstack no image fallback",
+    "keywords": ["partner", "program", "offer"],
+    "description_state": "missing",
+    "image_state": "missing",
+    "simulate_no_image_for_pilot": true
+  }
+]
