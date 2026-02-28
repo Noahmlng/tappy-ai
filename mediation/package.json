@@ -47,6 +47,8 @@
     "pilot:content:enrich": "node --env-file-if-exists=.env ./scripts/pilot/enrich-content-cases.js",
     "content:enrich:full": "node --env-file-if-exists=.env ./scripts/pilot/enrich-content-full.js",
     "content:enrich:report": "node --env-file-if-exists=.env ./scripts/pilot/generate-content-enrichment-report.js",
+    "content:enrich:report:combined": "node --env-file-if-exists=.env ./scripts/pilot/generate-content-enrichment-combined-report.js",
+    "content:enrich:api-samples": "node --env-file-if-exists=.env ./scripts/pilot/fetch-content-api-samples.js",
     "pilot:content:reindex": "npm run inventory:embeddings:full && npm run inventory:snapshot",
     "pilot:content:api-samples": "node --env-file-if-exists=.env ./scripts/pilot/fetch-api-samples.js",
     "pilot:content:review-pack": "node ./scripts/pilot/generate-review-pack.js"

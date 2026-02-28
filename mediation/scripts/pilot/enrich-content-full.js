@@ -567,6 +567,8 @@ export async function runFullContentEnrichment(rawArgs = {}) {
       await writeJson(failedBatchesPath, failedBatches)
       manifest.failed_batches = failedBatches
       manifest.status = 'partial'
+    } else if (Number(manifest.totals.failed || 0) > 0) {
+      manifest.status = 'partial'
     } else {
       manifest.status = 'success'
     }
