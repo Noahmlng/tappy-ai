@@ -95,3 +95,35 @@ Capture:
 2. cards without image
 3. disclosure visibility (`Sponsored` / `Ad`)
 4. layout stability on desktop and mobile
+
+## 7. Inventory audit baseline (Meyka + DeepAI)
+
+Run against local batch artifacts (no DB required):
+
+```bash
+npm --prefix ./mediation run inventory:health:links -- \
+  --batch-files=mediation/output/content-enrichment/full_mm76vakx_2d6v8z/batches/house_batch_0001.json,mediation/output/content-enrichment/full_mm76y5s1_7m6gfo/batches/partnerstack_batch_0001.json
+```
+
+```bash
+npm --prefix ./mediation run inventory:health:images -- \
+  --batch-files=mediation/output/content-enrichment/full_mm76vakx_2d6v8z/batches/house_batch_0001.json,mediation/output/content-enrichment/full_mm76y5s1_7m6gfo/batches/partnerstack_batch_0001.json
+```
+
+```bash
+npm --prefix ./mediation run inventory:coverage:products -- \
+  --batch-files=mediation/output/content-enrichment/full_mm76vakx_2d6v8z/batches/house_batch_0001.json,mediation/output/content-enrichment/full_mm76y5s1_7m6gfo/batches/partnerstack_batch_0001.json
+```
+
+Generate Meyka/DeepAI dialogue outcome report from the latest product coverage report:
+
+```bash
+npm --prefix ./mediation run inventory:report:dialogues
+```
+
+Default outputs:
+
+- `mediation/output/inventory-audit/link-health-*.json`
+- `mediation/output/inventory-audit/image-health-*.json`
+- `mediation/output/inventory-audit/product-coverage-*.json`
+- `mediation/output/product-dialogue/product-dialogue-report-*.json`
