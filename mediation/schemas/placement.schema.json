@@ -69,6 +69,18 @@
       },
       "additionalProperties": false
     },
+    "relevancePolicyV2": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "mode": { "type": "string", "enum": ["observe", "shadow", "enforce"] },
+        "strictThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "relaxedThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "sameVerticalFallbackEnabled": { "type": "boolean" },
+        "rolloutPercent": { "type": "integer", "minimum": 1, "maximum": 100 }
+      },
+      "additionalProperties": false
+    },
     "maxFanout": { "type": "integer", "minimum": 1 },
     "globalTimeoutMs": { "type": "integer", "minimum": 1 },
     "routingMode": {

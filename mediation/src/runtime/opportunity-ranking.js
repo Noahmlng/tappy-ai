@@ -3,11 +3,17 @@ import {
   getPricingModelWeights,
   getPricingMediationDefaults,
 } from './pricing-model.js'
+import {
+  buildRelevanceContext,
+  resolveThresholdsForPlacement,
+  scoreCandidateRelevance,
+} from './relevance-model.js'
 
 const DEFAULT_SCORE_FLOOR = 0.32
 const DEFAULT_INTENT_MIN_LEXICAL_SCORE = 0.02
 const DEFAULT_INTENT_MIN_VECTOR_SCORE = 0.35
-const INTENT_RELEVANCE_GATED_PLACEMENT = 'chat_intent_recommendation_v1'
+const RELEVANCE_GATED_PLACEMENTS = new Set(['chat_intent_recommendation_v1', 'chat_from_answer_v1'])
+const RELEVANCE_POLICY_MODES = new Set(['observe', 'shadow', 'enforce'])
 
 function cleanText(value) {
   return String(value || '').trim().replace(/\s+/g, ' ')
@@ -27,8 +33,24 @@ function toFiniteNumber(value, fallback = 0) {
   return n
 }
 
-function shouldApplyRelevanceGate(placementId = '') {
-  return cleanText(placementId) === INTENT_RELEVANCE_GATED_PLACEMENT
+function parseBoolean(value, fallback = false) {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (!normalized) return fallback
+  if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) return true
+  if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) return false
+  return fallback
+}
+
+function normalizeRelevancePolicyMode(value, fallback = 'enforce') {
+  const mode = cleanText(value).toLowerCase()
+  if (!mode) return fallback
+  if (!RELEVANCE_POLICY_MODES.has(mode)) return fallback
+  return mode
+}
+
+function shouldApplyRelevanceGate(placementId = '', relevancePolicy = {}) {
+  if (relevancePolicy?.enabled === false) return false
+  return RELEVANCE_GATED_PLACEMENTS.has(cleanText(placementId))
 }
 
 function normalizeQuality(value) {
@@ -167,7 +189,16 @@ function toBid(candidate = {}, context = {}) {
 
 function scoreCandidate(candidate = {}, input = {}) {
   const intentScore = clamp01(input.intentScore)
-  const similarity = clamp01(Math.max(toFiniteNumber(candidate.fusedScore), toFiniteNumber(candidate.vectorScore), toFiniteNumber(candidate.lexicalScore)))
+  const nativeSimilarity = Math.max(
+    toFiniteNumber(candidate.fusedScore),
+    toFiniteNumber(candidate.vectorScore),
+    toFiniteNumber(candidate.lexicalScore),
+  )
+  const similarity = clamp01(
+    Number.isFinite(candidate.relevanceScore)
+      ? Math.max(candidate.relevanceScore, nativeSimilarity)
+      : nativeSimilarity
+  )
   const quality = normalizeQuality(candidate.quality)
   const policyWeight = normalizePolicyWeight(candidate.policyWeight)
   const freshness = freshnessScore(candidate.freshnessAt || candidate.updatedAt)
@@ -204,6 +235,271 @@ function scoreCandidate(candidate = {}, input = {}) {
       policyWeight,
       freshness,
       availability,
+      relevanceScore: clamp01(candidate.relevanceScore),
+    },
+  }
+}
+
+function buildScoredRelevanceCandidates(candidates = [], input = {}) {
+  const context = buildRelevanceContext({
+    query: input.query,
+    answerText: input.answerText,
+    intentClass: input.intentClass,
+    intentScore: input.intentScore,
+  })
+
+  return candidates.map((candidate) => {
+    const relevance = scoreCandidateRelevance(candidate, { context })
+    return {
+      ...candidate,
+      relevanceScore: relevance.relevanceScore,
+      relevanceComponentScores: relevance.componentScores,
+      relevanceVerticalDecision: relevance.verticalDecision,
+      relevanceExplanations: relevance.explanations,
+    }
+  })
+}
+
+function buildRelevanceGateSnapshot(input = {}) {
+  return {
+    applied: Boolean(input.applied),
+    mode: cleanText(input.mode),
+    placementId: cleanText(input.placementId),
+    minLexicalScore: clamp01(input.minLexicalScore),
+    minVectorScore: clamp01(input.minVectorScore),
+    strictThreshold: clamp01(input.strictThreshold),
+    relaxedThreshold: clamp01(input.relaxedThreshold),
+    thresholdVersion: cleanText(input.thresholdVersion),
+    sameVerticalFallbackEnabled: input.sameVerticalFallbackEnabled !== false,
+    baseEligibleCount: toFiniteNumber(input.baseEligibleCount, 0),
+    strictEligibleCount: toFiniteNumber(input.strictEligibleCount, 0),
+    relaxedEligibleCount: toFiniteNumber(input.relaxedEligibleCount, 0),
+    filteredCount: toFiniteNumber(input.filteredCount, 0),
+    eligibleCount: toFiniteNumber(input.eligibleCount, 0),
+    triggered: Boolean(input.triggered),
+    gateStage: cleanText(input.gateStage || 'blocked') || 'blocked',
+    blockedReason: cleanText(input.blockedReason),
+    verticalDecision: input.verticalDecision && typeof input.verticalDecision === 'object'
+      ? { ...input.verticalDecision }
+      : {
+          queryVertical: 'general',
+          lockedVertical: '',
+          targetVertical: 'general',
+        },
+  }
+}
+
+function chooseRelevanceEligibleCandidates(baseEligible = [], input = {}) {
+  const placementId = cleanText(input.placementId)
+  const minLexicalScore = clamp01(
+    input.minLexicalScore ?? DEFAULT_INTENT_MIN_LEXICAL_SCORE,
+    DEFAULT_INTENT_MIN_LEXICAL_SCORE,
+  )
+  const minVectorScore = clamp01(
+    input.minVectorScore ?? DEFAULT_INTENT_MIN_VECTOR_SCORE,
+    DEFAULT_INTENT_MIN_VECTOR_SCORE,
+  )
+  const relevancePolicy = input.relevancePolicyV2 && typeof input.relevancePolicyV2 === 'object'
+    ? input.relevancePolicyV2
+    : {}
+  const applied = shouldApplyRelevanceGate(placementId, relevancePolicy)
+  const mode = normalizeRelevancePolicyMode(relevancePolicy.mode, 'enforce')
+  const thresholds = resolveThresholdsForPlacement(placementId, relevancePolicy)
+  const sameVerticalFallbackEnabled = parseBoolean(relevancePolicy.sameVerticalFallbackEnabled, true)
+
+  if (!applied || baseEligible.length <= 0) {
+    return {
+      eligible: baseEligible,
+      gateStage: applied ? 'strict' : 'disabled',
+      blockedReason: '',
+      strictEligibleCount: baseEligible.length,
+      relaxedEligibleCount: baseEligible.length,
+      filteredCount: 0,
+      shadowDecision: null,
+      scoredCandidates: baseEligible,
+      gate: buildRelevanceGateSnapshot({
+        applied,
+        mode,
+        placementId,
+        minLexicalScore,
+        minVectorScore,
+        strictThreshold: thresholds.strict,
+        relaxedThreshold: thresholds.relaxed,
+        thresholdVersion: thresholds.thresholdVersion,
+        sameVerticalFallbackEnabled,
+        baseEligibleCount: baseEligible.length,
+        strictEligibleCount: baseEligible.length,
+        relaxedEligibleCount: baseEligible.length,
+        filteredCount: 0,
+        eligibleCount: baseEligible.length,
+        triggered: false,
+        gateStage: applied ? 'strict' : 'disabled',
+        blockedReason: '',
+      }),
+      relevanceDebug: {
+        relevanceScore: 0,
+        componentScores: {
+          topicScore: 0,
+          entityScore: 0,
+          intentFitScore: 0,
+          qualitySupportScore: 0,
+        },
+        gateStage: applied ? 'strict' : 'disabled',
+        thresholdsApplied: {
+          strict: thresholds.strict,
+          relaxed: thresholds.relaxed,
+          thresholdVersion: thresholds.thresholdVersion,
+          mode,
+        },
+        verticalDecision: {
+          queryVertical: 'general',
+          lockedVertical: '',
+          targetVertical: 'general',
+          candidateVertical: 'general',
+          sameVerticalFamily: true,
+          lockReason: '',
+        },
+        explanations: [],
+      },
+    }
+  }
+
+  const scoredCandidates = buildScoredRelevanceCandidates(baseEligible, input)
+  const lexicalVectorEligible = scoredCandidates.filter((candidate) => (
+    toFiniteNumber(candidate?.lexicalScore, 0) >= minLexicalScore
+    || toFiniteNumber(candidate?.vectorScore, 0) >= minVectorScore
+  ))
+  const preFilteredCount = Math.max(0, scoredCandidates.length - lexicalVectorEligible.length)
+  const strictEligible = lexicalVectorEligible
+    .filter((candidate) => candidate.relevanceScore >= thresholds.strict)
+
+  const firstVertical = lexicalVectorEligible[0]?.relevanceVerticalDecision
+    && typeof lexicalVectorEligible[0].relevanceVerticalDecision === 'object'
+    ? lexicalVectorEligible[0].relevanceVerticalDecision
+    : {}
+  const targetVertical = cleanText(firstVertical.targetVertical || firstVertical.queryVertical || 'general') || 'general'
+
+  const relaxedPool = sameVerticalFallbackEnabled
+    ? lexicalVectorEligible.filter((candidate) => candidate?.relevanceVerticalDecision?.sameVerticalFamily === true)
+    : []
+  const relaxedEligible = relaxedPool
+    .filter((candidate) => candidate.relevanceScore >= thresholds.relaxed)
+
+  let gateStage = 'strict'
+  let blockedReason = ''
+  let eligible = strictEligible
+
+  const strictBlocked = strictEligible.length === 0
+  const hasCrossVerticalRelaxedHit = lexicalVectorEligible.some((candidate) => (
+    candidate.relevanceScore >= thresholds.relaxed
+    && candidate?.relevanceVerticalDecision?.sameVerticalFamily !== true
+  ))
+
+  if (strictBlocked) {
+    if (sameVerticalFallbackEnabled && targetVertical !== 'general' && relaxedEligible.length > 0) {
+      gateStage = 'relaxed'
+      eligible = relaxedEligible
+    } else {
+      gateStage = 'blocked'
+      blockedReason = hasCrossVerticalRelaxedHit
+        ? 'relevance_blocked_cross_vertical'
+        : 'relevance_blocked_strict'
+      eligible = []
+    }
+  }
+
+  const shadowDecision = {
+    gateStage,
+    blockedReason,
+    strictEligibleCount: strictEligible.length,
+    relaxedEligibleCount: relaxedEligible.length,
+    strictThreshold: thresholds.strict,
+    relaxedThreshold: thresholds.relaxed,
+    targetVertical,
+  }
+  const enforceEligible = eligible
+
+  if (mode === 'observe') {
+    eligible = scoredCandidates
+    gateStage = 'observe'
+    blockedReason = ''
+  } else if (mode === 'shadow') {
+    eligible = scoredCandidates
+    gateStage = 'shadow'
+    blockedReason = ''
+  }
+
+  const enforceFilteredCount = Math.max(0, preFilteredCount + lexicalVectorEligible.length - enforceEligible.length)
+  const filteredCount = mode === 'enforce' ? enforceFilteredCount : 0
+  const winnerLike = eligible[0] || scoredCandidates[0] || null
+
+  return {
+    eligible,
+    gateStage,
+    blockedReason,
+    strictEligibleCount: strictEligible.length,
+    relaxedEligibleCount: relaxedEligible.length,
+    filteredCount,
+    shadowDecision,
+    scoredCandidates,
+    gate: buildRelevanceGateSnapshot({
+      applied,
+      mode,
+      placementId,
+      minLexicalScore,
+      minVectorScore,
+      strictThreshold: thresholds.strict,
+      relaxedThreshold: thresholds.relaxed,
+      thresholdVersion: thresholds.thresholdVersion,
+        sameVerticalFallbackEnabled,
+        baseEligibleCount: baseEligible.length,
+        strictEligibleCount: strictEligible.length,
+        relaxedEligibleCount: relaxedEligible.length,
+        filteredCount: mode === 'enforce' ? filteredCount : enforceFilteredCount,
+        eligibleCount: eligible.length,
+        triggered: mode === 'enforce' ? filteredCount > 0 : enforceFilteredCount > 0,
+        gateStage,
+        blockedReason,
+        verticalDecision: {
+        queryVertical: cleanText(firstVertical.queryVertical || 'general') || 'general',
+        lockedVertical: cleanText(firstVertical.lockedVertical),
+        targetVertical,
+      },
+    }),
+    relevanceDebug: {
+      relevanceScore: winnerLike ? clamp01(winnerLike.relevanceScore) : 0,
+      componentScores: winnerLike?.relevanceComponentScores && typeof winnerLike.relevanceComponentScores === 'object'
+        ? winnerLike.relevanceComponentScores
+        : {
+            topicScore: 0,
+            entityScore: 0,
+            intentFitScore: 0,
+            qualitySupportScore: 0,
+          },
+      gateStage,
+      thresholdsApplied: {
+        strict: thresholds.strict,
+        relaxed: thresholds.relaxed,
+        thresholdVersion: thresholds.thresholdVersion,
+        mode,
+      },
+      verticalDecision: winnerLike?.relevanceVerticalDecision && typeof winnerLike.relevanceVerticalDecision === 'object'
+        ? winnerLike.relevanceVerticalDecision
+        : {
+            queryVertical: cleanText(firstVertical.queryVertical || 'general') || 'general',
+            lockedVertical: cleanText(firstVertical.lockedVertical),
+            targetVertical,
+            candidateVertical: cleanText(firstVertical.candidateVertical || 'general') || 'general',
+            sameVerticalFamily: true,
+            lockReason: cleanText(firstVertical.lockReason),
+          },
+      explanations: Array.isArray(winnerLike?.relevanceExplanations)
+        ? winnerLike.relevanceExplanations
+        : [],
+      strictEligibleCount: strictEligible.length,
+      relaxedEligibleCount: relaxedEligible.length,
+      blockedReason,
+      shadowDecision: mode === 'shadow' ? shadowDecision : null,
     },
   }
 }
@@ -213,26 +509,7 @@ export function rankOpportunityCandidates(input = {}) {
   const pricingDefaults = getPricingMediationDefaults()
   const weights = getPricingModelWeights()
   const placementId = cleanText(input.placementId)
-  const relevanceGateApplied = shouldApplyRelevanceGate(placementId)
-  const minLexicalScore = clamp01(
-    input.minLexicalScore ?? DEFAULT_INTENT_MIN_LEXICAL_SCORE,
-    DEFAULT_INTENT_MIN_LEXICAL_SCORE,
-  )
-  const minVectorScore = clamp01(
-    input.minVectorScore ?? DEFAULT_INTENT_MIN_VECTOR_SCORE,
-    DEFAULT_INTENT_MIN_VECTOR_SCORE,
-  )
   const scoreFloor = clamp01(input.scoreFloor ?? DEFAULT_SCORE_FLOOR)
-  const baseRelevanceGate = {
-    applied: relevanceGateApplied,
-    placementId: placementId || '',
-    minLexicalScore,
-    minVectorScore,
-    baseEligibleCount: 0,
-    filteredCount: 0,
-    eligibleCount: 0,
-    triggered: false,
-  }
   const blockedTopics = Array.isArray(input.blockedTopics)
     ? input.blockedTopics.map((item) => cleanText(item)).filter(Boolean)
     : []
@@ -249,8 +526,47 @@ export function rankOpportunityCandidates(input = {}) {
         policyBlockedTopic: blockedTopic,
         candidateCount: candidates.length,
         scoreFloor,
-        relevanceGate: baseRelevanceGate,
+        relevanceGate: buildRelevanceGateSnapshot({
+          applied: false,
+          mode: 'disabled',
+          placementId,
+          strictThreshold: 0,
+          relaxedThreshold: 0,
+          thresholdVersion: '',
+          baseEligibleCount: 0,
+          strictEligibleCount: 0,
+          relaxedEligibleCount: 0,
+          filteredCount: 0,
+          eligibleCount: 0,
+          triggered: false,
+          gateStage: 'blocked',
+          blockedReason: '',
+        }),
         relevanceFilteredCount: 0,
+        relevanceDebug: {
+          relevanceScore: 0,
+          componentScores: {
+            topicScore: 0,
+            entityScore: 0,
+            intentFitScore: 0,
+            qualitySupportScore: 0,
+          },
+          gateStage: 'blocked',
+          thresholdsApplied: { strict: 0, relaxed: 0, thresholdVersion: '', mode: 'disabled' },
+          verticalDecision: {
+            queryVertical: 'general',
+            lockedVertical: '',
+            targetVertical: 'general',
+            candidateVertical: 'general',
+            sameVerticalFamily: true,
+            lockReason: '',
+          },
+          explanations: [],
+          strictEligibleCount: 0,
+          relaxedEligibleCount: 0,
+          blockedReason: '',
+          shadowDecision: null,
+        },
         pricingModel: pricingDefaults.modelVersion,
       },
     }
@@ -264,8 +580,47 @@ export function rankOpportunityCandidates(input = {}) {
       debug: {
         candidateCount: 0,
         scoreFloor,
-        relevanceGate: baseRelevanceGate,
+        relevanceGate: buildRelevanceGateSnapshot({
+          applied: false,
+          mode: 'disabled',
+          placementId,
+          strictThreshold: 0,
+          relaxedThreshold: 0,
+          thresholdVersion: '',
+          baseEligibleCount: 0,
+          strictEligibleCount: 0,
+          relaxedEligibleCount: 0,
+          filteredCount: 0,
+          eligibleCount: 0,
+          triggered: false,
+          gateStage: 'blocked',
+          blockedReason: '',
+        }),
         relevanceFilteredCount: 0,
+        relevanceDebug: {
+          relevanceScore: 0,
+          componentScores: {
+            topicScore: 0,
+            entityScore: 0,
+            intentFitScore: 0,
+            qualitySupportScore: 0,
+          },
+          gateStage: 'blocked',
+          thresholdsApplied: { strict: 0, relaxed: 0, thresholdVersion: '', mode: 'disabled' },
+          verticalDecision: {
+            queryVertical: 'general',
+            lockedVertical: '',
+            targetVertical: 'general',
+            candidateVertical: 'general',
+            sameVerticalFamily: true,
+            lockReason: '',
+          },
+          explanations: [],
+          strictEligibleCount: 0,
+          relaxedEligibleCount: 0,
+          blockedReason: '',
+          shadowDecision: null,
+        },
         pricingModel: pricingDefaults.modelVersion,
       },
     }
@@ -274,32 +629,29 @@ export function rankOpportunityCandidates(input = {}) {
   const baseEligible = candidates
     .filter((item) => cleanText(item?.title) && cleanText(item?.targetUrl))
     .filter((item) => cleanText(item?.availability || 'active').toLowerCase() === 'active')
-  const eligible = relevanceGateApplied
-    ? baseEligible.filter((item) => (
-      toFiniteNumber(item?.lexicalScore, 0) >= minLexicalScore
-      || toFiniteNumber(item?.vectorScore, 0) >= minVectorScore
-    ))
-    : baseEligible
-  const relevanceFilteredCount = Math.max(0, baseEligible.length - eligible.length)
-  const relevanceGate = {
-    ...baseRelevanceGate,
-    baseEligibleCount: baseEligible.length,
-    filteredCount: relevanceFilteredCount,
-    eligibleCount: eligible.length,
-    triggered: relevanceGateApplied && relevanceFilteredCount > 0,
-  }
+
+  const relevanceSelection = chooseRelevanceEligibleCandidates(baseEligible, {
+    ...input,
+    placementId,
+    query,
+    answerText,
+  })
+  const eligible = relevanceSelection.eligible
+  const relevanceFilteredCount = relevanceSelection.filteredCount
+  const relevanceGate = relevanceSelection.gate
 
   if (eligible.length === 0) {
     return {
       winner: null,
       ranked: [],
-      reasonCode: relevanceGateApplied ? 'inventory_no_match' : 'policy_blocked',
+      reasonCode: cleanText(relevanceSelection.blockedReason) || 'inventory_no_match',
       debug: {
         candidateCount: candidates.length,
         eligibleCount: 0,
         scoreFloor,
         relevanceGate,
         relevanceFilteredCount,
+        relevanceDebug: relevanceSelection.relevanceDebug,
         pricingModel: pricingDefaults.modelVersion,
       },
     }
@@ -308,13 +660,14 @@ export function rankOpportunityCandidates(input = {}) {
   const scored = eligible
     .map((candidate) => scoreCandidate(candidate, {
       intentScore: input.intentScore,
-      placementId: input.placementId,
+      placementId,
       triggerType: input.triggerType,
     }))
   const ranked = [...scored]
     .sort((a, b) => {
       if (b.auctionScore !== a.auctionScore) return b.auctionScore - a.auctionScore
       if (b.rankScore !== a.rankScore) return b.rankScore - a.rankScore
+      if (b.relevanceScore !== a.relevanceScore) return b.relevanceScore - a.relevanceScore
       if (b.fusedScore !== a.fusedScore) return b.fusedScore - a.fusedScore
       return String(a.offerId || '').localeCompare(String(b.offerId || ''))
     })
@@ -340,6 +693,7 @@ export function rankOpportunityCandidates(input = {}) {
     ...relevanceGate,
     winnerLexicalScore: winner ? toFiniteNumber(winner.lexicalScore, 0) : 0,
     winnerVectorScore: winner ? toFiniteNumber(winner.vectorScore, 0) : 0,
+    winnerRelevanceScore: winner ? toFiniteNumber(winner.relevanceScore, 0) : 0,
   }
 
   if (!winner || winner.rankScore < scoreFloor) {
@@ -357,6 +711,13 @@ export function rankOpportunityCandidates(input = {}) {
         scoreFloor,
         relevanceGate: relevanceGateWithWinner,
         relevanceFilteredCount,
+        relevanceDebug: {
+          ...relevanceSelection.relevanceDebug,
+          relevanceScore: winner ? clamp01(winner.relevanceScore) : relevanceSelection.relevanceDebug.relevanceScore,
+          componentScores: winner?.relevanceComponentScores || relevanceSelection.relevanceDebug.componentScores,
+          verticalDecision: winner?.relevanceVerticalDecision || relevanceSelection.relevanceDebug.verticalDecision,
+          explanations: winner?.relevanceExplanations || relevanceSelection.relevanceDebug.explanations,
+        },
         pricingModel: pricingDefaults.modelVersion,
         pricingWeights: weights,
       },
@@ -371,7 +732,9 @@ export function rankOpportunityCandidates(input = {}) {
       }),
     },
     ranked,
-    reasonCode: 'served',
+    reasonCode: relevanceSelection.gateStage === 'relaxed'
+      ? 'relevance_pass_relaxed_same_vertical'
+      : 'served',
     debug: {
       candidateCount: candidates.length,
       eligibleCount: eligible.length,
@@ -384,6 +747,13 @@ export function rankOpportunityCandidates(input = {}) {
       scoreFloor,
       relevanceGate: relevanceGateWithWinner,
       relevanceFilteredCount,
+      relevanceDebug: {
+        ...relevanceSelection.relevanceDebug,
+        relevanceScore: clamp01(winner.relevanceScore),
+        componentScores: winner?.relevanceComponentScores || relevanceSelection.relevanceDebug.componentScores,
+        verticalDecision: winner?.relevanceVerticalDecision || relevanceSelection.relevanceDebug.verticalDecision,
+        explanations: winner?.relevanceExplanations || relevanceSelection.relevanceDebug.explanations,
+      },
       pricingModel: pricingDefaults.modelVersion,
       pricingWeights: weights,
     },

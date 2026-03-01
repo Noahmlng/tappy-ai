@@ -44,6 +44,7 @@
     "inventory:embeddings:full": "node --env-file-if-exists=.env ./scripts/inventory/rebuild-embeddings-full.js",
     "inventory:snapshot": "node --env-file-if-exists=.env ./scripts/inventory/materialize-serving-snapshot.js",
     "inventory:sync:all": "npm run inventory:sync:partnerstack && npm run inventory:sync:cj && npm run inventory:sync:house && npm run inventory:embeddings && npm run inventory:snapshot",
+    "relevance:calibrate": "node --env-file-if-exists=.env ./scripts/relevance-calibration.js",
     "pilot:content:enrich": "node --env-file-if-exists=.env ./scripts/pilot/enrich-content-cases.js",
     "content:enrich:full": "node --env-file-if-exists=.env ./scripts/pilot/enrich-content-full.js",
     "content:enrich:report": "node --env-file-if-exists=.env ./scripts/pilot/generate-content-enrichment-report.js",

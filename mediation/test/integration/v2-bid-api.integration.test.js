@@ -254,6 +254,27 @@ test('v2 bid API returns unified response on the single runtime path', async () 
     assert.equal(Array.isArray(languageResolved.accepted), true)
     assert.equal(typeof bid.payload?.diagnostics?.rankingDebug?.relevanceGate, 'object')
     assert.equal(typeof bid.payload?.diagnostics?.rankingDebug?.relevanceFilteredCount, 'number')
+    assert.equal(typeof bid.payload?.diagnostics?.relevanceDebug, 'object')
+    const relevanceDebug = bid.payload?.diagnostics?.relevanceDebug
+      && typeof bid.payload.diagnostics.relevanceDebug === 'object'
+      ? bid.payload.diagnostics.relevanceDebug
+      : {}
+    assert.equal(typeof relevanceDebug.relevanceScore, 'number')
+    assert.equal(typeof relevanceDebug.componentScores, 'object')
+    assert.equal(typeof relevanceDebug.componentScores?.topicScore, 'number')
+    assert.equal(typeof relevanceDebug.componentScores?.entityScore, 'number')
+    assert.equal(typeof relevanceDebug.componentScores?.intentFitScore, 'number')
+    assert.equal(typeof relevanceDebug.componentScores?.qualitySupportScore, 'number')
+    assert.equal(typeof relevanceDebug.thresholdsApplied, 'object')
+    assert.equal(typeof relevanceDebug.thresholdsApplied?.strict, 'number')
+    assert.equal(typeof relevanceDebug.thresholdsApplied?.relaxed, 'number')
+    assert.equal(typeof relevanceDebug.thresholdsApplied?.thresholdVersion, 'string')
+    assert.equal(
+      ['strict', 'relaxed', 'blocked', 'observe', 'shadow', 'disabled'].includes(
+        String(relevanceDebug.gateStage || ''),
+      ),
+      true,
+    )
     assert.equal(bid.payload?.diagnostics?.pricingVersion, 'cpa_mock_v2')
     assert.equal(typeof bid.payload?.diagnostics?.timingsMs?.total, 'number')
     assert.equal(typeof bid.payload?.diagnostics?.budgetMs?.total, 'number')

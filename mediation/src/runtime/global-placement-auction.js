@@ -46,6 +46,8 @@ const NO_BID_REASON_PRIORITY = Object.freeze({
   budget_exhausted: 1,
   risk_blocked: 2,
   inventory_empty: 0,
+  relevance_blocked_strict: 3,
+  relevance_blocked_cross_vertical: 4,
   rank_below_floor: 3,
   inventory_no_match: 4,
   upstream_timeout: 5,

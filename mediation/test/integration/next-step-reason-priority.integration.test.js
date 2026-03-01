@@ -266,6 +266,14 @@ test('next-step decision logs are recorded through v2 bid flow', async () => {
     assert.equal(String(row?.placementId || '').trim(), 'chat_intent_recommendation_v1')
     assert.equal(Boolean(row?.runtime && typeof row.runtime === 'object'), true)
     assert.equal(Boolean(row?.runtime?.bidV2), true)
+    assert.equal(Boolean(row?.runtime?.relevance && typeof row.runtime.relevance === 'object'), true)
+    assert.equal(
+      ['strict', 'relaxed', 'blocked', 'observe', 'shadow', 'disabled'].includes(
+        String(row?.runtime?.relevance?.gateStage || ''),
+      ),
+      true,
+    )
+    assert.equal(typeof row?.runtime?.relevance?.thresholdsApplied?.thresholdVersion, 'string')
   } catch (error) {
     const logs = gateway.getLogs()
     const message = error instanceof Error ? error.message : String(error)

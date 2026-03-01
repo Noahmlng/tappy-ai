@@ -123,8 +123,12 @@ test('relevance guard: v2 intent placement drops low lexical and low vector cand
     ],
   })
 
-  assert.equal(ranked.reasonCode, 'inventory_no_match')
+  assert.equal(ranked.reasonCode, 'relevance_blocked_strict')
   assert.equal(ranked.winner, null)
   assert.equal(ranked.debug.relevanceFilteredCount, 1)
   assert.equal(ranked.debug.relevanceGate?.applied, true)
+  assert.equal(ranked.debug.relevanceDebug?.gateStage, 'blocked')
+  assert.equal(ranked.debug.relevanceDebug?.blockedReason, 'relevance_blocked_strict')
+  assert.equal(typeof ranked.debug.relevanceDebug?.thresholdsApplied?.strict, 'number')
+  assert.equal(typeof ranked.debug.relevanceDebug?.thresholdsApplied?.relaxed, 'number')
 })

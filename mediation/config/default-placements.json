@@ -38,6 +38,14 @@
         "floorPrice": 0
       }
     },
+    "relevancePolicyV2": {
+      "enabled": true,
+      "mode": "enforce",
+      "strictThreshold": 0.58,
+      "relaxedThreshold": 0.44,
+      "sameVerticalFallbackEnabled": true,
+      "rolloutPercent": 100
+    },
     "maxFanout": 3,
     "globalTimeoutMs": 1200
   },
@@ -79,6 +87,14 @@
         "enabled": true,
         "floorPrice": 0
       }
+    },
+    "relevancePolicyV2": {
+      "enabled": true,
+      "mode": "enforce",
+      "strictThreshold": 0.62,
+      "relaxedThreshold": 0.48,
+      "sameVerticalFallbackEnabled": true,
+      "rolloutPercent": 100
     },
     "maxFanout": 3,
     "globalTimeoutMs": 1200

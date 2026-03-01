@@ -228,8 +228,8 @@ test('opportunity-first ranking: economic score can break close rank ties', () =
       {
         offerId: 'partnerstack:offer:high_rank_low_econ',
         network: 'partnerstack',
-        title: 'Creative tools trial',
-        description: 'low payout',
+        title: 'Creator suite tools trial',
+        description: 'creator suite low payout trial',
         targetUrl: 'https://example.com/a',
         availability: 'active',
         quality: 0.9,

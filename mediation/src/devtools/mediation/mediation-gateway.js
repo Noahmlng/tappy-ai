@@ -52,6 +52,13 @@ function parseEnforcementMode(value, fallback = 'on') {
   return fallback
 }
 
+function parseRelevancePolicyMode(value, fallback = 'enforce') {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (!normalized) return fallback
+  if (!RELEVANCE_POLICY_MODES.has(normalized)) return fallback
+  return normalized
+}
+
 function normalizeCorsOrigin(value) {
   const raw = String(value || '').trim()
   if (!raw) return ''
@@ -173,6 +180,7 @@ const MAX_DASHBOARD_USERS = 500
 const MAX_DASHBOARD_SESSIONS = 1500
 const CONTROL_PLANE_REFRESH_THROTTLE_MS = 1000
 const DECISION_REASON_ENUM = new Set(['served', 'no_fill', 'blocked', 'error'])
+const RELEVANCE_POLICY_MODES = new Set(['observe', 'shadow', 'enforce'])
 const CONTROL_PLANE_ENVIRONMENTS = new Set(['prod'])
 const CONTROL_PLANE_KEY_STATUS = new Set(['active', 'revoked'])
 const DEFAULT_CONTROL_PLANE_APP_ID = ''
@@ -734,6 +742,82 @@ function isInventoryFallbackEnabled() {
   return INVENTORY_FALLBACK_WHEN_UNAVAILABLE
 }
 
+function resolveRelevancePolicyThresholdsByPlacement(runtimeConfig = null) {
+  const thresholds = runtimeConfig?.relevancePolicyV2?.thresholds
+    && typeof runtimeConfig.relevancePolicyV2.thresholds === 'object'
+    ? runtimeConfig.relevancePolicyV2.thresholds
+    : {}
+  return thresholds
+}
+
+function computeDeterministicRolloutBucket(seed = '') {
+  const digest = createHash('sha1').update(String(seed || '')).digest('hex').slice(0, 8)
+  const parsed = Number.parseInt(digest, 16)
+  if (!Number.isFinite(parsed)) return 0
+  return parsed % 100
+}
+
+function resolvePlacementRelevancePolicyV2({ requestId = '', placementId = '', placement = null, runtimeConfig = null }) {
+  const runtimePolicy = runtimeConfig?.relevancePolicyV2 && typeof runtimeConfig.relevancePolicyV2 === 'object'
+    ? runtimeConfig.relevancePolicyV2
+    : {}
+  const placementPolicy = placement?.relevancePolicyV2 && typeof placement.relevancePolicyV2 === 'object'
+    ? placement.relevancePolicyV2
+    : {}
+  const thresholdsByPlacement = resolveRelevancePolicyThresholdsByPlacement(runtimeConfig)
+  const placementThreshold = thresholdsByPlacement[String(placementId || '')]
+    && typeof thresholdsByPlacement[String(placementId || '')] === 'object'
+    ? thresholdsByPlacement[String(placementId || '')]
+    : {}
+
+  const strictThreshold = Number.isFinite(Number(placementPolicy.strictThreshold))
+    ? clampNumber(placementPolicy.strictThreshold, 0, 1, 0.6)
+    : clampNumber(placementThreshold.strict, 0, 1, 0.6)
+  const relaxedThresholdRaw = Number.isFinite(Number(placementPolicy.relaxedThreshold))
+    ? clampNumber(placementPolicy.relaxedThreshold, 0, 1, 0.46)
+    : clampNumber(placementThreshold.relaxed, 0, 1, 0.46)
+  const relaxedThreshold = Math.min(strictThreshold, relaxedThresholdRaw)
+
+  const rolloutPercentRaw = Number.isFinite(Number(placementPolicy.rolloutPercent))
+    ? toPositiveInteger(placementPolicy.rolloutPercent, 100)
+    : toPositiveInteger(runtimePolicy.rolloutPercent, 100)
+  const rolloutPercent = Math.max(1, Math.min(100, Number.isFinite(rolloutPercentRaw) ? rolloutPercentRaw : 100))
+
+  const enabled = parseFeatureSwitch(
+    placementPolicy.enabled,
+    parseFeatureSwitch(runtimePolicy.enabled, true),
+  )
+  const configuredMode = parseRelevancePolicyMode(
+    placementPolicy.mode || runtimePolicy.mode,
+    'enforce',
+  )
+  let mode = configuredMode
+  if (enabled && configuredMode === 'enforce' && rolloutPercent < 100) {
+    const bucket = computeDeterministicRolloutBucket(`${requestId}|${placementId}`)
+    mode = bucket < rolloutPercent ? 'enforce' : 'shadow'
+  }
+
+  return {
+    enabled,
+    mode,
+    thresholdVersion: String(runtimePolicy.thresholdVersion || 'v1_default_2026_03_01').trim() || 'v1_default_2026_03_01',
+    sameVerticalFallbackEnabled: parseFeatureSwitch(
+      placementPolicy.sameVerticalFallbackEnabled,
+      parseFeatureSwitch(runtimePolicy.sameVerticalFallbackEnabled, true),
+    ),
+    rolloutPercent,
+    thresholds: {
+      [String(placementId || '')]: {
+        strict: strictThreshold,
+        relaxed: relaxedThreshold,
+      },
+    },
+    calibration: runtimePolicy.calibration && typeof runtimePolicy.calibration === 'object'
+      ? runtimePolicy.calibration
+      : {},
+  }
+}
+
 function summarizeInventoryReadiness(statusInput = {}) {
   const status = statusInput && typeof statusInput === 'object' ? statusInput : {}
   const counts = Array.isArray(status.counts) ? status.counts : []
@@ -962,6 +1046,8 @@ function mapOpportunityReasonToDecision(reasonCode = '', served = false) {
   if (
     reasonCode === 'inventory_no_match'
     || reasonCode === 'rank_below_floor'
+    || reasonCode === 'relevance_blocked_strict'
+    || reasonCode === 'relevance_blocked_cross_vertical'
     || reasonCode === 'inventory_empty'
     || reasonCode === 'budget_unconfigured'
     || reasonCode === 'budget_exhausted'
@@ -3365,6 +3451,40 @@ function normalizePlacementFallback(value) {
   }
 }
 
+function normalizePlacementRelevancePolicy(raw = {}) {
+  const input = raw && typeof raw === 'object' ? raw : {}
+  const strictThreshold = clampNumber(
+    input.strictThreshold ?? input.strict,
+    0,
+    1,
+    NaN,
+  )
+  const relaxedThresholdRaw = clampNumber(
+    input.relaxedThreshold ?? input.relaxed,
+    0,
+    1,
+    NaN,
+  )
+  const hasStrict = Number.isFinite(strictThreshold)
+  const hasRelaxed = Number.isFinite(relaxedThresholdRaw)
+  const relaxedThreshold = hasStrict && hasRelaxed
+    ? Math.min(strictThreshold, relaxedThresholdRaw)
+    : (hasRelaxed ? relaxedThresholdRaw : NaN)
+  const rolloutPercentRaw = toPositiveInteger(input.rolloutPercent, NaN)
+  const rolloutPercent = Number.isFinite(rolloutPercentRaw)
+    ? Math.max(1, Math.min(100, rolloutPercentRaw))
+    : 100
+
+  return {
+    enabled: parseFeatureSwitch(input.enabled, true),
+    mode: parseRelevancePolicyMode(input.mode, 'enforce'),
+    strictThreshold: hasStrict ? strictThreshold : null,
+    relaxedThreshold: Number.isFinite(relaxedThreshold) ? relaxedThreshold : null,
+    sameVerticalFallbackEnabled: parseFeatureSwitch(input.sameVerticalFallbackEnabled, true),
+    rolloutPercent,
+  }
+}
+
 function normalizePlacement(raw) {
   const placementId = normalizePlacementIdWithMigration(String(raw?.placementId || '').trim())
   const placementKey = String(raw?.placementKey || PLACEMENT_KEY_BY_ID[placementId] || '').trim()
@@ -3391,6 +3511,7 @@ function normalizePlacement(raw) {
     },
     bidders: normalizePlacementBidders(raw?.bidders),
     fallback: normalizePlacementFallback(raw?.fallback),
+    relevancePolicyV2: normalizePlacementRelevancePolicy(raw?.relevancePolicyV2),
     maxFanout: toPositiveInteger(raw?.maxFanout, 3),
     globalTimeoutMs: toPositiveInteger(raw?.globalTimeoutMs, 1200),
   }
@@ -7113,6 +7234,14 @@ function isClickEventLogRow(row = {}) {
   return eventType === 'sdk_event' || eventType === 'redirect_click'
 }
 
+function isDismissEventLogRow(row = {}) {
+  const item = row && typeof row === 'object' ? row : {}
+  const kind = String(item.kind || item.event || '').trim().toLowerCase()
+  if (kind !== 'dismiss') return false
+  const eventType = String(item.eventType || '').trim().toLowerCase()
+  return eventType === 'sdk_event'
+}
+
 function conversionFactDateKey(row) {
   const raw = String(row?.occurredAt || row?.createdAt || '').trim()
   if (!raw) return ''
@@ -7890,10 +8019,17 @@ async function evaluateSinglePlacementOpportunity({
         stageStatusMap.retrieval = toPositiveInteger(retrievalDebug.fusedHitCount, 0) > 0 ? 'hit' : 'miss'
 
         const rankingStartedAt = Date.now()
+        const relevancePolicyV2 = resolvePlacementRelevancePolicyV2({
+          requestId,
+          placementId,
+          placement,
+          runtimeConfig,
+        })
         const ranking = rankOpportunityCandidates({
           candidates: Array.isArray(retrieval?.candidates) ? retrieval.candidates : [],
           query: messageContext.query,
           answerText: messageContext.answerText,
+          intentClass: intent.class,
           blockedTopics,
           intentScore: intent.score,
           scoreFloor,
@@ -7902,6 +8038,7 @@ async function evaluateSinglePlacementOpportunity({
           placementId,
           triggerType,
           placement: 'block',
+          relevancePolicyV2,
         })
         stageDurationsMs.ranking = Math.max(0, Date.now() - rankingStartedAt)
 
@@ -7919,9 +8056,10 @@ async function evaluateSinglePlacementOpportunity({
         winnerBid = budgetRiskSelection?.winnerBid && typeof budgetRiskSelection.winnerBid === 'object'
           ? budgetRiskSelection.winnerBid
           : null
+        const rankingReasonCode = String(ranking?.reasonCode || '').trim()
         reasonCode = winnerCandidate
-          ? 'served'
-          : String(budgetRiskSelection?.reasonCode || ranking?.reasonCode || 'inventory_no_match')
+          ? (rankingReasonCode === 'relevance_pass_relaxed_same_vertical' ? rankingReasonCode : 'served')
+          : String(budgetRiskSelection?.reasonCode || rankingReasonCode || 'inventory_no_match')
         budgetDecision = budgetRiskSelection?.budgetDecision && typeof budgetRiskSelection.budgetDecision === 'object'
           ? budgetRiskSelection.budgetDecision
           : budgetDecision
@@ -8323,6 +8461,9 @@ async function evaluateV2BidOpportunityFirst(payload) {
     },
     retrievalDebug,
     rankingDebug,
+    relevance: rankingDebug?.relevanceDebug && typeof rankingDebug.relevanceDebug === 'object'
+      ? rankingDebug.relevanceDebug
+      : null,
     intent,
     triggerType,
     pricingVersion,
@@ -8443,6 +8584,9 @@ async function evaluateV2BidOpportunityFirst(payload) {
       },
       retrievalDebug,
       rankingDebug,
+      relevanceDebug: rankingDebug?.relevanceDebug && typeof rankingDebug.relevanceDebug === 'object'
+        ? rankingDebug.relevanceDebug
+        : null,
       multiPlacement: multiPlacementDiagnostics,
       bidLatencyMs: stageDurationsMs.total,
     },
@@ -8514,6 +8658,7 @@ function summarizeRuntimeDebug(debug) {
     networkErrors,
     snapshotUsage: debug.snapshotUsage && typeof debug.snapshotUsage === 'object' ? debug.snapshotUsage : {},
     networkHealth: debug.networkHealth && typeof debug.networkHealth === 'object' ? debug.networkHealth : {},
+    relevance: debug.relevance && typeof debug.relevance === 'object' ? debug.relevance : null,
   }
 }
 
@@ -9004,6 +9149,7 @@ function applyPlacementPatch(placement, patch, configVersion) {
   placement.frequencyCap = next.frequencyCap
   placement.bidders = next.bidders
   placement.fallback = next.fallback
+  placement.relevancePolicyV2 = next.relevancePolicyV2
   placement.maxFanout = next.maxFanout
   placement.globalTimeoutMs = next.globalTimeoutMs
 
@@ -9024,11 +9170,13 @@ function computeScopedMetricsSummary(decisionRows, eventRows, factRows, controlP
   const bidUnknownCount = Math.max(0, requests - bidKnownCount)
   const impressions = served
   const clicks = eventRows.filter((row) => isClickEventLogRow(row)).length
+  const dismisses = eventRows.filter((row) => isDismissEventLogRow(row)).length
   const revenueUsd = computeRevenueFromFacts(factRows)
   const revenueBreakdown = computeRevenueBreakdownFromFacts(factRows)
   const ctr = impressions > 0 ? clicks / impressions : 0
   const ecpm = impressions > 0 ? (revenueUsd / impressions) * 1000 : 0
   const fillRate = requests > 0 ? served / requests : 0
+  const offTopicProxyRate = impressions > 0 ? dismisses / impressions : 0
   const bidFillRateKnown = bidKnownCount > 0 ? served / bidKnownCount : 0
   const unknownRate = requests > 0 ? bidUnknownCount / requests : 0
   const resultBreakdown = {
@@ -9084,14 +9232,61 @@ function computeScopedMetricsSummary(decisionRows, eventRows, factRows, controlP
       : {}
     return String(riskDecision.decision || '').trim().toLowerCase() === 'block'
   }).length
+  const relevanceStrictBlockedCount = decisionRows.filter((row) => {
+    const runtime = row?.runtime && typeof row.runtime === 'object' ? row.runtime : {}
+    const relevance = runtime?.relevance && typeof runtime.relevance === 'object'
+      ? runtime.relevance
+      : (runtime?.rankingDebug?.relevanceDebug && typeof runtime.rankingDebug.relevanceDebug === 'object'
+        ? runtime.rankingDebug.relevanceDebug
+        : {})
+    const stage = String(relevance.gateStage || '').trim().toLowerCase()
+    const blockedReason = String(relevance.blockedReason || runtime.reasonCode || '').trim().toLowerCase()
+    return stage === 'blocked' && blockedReason.includes('relevance_blocked_strict')
+  }).length
+  const relevanceRelaxedRecoveryCount = decisionRows.filter((row) => {
+    const runtime = row?.runtime && typeof row.runtime === 'object' ? row.runtime : {}
+    const relevance = runtime?.relevance && typeof runtime.relevance === 'object'
+      ? runtime.relevance
+      : (runtime?.rankingDebug?.relevanceDebug && typeof runtime.rankingDebug.relevanceDebug === 'object'
+        ? runtime.rankingDebug.relevanceDebug
+        : {})
+    const stage = String(relevance.gateStage || '').trim().toLowerCase()
+    return stage === 'relaxed' && String(row?.result || '').trim().toLowerCase() === 'served'
+  }).length
+  const fillRateByPlacement = {}
+  for (const row of decisionRows) {
+    const placementId = String(row?.placementId || '').trim()
+    if (!placementId) continue
+    if (!Object.prototype.hasOwnProperty.call(fillRateByPlacement, placementId)) {
+      fillRateByPlacement[placementId] = {
+        requests: 0,
+        served: 0,
+      }
+    }
+    fillRateByPlacement[placementId].requests += 1
+    if (String(row?.result || '').trim().toLowerCase() === 'served') {
+      fillRateByPlacement[placementId].served += 1
+    }
+  }
+  const normalizedFillRateByPlacement = Object.fromEntries(
+    Object.entries(fillRateByPlacement).map(([placementId, bucket]) => [
+      placementId,
+      bucket.requests > 0 ? round(bucket.served / bucket.requests, 4) : 0,
+    ]),
+  )
 
   return {
     revenueUsd: round(revenueUsd, 2),
     impressions,
     clicks,
+    dismisses,
     ctr: round(ctr, 4),
     ecpm: round(ecpm, 2),
     fillRate: round(fillRate, 4),
+    offTopicProxyRate: round(offTopicProxyRate, 4),
+    relevanceStrictBlockRate: requests > 0 ? round(relevanceStrictBlockedCount / requests, 4) : 0,
+    relevanceRelaxedRecoveryRate: requests > 0 ? round(relevanceRelaxedRecoveryCount / requests, 4) : 0,
+    fillRateByPlacement: normalizedFillRateByPlacement,
     bidKnownCount,
     bidUnknownCount,
     bidFillRateKnown: round(bidFillRateKnown, 4),
@@ -9102,6 +9297,8 @@ function computeScopedMetricsSummary(decisionRows, eventRows, factRows, controlP
     budgetExceededCount,
     budgetBlockedCount,
     riskBlockedCount,
+    relevanceStrictBlockedCount,
+    relevanceRelaxedRecoveryCount,
     reasonCounts: {
       placementUnavailable: placementUnavailableCount,
       inventoryEmpty: inventoryEmptyCount,
@@ -9165,13 +9362,29 @@ function computeScopedMetricsByPlacement(decisionRows, eventRows, factRows, scop
         requests: 0,
         served: 0,
         impressions: 0,
+        relevanceStrictBlocked: 0,
+        relevanceRelaxedRecovered: 0,
       })
     }
     const stats = decisionStatsByPlacement.get(placementId)
     stats.requests += 1
+    const runtime = row?.runtime && typeof row.runtime === 'object' ? row.runtime : {}
+    const relevance = runtime?.relevance && typeof runtime.relevance === 'object'
+      ? runtime.relevance
+      : (runtime?.rankingDebug?.relevanceDebug && typeof runtime.rankingDebug.relevanceDebug === 'object'
+        ? runtime.rankingDebug.relevanceDebug
+        : {})
+    const gateStage = String(relevance.gateStage || '').trim().toLowerCase()
+    const blockedReason = String(relevance.blockedReason || runtime.reasonCode || '').trim().toLowerCase()
+    if (gateStage === 'blocked' && blockedReason.includes('relevance_blocked_strict')) {
+      stats.relevanceStrictBlocked += 1
+    }
     if (String(row?.result || '') === 'served') {
       stats.served += 1
       stats.impressions += 1
+      if (gateStage === 'relaxed') {
+        stats.relevanceRelaxedRecovered += 1
+      }
     }
   }
 
@@ -9179,11 +9392,17 @@ function computeScopedMetricsByPlacement(decisionRows, eventRows, factRows, scop
   const revenueByPlacement = buildRevenueByPlacementMap(factRows, placementIdByRequest)
 
   const clicksByPlacement = new Map()
+  const dismissByPlacement = new Map()
   for (const row of eventRows) {
-    if (!isClickEventLogRow(row)) continue
     const placementId = String(row?.placementId || '').trim()
     if (!placementId) continue
-    clicksByPlacement.set(placementId, (clicksByPlacement.get(placementId) || 0) + 1)
+    if (isClickEventLogRow(row)) {
+      clicksByPlacement.set(placementId, (clicksByPlacement.get(placementId) || 0) + 1)
+      continue
+    }
+    if (isDismissEventLogRow(row)) {
+      dismissByPlacement.set(placementId, (dismissByPlacement.get(placementId) || 0) + 1)
+    }
   }
   const placementScope = getPlacementsForScope(scope, { createIfMissing: false, clone: true })
   const observedPlacementIds = new Set([
@@ -9204,6 +9423,7 @@ function computeScopedMetricsByPlacement(decisionRows, eventRows, factRows, scop
       impressions: 0,
     }
     const clicks = clicksByPlacement.get(placement.placementId) || 0
+    const dismisses = dismissByPlacement.get(placement.placementId) || 0
     const ctr = stats.impressions > 0 ? clicks / stats.impressions : 0
     const fillRate = stats.requests > 0 ? stats.served / stats.requests : 0
 
@@ -9213,6 +9433,9 @@ function computeScopedMetricsByPlacement(decisionRows, eventRows, factRows, scop
       revenueUsd: round(revenueByPlacement.get(placement.placementId) || 0, 2),
       ctr: round(ctr, 4),
       fillRate: round(fillRate, 4),
+      offTopicProxyRate: stats.impressions > 0 ? round(dismisses / stats.impressions, 4) : 0,
+      relevanceStrictBlockRate: stats.requests > 0 ? round(stats.relevanceStrictBlocked / stats.requests, 4) : 0,
+      relevanceRelaxedRecoveryRate: stats.requests > 0 ? round(stats.relevanceRelaxedRecovered / stats.requests, 4) : 0,
     }
   })
 }
