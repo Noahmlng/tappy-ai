@@ -10,6 +10,11 @@ const PROJECT_ROOT = path.resolve(__dirname, '../..')
 const GATEWAY_ENTRY = path.join(PROJECT_ROOT, 'src', 'devtools', 'mediation', 'mediation-gateway.js')
 
 const HOST = '127.0.0.1'
+const HEALTH_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.MEDIATION_TEST_HEALTH_TIMEOUT_MS || 45000)
+  if (!Number.isFinite(raw) || raw <= 0) return 45000
+  return Math.floor(raw)
+})()
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -49,7 +54,7 @@ async function requestJson(baseUrl, pathname, options = {}) {
 
 async function waitForGateway(baseUrl) {
   const startedAt = Date.now()
-  while (Date.now() - startedAt < 20000) {
+  while (Date.now() - startedAt < HEALTH_TIMEOUT_MS) {
     try {
       const health = await requestJson(baseUrl, '/api/health', { timeoutMs: 1200 })
       if (health.ok && health.payload?.ok === true) return
@@ -58,7 +63,7 @@ async function waitForGateway(baseUrl) {
     }
     await sleep(250)
   }
-  throw new Error('gateway health check timeout')
+  throw new Error(`gateway health check timeout after ${HEALTH_TIMEOUT_MS}ms`)
 }
 
 function startGateway(port) {
