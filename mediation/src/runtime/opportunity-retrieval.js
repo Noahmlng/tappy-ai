@@ -5,6 +5,10 @@ const DEFAULT_LEXICAL_TOP_K = 30
 const DEFAULT_VECTOR_TOP_K = 30
 const DEFAULT_FINAL_TOP_K = 24
 const DEFAULT_RRF_K = 60
+const DEFAULT_LOCALE_MATCH_MODE = 'locale_or_base'
+const DEFAULT_INTENT_MIN_LEXICAL_SCORE = 0.02
+const DEFAULT_HOUSE_LOWINFO_FILTER_ENABLED = true
+const HOUSE_LOWINFO_TEMPLATE_PHRASE = 'option with strong category relevance and direct shopping intent'
 
 function cleanText(value) {
   return String(value || '').trim().replace(/\s+/g, ' ')
@@ -22,6 +26,62 @@ function toFiniteNumber(value, fallback = 0) {
   return n
 }
 
+function clamp01(value, fallback = 0) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return fallback
+  if (n < 0) return 0
+  if (n > 1) return 1
+  return n
+}
+
+function parseBoolean(value, fallback = false) {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (!normalized) return fallback
+  if (['1', 'true', 'on', 'yes', 'enabled'].includes(normalized)) return true
+  if (['0', 'false', 'off', 'no', 'disabled'].includes(normalized)) return false
+  return fallback
+}
+
+function normalizeLocaleMatchMode(value) {
+  const normalized = cleanText(value).toLowerCase()
+  if (!normalized) return DEFAULT_LOCALE_MATCH_MODE
+  if (normalized === 'exact') return 'exact'
+  if (normalized === DEFAULT_LOCALE_MATCH_MODE) return DEFAULT_LOCALE_MATCH_MODE
+  if (normalized === 'base_or_locale') return DEFAULT_LOCALE_MATCH_MODE
+  return DEFAULT_LOCALE_MATCH_MODE
+}
+
+function resolveLanguageFilter(language = '', matchMode = DEFAULT_LOCALE_MATCH_MODE) {
+  const requested = cleanText(language)
+  const normalizedLocale = requested.toLowerCase().replace(/_/g, '-')
+  if (!normalizedLocale) {
+    return {
+      requested,
+      normalized: '',
+      base: '',
+      accepted: [],
+    }
+  }
+  const base = normalizedLocale.split('-')[0] || normalizedLocale
+  if (matchMode === 'exact') {
+    return {
+      requested,
+      normalized: normalizedLocale,
+      base,
+      accepted: [normalizedLocale],
+    }
+  }
+  const accepted = base && base !== normalizedLocale
+    ? [normalizedLocale, base]
+    : [normalizedLocale]
+  return {
+    requested,
+    normalized: normalizedLocale,
+    base,
+    accepted: Array.from(new Set(accepted)),
+  }
+}
+
 function normalizeNetworkFilters(value = []) {
   if (!Array.isArray(value)) return []
   return Array.from(new Set(value
@@ -34,7 +94,73 @@ function normalizeFilters(filters = {}) {
   return {
     networks: normalizeNetworkFilters(input.networks),
     market: cleanText(input.market).toUpperCase(),
-    language: cleanText(input.language),
+    language: cleanText(input.language).replace(/_/g, '-'),
+  }
+}
+
+function countCandidatesByNetwork(candidates = []) {
+  const seed = { partnerstack: 0, cj: 0, house: 0 }
+  for (const candidate of candidates) {
+    const network = cleanText(candidate?.network).toLowerCase()
+    if (!network) continue
+    if (Object.prototype.hasOwnProperty.call(seed, network)) {
+      seed[network] += 1
+      continue
+    }
+    seed[network] = (seed[network] || 0) + 1
+  }
+  return seed
+}
+
+function matchesLanguageWithMode(language = '', languageFilter = {}) {
+  const candidateLanguage = cleanText(language).toLowerCase().replace(/_/g, '-')
+  const accepted = Array.isArray(languageFilter.accepted) ? languageFilter.accepted : []
+  if (accepted.length <= 0) return true
+  return accepted.includes(candidateLanguage)
+}
+
+function isHouseLowInfoCandidate(candidate = {}, threshold = DEFAULT_INTENT_MIN_LEXICAL_SCORE) {
+  const network = cleanText(candidate?.network).toLowerCase()
+  if (network !== 'house') return false
+  const tags = Array.isArray(candidate?.tags) ? candidate.tags : []
+  const hasSyntheticTag = tags.some((tag) => cleanText(tag).toLowerCase() === 'synthetic')
+  if (!hasSyntheticTag) return false
+  const description = cleanText(candidate?.description).toLowerCase()
+  if (!description.includes(HOUSE_LOWINFO_TEMPLATE_PHRASE)) return false
+  return toFiniteNumber(candidate?.lexicalScore, 0) < threshold
+}
+
+function applyHouseLowInfoFilter(candidates = [], policy = {}) {
+  const enabled = parseBoolean(policy?.enabled, DEFAULT_HOUSE_LOWINFO_FILTER_ENABLED)
+  const lexicalThreshold = clamp01(
+    policy?.minLexicalScore,
+    DEFAULT_INTENT_MIN_LEXICAL_SCORE,
+  )
+  const beforeCounts = countCandidatesByNetwork(candidates)
+  if (!enabled || candidates.length <= 0) {
+    return {
+      candidates,
+      filteredCount: 0,
+      beforeCounts,
+      afterCounts: beforeCounts,
+      enabled,
+      lexicalThreshold,
+    }
+  }
+
+  let filteredCount = 0
+  const filtered = candidates.filter((candidate) => {
+    const shouldFilter = isHouseLowInfoCandidate(candidate, lexicalThreshold)
+    if (shouldFilter) filteredCount += 1
+    return !shouldFilter
+  })
+  return {
+    candidates: filtered,
+    filteredCount,
+    beforeCounts,
+    afterCounts: countCandidatesByNetwork(filtered),
+    enabled,
+    lexicalThreshold,
   }
 }
 
@@ -112,6 +238,10 @@ function createFallbackCandidatesFromOffers(offers = [], input = {}) {
   const normalized = normalizeUnifiedOffers(offers)
   const query = cleanText(input.query)
   const filters = normalizeFilters(input.filters)
+  const languageFilter = resolveLanguageFilter(
+    filters.language,
+    normalizeLocaleMatchMode(input.languageMatchMode),
+  )
 
   const candidates = normalized
     .map((offer) => toFallbackCandidate(offer, query))
@@ -120,7 +250,7 @@ function createFallbackCandidatesFromOffers(offers = [], input = {}) {
     .filter((item) => {
       if (filters.networks.length > 0 && !filters.networks.includes(cleanText(item.network).toLowerCase())) return false
       if (filters.market && cleanText(item.market).toUpperCase() !== filters.market) return false
-      if (filters.language && cleanText(item.language).toLowerCase() !== filters.language.toLowerCase()) return false
+      if (!matchesLanguageWithMode(item.language, languageFilter)) return false
       return true
     })
     .sort((a, b) => {
@@ -138,11 +268,15 @@ function createFallbackCandidatesFromOffers(offers = [], input = {}) {
   return candidates
 }
 
-async function fetchLexicalCandidates(pool, query, filters = {}, topK = DEFAULT_LEXICAL_TOP_K) {
+async function fetchLexicalCandidates(pool, query, filters = {}, topK = DEFAULT_LEXICAL_TOP_K, policy = {}) {
   const trimmedQuery = cleanText(query)
   if (!trimmedQuery) return []
 
   const normalizedFilters = normalizeFilters(filters)
+  const languageFilter = resolveLanguageFilter(
+    normalizedFilters.language,
+    normalizeLocaleMatchMode(policy.languageMatchMode),
+  )
   const sql = `
     WITH q AS (
       SELECT websearch_to_tsquery('simple', $1) AS tsq
@@ -172,28 +306,32 @@ async function fetchLexicalCandidates(pool, query, filters = {}, topK = DEFAULT_
       AND ${createQueryTextExpression('n')} @@ q.tsq
       AND ($2::text[] IS NULL OR n.network = ANY($2::text[]))
       AND ($3::text IS NULL OR upper(n.market) = upper($3::text))
-      AND ($4::text IS NULL OR lower(n.language) = lower($4::text))
+      AND ($4::text[] IS NULL OR lower(n.language) = ANY($4::text[]))
     ORDER BY lexical_score DESC, n.updated_at DESC
-    LIMIT $5
+      LIMIT $5
   `
 
   const result = await pool.query(sql, [
     trimmedQuery,
     normalizedFilters.networks.length > 0 ? normalizedFilters.networks : null,
     normalizedFilters.market || null,
-    normalizedFilters.language || null,
+    languageFilter.accepted.length > 0 ? languageFilter.accepted : null,
     toPositiveInteger(topK, DEFAULT_LEXICAL_TOP_K),
   ])
 
   return Array.isArray(result.rows) ? result.rows : []
 }
 
-async function fetchVectorCandidates(pool, query, filters = {}, topK = DEFAULT_VECTOR_TOP_K) {
+async function fetchVectorCandidates(pool, query, filters = {}, topK = DEFAULT_VECTOR_TOP_K, policy = {}) {
   const trimmedQuery = cleanText(query)
   if (!trimmedQuery) return []
 
   const embedding = buildQueryEmbedding(trimmedQuery)
   const normalizedFilters = normalizeFilters(filters)
+  const languageFilter = resolveLanguageFilter(
+    normalizedFilters.language,
+    normalizeLocaleMatchMode(policy.languageMatchMode),
+  )
 
   const sql = `
     SELECT
@@ -219,7 +357,7 @@ async function fetchVectorCandidates(pool, query, filters = {}, topK = DEFAULT_V
     WHERE n.availability = 'active'
       AND ($2::text[] IS NULL OR n.network = ANY($2::text[]))
       AND ($3::text IS NULL OR upper(n.market) = upper($3::text))
-      AND ($4::text IS NULL OR lower(n.language) = lower($4::text))
+      AND ($4::text[] IS NULL OR lower(n.language) = ANY($4::text[]))
     ORDER BY e.embedding <=> $1::vector ASC
     LIMIT $5
   `
@@ -228,7 +366,7 @@ async function fetchVectorCandidates(pool, query, filters = {}, topK = DEFAULT_V
     vectorToSqlLiteral(embedding.vector),
     normalizedFilters.networks.length > 0 ? normalizedFilters.networks : null,
     normalizedFilters.market || null,
-    normalizedFilters.language || null,
+    languageFilter.accepted.length > 0 ? languageFilter.accepted : null,
     toPositiveInteger(topK, DEFAULT_VECTOR_TOP_K),
   ])
 
@@ -307,6 +445,16 @@ export async function retrieveOpportunityCandidates(input = {}, options = {}) {
   const startedAt = Date.now()
   const query = cleanText(input.query)
   const filters = normalizeFilters(input.filters)
+  const languageMatchMode = normalizeLocaleMatchMode(input.languageMatchMode)
+  const languageResolved = resolveLanguageFilter(filters.language, languageMatchMode)
+  const houseLowInfoFilterEnabled = parseBoolean(
+    input.houseLowInfoFilterEnabled,
+    DEFAULT_HOUSE_LOWINFO_FILTER_ENABLED,
+  )
+  const houseLowInfoLexicalThreshold = clamp01(
+    input.minLexicalScore,
+    DEFAULT_INTENT_MIN_LEXICAL_SCORE,
+  )
   const lexicalTopK = toPositiveInteger(input.lexicalTopK, DEFAULT_LEXICAL_TOP_K)
   const vectorTopK = toPositiveInteger(input.vectorTopK, DEFAULT_VECTOR_TOP_K)
   const finalTopK = toPositiveInteger(input.finalTopK, DEFAULT_FINAL_TOP_K)
@@ -329,9 +477,17 @@ export async function retrieveOpportunityCandidates(input = {}, options = {}) {
           ? fallbackResult.candidates
           : createFallbackCandidatesFromOffers(
             Array.isArray(fallbackResult?.offers) ? fallbackResult.offers : [],
-            { query, filters },
+            {
+              query,
+              filters,
+              languageMatchMode,
+            },
           )
-        const sliced = fallbackCandidates.slice(0, finalTopK)
+        const filtered = applyHouseLowInfoFilter(fallbackCandidates, {
+          enabled: houseLowInfoFilterEnabled,
+          minLexicalScore: houseLowInfoLexicalThreshold,
+        })
+        const sliced = filtered.candidates.slice(0, finalTopK)
         if (sliced.length > 0) {
           return {
             candidates: sliced,
@@ -341,6 +497,11 @@ export async function retrieveOpportunityCandidates(input = {}, options = {}) {
               fusedHitCount: sliced.length,
               filters,
               query,
+              languageMatchMode,
+              languageResolved,
+              networkCandidateCountsBeforeFilter: filtered.beforeCounts,
+              networkCandidateCountsAfterFilter: filtered.afterCounts,
+              houseLowInfoFilteredCount: filtered.filteredCount,
               mode: String(fallbackResult?.debug?.mode || 'connector_live_fallback'),
               fallbackMeta: fallbackResult?.debug && typeof fallbackResult.debug === 'object'
                 ? fallbackResult.debug
@@ -357,6 +518,11 @@ export async function retrieveOpportunityCandidates(input = {}, options = {}) {
             fusedHitCount: 0,
             filters,
             query,
+            languageMatchMode,
+            languageResolved,
+            networkCandidateCountsBeforeFilter: filtered.beforeCounts,
+            networkCandidateCountsAfterFilter: filtered.afterCounts,
+            houseLowInfoFilteredCount: filtered.filteredCount,
             mode: String(fallbackResult?.debug?.mode || 'connector_live_fallback_empty'),
             fallbackMeta: fallbackResult?.debug && typeof fallbackResult.debug === 'object'
               ? fallbackResult.debug
@@ -373,6 +539,11 @@ export async function retrieveOpportunityCandidates(input = {}, options = {}) {
             fusedHitCount: 0,
             filters,
             query,
+            languageMatchMode,
+            languageResolved,
+            networkCandidateCountsBeforeFilter: { partnerstack: 0, cj: 0, house: 0 },
+            networkCandidateCountsAfterFilter: { partnerstack: 0, cj: 0, house: 0 },
+            houseLowInfoFilteredCount: 0,
             mode: 'connector_live_fallback_error',
             fallbackError: error instanceof Error ? error.message : 'fallback_failed',
             retrievalMs: Math.max(0, Date.now() - startedAt),
@@ -388,6 +559,11 @@ export async function retrieveOpportunityCandidates(input = {}, options = {}) {
         fusedHitCount: 0,
         filters,
         query,
+        languageMatchMode,
+        languageResolved,
+        networkCandidateCountsBeforeFilter: { partnerstack: 0, cj: 0, house: 0 },
+        networkCandidateCountsAfterFilter: { partnerstack: 0, cj: 0, house: 0 },
+        houseLowInfoFilteredCount: 0,
         mode: 'inventory_store_unavailable',
         retrievalMs: Math.max(0, Date.now() - startedAt),
       },
@@ -395,22 +571,36 @@ export async function retrieveOpportunityCandidates(input = {}, options = {}) {
   }
 
   const [lexicalRows, vectorRows] = await Promise.all([
-    fetchLexicalCandidates(pool, query, filters, lexicalTopK),
-    fetchVectorCandidates(pool, query, filters, vectorTopK),
+    fetchLexicalCandidates(pool, query, filters, lexicalTopK, {
+      languageMatchMode,
+    }),
+    fetchVectorCandidates(pool, query, filters, vectorTopK, {
+      languageMatchMode,
+    }),
   ])
 
   const fused = rrfFuse(lexicalRows, vectorRows, {
     rrfK: toPositiveInteger(input.rrfK, DEFAULT_RRF_K),
-  }).slice(0, finalTopK)
+  })
+  const filtered = applyHouseLowInfoFilter(fused, {
+    enabled: houseLowInfoFilterEnabled,
+    minLexicalScore: houseLowInfoLexicalThreshold,
+  })
+  const sliced = filtered.candidates.slice(0, finalTopK)
 
   return {
-    candidates: fused,
+    candidates: sliced,
     debug: {
       lexicalHitCount: lexicalRows.length,
       vectorHitCount: vectorRows.length,
-      fusedHitCount: fused.length,
+      fusedHitCount: sliced.length,
       filters,
       query,
+      languageMatchMode,
+      languageResolved,
+      networkCandidateCountsBeforeFilter: filtered.beforeCounts,
+      networkCandidateCountsAfterFilter: filtered.afterCounts,
+      houseLowInfoFilteredCount: filtered.filteredCount,
       retrievalMs: Math.max(0, Date.now() - startedAt),
     },
   }

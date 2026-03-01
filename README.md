@@ -132,9 +132,28 @@
 3. 检索面（Retrieval Plane）
 - Runtime 并发聚合多网络（PartnerStack / house；CJ 默认关闭），执行召回、归一化、排序、降级。
 - 可通过 `MEDIATION_ENABLED_NETWORKS` 覆盖默认网络白名单（默认：`partnerstack,house`）。
+- v2 语言匹配默认 `MEDIATION_LOCALE_MATCH_MODE=locale_or_base`：`en-US` 会同时匹配 `en-US` 与 `en`，避免 House 的 `en` 库存被整体过滤。
+- v2 相关性门槛默认（`chat_intent_recommendation_v1`）：`lexical >= 0.02` 或 `vector >= 0.35`，并使用 `scoreFloor=0.38`；阈值可通过 env 调整：
+  - `MEDIATION_INTENT_MIN_LEXICAL_SCORE`
+  - `MEDIATION_INTENT_MIN_VECTOR_SCORE`
+  - `MEDIATION_INTENT_SCORE_FLOOR`
+- House 低信息过滤默认开启（`MEDIATION_HOUSE_LOWINFO_FILTER_ENABLED=true`）：对 `synthetic` + 模板描述 + 低 lexical 的候选做运行时剔除。
 
 4. 体验面（Experience Plane）
 - 客户端负责 SDK 调用和渲染；广告链路全部 fail-open，不阻塞主回答。
+
+### requestId 排障（v2 相关性）
+
+在 `POST /api/v2/bid` 响应 `diagnostics` 中优先看：
+
+1. `retrievalDebug.languageMatchMode` 与 `retrievalDebug.languageResolved`
+- 判断请求语言是否按 locale/base 扩展匹配。
+
+2. `retrievalDebug.networkCandidateCountsBeforeFilter / AfterFilter`
+- 判断 House 是否进入候选，以及是否被 low-info 过滤剔除。
+
+3. `rankingDebug.relevanceGate` 与 `rankingDebug.relevanceFilteredCount`
+- 判断是否触发相关性门槛、剔除了多少候选、winner 的 lexical/vector 分数。
 
 <a id="readme-sdk-docs"></a>
 ## SDK 文档入口（重点）

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { runBidAggregationPipeline } from '../../src/runtime/index.js'
+import { retrieveOpportunityCandidates } from '../../src/runtime/opportunity-retrieval.js'
 
 function makeOffer({ network, offerId, price, quality = 0 }) {
   return {
@@ -16,6 +17,39 @@ function makeOffer({ network, offerId, price, quality = 0 }) {
     entityType: 'service',
     qualityScore: quality,
     bidValue: price,
+  }
+}
+
+function makeInventoryRow({
+  offerId,
+  network,
+  title,
+  description,
+  targetUrl,
+  language = 'en-US',
+  tags = [],
+  lexicalScore = 0,
+  vectorScore = 0,
+}) {
+  return {
+    offer_id: offerId,
+    network,
+    upstream_offer_id: `${offerId}:upstream`,
+    title,
+    description,
+    target_url: targetUrl,
+    market: 'US',
+    language,
+    availability: 'active',
+    quality: 0.8,
+    bid_hint: 1.2,
+    policy_weight: 0.1,
+    freshness_at: '2026-02-26T00:00:00.000Z',
+    tags,
+    metadata: {},
+    updated_at: '2026-02-26T00:00:00.000Z',
+    lexical_score: lexicalScore,
+    vector_score: vectorScore,
   }
 }
 
@@ -127,4 +161,118 @@ test('v2 bid runtime: tie breaks by policy weight then networkId', async () => {
   })
 
   assert.equal(lexical.winnerBid.dsp, 'cj')
+})
+
+test('v2 bid runtime: retrieval language policy locale_or_base keeps house en for en-US request', async () => {
+  const languageFilters = []
+  const pool = {
+    async query(sql, params) {
+      languageFilters.push(params[3])
+      if (String(sql).includes('websearch_to_tsquery')) {
+        return {
+          rows: [
+            makeInventoryRow({
+              offerId: 'house:resource:001',
+              network: 'house',
+              title: 'Natural Resource Broker',
+              description: 'Buy commodity and mining stocks on one platform.',
+              targetUrl: 'https://house.example.com/resource',
+              language: 'en',
+              lexicalScore: 0.21,
+            }),
+          ],
+        }
+      }
+      return {
+        rows: [
+          makeInventoryRow({
+            offerId: 'partnerstack:stocks:001',
+            network: 'partnerstack',
+            title: 'Global Stocks Platform',
+            description: 'Research and trade resource equities.',
+            targetUrl: 'https://partner.example.com/stocks',
+            language: 'en-US',
+            vectorScore: 0.56,
+          }),
+        ],
+      }
+    },
+  }
+
+  const result = await retrieveOpportunityCandidates({
+    query: 'where can i buy natural resource stocks',
+    filters: {
+      networks: ['partnerstack', 'house'],
+      market: 'US',
+      language: 'en-US',
+    },
+    languageMatchMode: 'locale_or_base',
+    houseLowInfoFilterEnabled: false,
+    lexicalTopK: 10,
+    vectorTopK: 10,
+    finalTopK: 10,
+  }, {
+    pool,
+  })
+
+  assert.deepEqual(languageFilters[0], ['en-us', 'en'])
+  assert.deepEqual(languageFilters[1], ['en-us', 'en'])
+  assert.equal(result.debug.languageMatchMode, 'locale_or_base')
+  assert.deepEqual(result.debug.languageResolved.accepted, ['en-us', 'en'])
+  assert.equal(result.debug.networkCandidateCountsBeforeFilter.house > 0, true)
+})
+
+test('v2 bid runtime: retrieval low-info house candidates are filtered before ranking', async () => {
+  const pool = {
+    async query(sql) {
+      if (String(sql).includes('websearch_to_tsquery')) {
+        return {
+          rows: [
+            makeInventoryRow({
+              offerId: 'house:synthetic:001',
+              network: 'house',
+              title: 'Generic Offer',
+              description: 'Option with strong category relevance and direct shopping intent.',
+              targetUrl: 'https://house.example.com/generic',
+              language: 'en',
+              tags: ['synthetic', 'finance'],
+              lexicalScore: 0.01,
+            }),
+            makeInventoryRow({
+              offerId: 'partnerstack:broker:001',
+              network: 'partnerstack',
+              title: 'Commodity Trading Platform',
+              description: 'Compare broker plans and trading tools.',
+              targetUrl: 'https://partner.example.com/broker',
+              language: 'en-US',
+              lexicalScore: 0.09,
+            }),
+          ],
+        }
+      }
+      return { rows: [] }
+    },
+  }
+
+  const result = await retrieveOpportunityCandidates({
+    query: 'platforms to buy natural resource stocks',
+    filters: {
+      networks: ['partnerstack', 'house'],
+      market: 'US',
+      language: 'en-US',
+    },
+    languageMatchMode: 'locale_or_base',
+    minLexicalScore: 0.02,
+    houseLowInfoFilterEnabled: true,
+    lexicalTopK: 10,
+    vectorTopK: 10,
+    finalTopK: 10,
+  }, {
+    pool,
+  })
+
+  assert.equal(result.debug.networkCandidateCountsBeforeFilter.house > 0, true)
+  assert.equal(result.debug.networkCandidateCountsAfterFilter.house, 0)
+  assert.equal(result.debug.houseLowInfoFilteredCount > 0, true)
+  assert.equal(result.candidates.some((item) => String(item.network).toLowerCase() === 'house'), false)
 })

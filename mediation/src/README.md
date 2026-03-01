@@ -34,6 +34,16 @@
 - 对 `attach.post_answer_render` 与 `next_step.intent_card`：均可加载 House Product Offers Catalog。
 - 对 `next_step.intent_card`：默认使用 Affiliate links catalog（PartnerStack `listLinksByPartnership` + CJ `listLinks`）作为商品库来源（当网络白名单包含对应网络时）。
 - 对 `next_step.intent_card`：在检索前先构建 `IntentCardCatalog`（统一 `item_id/title/url/network/category/tags`），再回填给候选用于匹配与追踪。
+- v2 语言匹配默认 `MEDIATION_LOCALE_MATCH_MODE=locale_or_base`，`en-US` 会同时匹配 `en-US` 与 `en`（可回滚为 `exact`）。
+- v2 `chat_intent_recommendation_v1` 默认相关性门槛：
+  - `MEDIATION_INTENT_MIN_LEXICAL_SCORE=0.02`
+  - `MEDIATION_INTENT_MIN_VECTOR_SCORE=0.35`
+  - `MEDIATION_INTENT_SCORE_FLOOR=0.38`
+- House 低信息过滤默认开启：`MEDIATION_HOUSE_LOWINFO_FILTER_ENABLED=true`。
+- 运行时诊断新增：
+  - `retrievalDebug.languageMatchMode / languageResolved`
+  - `retrievalDebug.networkCandidateCountsBeforeFilter / networkCandidateCountsAfterFilter`
+  - `rankingDebug.relevanceGate / relevanceFilteredCount`
 - `adResponse.placementId` 与输入 placement 对齐返回（例如 `attach.post_answer_render` / `next_step.intent_card`）。
 - 输出顺序：各 placement 均按排序结果直接输出，不再按网络分组重排。
 - 非 `testAllOffers` 模式下 v1 排序：相关性优先，其次质量（`qualityScore`），再次商业信号（`bidValue/epc/cpc`），最后可用性与新鲜度作为平局兜底。

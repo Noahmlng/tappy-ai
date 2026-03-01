@@ -5,6 +5,9 @@ import {
 } from './pricing-model.js'
 
 const DEFAULT_SCORE_FLOOR = 0.32
+const DEFAULT_INTENT_MIN_LEXICAL_SCORE = 0.02
+const DEFAULT_INTENT_MIN_VECTOR_SCORE = 0.35
+const INTENT_RELEVANCE_GATED_PLACEMENT = 'chat_intent_recommendation_v1'
 
 function cleanText(value) {
   return String(value || '').trim().replace(/\s+/g, ' ')
@@ -22,6 +25,10 @@ function toFiniteNumber(value, fallback = 0) {
   const n = Number(value)
   if (!Number.isFinite(n)) return fallback
   return n
+}
+
+function shouldApplyRelevanceGate(placementId = '') {
+  return cleanText(placementId) === INTENT_RELEVANCE_GATED_PLACEMENT
 }
 
 function normalizeQuality(value) {
@@ -184,6 +191,27 @@ export function rankOpportunityCandidates(input = {}) {
   const candidates = Array.isArray(input.candidates) ? input.candidates : []
   const pricingDefaults = getPricingMediationDefaults()
   const weights = getPricingModelWeights()
+  const placementId = cleanText(input.placementId)
+  const relevanceGateApplied = shouldApplyRelevanceGate(placementId)
+  const minLexicalScore = clamp01(
+    input.minLexicalScore ?? DEFAULT_INTENT_MIN_LEXICAL_SCORE,
+    DEFAULT_INTENT_MIN_LEXICAL_SCORE,
+  )
+  const minVectorScore = clamp01(
+    input.minVectorScore ?? DEFAULT_INTENT_MIN_VECTOR_SCORE,
+    DEFAULT_INTENT_MIN_VECTOR_SCORE,
+  )
+  const scoreFloor = clamp01(input.scoreFloor ?? DEFAULT_SCORE_FLOOR)
+  const baseRelevanceGate = {
+    applied: relevanceGateApplied,
+    placementId: placementId || '',
+    minLexicalScore,
+    minVectorScore,
+    baseEligibleCount: 0,
+    filteredCount: 0,
+    eligibleCount: 0,
+    triggered: false,
+  }
   const blockedTopics = Array.isArray(input.blockedTopics)
     ? input.blockedTopics.map((item) => cleanText(item)).filter(Boolean)
     : []
@@ -199,7 +227,9 @@ export function rankOpportunityCandidates(input = {}) {
       debug: {
         policyBlockedTopic: blockedTopic,
         candidateCount: candidates.length,
-        scoreFloor: clamp01(input.scoreFloor ?? DEFAULT_SCORE_FLOOR),
+        scoreFloor,
+        relevanceGate: baseRelevanceGate,
+        relevanceFilteredCount: 0,
         pricingModel: pricingDefaults.modelVersion,
       },
     }
@@ -212,25 +242,43 @@ export function rankOpportunityCandidates(input = {}) {
       reasonCode: 'inventory_no_match',
       debug: {
         candidateCount: 0,
-        scoreFloor: clamp01(input.scoreFloor ?? DEFAULT_SCORE_FLOOR),
+        scoreFloor,
+        relevanceGate: baseRelevanceGate,
+        relevanceFilteredCount: 0,
         pricingModel: pricingDefaults.modelVersion,
       },
     }
   }
 
-  const eligible = candidates
+  const baseEligible = candidates
     .filter((item) => cleanText(item?.title) && cleanText(item?.targetUrl))
     .filter((item) => cleanText(item?.availability || 'active').toLowerCase() === 'active')
+  const eligible = relevanceGateApplied
+    ? baseEligible.filter((item) => (
+      toFiniteNumber(item?.lexicalScore, 0) >= minLexicalScore
+      || toFiniteNumber(item?.vectorScore, 0) >= minVectorScore
+    ))
+    : baseEligible
+  const relevanceFilteredCount = Math.max(0, baseEligible.length - eligible.length)
+  const relevanceGate = {
+    ...baseRelevanceGate,
+    baseEligibleCount: baseEligible.length,
+    filteredCount: relevanceFilteredCount,
+    eligibleCount: eligible.length,
+    triggered: relevanceGateApplied && relevanceFilteredCount > 0,
+  }
 
   if (eligible.length === 0) {
     return {
       winner: null,
       ranked: [],
-      reasonCode: 'policy_blocked',
+      reasonCode: relevanceGateApplied ? 'inventory_no_match' : 'policy_blocked',
       debug: {
         candidateCount: candidates.length,
         eligibleCount: 0,
-        scoreFloor: clamp01(input.scoreFloor ?? DEFAULT_SCORE_FLOOR),
+        scoreFloor,
+        relevanceGate,
+        relevanceFilteredCount,
         pricingModel: pricingDefaults.modelVersion,
       },
     }
@@ -250,7 +298,6 @@ export function rankOpportunityCandidates(input = {}) {
       return String(a.offerId || '').localeCompare(String(b.offerId || ''))
     })
 
-  const scoreFloor = clamp01(input.scoreFloor ?? DEFAULT_SCORE_FLOOR)
   const auctionWinner = ranked[0] || null
   const topRankCandidate = [...scored].sort((a, b) => {
     if (b.rankScore !== a.rankScore) return b.rankScore - a.rankScore
@@ -268,6 +315,11 @@ export function rankOpportunityCandidates(input = {}) {
     && (topRankCandidate.rankScore - auctionWinner.rankScore) >= rankDominanceMargin,
   )
   const winner = shouldProtectRankWinner ? topRankCandidate : auctionWinner
+  const relevanceGateWithWinner = {
+    ...relevanceGate,
+    winnerLexicalScore: winner ? toFiniteNumber(winner.lexicalScore, 0) : 0,
+    winnerVectorScore: winner ? toFiniteNumber(winner.vectorScore, 0) : 0,
+  }
 
   if (!winner || winner.rankScore < scoreFloor) {
     return {
@@ -282,6 +334,8 @@ export function rankOpportunityCandidates(input = {}) {
         topEconomicScore: winner?.pricing ? winner.pricing.economicScore : 0,
         rankDominanceApplied: false,
         scoreFloor,
+        relevanceGate: relevanceGateWithWinner,
+        relevanceFilteredCount,
         pricingModel: pricingDefaults.modelVersion,
         pricingWeights: weights,
       },
@@ -307,6 +361,8 @@ export function rankOpportunityCandidates(input = {}) {
       rankDominanceFloor,
       rankDominanceMargin,
       scoreFloor,
+      relevanceGate: relevanceGateWithWinner,
+      relevanceFilteredCount,
       pricingModel: pricingDefaults.modelVersion,
       pricingWeights: weights,
     },

@@ -246,6 +246,14 @@ test('v2 bid API returns unified response on the single runtime path', async () 
     assert.equal(retrievalNetworks.includes('partnerstack'), true)
     assert.equal(retrievalNetworks.includes('house'), true)
     assert.equal(retrievalNetworks.includes('cj'), false)
+    assert.equal(typeof bid.payload?.diagnostics?.retrievalDebug?.languageMatchMode, 'string')
+    const languageResolved = bid.payload?.diagnostics?.retrievalDebug?.languageResolved
+      && typeof bid.payload?.diagnostics?.retrievalDebug?.languageResolved === 'object'
+      ? bid.payload.diagnostics.retrievalDebug.languageResolved
+      : {}
+    assert.equal(Array.isArray(languageResolved.accepted), true)
+    assert.equal(typeof bid.payload?.diagnostics?.rankingDebug?.relevanceGate, 'object')
+    assert.equal(typeof bid.payload?.diagnostics?.rankingDebug?.relevanceFilteredCount, 'number')
     assert.equal(bid.payload?.diagnostics?.pricingVersion, 'cpa_mock_v2')
     assert.equal(typeof bid.payload?.diagnostics?.timingsMs?.total, 'number')
     assert.equal(typeof bid.payload?.diagnostics?.budgetMs?.total, 'number')

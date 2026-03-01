@@ -7,6 +7,8 @@ const REQUIRED_ENV_VARS = [
 ]
 const SUPPORTED_MEDIATION_NETWORKS = new Set(['partnerstack', 'cj', 'house'])
 const DEFAULT_ENABLED_MEDIATION_NETWORKS = ['partnerstack', 'house']
+const DEFAULT_LOCALE_MATCH_MODE = 'locale_or_base'
+const SUPPORTED_LOCALE_MATCH_MODES = new Set(['exact', 'locale_or_base'])
 
 function readEnv(env, key, { required = false } = {}) {
   const value = env[key]
@@ -23,6 +25,29 @@ function toPositiveInteger(value, fallback) {
   const numeric = Number(value)
   if (!Number.isFinite(numeric) || numeric <= 0) return fallback
   return Math.floor(numeric)
+}
+
+function toNumberInRange(value, fallback, min = 0, max = 1) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return fallback
+  if (numeric < min || numeric > max) return fallback
+  return numeric
+}
+
+function parseBoolean(value, fallback = false) {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (!normalized) return fallback
+  if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) return true
+  if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) return false
+  return fallback
+}
+
+function parseLocaleMatchMode(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized) return DEFAULT_LOCALE_MATCH_MODE
+  if (normalized === 'base_or_locale') return 'locale_or_base'
+  if (!SUPPORTED_LOCALE_MATCH_MODES.has(normalized)) return DEFAULT_LOCALE_MATCH_MODE
+  return normalized
 }
 
 function parseEnabledNetworks(rawValue) {
@@ -62,6 +87,27 @@ export function loadRuntimeConfig(env = process.env, options = {}) {
     },
     networkPolicy: {
       enabledNetworks: parseEnabledNetworks(readEnv(env, 'MEDIATION_ENABLED_NETWORKS', { required: false }))
+    },
+    languagePolicy: {
+      localeMatchMode: parseLocaleMatchMode(readEnv(env, 'MEDIATION_LOCALE_MATCH_MODE', { required: false })),
+    },
+    relevancePolicy: {
+      minLexicalScore: toNumberInRange(
+        readEnv(env, 'MEDIATION_INTENT_MIN_LEXICAL_SCORE', { required: false }),
+        0.02,
+      ),
+      minVectorScore: toNumberInRange(
+        readEnv(env, 'MEDIATION_INTENT_MIN_VECTOR_SCORE', { required: false }),
+        0.35,
+      ),
+      intentScoreFloor: toNumberInRange(
+        readEnv(env, 'MEDIATION_INTENT_SCORE_FLOOR', { required: false }),
+        0.38,
+      ),
+      houseLowInfoFilterEnabled: parseBoolean(
+        readEnv(env, 'MEDIATION_HOUSE_LOWINFO_FILTER_ENABLED', { required: false }),
+        true,
+      ),
     }
   }
 }

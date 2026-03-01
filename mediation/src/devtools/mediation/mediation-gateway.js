@@ -691,8 +691,10 @@ function isLlmIntentFallbackEnabled() {
   return true
 }
 
-function resolveRuntimeEnabledNetworks() {
-  const runtimeConfig = loadRuntimeConfig(process.env, { strict: false })
+function resolveRuntimeEnabledNetworks(runtimeConfigInput = null) {
+  const runtimeConfig = runtimeConfigInput && typeof runtimeConfigInput === 'object'
+    ? runtimeConfigInput
+    : loadRuntimeConfig(process.env, { strict: false })
   const configured = Array.isArray(runtimeConfig?.networkPolicy?.enabledNetworks)
     ? runtimeConfig.networkPolicy.enabledNetworks
     : []
@@ -706,8 +708,8 @@ function resolveRuntimeEnabledNetworks() {
   return normalized.length > 0 ? normalized : [...DEFAULT_ENABLED_MEDIATION_NETWORKS]
 }
 
-function deriveInventoryNetworksFromPlacement(placement = {}) {
-  const runtimeEnabledNetworks = resolveRuntimeEnabledNetworks()
+function deriveInventoryNetworksFromPlacement(placement = {}, runtimeConfig = null) {
+  const runtimeEnabledNetworks = resolveRuntimeEnabledNetworks(runtimeConfig)
   const runtimeEnabledSet = new Set(runtimeEnabledNetworks)
   const bidders = Array.isArray(placement?.bidders) ? placement.bidders : []
   const enabled = bidders
@@ -7729,6 +7731,7 @@ async function evaluateSinglePlacementOpportunity({
   intentUpstreamFailure = null,
   precheckInventory = {},
   writer,
+  runtimeConfig = null,
 }) {
   const placementId = normalizePlacementIdWithMigration(
     String(placement?.placementId || '').trim(),
@@ -7738,6 +7741,17 @@ async function evaluateSinglePlacementOpportunity({
   const triggerType = resolveTriggerTypeByPlacementId(placementId)
   const blockedTopics = normalizeStringList(placement?.trigger?.blockedTopics)
   const intentThreshold = clampNumber(placement?.trigger?.intentThreshold, 0, 1, 0.6)
+  const languageMatchMode = String(runtimeConfig?.languagePolicy?.localeMatchMode || 'locale_or_base').trim() || 'locale_or_base'
+  const minLexicalScore = clampNumber(runtimeConfig?.relevancePolicy?.minLexicalScore, 0, 1, 0.02)
+  const minVectorScore = clampNumber(runtimeConfig?.relevancePolicy?.minVectorScore, 0, 1, 0.35)
+  const intentScoreFloor = clampNumber(runtimeConfig?.relevancePolicy?.intentScoreFloor, 0, 1, 0.38)
+  const houseLowInfoFilterEnabled = parseFeatureSwitch(
+    runtimeConfig?.relevancePolicy?.houseLowInfoFilterEnabled,
+    true,
+  )
+  const scoreFloor = placementId === PLACEMENT_ID_INTENT_RECOMMENDATION
+    ? intentScoreFloor
+    : 0.32
 
   const stageStatusMap = createV2BidStageStatusMap()
   if (placement?.enabled === false) {
@@ -7763,7 +7777,19 @@ async function evaluateSinglePlacementOpportunity({
     vectorHitCount: 0,
     fusedHitCount: 0,
   }
-  let rankingDebug = {}
+  let rankingDebug = {
+    relevanceGate: {
+      applied: placementId === PLACEMENT_ID_INTENT_RECOMMENDATION,
+      placementId,
+      minLexicalScore,
+      minVectorScore,
+      baseEligibleCount: 0,
+      filteredCount: 0,
+      eligibleCount: 0,
+      triggered: false,
+    },
+    relevanceFilteredCount: 0,
+  }
   let gatePassed = false
   let budgetDecision = {
     mode: BUDGET_ENFORCEMENT_MODE,
@@ -7804,6 +7830,7 @@ async function evaluateSinglePlacementOpportunity({
     stageStatusMap.retrieval = 'skipped'
     stageStatusMap.ranking = 'skipped'
     rankingDebug = {
+      ...rankingDebug,
       upstreamFailure: intentUpstreamFailure,
     }
   } else {
@@ -7820,6 +7847,7 @@ async function evaluateSinglePlacementOpportunity({
       stageStatusMap.retrieval = 'blocked'
       stageStatusMap.ranking = 'blocked'
       rankingDebug = {
+        ...rankingDebug,
         policyBlockedTopic: blockedTopic,
       }
     } else if (intent.score < intentThreshold) {
@@ -7827,6 +7855,7 @@ async function evaluateSinglePlacementOpportunity({
       stageStatusMap.retrieval = 'blocked'
       stageStatusMap.ranking = 'blocked'
       rankingDebug = {
+        ...rankingDebug,
         intentBelowThreshold: true,
         threshold: intentThreshold,
         intentScore: intent.score,
@@ -7838,10 +7867,13 @@ async function evaluateSinglePlacementOpportunity({
         const retrieval = await retrieveOpportunityCandidates({
           query: messageContext.query,
           filters: {
-            networks: deriveInventoryNetworksFromPlacement(placement),
+            networks: deriveInventoryNetworksFromPlacement(placement, runtimeConfig),
             market: 'US',
             language: 'en-US',
           },
+          languageMatchMode,
+          minLexicalScore,
+          houseLowInfoFilterEnabled,
           lexicalTopK: 28,
           vectorTopK: 28,
           finalTopK: 24,
@@ -7864,7 +7896,9 @@ async function evaluateSinglePlacementOpportunity({
           answerText: messageContext.answerText,
           blockedTopics,
           intentScore: intent.score,
-          scoreFloor: 0.32,
+          scoreFloor,
+          minLexicalScore,
+          minVectorScore,
           placementId,
           triggerType,
           placement: 'block',
@@ -7877,7 +7911,7 @@ async function evaluateSinglePlacementOpportunity({
           request,
           requestId,
           placementId,
-          scoreFloor: clampNumber(ranking?.debug?.scoreFloor, 0, 1, 0.32),
+          scoreFloor: clampNumber(ranking?.debug?.scoreFloor, 0, 1, scoreFloor),
         })
         winnerCandidate = budgetRiskSelection?.winnerCandidate && typeof budgetRiskSelection.winnerCandidate === 'object'
           ? budgetRiskSelection.winnerCandidate
@@ -8044,6 +8078,7 @@ async function evaluateV2BidOpportunityFirst(payload) {
   })
   const messageContext = deriveBidMessageContext(request.messages)
   const writer = createOpportunityChainWriter()
+  const runtimeConfig = loadRuntimeConfig(process.env, { strict: false })
 
   let precheckInventory = normalizeInventoryPrecheck()
   try {
@@ -8067,7 +8102,6 @@ async function evaluateV2BidOpportunityFirst(payload) {
   if (placements.length > 0) {
     const intentStartedAt = Date.now()
     try {
-      const runtimeConfig = loadRuntimeConfig(process.env, { strict: false })
       intent = await scoreIntentOpportunityFirst({
         query: messageContext.query,
         answerText: messageContext.answerText,
@@ -8100,6 +8134,7 @@ async function evaluateV2BidOpportunityFirst(payload) {
         intentUpstreamFailure,
         precheckInventory,
         writer,
+        runtimeConfig,
       })),
     )
     : []

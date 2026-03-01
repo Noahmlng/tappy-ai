@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { clearNetworkHealthState, clearRuntimeCaches, runAdsRetrievalPipeline } from '../../src/runtime/index.js'
+import { rankOpportunityCandidates } from '../../src/runtime/opportunity-ranking.js'
 
 function createRuntimeConfig() {
   return {
@@ -93,4 +94,37 @@ test('relevance guard: finance intent blocks cloud-only ad matches', async () =>
   assert.equal(result.debug.semanticFilteredOut, 1)
   assert.equal(result.debug.matchedCandidates, 0)
   assert.equal(result.adResponse.ads.length, 0)
+})
+
+test('relevance guard: v2 intent placement drops low lexical and low vector candidates', () => {
+  const ranked = rankOpportunityCandidates({
+    placementId: 'chat_intent_recommendation_v1',
+    query: 'buy natural resource stocks',
+    answerText: 'looking for investment platforms',
+    intentScore: 0.82,
+    scoreFloor: 0.38,
+    minLexicalScore: 0.02,
+    minVectorScore: 0.35,
+    candidates: [
+      {
+        offerId: 'partnerstack:link:taxcycle',
+        network: 'partnerstack',
+        title: 'TaxCycle',
+        description: 'Tax filing tool for accountants',
+        targetUrl: 'https://example.com/taxcycle',
+        availability: 'active',
+        quality: 0.94,
+        bidHint: 8.8,
+        policyWeight: 0.1,
+        lexicalScore: 0,
+        vectorScore: 0.11,
+        fusedScore: 0.92,
+      },
+    ],
+  })
+
+  assert.equal(ranked.reasonCode, 'inventory_no_match')
+  assert.equal(ranked.winner, null)
+  assert.equal(ranked.debug.relevanceFilteredCount, 1)
+  assert.equal(ranked.debug.relevanceGate?.applied, true)
 })
