@@ -309,6 +309,19 @@ const V2_BID_MESSAGE_ALLOWED_FIELDS = new Set([
   'timestamp',
 ])
 const V2_BID_MESSAGE_ROLES = new Set(['user', 'assistant', 'system'])
+const DEFAULT_RETRIEVAL_QUERY_MODE = 'latest_user_plus_entities'
+const RETRIEVAL_QUERY_MODES = new Set([
+  DEFAULT_RETRIEVAL_QUERY_MODE,
+  'recent_user_turns_concat',
+])
+const RETRIEVAL_ENTITY_STOPWORDS = new Set([
+  'the', 'and', 'for', 'with', 'from', 'that', 'this', 'those', 'these', 'have', 'will', 'your', 'about', 'which',
+  'what', 'when', 'where', 'who', 'how', 'why', 'would', 'could', 'should', 'very', 'more', 'most',
+  'best', 'better', 'recommend', 'recommendation', 'recommendations', 'compare', 'comparison', 'price', 'prices',
+  'pricing', 'deal', 'deals', 'tool', 'tools', 'platform', 'platforms',
+  'assistant', 'user', 'please', 'thanks',
+  '推荐', '比较', '对比', '价格', '优惠', '哪个好', '什么', '怎么', '可以', '帮我', '一下',
+])
 const MANAGED_ROUTING_MODE = 'managed_mediation'
 const NEXT_STEP_INTENT_CARD_EVENTS = new Set(['followup_generation', 'follow_up_generation'])
 const POSTBACK_EVENT_TYPES = new Set(['postback'])
@@ -7544,6 +7557,71 @@ function detectLocaleHintFromText(value = '') {
   return 'en-US'
 }
 
+function normalizeRetrievalQueryMode(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized) return DEFAULT_RETRIEVAL_QUERY_MODE
+  if (normalized === 'latest_user') return DEFAULT_RETRIEVAL_QUERY_MODE
+  if (normalized === 'recent_turns_concat') return 'recent_user_turns_concat'
+  if (!RETRIEVAL_QUERY_MODES.has(normalized)) return DEFAULT_RETRIEVAL_QUERY_MODE
+  return normalized
+}
+
+function tokenizeRetrievalText(value = '') {
+  return String(value || '')
+    .toLowerCase()
+    .split(/[^a-z0-9\u4e00-\u9fff]+/g)
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 2)
+}
+
+function isRetrievalEntityToken(token = '') {
+  const normalized = String(token || '').trim().toLowerCase()
+  if (!normalized) return false
+  if (RETRIEVAL_ENTITY_STOPWORDS.has(normalized)) return false
+  if (/^\d+$/.test(normalized)) return false
+  if (normalized.length < 3 && !/[\u4e00-\u9fff]{2,}/.test(normalized)) return false
+  return true
+}
+
+function extractRetrievalEntitiesFromTurns(recentTurns = [], options = {}) {
+  const maxCount = Math.max(1, toPositiveInteger(options.maxCount, 12))
+  const rows = Array.isArray(recentTurns) ? recentTurns : []
+  if (rows.length <= 0) return []
+
+  const orderedRows = [...rows].reverse()
+  const dedupe = new Set()
+  const entities = []
+
+  for (const role of ['user', 'assistant']) {
+    for (const row of orderedRows) {
+      if (row?.role !== role) continue
+      const tokens = tokenizeRetrievalText(row?.content || '')
+      for (const token of tokens) {
+        if (!isRetrievalEntityToken(token)) continue
+        if (dedupe.has(token)) continue
+        dedupe.add(token)
+        entities.push(token)
+        if (entities.length >= maxCount) return entities
+      }
+    }
+  }
+
+  return entities
+}
+
+function buildRetrievalQuery(primaryQuery = '', entities = []) {
+  const query = clipText(primaryQuery, 1200)
+  if (!query) return ''
+  const queryTokenSet = new Set(tokenizeRetrievalText(query))
+  const extraTokens = (Array.isArray(entities) ? entities : [])
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter((item) => item && !queryTokenSet.has(item))
+    .slice(0, 20)
+
+  const merged = `${query} ${extraTokens.join(' ')}`.trim()
+  return clipText(merged, 1200)
+}
+
 function deriveBidMessageContext(messages = []) {
   const rows = Array.isArray(messages) ? messages : []
   const normalized = rows
@@ -7556,6 +7634,7 @@ function deriveBidMessageContext(messages = []) {
   const recentTurns = normalized.slice(-12)
   let query = ''
   let answerText = ''
+  let latestUserQuery = ''
   const recentUserTurns = recentTurns
     .filter((row) => row.role === 'user')
     .slice(-3)
@@ -7567,6 +7646,7 @@ function deriveBidMessageContext(messages = []) {
 
   if (recentUserTurns.length > 0) {
     query = recentUserTurns.join(' ').trim()
+    latestUserQuery = recentUserTurns[recentUserTurns.length - 1]
   }
   if (recentAssistantTurns.length > 0) {
     answerText = recentAssistantTurns.join(' ').trim()
@@ -7576,15 +7656,23 @@ function deriveBidMessageContext(messages = []) {
     for (let index = recentTurns.length - 1; index >= 0; index -= 1) {
       const row = recentTurns[index]
       if (!query && row.role === 'user') query = row.content
+      if (!latestUserQuery && row.role === 'user') latestUserQuery = row.content
       if (!answerText && row.role === 'assistant') answerText = row.content
       if (query && answerText) break
     }
   }
 
+  const retrievalEntities = extractRetrievalEntitiesFromTurns(recentTurns, {
+    maxCount: 12,
+  })
+  const retrievalQuery = buildRetrievalQuery(latestUserQuery || query, retrievalEntities)
   const localeHint = detectLocaleHintFromText(`${query} ${answerText}`)
   return {
     query: clipText(query, 1200),
     answerText: clipText(answerText, 1200),
+    latestUserQuery: clipText(latestUserQuery || query, 1200),
+    retrievalEntities,
+    retrievalQuery,
     recentTurns,
     localeHint,
   }
@@ -7871,6 +7959,24 @@ async function evaluateSinglePlacementOpportunity({
   const blockedTopics = normalizeStringList(placement?.trigger?.blockedTopics)
   const intentThreshold = clampNumber(placement?.trigger?.intentThreshold, 0, 1, 0.6)
   const languageMatchMode = String(runtimeConfig?.languagePolicy?.localeMatchMode || 'locale_or_base').trim() || 'locale_or_base'
+  const retrievalPolicy = runtimeConfig?.retrievalPolicy && typeof runtimeConfig.retrievalPolicy === 'object'
+    ? runtimeConfig.retrievalPolicy
+    : {}
+  const retrievalQueryMode = normalizeRetrievalQueryMode(retrievalPolicy.queryMode)
+  const retrievalQuery = retrievalQueryMode === 'recent_user_turns_concat'
+    ? String(messageContext.query || '').trim()
+    : String(
+      messageContext.retrievalQuery
+      || messageContext.latestUserQuery
+      || messageContext.query
+      || '',
+    ).trim()
+  const lexicalTopK = toPositiveInteger(retrievalPolicy.lexicalTopK, 120)
+  const vectorTopK = toPositiveInteger(retrievalPolicy.vectorTopK, 120)
+  const finalTopK = toPositiveInteger(retrievalPolicy.finalTopK, 40)
+  const hybridSparseWeight = clampNumber(retrievalPolicy?.hybrid?.sparseWeight, 0, 1, 0.65)
+  const hybridDenseWeight = clampNumber(retrievalPolicy?.hybrid?.denseWeight, 0, 1, 0.35)
+  const hybridStrategy = String(retrievalPolicy?.hybrid?.strategy || 'rrf_then_linear').trim() || 'rrf_then_linear'
   const minLexicalScore = clampNumber(runtimeConfig?.relevancePolicy?.minLexicalScore, 0, 1, 0.02)
   const minVectorScore = clampNumber(runtimeConfig?.relevancePolicy?.minVectorScore, 0, 1, 0.35)
   const intentScoreFloor = clampNumber(runtimeConfig?.relevancePolicy?.intentScoreFloor, 0, 1, 0.38)
@@ -7905,6 +8011,8 @@ async function evaluateSinglePlacementOpportunity({
     lexicalHitCount: 0,
     vectorHitCount: 0,
     fusedHitCount: 0,
+    queryMode: retrievalQueryMode,
+    queryUsed: retrievalQuery,
   }
   let rankingDebug = {
     relevanceGate: {
@@ -7994,18 +8102,22 @@ async function evaluateSinglePlacementOpportunity({
       try {
         const retrievalStartedAt = Date.now()
         const retrieval = await retrieveOpportunityCandidates({
-          query: messageContext.query,
+          query: retrievalQuery,
           filters: {
             networks: deriveInventoryNetworksFromPlacement(placement, runtimeConfig),
             market: 'US',
             language: 'en-US',
           },
+          queryMode: retrievalQueryMode,
           languageMatchMode,
           minLexicalScore,
           houseLowInfoFilterEnabled,
-          lexicalTopK: 28,
-          vectorTopK: 28,
-          finalTopK: 24,
+          lexicalTopK,
+          vectorTopK,
+          finalTopK,
+          hybridStrategy,
+          hybridSparseWeight,
+          hybridDenseWeight,
         }, {
           pool: isPostgresSettlementStore() ? settlementStore.pool : null,
           enableFallbackWhenInventoryUnavailable: isInventoryFallbackEnabled(),

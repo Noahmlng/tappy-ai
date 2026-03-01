@@ -1,14 +1,17 @@
 import { buildQueryEmbedding, vectorToSqlLiteral } from './embedding.js'
 import { normalizeUnifiedOffers } from '../offers/index.js'
 
-const DEFAULT_LEXICAL_TOP_K = 30
-const DEFAULT_VECTOR_TOP_K = 30
-const DEFAULT_FINAL_TOP_K = 24
+const DEFAULT_LEXICAL_TOP_K = 120
+const DEFAULT_VECTOR_TOP_K = 120
+const DEFAULT_FINAL_TOP_K = 40
 const DEFAULT_RRF_K = 60
 const DEFAULT_LOCALE_MATCH_MODE = 'locale_or_base'
 const DEFAULT_INTENT_MIN_LEXICAL_SCORE = 0.02
 const DEFAULT_HOUSE_LOWINFO_FILTER_ENABLED = true
 const HOUSE_LOWINFO_TEMPLATE_PHRASE = 'option with strong category relevance and direct shopping intent'
+const DEFAULT_HYBRID_STRATEGY = 'rrf_then_linear'
+const DEFAULT_HYBRID_SPARSE_WEIGHT = 0.65
+const DEFAULT_HYBRID_DENSE_WEIGHT = 0.35
 
 function cleanText(value) {
   return String(value || '').trim().replace(/\s+/g, ' ')
@@ -32,6 +35,12 @@ function clamp01(value, fallback = 0) {
   if (n < 0) return 0
   if (n > 1) return 1
   return n
+}
+
+function round(value, precision = 6) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return 0
+  return Number(n.toFixed(precision))
 }
 
 function parseBoolean(value, fallback = false) {
@@ -406,6 +415,7 @@ function mergeCandidate(base = {}, override = {}) {
     lexicalScore: toFiniteNumber(override.lexical_score ?? base.lexicalScore, 0),
     vectorScore: toFiniteNumber(override.vector_score ?? base.vectorScore, 0),
     fusedScore: toFiniteNumber(override.fusedScore ?? base.fusedScore, 0),
+    rrfScore: toFiniteNumber(override.rrfScore ?? base.rrfScore, 0),
     lexicalRank: toPositiveInteger(override.lexicalRank ?? base.lexicalRank, 0),
     vectorRank: toPositiveInteger(override.vectorRank ?? base.vectorRank, 0),
   }
@@ -420,10 +430,12 @@ function rrfFuse(lexicalRows = [], vectorRows = [], options = {}) {
     if (!offerId) return
     const rank = index + 1
     const current = merged.get(offerId) || {}
+    const nextRrfScore = toFiniteNumber(current.rrfScore ?? current.fusedScore, 0) + (1 / (k + rank))
     const next = mergeCandidate(current, {
       ...row,
       lexicalRank: rank,
-      fusedScore: toFiniteNumber(current.fusedScore, 0) + (1 / (k + rank)),
+      rrfScore: nextRrfScore,
+      fusedScore: nextRrfScore,
     })
     merged.set(offerId, next)
   })
@@ -433,10 +445,12 @@ function rrfFuse(lexicalRows = [], vectorRows = [], options = {}) {
     if (!offerId) return
     const rank = index + 1
     const current = merged.get(offerId) || {}
+    const nextRrfScore = toFiniteNumber(current.rrfScore ?? current.fusedScore, 0) + (1 / (k + rank))
     const next = mergeCandidate(current, {
       ...row,
       vectorRank: rank,
-      fusedScore: toFiniteNumber(current.fusedScore, 0) + (1 / (k + rank)),
+      rrfScore: nextRrfScore,
+      fusedScore: nextRrfScore,
     })
     merged.set(offerId, next)
   })
@@ -449,12 +463,126 @@ function rrfFuse(lexicalRows = [], vectorRows = [], options = {}) {
   })
 }
 
+function normalizeHybridWeights(input = {}) {
+  const sparseRaw = toFiniteNumber(input.sparseWeight, Number.NaN)
+  const denseRaw = toFiniteNumber(input.denseWeight, Number.NaN)
+  let sparseWeight = Number.isFinite(sparseRaw) && sparseRaw >= 0
+    ? sparseRaw
+    : DEFAULT_HYBRID_SPARSE_WEIGHT
+  let denseWeight = Number.isFinite(denseRaw) && denseRaw >= 0
+    ? denseRaw
+    : DEFAULT_HYBRID_DENSE_WEIGHT
+
+  if (sparseWeight + denseWeight <= 0) {
+    sparseWeight = DEFAULT_HYBRID_SPARSE_WEIGHT
+    denseWeight = DEFAULT_HYBRID_DENSE_WEIGHT
+  }
+
+  const totalWeight = sparseWeight + denseWeight
+  if (!Number.isFinite(totalWeight) || totalWeight <= 0) {
+    return {
+      sparseWeight: DEFAULT_HYBRID_SPARSE_WEIGHT,
+      denseWeight: DEFAULT_HYBRID_DENSE_WEIGHT,
+    }
+  }
+
+  return {
+    sparseWeight: round(sparseWeight / totalWeight),
+    denseWeight: round(denseWeight / totalWeight),
+  }
+}
+
+function applyHybridLinearFusion(candidates = [], policy = {}) {
+  const list = Array.isArray(candidates) ? candidates : []
+  const weights = normalizeHybridWeights({
+    sparseWeight: policy.sparseWeight,
+    denseWeight: policy.denseWeight,
+  })
+
+  let sparseMin = Number.POSITIVE_INFINITY
+  let sparseMax = Number.NEGATIVE_INFINITY
+  let denseMin = Number.POSITIVE_INFINITY
+  let denseMax = Number.NEGATIVE_INFINITY
+
+  for (const candidate of list) {
+    const sparseRaw = toFiniteNumber(candidate?.lexicalScore, 0)
+    const denseRaw = toFiniteNumber(candidate?.vectorScore, 0)
+    sparseMin = Math.min(sparseMin, sparseRaw)
+    sparseMax = Math.max(sparseMax, sparseRaw)
+    denseMin = Math.min(denseMin, denseRaw)
+    denseMax = Math.max(denseMax, denseRaw)
+  }
+
+  if (!Number.isFinite(sparseMin)) sparseMin = 0
+  if (!Number.isFinite(sparseMax)) sparseMax = 0
+  if (!Number.isFinite(denseMin)) denseMin = 0
+  if (!Number.isFinite(denseMax)) denseMax = 0
+
+  const sparseRange = sparseMax - sparseMin
+  const scoredCandidates = list.map((candidate) => {
+    const sparseRaw = toFiniteNumber(candidate?.lexicalScore, 0)
+    const denseRaw = toFiniteNumber(candidate?.vectorScore, 0)
+    const sparseScoreNormalized = sparseRange > 0
+      ? clamp01((sparseRaw - sparseMin) / sparseRange, 0)
+      : (sparseRaw > 0 ? 1 : 0)
+    const denseScoreNormalized = clamp01((denseRaw + 1) / 2, 0)
+    const rrfScore = toFiniteNumber(candidate?.rrfScore ?? candidate?.fusedScore, 0)
+    const fusedScore = round(
+      sparseScoreNormalized * weights.sparseWeight
+      + denseScoreNormalized * weights.denseWeight,
+    )
+
+    return {
+      ...candidate,
+      sparseScoreNormalized,
+      denseScoreNormalized,
+      rrfScore,
+      fusedScore,
+    }
+  })
+
+  scoredCandidates.sort((a, b) => {
+    if (b.fusedScore !== a.fusedScore) return b.fusedScore - a.fusedScore
+    if (b.sparseScoreNormalized !== a.sparseScoreNormalized) return b.sparseScoreNormalized - a.sparseScoreNormalized
+    if (b.denseScoreNormalized !== a.denseScoreNormalized) return b.denseScoreNormalized - a.denseScoreNormalized
+    if (b.rrfScore !== a.rrfScore) return b.rrfScore - a.rrfScore
+    if (b.vectorScore !== a.vectorScore) return b.vectorScore - a.vectorScore
+    if (b.lexicalScore !== a.lexicalScore) return b.lexicalScore - a.lexicalScore
+    return String(a.offerId || '').localeCompare(String(b.offerId || ''))
+  })
+
+  return {
+    candidates: scoredCandidates,
+    stats: {
+      sparseMin: round(sparseMin),
+      sparseMax: round(sparseMax),
+      denseMin: round(denseMin),
+      denseMax: round(denseMax),
+    },
+    weights,
+  }
+}
+
+function normalizeHybridStrategy(value) {
+  const strategy = cleanText(value).toLowerCase()
+  if (!strategy) return DEFAULT_HYBRID_STRATEGY
+  if (strategy !== DEFAULT_HYBRID_STRATEGY) return DEFAULT_HYBRID_STRATEGY
+  return strategy
+}
+
 export async function retrieveOpportunityCandidates(input = {}, options = {}) {
   const startedAt = Date.now()
   const query = cleanText(input.query)
+  const queryMode = cleanText(input.queryMode).toLowerCase() || 'raw_query'
   const filters = normalizeFilters(input.filters)
   const languageMatchMode = normalizeLocaleMatchMode(input.languageMatchMode)
   const languageResolved = resolveLanguageFilter(filters.language, languageMatchMode)
+  const rrfK = Math.max(1, toPositiveInteger(input.rrfK, DEFAULT_RRF_K))
+  const hybridStrategy = normalizeHybridStrategy(input.hybridStrategy)
+  const hybridWeights = normalizeHybridWeights({
+    sparseWeight: input.hybridSparseWeight ?? input.hybridSparse ?? input.sparseWeight,
+    denseWeight: input.hybridDenseWeight ?? input.hybridDense ?? input.denseWeight,
+  })
   const houseLowInfoFilterEnabled = parseBoolean(
     input.houseLowInfoFilterEnabled,
     DEFAULT_HOUSE_LOWINFO_FILTER_ENABLED,
@@ -466,6 +594,42 @@ export async function retrieveOpportunityCandidates(input = {}, options = {}) {
   const lexicalTopK = toPositiveInteger(input.lexicalTopK, DEFAULT_LEXICAL_TOP_K)
   const vectorTopK = toPositiveInteger(input.vectorTopK, DEFAULT_VECTOR_TOP_K)
   const finalTopK = toPositiveInteger(input.finalTopK, DEFAULT_FINAL_TOP_K)
+  const emptyNetworkCounts = { partnerstack: 0, cj: 0, house: 0 }
+  const emptyScoreStats = {
+    sparseMin: 0,
+    sparseMax: 0,
+    denseMin: 0,
+    denseMax: 0,
+  }
+  const scoringDebug = {
+    strategy: hybridStrategy,
+    sparseWeight: hybridWeights.sparseWeight,
+    denseWeight: hybridWeights.denseWeight,
+    sparseNormalization: 'min_max',
+    denseNormalization: 'cosine_shift',
+    rrfK,
+  }
+  const baseDebug = {
+    filters,
+    query,
+    queryMode,
+    queryUsed: query,
+    languageMatchMode,
+    languageResolved,
+    scoring: scoringDebug,
+  }
+  const buildDebug = (overrides = {}) => ({
+    lexicalHitCount: 0,
+    vectorHitCount: 0,
+    fusedHitCount: 0,
+    networkCandidateCountsBeforeFilter: emptyNetworkCounts,
+    networkCandidateCountsAfterFilter: emptyNetworkCounts,
+    houseLowInfoFilteredCount: 0,
+    scoreStats: emptyScoreStats,
+    ...baseDebug,
+    ...overrides,
+    retrievalMs: Math.max(0, Date.now() - startedAt),
+  })
   const pool = options.pool
   if (!pool) {
     const fallbackEnabled = options.enableFallbackWhenInventoryUnavailable !== false
@@ -491,7 +655,8 @@ export async function retrieveOpportunityCandidates(input = {}, options = {}) {
               languageMatchMode,
             },
           )
-        const filtered = applyHouseLowInfoFilter(fallbackCandidates, {
+        const hybridFallback = applyHybridLinearFusion(fallbackCandidates, hybridWeights)
+        const filtered = applyHouseLowInfoFilter(hybridFallback.candidates, {
           enabled: houseLowInfoFilterEnabled,
           minLexicalScore: houseLowInfoLexicalThreshold,
         })
@@ -499,82 +664,53 @@ export async function retrieveOpportunityCandidates(input = {}, options = {}) {
         if (sliced.length > 0) {
           return {
             candidates: sliced,
-            debug: {
-              lexicalHitCount: sliced.filter((item) => toFiniteNumber(item?.lexicalScore, 0) > 0).length,
-              vectorHitCount: sliced.filter((item) => toFiniteNumber(item?.vectorScore, 0) > 0).length,
+            debug: buildDebug({
+              lexicalHitCount: hybridFallback.candidates
+                .filter((item) => toFiniteNumber(item?.lexicalScore, 0) > 0)
+                .length,
+              vectorHitCount: hybridFallback.candidates
+                .filter((item) => toFiniteNumber(item?.vectorScore, 0) > 0)
+                .length,
               fusedHitCount: sliced.length,
-              filters,
-              query,
-              languageMatchMode,
-              languageResolved,
               networkCandidateCountsBeforeFilter: filtered.beforeCounts,
               networkCandidateCountsAfterFilter: filtered.afterCounts,
               houseLowInfoFilteredCount: filtered.filteredCount,
+              scoreStats: hybridFallback.stats,
               mode: String(fallbackResult?.debug?.mode || 'connector_live_fallback'),
               fallbackMeta: fallbackResult?.debug && typeof fallbackResult.debug === 'object'
                 ? fallbackResult.debug
                 : {},
-              retrievalMs: Math.max(0, Date.now() - startedAt),
-            },
+            }),
           }
         }
         return {
           candidates: [],
-          debug: {
-            lexicalHitCount: 0,
-            vectorHitCount: 0,
-            fusedHitCount: 0,
-            filters,
-            query,
-            languageMatchMode,
-            languageResolved,
+          debug: buildDebug({
             networkCandidateCountsBeforeFilter: filtered.beforeCounts,
             networkCandidateCountsAfterFilter: filtered.afterCounts,
             houseLowInfoFilteredCount: filtered.filteredCount,
+            scoreStats: hybridFallback.stats,
             mode: String(fallbackResult?.debug?.mode || 'connector_live_fallback_empty'),
             fallbackMeta: fallbackResult?.debug && typeof fallbackResult.debug === 'object'
               ? fallbackResult.debug
               : {},
-            retrievalMs: Math.max(0, Date.now() - startedAt),
-          },
+          }),
         }
       } catch (error) {
         return {
           candidates: [],
-          debug: {
-            lexicalHitCount: 0,
-            vectorHitCount: 0,
-            fusedHitCount: 0,
-            filters,
-            query,
-            languageMatchMode,
-            languageResolved,
-            networkCandidateCountsBeforeFilter: { partnerstack: 0, cj: 0, house: 0 },
-            networkCandidateCountsAfterFilter: { partnerstack: 0, cj: 0, house: 0 },
-            houseLowInfoFilteredCount: 0,
+          debug: buildDebug({
             mode: 'connector_live_fallback_error',
             fallbackError: error instanceof Error ? error.message : 'fallback_failed',
-            retrievalMs: Math.max(0, Date.now() - startedAt),
-          },
+          }),
         }
       }
     }
     return {
       candidates: [],
-      debug: {
-        lexicalHitCount: 0,
-        vectorHitCount: 0,
-        fusedHitCount: 0,
-        filters,
-        query,
-        languageMatchMode,
-        languageResolved,
-        networkCandidateCountsBeforeFilter: { partnerstack: 0, cj: 0, house: 0 },
-        networkCandidateCountsAfterFilter: { partnerstack: 0, cj: 0, house: 0 },
-        houseLowInfoFilteredCount: 0,
+      debug: buildDebug({
         mode: 'inventory_store_unavailable',
-        retrievalMs: Math.max(0, Date.now() - startedAt),
-      },
+      }),
     }
   }
 
@@ -588,9 +724,13 @@ export async function retrieveOpportunityCandidates(input = {}, options = {}) {
   ])
 
   const fused = rrfFuse(lexicalRows, vectorRows, {
-    rrfK: toPositiveInteger(input.rrfK, DEFAULT_RRF_K),
+    rrfK,
   })
-  const filtered = applyHouseLowInfoFilter(fused, {
+  const hybrid = applyHybridLinearFusion(fused, {
+    sparseWeight: hybridWeights.sparseWeight,
+    denseWeight: hybridWeights.denseWeight,
+  })
+  const filtered = applyHouseLowInfoFilter(hybrid.candidates, {
     enabled: houseLowInfoFilterEnabled,
     minLexicalScore: houseLowInfoLexicalThreshold,
   })
@@ -598,19 +738,15 @@ export async function retrieveOpportunityCandidates(input = {}, options = {}) {
 
   return {
     candidates: sliced,
-    debug: {
+    debug: buildDebug({
       lexicalHitCount: lexicalRows.length,
       vectorHitCount: vectorRows.length,
       fusedHitCount: sliced.length,
-      filters,
-      query,
-      languageMatchMode,
-      languageResolved,
       networkCandidateCountsBeforeFilter: filtered.beforeCounts,
       networkCandidateCountsAfterFilter: filtered.afterCounts,
       houseLowInfoFilteredCount: filtered.filteredCount,
-      retrievalMs: Math.max(0, Date.now() - startedAt),
-    },
+      scoreStats: hybrid.stats,
+    }),
   }
 }
 

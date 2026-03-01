@@ -10,6 +10,11 @@ const DEFAULT_ENABLED_MEDIATION_NETWORKS = ['partnerstack', 'house']
 const DEFAULT_LOCALE_MATCH_MODE = 'locale_or_base'
 const SUPPORTED_LOCALE_MATCH_MODES = new Set(['exact', 'locale_or_base'])
 const SUPPORTED_RELEVANCE_POLICY_MODES = new Set(['observe', 'shadow', 'enforce'])
+const DEFAULT_RETRIEVAL_QUERY_MODE = 'latest_user_plus_entities'
+const SUPPORTED_RETRIEVAL_QUERY_MODES = new Set([
+  'latest_user_plus_entities',
+  'recent_user_turns_concat',
+])
 const DEFAULT_RELEVANCE_THRESHOLDS = Object.freeze({
   chat_intent_recommendation_v1: { strict: 0.62, relaxed: 0.48 },
   chat_from_answer_v1: { strict: 0.58, relaxed: 0.44 },
@@ -82,6 +87,15 @@ function parseRelevancePolicyMode(value) {
   return mode
 }
 
+function parseRetrievalQueryMode(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (!normalized) return DEFAULT_RETRIEVAL_QUERY_MODE
+  if (normalized === 'latest_user') return DEFAULT_RETRIEVAL_QUERY_MODE
+  if (normalized === 'recent_turns_concat') return 'recent_user_turns_concat'
+  if (!SUPPORTED_RETRIEVAL_QUERY_MODES.has(normalized)) return DEFAULT_RETRIEVAL_QUERY_MODE
+  return normalized
+}
+
 function normalizeThresholdsMap(raw = {}, defaults = DEFAULT_RELEVANCE_THRESHOLDS) {
   const source = raw && typeof raw === 'object' ? raw : {}
   const normalized = { ...defaults }
@@ -136,6 +150,38 @@ export function loadRuntimeConfig(env = process.env, options = {}) {
     },
     languagePolicy: {
       localeMatchMode: parseLocaleMatchMode(readEnv(env, 'MEDIATION_LOCALE_MATCH_MODE', { required: false })),
+    },
+    retrievalPolicy: {
+      lexicalTopK: toPositiveInteger(
+        readEnv(env, 'MEDIATION_RETRIEVAL_LEXICAL_TOP_K', { required: false }),
+        120,
+      ),
+      vectorTopK: toPositiveInteger(
+        readEnv(env, 'MEDIATION_RETRIEVAL_VECTOR_TOP_K', { required: false }),
+        120,
+      ),
+      finalTopK: toPositiveInteger(
+        readEnv(env, 'MEDIATION_RETRIEVAL_FINAL_TOP_K', { required: false }),
+        40,
+      ),
+      queryMode: parseRetrievalQueryMode(
+        readEnv(env, 'MEDIATION_RETRIEVAL_QUERY_MODE', { required: false }),
+      ),
+      hybrid: {
+        strategy: 'rrf_then_linear',
+        sparseWeight: toNumberInRange(
+          readEnv(env, 'MEDIATION_HYBRID_SPARSE_WEIGHT', { required: false }),
+          0.65,
+          0,
+          1,
+        ),
+        denseWeight: toNumberInRange(
+          readEnv(env, 'MEDIATION_HYBRID_DENSE_WEIGHT', { required: false }),
+          0.35,
+          0,
+          1,
+        ),
+      },
     },
     relevancePolicy: {
       minLexicalScore: toNumberInRange(

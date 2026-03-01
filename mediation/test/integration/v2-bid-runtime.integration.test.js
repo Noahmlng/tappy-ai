@@ -276,3 +276,136 @@ test('v2 bid runtime: retrieval low-info house candidates are filtered before ra
   assert.equal(result.debug.houseLowInfoFilteredCount > 0, true)
   assert.equal(result.candidates.some((item) => String(item.network).toLowerCase() === 'house'), false)
 })
+
+test('v2 bid runtime: retrieval hybrid fusion reranks by sparse+dense and keeps rrfScore', async () => {
+  const pool = {
+    async query(sql) {
+      if (String(sql).includes('websearch_to_tsquery')) {
+        return {
+          rows: [
+            makeInventoryRow({
+              offerId: 'partnerstack:brand:strong_lexical',
+              network: 'partnerstack',
+              title: 'Murf AI Voice Tools',
+              description: 'AI voice generation for multilingual dubbing.',
+              targetUrl: 'https://partner.example.com/murf',
+              lexicalScore: 0.9,
+              vectorScore: 0.2,
+            }),
+            makeInventoryRow({
+              offerId: 'partnerstack:generic:strong_dense',
+              network: 'partnerstack',
+              title: 'Generic Sales Platform',
+              description: 'General business lead management software.',
+              targetUrl: 'https://partner.example.com/generic',
+              lexicalScore: 0.1,
+              vectorScore: 0.95,
+            }),
+          ],
+        }
+      }
+      return {
+        rows: [
+          makeInventoryRow({
+            offerId: 'partnerstack:generic:strong_dense',
+            network: 'partnerstack',
+            title: 'Generic Sales Platform',
+            description: 'General business lead management software.',
+            targetUrl: 'https://partner.example.com/generic',
+            lexicalScore: 0.1,
+            vectorScore: 0.95,
+          }),
+          makeInventoryRow({
+            offerId: 'partnerstack:brand:strong_lexical',
+            network: 'partnerstack',
+            title: 'Murf AI Voice Tools',
+            description: 'AI voice generation for multilingual dubbing.',
+            targetUrl: 'https://partner.example.com/murf',
+            lexicalScore: 0.9,
+            vectorScore: 0.2,
+          }),
+        ],
+      }
+    },
+  }
+
+  const result = await retrieveOpportunityCandidates({
+    query: 'how do you feel about murf ai and elevenlabs',
+    queryMode: 'latest_user_plus_entities',
+    filters: {
+      networks: ['partnerstack'],
+      market: 'US',
+      language: 'en-US',
+    },
+    languageMatchMode: 'locale_or_base',
+    lexicalTopK: 10,
+    vectorTopK: 10,
+    finalTopK: 10,
+    hybridSparseWeight: 0.65,
+    hybridDenseWeight: 0.35,
+  }, {
+    pool,
+  })
+
+  assert.equal(result.candidates.length, 2)
+  assert.equal(result.candidates[0].offerId, 'partnerstack:brand:strong_lexical')
+  assert.equal(result.candidates[0].fusedScore > result.candidates[1].fusedScore, true)
+  assert.equal(typeof result.candidates[0].rrfScore, 'number')
+  assert.equal(typeof result.debug?.scoring, 'object')
+  assert.equal(result.debug?.scoring?.strategy, 'rrf_then_linear')
+  assert.equal(result.debug?.scoring?.sparseWeight, 0.65)
+  assert.equal(result.debug?.scoring?.denseWeight, 0.35)
+  assert.equal(result.debug?.queryMode, 'latest_user_plus_entities')
+  assert.equal(typeof result.debug?.queryUsed, 'string')
+  assert.equal(typeof result.debug?.scoreStats?.sparseMin, 'number')
+  assert.equal(typeof result.debug?.scoreStats?.sparseMax, 'number')
+  assert.equal(typeof result.debug?.scoreStats?.denseMin, 'number')
+  assert.equal(typeof result.debug?.scoreStats?.denseMax, 'number')
+})
+
+test('v2 bid runtime: retrieval hybrid normalizes invalid weights and returns score stats', async () => {
+  const pool = {
+    async query(sql) {
+      if (String(sql).includes('websearch_to_tsquery')) {
+        return { rows: [] }
+      }
+      return {
+        rows: [
+          makeInventoryRow({
+            offerId: 'partnerstack:vector:001',
+            network: 'partnerstack',
+            title: 'ElevenLabs Voice AI',
+            description: 'Voice cloning and dubbing API.',
+            targetUrl: 'https://partner.example.com/elevenlabs',
+            lexicalScore: 0,
+            vectorScore: 0.4,
+          }),
+        ],
+      }
+    },
+  }
+
+  const result = await retrieveOpportunityCandidates({
+    query: 'elevenlabs voice dubbing tool',
+    queryMode: 'latest_user_plus_entities',
+    filters: {
+      networks: ['partnerstack'],
+      market: 'US',
+      language: 'en-US',
+    },
+    languageMatchMode: 'locale_or_base',
+    lexicalTopK: 10,
+    vectorTopK: 10,
+    finalTopK: 10,
+    hybridSparseWeight: -1,
+    hybridDenseWeight: -1,
+  }, {
+    pool,
+  })
+
+  assert.equal(result.candidates.length, 1)
+  assert.equal(result.debug?.scoring?.sparseWeight, 0.65)
+  assert.equal(result.debug?.scoring?.denseWeight, 0.35)
+  assert.equal(result.debug?.scoreStats?.sparseMin, 0)
+  assert.equal(result.debug?.scoreStats?.sparseMax, 0)
+})

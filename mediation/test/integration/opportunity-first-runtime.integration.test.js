@@ -87,6 +87,14 @@ test('opportunity retrieval: connector fallback returns sortable candidates with
   assert.equal(result.candidates.length, 1)
   assert.equal(result.candidates[0].offerId, 'house:finance:001')
   assert.equal(result.candidates[0].fusedScore > 0, true)
+  assert.equal(typeof result.candidates[0].rrfScore, 'number')
+  assert.equal(result.debug.queryMode, 'raw_query')
+  assert.equal(typeof result.debug.queryUsed, 'string')
+  assert.equal(typeof result.debug.scoring, 'object')
+  assert.equal(result.debug.scoring.strategy, 'rrf_then_linear')
+  assert.equal(typeof result.debug.scoreStats, 'object')
+  assert.equal(typeof result.debug.scoreStats.sparseMin, 'number')
+  assert.equal(typeof result.debug.scoreStats.denseMax, 'number')
 
   const disabled = await retrieveOpportunityCandidates({
     query: 'low fee brokerage for etf trading',
