@@ -1,0 +1,180 @@
+{
+  "scenarioSet": "deepai_chatbot_v1_multiturn",
+  "description": "DeepAI-oriented chatbot scenarios across creator, developer, and team workflows.",
+  "distribution": {
+    "strongCommercial": 0.7,
+    "mediumCommercial": 0.2,
+    "nonCommercial": 0.1
+  },
+  "scenarios": [
+    {
+      "key": "deepai_creator_image_pipeline",
+      "category": "creator",
+      "query": "I need an AI tool like DeepAI for fast image generation with predictable pricing. What should I buy?",
+      "answerText": "Compare image quality consistency, generation latency, and monthly pricing caps before choosing.",
+      "messages": [
+        { "role": "user", "content": "I publish social content daily and need more visuals." },
+        { "role": "assistant", "content": "Do you prioritize output quality or speed?" },
+        { "role": "user", "content": "Speed first, but quality cannot be unstable." },
+        { "role": "assistant", "content": "Then shortlist tools with fast batch generation and transparent pricing tiers." },
+        { "role": "user", "content": "I need an AI tool like DeepAI for fast image generation with predictable pricing. What should I buy?" },
+        { "role": "assistant", "content": "Compare image quality consistency, generation latency, and monthly pricing caps before choosing." }
+      ],
+      "intentClass": "product_exploration",
+      "intentScore": 0.9,
+      "locale": "en-US"
+    },
+    {
+      "key": "deepai_api_cost_control",
+      "category": "developer",
+      "query": "Which API platform is the best DeepAI alternative for stable latency and usage-based billing?",
+      "answerText": "Review per-request pricing, concurrency controls, and real-world latency under load.",
+      "messages": [
+        { "role": "user", "content": "I am integrating an AI endpoint into my product this week." },
+        { "role": "assistant", "content": "Do you need text-only, image-only, or both?" },
+        { "role": "user", "content": "Both text and image, plus predictable costs." },
+        { "role": "assistant", "content": "Then compare billing granularity and API reliability metrics." },
+        { "role": "user", "content": "Which API platform is the best DeepAI alternative for stable latency and usage-based billing?" },
+        { "role": "assistant", "content": "Review per-request pricing, concurrency controls, and real-world latency under load." }
+      ],
+      "intentClass": "product_exploration",
+      "intentScore": 0.92,
+      "locale": "en-US"
+    },
+    {
+      "key": "deepai_team_seat_plans",
+      "category": "team_ops",
+      "query": "Can you compare team plans for DeepAI-style chatbots with admin controls and audit logs?",
+      "answerText": "Focus on seat pricing, role-based permissions, and enterprise auditability.",
+      "messages": [
+        { "role": "user", "content": "Our support team wants an internal AI assistant." },
+        { "role": "assistant", "content": "How many seats and what governance controls are required?" },
+        { "role": "user", "content": "About 40 seats with strict access control." },
+        { "role": "assistant", "content": "Then evaluate RBAC depth, compliance logs, and admin tooling." },
+        { "role": "user", "content": "Can you compare team plans for DeepAI-style chatbots with admin controls and audit logs?" },
+        { "role": "assistant", "content": "Focus on seat pricing, role-based permissions, and enterprise auditability." }
+      ],
+      "intentClass": "product_exploration",
+      "intentScore": 0.88,
+      "locale": "en-US"
+    },
+    {
+      "key": "deepai_chatbot_sdk_choice",
+      "category": "developer",
+      "query": "What chatbot SDK should I choose if I want a DeepAI-like assistant with low integration effort?",
+      "answerText": "Compare SDK docs quality, auth flow complexity, and time-to-first-response.",
+      "messages": [
+        { "role": "user", "content": "I need to ship an AI support bot quickly." },
+        { "role": "assistant", "content": "Do you prefer server-side APIs or client SDK wrappers?" },
+        { "role": "user", "content": "Server-side first with minimal setup." },
+        { "role": "assistant", "content": "Then benchmark implementation speed and operational overhead." },
+        { "role": "user", "content": "What chatbot SDK should I choose if I want a DeepAI-like assistant with low integration effort?" },
+        { "role": "assistant", "content": "Compare SDK docs quality, auth flow complexity, and time-to-first-response." }
+      ],
+      "intentClass": "product_exploration",
+      "intentScore": 0.86,
+      "locale": "en-US"
+    },
+    {
+      "key": "deepai_content_localization",
+      "category": "creator",
+      "query": "Which AI platform gives better multilingual output quality than DeepAI for marketing copy?",
+      "answerText": "Evaluate language consistency, tone control, and terminology retention across locales.",
+      "messages": [
+        { "role": "user", "content": "We publish in English, Japanese, and Spanish." },
+        { "role": "assistant", "content": "Is strict brand tone important?" },
+        { "role": "user", "content": "Yes, tone consistency is critical." },
+        { "role": "assistant", "content": "Then test multilingual quality and prompt control options side by side." },
+        { "role": "user", "content": "Which AI platform gives better multilingual output quality than DeepAI for marketing copy?" },
+        { "role": "assistant", "content": "Evaluate language consistency, tone control, and terminology retention across locales." }
+      ],
+      "intentClass": "product_exploration",
+      "intentScore": 0.89,
+      "locale": "en-US"
+    },
+    {
+      "key": "deepai_budget_limit",
+      "category": "team_ops",
+      "query": "I need the cheapest DeepAI-like chatbot plan under $100/month for a small startup. Suggestions?",
+      "answerText": "Compare starter-tier limits, overage pricing, and feature restrictions at low budgets.",
+      "messages": [
+        { "role": "user", "content": "Our budget is tight but we need reliable AI responses." },
+        { "role": "assistant", "content": "How many monthly requests do you expect?" },
+        { "role": "user", "content": "Roughly 80k requests per month." },
+        { "role": "assistant", "content": "Then model expected overage before picking the starter plan." },
+        { "role": "user", "content": "I need the cheapest DeepAI-like chatbot plan under $100/month for a small startup. Suggestions?" },
+        { "role": "assistant", "content": "Compare starter-tier limits, overage pricing, and feature restrictions at low budgets." }
+      ],
+      "intentClass": "shopping",
+      "intentScore": 0.84,
+      "locale": "en-US"
+    },
+    {
+      "key": "deepai_model_quality",
+      "category": "creator",
+      "query": "Which service has better reasoning quality than DeepAI for long-form content drafting?",
+      "answerText": "Test coherence over long outputs, revision controls, and factual consistency.",
+      "messages": [
+        { "role": "user", "content": "I write long strategy memos and need fewer hallucinations." },
+        { "role": "assistant", "content": "Do you need citations or just strong drafting quality?" },
+        { "role": "user", "content": "Both, if possible." },
+        { "role": "assistant", "content": "Then compare reasoning depth and citation support on long prompts." },
+        { "role": "user", "content": "Which service has better reasoning quality than DeepAI for long-form content drafting?" },
+        { "role": "assistant", "content": "Test coherence over long outputs, revision controls, and factual consistency." }
+      ],
+      "intentClass": "purchase_intent",
+      "intentScore": 0.82,
+      "locale": "en-US"
+    },
+    {
+      "key": "deepai_open_source_vs_paid",
+      "category": "developer",
+      "query": "Should I buy a DeepAI-like hosted API or run an open-source model stack myself?",
+      "answerText": "Compare hosting complexity, infra costs, and maintenance burden against hosted pricing.",
+      "messages": [
+        { "role": "user", "content": "I can code, but I do not want heavy ops work." },
+        { "role": "assistant", "content": "What matters more now, cost or speed to production?" },
+        { "role": "user", "content": "Speed this quarter, cost in the long run." },
+        { "role": "assistant", "content": "Then model total ownership cost versus hosted API velocity." },
+        { "role": "user", "content": "Should I buy a DeepAI-like hosted API or run an open-source model stack myself?" },
+        { "role": "assistant", "content": "Compare hosting complexity, infra costs, and maintenance burden against hosted pricing." }
+      ],
+      "intentClass": "purchase_intent",
+      "intentScore": 0.8,
+      "locale": "en-US"
+    },
+    {
+      "key": "deepai_general_chat",
+      "category": "non_commercial",
+      "query": "How do transformer models work internally?",
+      "answerText": "Transformers rely on self-attention layers that weigh token relationships across context windows.",
+      "messages": [
+        { "role": "user", "content": "I am studying NLP basics." },
+        { "role": "assistant", "content": "Happy to explain the architecture step by step." },
+        { "role": "user", "content": "How do transformer models work internally?" },
+        { "role": "assistant", "content": "Transformers rely on self-attention layers that weigh token relationships across context windows." }
+      ],
+      "intentClass": "non_commercial",
+      "intentScore": 0.12,
+      "locale": "en-US"
+    },
+    {
+      "key": "deepai_enterprise_security",
+      "category": "team_ops",
+      "query": "Which DeepAI alternatives support SSO, audit logs, and private deployment for enterprise security?",
+      "answerText": "Compare SSO integrations, audit retention controls, and private-network deployment options.",
+      "messages": [
+        { "role": "user", "content": "Security and compliance are mandatory for procurement." },
+        { "role": "assistant", "content": "Do you require private cloud or on-prem deployment?" },
+        { "role": "user", "content": "Private cloud is acceptable if controls are strong." },
+        { "role": "assistant", "content": "Then prioritize identity integration and audit policy controls." },
+        { "role": "user", "content": "Which DeepAI alternatives support SSO, audit logs, and private deployment for enterprise security?" },
+        { "role": "assistant", "content": "Compare SSO integrations, audit retention controls, and private-network deployment options." }
+      ],
+      "intentClass": "product_exploration",
+      "intentScore": 0.91,
+      "locale": "en-US"
+    }
+  ]
+}
+
