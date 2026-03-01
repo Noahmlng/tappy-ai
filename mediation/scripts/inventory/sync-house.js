@@ -7,7 +7,7 @@ const args = parseArgs(process.argv.slice(2))
 withDbPool(async (pool) => {
   const result = await syncInventoryNetworks(pool, {
     networks: ['house'],
-    limit: toPositiveInteger(args.limit, 2500),
+    limit: toPositiveInteger(args.limit, 50000),
     search: String(args.search || '').trim(),
     market: String(args.market || 'US').trim() || 'US',
     language: String(args.language || 'en-US').trim() || 'en-US',

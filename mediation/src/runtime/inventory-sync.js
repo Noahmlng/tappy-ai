@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto'
 
 import { loadRuntimeConfig } from '../config/runtime-config.js'
 import { createCjConnector } from '../connectors/cj/index.js'
-import { createHouseConnector } from '../connectors/house/index.js'
 import { createPartnerStackConnector } from '../connectors/partnerstack/index.js'
 import { normalizeUnifiedOffers } from '../offers/index.js'
 import { buildTextEmbedding, vectorToSqlLiteral } from './embedding.js'
@@ -36,6 +35,153 @@ function normalizeTags(value) {
       .map((item) => cleanText(item).toLowerCase())
       .filter(Boolean),
   ))
+}
+
+function normalizeHouseLocale(value) {
+  return cleanText(value).toLowerCase().replace(/_/g, '-')
+}
+
+function normalizeHouseMarket(value) {
+  return cleanText(value).toUpperCase()
+}
+
+function toHouseNumber(value, fallback = 0) {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : fallback
+}
+
+function normalizeHouseAvailability(status, availability) {
+  const normalizedStatus = cleanText(status).toLowerCase()
+  const normalizedAvailability = cleanText(availability).toLowerCase()
+  if (normalizedStatus === 'active') return 'active'
+  if (normalizedAvailability === 'active') return 'active'
+  return 'active'
+}
+
+function mapHouseOfferRowToUnifiedOffer(row = {}) {
+  const offerId = cleanText(row.offer_id)
+  const title = cleanText(row.title)
+  const targetUrl = cleanText(row.target_url)
+  const description = cleanText(row.snippet || row.description)
+  const merchant = cleanText(row.merchant)
+  const market = cleanText(row.market)
+  const locale = cleanText(row.language)
+  const currency = cleanText(row.currency)
+  const verticalL1 = cleanText(row.vertical_l1)
+  const verticalL2 = cleanText(row.vertical_l2)
+  const imageUrl = cleanText(row.image_url)
+  const productId = cleanText(row.product_id)
+  const tags = Array.isArray(row.tags_json)
+    ? row.tags_json.map((item) => cleanText(String(item || ''))).filter(Boolean)
+    : []
+
+  if (!offerId || !title || !targetUrl) return null
+
+  return {
+    sourceNetwork: 'house',
+    sourceType: 'product',
+    sourceId: offerId,
+    offerId: `house:product:${offerId}`,
+    title,
+    description,
+    targetUrl,
+    trackingUrl: targetUrl,
+    merchantName: merchant,
+    productName: title,
+    entityText: merchant || title,
+    entityType: 'product',
+    locale,
+    market,
+    currency,
+    availability: normalizeHouseAvailability(row.status, row.availability),
+    qualityScore: toHouseNumber(row.confidence_score, 0),
+    bidValue: toHouseNumber(row.discount_pct, 0),
+    metadata: {
+      intentCardItemId: productId || offerId,
+      campaignId: cleanText(row.campaign_id),
+      creativeId: '',
+      brandId: cleanText(row.brand_id),
+      category: verticalL2 || verticalL1,
+      verticalL1,
+      verticalL2,
+      matchTags: tags,
+      sourceType: cleanText(row.source_type),
+      placementKey: 'next_step.intent_card',
+      disclosure: cleanText(row.disclosure),
+      image_url: imageUrl,
+      imageUrl,
+    },
+    raw: row,
+  }
+}
+
+async function fetchHouseOffersForSync(pool, options = {}) {
+  const requestedLimit = Math.max(80, Math.floor(toFiniteNumber(options.limit, 2000)))
+  const batchSize = Math.max(200, Math.min(2000, requestedLimit))
+  const market = normalizeHouseMarket(options.market || 'US')
+  const locale = normalizeHouseLocale(options.language || 'en-US')
+  const localePrefix = locale ? locale.split('-')[0] : ''
+
+  const out = []
+  let cursor = ''
+  while (out.length < requestedLimit) {
+    const remaining = requestedLimit - out.length
+    const fetchLimit = Math.max(1, Math.min(batchSize, remaining))
+    const result = await pool.query(
+      `
+        SELECT
+          offer_id,
+          campaign_id,
+          brand_id,
+          vertical_l1,
+          vertical_l2,
+          market,
+          title,
+          description,
+          snippet,
+          target_url,
+          image_url,
+          status,
+          language,
+          disclosure,
+          source_type,
+          confidence_score,
+          product_id,
+          merchant,
+          currency,
+          discount_pct,
+          availability,
+          tags_json
+        FROM house_ads_offers
+        WHERE offer_type = 'product'
+          AND status = 'active'
+          AND ($1::text = '' OR market = $1 OR market = '')
+          AND (
+            $2::text = ''
+            OR lower(language) = lower($2)
+            OR lower(split_part(language, '-', 1)) = lower($3)
+            OR language = ''
+          )
+          AND ($4::text = '' OR offer_id > $4::text)
+        ORDER BY offer_id ASC
+        LIMIT $5
+      `,
+      [market, locale, localePrefix, cursor, fetchLimit],
+    )
+    const rows = Array.isArray(result.rows) ? result.rows : []
+    if (rows.length === 0) break
+    for (const row of rows) {
+      const mapped = mapHouseOfferRowToUnifiedOffer(row)
+      if (!mapped) continue
+      out.push(mapped)
+      if (out.length >= requestedLimit) break
+    }
+    const tail = rows[rows.length - 1]
+    cursor = cleanText(tail?.offer_id)
+    if (!cursor) break
+  }
+
+  return out
 }
 
 function makeRawRecordId(network, offer = {}) {
@@ -245,7 +391,7 @@ async function upsertInventoryRows(pool, network, offers = [], options = {}) {
   }
 }
 
-async function fetchNetworkOffers(network, runtimeConfig, options = {}) {
+async function fetchNetworkOffers(pool, network, runtimeConfig, options = {}) {
   if (network === 'partnerstack') {
     const connector = createPartnerStackConnector({
       runtimeConfig,
@@ -276,14 +422,7 @@ async function fetchNetworkOffers(network, runtimeConfig, options = {}) {
   }
 
   if (network === 'house') {
-    const connector = createHouseConnector({ runtimeConfig })
-    const result = await connector.fetchProductOffersCatalog({
-      keywords: cleanText(options.search),
-      limit: Math.max(80, Math.floor(toFiniteNumber(options.limit, 2000))),
-      locale: cleanText(options.language || 'en-US') || 'en-US',
-      market: cleanText(options.market || 'US') || 'US',
-    })
-    return Array.isArray(result?.offers) ? result.offers : []
+    return await fetchHouseOffersForSync(pool, options)
   }
 
   return []
@@ -307,7 +446,7 @@ async function syncOneNetwork(pool, network, options = {}) {
 
   try {
     const runtimeConfig = options.runtimeConfig || loadRuntimeConfig(process.env, { strict: false })
-    const offers = await fetchNetworkOffers(network, runtimeConfig, options)
+    const offers = await fetchNetworkOffers(pool, network, runtimeConfig, options)
     const stats = await upsertInventoryRows(pool, network, offers, {
       fetchedAt: startedAt,
     })
@@ -396,15 +535,32 @@ export async function buildInventoryEmbeddings(pool, input = {}) {
   const fullRebuild = input.fullRebuild === true
   const batchSize = Math.max(100, Math.floor(toFiniteNumber(input.batchSize, 5000)))
   const limit = Math.max(1, Math.floor(toFiniteNumber(input.limit, 5000)))
+  const upsertBatchSize = Math.max(20, Math.floor(toFiniteNumber(
+    input.upsertBatchSize ?? input.upsert_batch_size,
+    200,
+  )))
 
   async function upsertEmbeddingRows(rows = []) {
     let upserted = 0
-    for (const row of rows) {
-      const embedding = buildTextEmbedding({
-        title: row.title,
-        description: row.description,
-        tags: Array.isArray(row.tags) ? row.tags : [],
-      })
+    for (let start = 0; start < rows.length; start += upsertBatchSize) {
+      const chunk = rows.slice(start, start + upsertBatchSize)
+      if (chunk.length === 0) continue
+
+      const params = []
+      const valuesSql = chunk.map((row, index) => {
+        const embedding = buildTextEmbedding({
+          title: row.title,
+          description: row.description,
+          tags: Array.isArray(row.tags) ? row.tags : [],
+        })
+        const base = index * 3
+        params.push(
+          cleanText(row.offer_id),
+          embedding.model,
+          vectorToSqlLiteral(embedding.vector),
+        )
+        return `($${base + 1}, $${base + 2}, $${base + 3}::vector, NOW(), NOW())`
+      }).join(',\n            ')
 
       await pool.query(
         `
@@ -415,20 +571,17 @@ export async function buildInventoryEmbeddings(pool, input = {}) {
             embedding_updated_at,
             created_at
           )
-          VALUES ($1, $2, $3::vector, NOW(), NOW())
+          VALUES
+            ${valuesSql}
           ON CONFLICT (offer_id) DO UPDATE
           SET
             embedding_model = EXCLUDED.embedding_model,
             embedding = EXCLUDED.embedding,
             embedding_updated_at = NOW()
         `,
-        [
-          cleanText(row.offer_id),
-          embedding.model,
-          vectorToSqlLiteral(embedding.vector),
-        ],
+        params,
       )
-      upserted += 1
+      upserted += chunk.length
     }
     return upserted
   }
@@ -630,4 +783,9 @@ export async function getInventoryStatus(pool) {
     latestRuns: Array.isArray(runResult.rows) ? runResult.rows : [],
     checkedAt: nowIso(),
   }
+}
+
+export const __inventorySyncInternal = {
+  mapHouseOfferRowToUnifiedOffer,
+  fetchHouseOffersForSync,
 }
