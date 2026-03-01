@@ -50,6 +50,66 @@ const KEYWORD_STOPWORDS = new Set([
   'you',
   'your',
 ])
+const QUERY_CATEGORY_HINT_RULES = Object.freeze([
+  {
+    key: 'electronics',
+    queryKeywords: [
+      'camera',
+      'cameras',
+      'dslr',
+      'mirrorless',
+      'lens',
+      'lenses',
+      'photography',
+      'vlog',
+      'vlogging',
+      '相机',
+      '镜头',
+      '摄影',
+      '拍摄',
+    ],
+    corpusKeywords: [
+      'camera',
+      'dslr',
+      'mirrorless',
+      'lens',
+      'photography',
+      'electronics',
+      'electronic',
+      '相机',
+      '镜头',
+      '摄影',
+      '拍摄',
+    ],
+  },
+  {
+    key: 'travel',
+    queryKeywords: [
+      'travel',
+      'trip',
+      'flight',
+      'hotel',
+      'vacation',
+      'tour',
+      '旅行',
+      '旅游',
+      '酒店',
+      '机票',
+    ],
+    corpusKeywords: [
+      'travel',
+      'trip',
+      'flight',
+      'hotel',
+      'vacation',
+      'tour',
+      '旅行',
+      '旅游',
+      '酒店',
+      '机票',
+    ],
+  },
+])
 
 function cleanText(value) {
   if (typeof value !== 'string') return ''
@@ -117,6 +177,26 @@ function computeKeywordScore(corpus = '', keywordTokens = []) {
     }
   }
   return score
+}
+
+function inferQueryCategoryHint(value = '') {
+  const text = cleanText(value).toLowerCase()
+  if (!text) return null
+
+  for (const rule of QUERY_CATEGORY_HINT_RULES) {
+    if (rule.queryKeywords.some((keyword) => text.includes(keyword))) {
+      return rule
+    }
+  }
+
+  return null
+}
+
+function entryMatchesCategoryHint(entry = {}, hintRule = null) {
+  if (!hintRule) return true
+  const corpus = cleanText(entry.corpus).toLowerCase()
+  if (!corpus) return false
+  return hintRule.corpusKeywords.some((keyword) => corpus.includes(keyword))
 }
 
 function normalizeStatus(status, availability) {
@@ -524,7 +604,9 @@ export function createHouseConnector(options = {}) {
       market: params.market,
     })
     const limit = toBoundedLimit(params.limit, DEFAULT_LIMIT)
-    const keywordTokens = tokenizeKeywords(params.keywords || params.search || params.query)
+    const queryText = cleanText(params.query || params.keywords || params.search)
+    const keywordTokens = tokenizeKeywords(queryText)
+    const queryCategoryHint = inferQueryCategoryHint(queryText)
     const locale = normalizeLocale(params.locale)
     const localePrefix = locale ? locale.split('-')[0] : ''
     const market = normalizeMarket(params.market)
@@ -540,8 +622,10 @@ export function createHouseConnector(options = {}) {
       if (!entry.market) return true
       return entry.market === market
     })
-
-    const scored = marketFiltered.map((entry) => ({
+    const categoryFiltered = queryCategoryHint
+      ? marketFiltered.filter((entry) => entryMatchesCategoryHint(entry, queryCategoryHint))
+      : marketFiltered
+    const scored = categoryFiltered.map((entry) => ({
       ...entry,
       score: computeKeywordScore(entry.corpus, keywordTokens),
     }))
@@ -562,6 +646,8 @@ export function createHouseConnector(options = {}) {
         catalogEntries: entries.length,
         localeFilteredEntries: localeFiltered.length,
         marketFilteredEntries: marketFiltered.length,
+        categoryFilteredEntries: categoryFiltered.length,
+        queryCategoryHint: queryCategoryHint ? queryCategoryHint.key : '',
         keywordTokenCount: keywordTokens.length,
         keywordMatchedEntries: matched.length,
         selectedEntries: offers.length,
