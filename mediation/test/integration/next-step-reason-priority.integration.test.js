@@ -10,8 +10,16 @@ const PROJECT_ROOT = path.resolve(__dirname, '../..')
 const GATEWAY_ENTRY = path.join(PROJECT_ROOT, 'src', 'devtools', 'mediation', 'mediation-gateway.js')
 
 const HOST = '127.0.0.1'
-const HEALTH_TIMEOUT_MS = 12000
-const REQUEST_TIMEOUT_MS = 12000
+const HEALTH_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.MEDIATION_TEST_HEALTH_TIMEOUT_MS || 12000)
+  if (!Number.isFinite(raw) || raw <= 0) return 12000
+  return Math.floor(raw)
+})()
+const REQUEST_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.MEDIATION_TEST_REQUEST_TIMEOUT_MS || HEALTH_TIMEOUT_MS)
+  if (!Number.isFinite(raw) || raw <= 0) return HEALTH_TIMEOUT_MS
+  return Math.floor(raw)
+})()
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -160,6 +168,9 @@ async function issueRuntimeApiKeyHeaders(baseUrl, input = {}, headers = {}) {
 }
 
 test('legacy evaluate endpoint is removed', async () => {
+  const suffix = `${Date.now()}_${Math.floor(Math.random() * 1000)}`
+  const scopedAccountId = `org_mediation_${suffix}`
+  const scopedAppId = `sample-client-app-${suffix}`
   const port = 3450 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${HOST}:${port}`
   const gateway = startGateway(port)
@@ -169,13 +180,13 @@ test('legacy evaluate endpoint is removed', async () => {
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.status, 404)
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
-      email: 'next-step-reason-priority@example.com',
-      accountId: 'org_mediation',
-      appId: 'sample-client-app',
+      email: `next-step-reason-priority-${suffix}@example.com`,
+      accountId: scopedAccountId,
+      appId: scopedAppId,
     })
     const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, {
-      accountId: 'org_mediation',
-      appId: 'sample-client-app',
+      accountId: scopedAccountId,
+      appId: scopedAppId,
     }, dashboardHeaders)
 
     const evaluate = await requestJson(baseUrl, '/api/v1/sdk/evaluate', {
@@ -207,6 +218,9 @@ test('legacy evaluate endpoint is removed', async () => {
 })
 
 test('next-step decision logs are recorded through v2 bid flow', async () => {
+  const suffix = `${Date.now()}_${Math.floor(Math.random() * 1000)}`
+  const scopedAccountId = `org_mediation_${suffix}`
+  const scopedAppId = `sample-client-app-${suffix}`
   const port = 3550 + Math.floor(Math.random() * 200)
   const baseUrl = `http://${HOST}:${port}`
   const gateway = startGateway(port)
@@ -216,13 +230,13 @@ test('next-step decision logs are recorded through v2 bid flow', async () => {
     const reset = await requestJson(baseUrl, '/api/v1/dev/reset', { method: 'POST' })
     assert.equal(reset.status, 404)
     const dashboardHeaders = await registerDashboardHeaders(baseUrl, {
-      email: 'next-step-observability@example.com',
-      accountId: 'org_mediation',
-      appId: 'sample-client-app',
+      email: `next-step-observability-${suffix}@example.com`,
+      accountId: scopedAccountId,
+      appId: scopedAppId,
     })
     const runtimeHeaders = await issueRuntimeApiKeyHeaders(baseUrl, {
-      accountId: 'org_mediation',
-      appId: 'sample-client-app',
+      accountId: scopedAccountId,
+      appId: scopedAppId,
     }, dashboardHeaders)
 
     const enablePlacement = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_intent_recommendation_v1', {
@@ -233,6 +247,14 @@ test('next-step decision logs are recorded through v2 bid flow', async () => {
       },
     })
     assert.equal(enablePlacement.ok, true, 'chat_intent_recommendation_v1 should be enabled for next-step checks')
+    const disableFromAnswerPlacement = await requestJson(baseUrl, '/api/v1/dashboard/placements/chat_from_answer_v1', {
+      method: 'PUT',
+      headers: dashboardHeaders,
+      body: {
+        enabled: false,
+      },
+    })
+    assert.equal(disableFromAnswerPlacement.ok, true, 'chat_from_answer_v1 should be disabled for next-step checks')
 
     const bid = await requestJson(baseUrl, '/api/v2/bid', {
       method: 'POST',
@@ -240,7 +262,6 @@ test('next-step decision logs are recorded through v2 bid flow', async () => {
       body: {
         userId: `inference_observe_user_${Date.now()}`,
         chatId: `inference_observe_chat_${Date.now()}`,
-        placementId: 'chat_intent_recommendation_v1',
         messages: [
           { role: 'user', content: 'I want to buy a running shoe for daily gym training' },
           { role: 'assistant', content: 'You can compare running shoes by cushioning and durability.' },
