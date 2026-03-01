@@ -8291,6 +8291,12 @@ async function evaluateV2BidOpportunityFirst(payload) {
       Number.MAX_SAFE_INTEGER,
       0,
     ),
+    relevanceScore: clampNumber(
+      item.winnerCandidate?.relevanceScore,
+      0,
+      1,
+      clampNumber(item.winnerCandidate?.rankScore, 0, 1, 0),
+    ),
     rankScore: clampNumber(item.winnerCandidate?.rankScore, 0, 1, 0),
     auctionScore: clampNumber(item.winnerCandidate?.auctionScore, 0, 1, 0),
     priority: toPositiveInteger(item.placement?.priority, Number.MAX_SAFE_INTEGER),
@@ -8304,6 +8310,10 @@ async function evaluateV2BidOpportunityFirst(payload) {
   const winnerBid = globalAuction?.winner?.bid && typeof globalAuction.winner.bid === 'object'
     ? globalAuction.winner.bid
     : null
+  const scoredOptionsByPlacementId = new Map(
+    (Array.isArray(globalAuction?.scoredOptions) ? globalAuction.scoredOptions : [])
+      .map((item) => [String(item?.placementId || '').trim(), item]),
+  )
   const selectedPlacementId = String(
     winnerPlacementId
     || globalAuction?.selectedOption?.placementId
@@ -8426,18 +8436,37 @@ async function evaluateV2BidOpportunityFirst(payload) {
     evaluatedCount: placementOptions.length,
     winnerPlacementId,
     selectionReason: String(globalAuction?.selectionReason || '').trim(),
-    options: placementOptions.map((item) => ({
-      placementId: item.placementId,
-      gatePassed: item.gatePassed,
-      reasonCode: item.reasonCode,
-      bidPrice: item.bidPrice,
-      ecpmUsd: item.ecpmUsd,
-      rankScore: item.rankScore,
-      auctionScore: item.auctionScore,
-      budgetDecision: item?.budgetDecision || null,
-      riskDecision: item?.riskDecision || null,
-      stageStatusMap: item.stageStatusMap,
-    })),
+    scoring: globalAuction?.scoring && typeof globalAuction.scoring === 'object'
+      ? globalAuction.scoring
+      : {
+          relevanceWeight: 0.7,
+          bidWeight: 0.3,
+          bidNormalization: 'log1p_max',
+          maxBidPrice: 0,
+        },
+    options: placementOptions.map((item) => {
+      const scoredOption = scoredOptionsByPlacementId.get(item.placementId) || {}
+      return {
+        placementId: item.placementId,
+        gatePassed: item.gatePassed,
+        reasonCode: item.reasonCode,
+        bidPrice: item.bidPrice,
+        ecpmUsd: item.ecpmUsd,
+        relevanceScore: clampNumber(
+          scoredOption.relevanceScore,
+          0,
+          1,
+          clampNumber(item.relevanceScore, 0, 1, 0),
+        ),
+        bidNormalizedScore: clampNumber(scoredOption.bidNormalizedScore, 0, 1, 0),
+        compositeScore: clampNumber(scoredOption.compositeScore, 0, 1, 0),
+        rankScore: item.rankScore,
+        auctionScore: item.auctionScore,
+        budgetDecision: item?.budgetDecision || null,
+        riskDecision: item?.riskDecision || null,
+        stageStatusMap: item.stageStatusMap,
+      }
+    }),
     loserSummary: globalAuction?.loserSummary && typeof globalAuction.loserSummary === 'object'
       ? globalAuction.loserSummary
       : { totalOptions: placementOptions.length, reasonCount: {} },

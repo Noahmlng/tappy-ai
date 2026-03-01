@@ -238,6 +238,18 @@ test('v2 bid API returns unified response on the single runtime path', async () 
     assert.equal(typeof bid.payload?.diagnostics?.riskDecision, 'object')
     assert.equal(typeof bid.payload?.diagnostics?.multiPlacement?.evaluatedCount, 'number')
     assert.equal(bid.payload?.diagnostics?.multiPlacement?.evaluatedCount >= 2, true)
+    assert.equal(typeof bid.payload?.diagnostics?.multiPlacement?.scoring, 'object')
+    assert.equal(bid.payload?.diagnostics?.multiPlacement?.scoring?.relevanceWeight, 0.7)
+    assert.equal(bid.payload?.diagnostics?.multiPlacement?.scoring?.bidWeight, 0.3)
+    assert.equal(bid.payload?.diagnostics?.multiPlacement?.scoring?.bidNormalization, 'log1p_max')
+    const multiPlacementOptions = Array.isArray(bid.payload?.diagnostics?.multiPlacement?.options)
+      ? bid.payload.diagnostics.multiPlacement.options
+      : []
+    assert.equal(multiPlacementOptions.length >= 2, true)
+    assert.equal(
+      multiPlacementOptions.every((item) => typeof item?.compositeScore === 'number'),
+      true,
+    )
     const retrievalFilters = bid.payload?.diagnostics?.retrievalDebug?.filters
       && typeof bid.payload?.diagnostics?.retrievalDebug?.filters === 'object'
       ? bid.payload.diagnostics.retrievalDebug.filters

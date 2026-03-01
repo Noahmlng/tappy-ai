@@ -4,17 +4,38 @@ function toFiniteNumber(value, fallback = 0) {
   return n
 }
 
+function clamp01(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return 0
+  if (n < 0) return 0
+  if (n > 1) return 1
+  return n
+}
+
+function round(value, precision = 6) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return 0
+  return Number(n.toFixed(precision))
+}
+
 function toPriorityValue(value) {
   const n = Number(value)
   if (!Number.isFinite(n)) return Number.MAX_SAFE_INTEGER
   return Math.floor(n)
 }
 
+const GLOBAL_AUCTION_SCORING = Object.freeze({
+  relevanceWeight: 0.7,
+  bidWeight: 0.3,
+  bidNormalization: 'log1p_max',
+})
+
 function normalizeOption(input = {}) {
   const option = input && typeof input === 'object' ? input : {}
   const bid = option.bid && typeof option.bid === 'object' ? option.bid : null
   const bidPrice = bid ? toFiniteNumber(bid.price, 0) : toFiniteNumber(option.bidPrice, 0)
   const pricing = bid?.pricing && typeof bid.pricing === 'object' ? bid.pricing : null
+  const relevanceScoreRaw = Number(option.relevanceScore)
 
   return {
     placementId: String(option.placementId || '').trim(),
@@ -23,6 +44,7 @@ function normalizeOption(input = {}) {
     bid,
     bidPrice,
     ecpmUsd: toFiniteNumber(pricing?.ecpmUsd ?? option.ecpmUsd, 0),
+    relevanceScore: Number.isFinite(relevanceScoreRaw) ? relevanceScoreRaw : Number.NaN,
     rankScore: toFiniteNumber(option.rankScore, 0),
     auctionScore: toFiniteNumber(option.auctionScore, 0),
     priority: toPriorityValue(option.priority),
@@ -33,6 +55,9 @@ function normalizeOption(input = {}) {
 }
 
 function compareWinnerOptions(left, right) {
+  if (right.compositeScore !== left.compositeScore) return right.compositeScore - left.compositeScore
+  if (right.relevanceScore !== left.relevanceScore) return right.relevanceScore - left.relevanceScore
+  if (right.bidNormalizedScore !== left.bidNormalizedScore) return right.bidNormalizedScore - left.bidNormalizedScore
   if (right.bidPrice !== left.bidPrice) return right.bidPrice - left.bidPrice
   if (right.ecpmUsd !== left.ecpmUsd) return right.ecpmUsd - left.ecpmUsd
   if (right.rankScore !== left.rankScore) return right.rankScore - left.rankScore
@@ -79,11 +104,51 @@ function summarizeLosers(options = [], winnerPlacementId = '') {
   return reasonCount
 }
 
+function scoreOptions(options = []) {
+  const winnerCandidates = options.filter((option) => option.bid)
+  const maxBidPrice = winnerCandidates.reduce((maxValue, option) => (
+    Math.max(maxValue, Math.max(0, toFiniteNumber(option.bidPrice, 0)))
+  ), 0)
+  const maxBidPriceLog = maxBidPrice > 0 ? Math.log1p(maxBidPrice) : 0
+  const scoredOptions = options.map((option) => {
+    const relevanceScore = clamp01(
+      Number.isFinite(option.relevanceScore)
+        ? option.relevanceScore
+        : option.rankScore,
+    )
+    const bidNormalizedScore = option.bid && maxBidPriceLog > 0
+      ? clamp01(Math.log1p(Math.max(0, toFiniteNumber(option.bidPrice, 0))) / maxBidPriceLog)
+      : 0
+    const compositeScore = round(
+      relevanceScore * GLOBAL_AUCTION_SCORING.relevanceWeight
+      + bidNormalizedScore * GLOBAL_AUCTION_SCORING.bidWeight,
+      6,
+    )
+    return {
+      ...option,
+      relevanceScore,
+      bidNormalizedScore,
+      compositeScore,
+    }
+  })
+
+  return {
+    scoredOptions,
+    scoring: {
+      ...GLOBAL_AUCTION_SCORING,
+      maxBidPrice: round(maxBidPrice, 6),
+    },
+  }
+}
+
 export function runGlobalPlacementAuction(input = {}) {
   const rawOptions = Array.isArray(input.options) ? input.options : []
   const options = rawOptions
     .map((item) => normalizeOption(item))
     .filter((item) => item.placementId)
+  const scoredResult = scoreOptions(options)
+  const scoredOptions = scoredResult.scoredOptions
+  const scoring = scoredResult.scoring
 
   if (options.length === 0) {
     return {
@@ -96,26 +161,30 @@ export function runGlobalPlacementAuction(input = {}) {
         totalOptions: 0,
         reasonCount: {},
       },
+      scoring,
+      scoredOptions,
     }
   }
 
-  const winnerCandidates = options.filter((option) => option.bid)
+  const winnerCandidates = scoredOptions.filter((option) => option.bid)
   if (winnerCandidates.length > 0) {
     const winner = [...winnerCandidates].sort(compareWinnerOptions)[0]
     return {
       winner,
       winnerPlacementId: winner.placementId,
       selectedOption: winner,
-      selectionReason: 'highest_bid_price',
+      selectionReason: 'weighted_relevance_bid',
       noBidReasonCode: '',
       loserSummary: {
-        totalOptions: options.length,
-        reasonCount: summarizeLosers(options, winner.placementId),
+        totalOptions: scoredOptions.length,
+        reasonCount: summarizeLosers(scoredOptions, winner.placementId),
       },
+      scoring,
+      scoredOptions,
     }
   }
 
-  const selectedOption = [...options].sort(compareNoBidOptions)[0]
+  const selectedOption = [...scoredOptions].sort(compareNoBidOptions)[0]
   const selectedReasonCode = String(selectedOption?.reasonCode || '').trim() || 'inventory_no_match'
 
   return {
@@ -127,8 +196,10 @@ export function runGlobalPlacementAuction(input = {}) {
       : 'all_gate_blocked_or_unavailable',
     noBidReasonCode: selectedReasonCode,
     loserSummary: {
-      totalOptions: options.length,
-      reasonCount: summarizeLosers(options),
+      totalOptions: scoredOptions.length,
+      reasonCount: summarizeLosers(scoredOptions),
     },
+    scoring,
+    scoredOptions,
   }
 }
