@@ -25,6 +25,24 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+async function waitForCondition(check, options = {}) {
+  const timeoutMs = Number(options.timeoutMs || REQUEST_TIMEOUT_MS)
+  const intervalMs = Number(options.intervalMs || 300)
+  const startedAt = Date.now()
+  let lastError = null
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const passed = await check()
+      if (passed) return true
+    } catch (error) {
+      lastError = error
+    }
+    await sleep(intervalMs)
+  }
+  if (lastError) throw lastError
+  return false
+}
+
 function withTimeoutSignal(timeoutMs = REQUEST_TIMEOUT_MS) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -106,6 +124,8 @@ function startGateway(port) {
       MEDIATION_ENABLE_LOCAL_SERVER: 'true',
       MEDIATION_GATEWAY_HOST: HOST,
       MEDIATION_GATEWAY_PORT: String(port),
+      CPC_SEMANTICS: process.env.CPC_SEMANTICS || 'on',
+      BUDGET_ENFORCEMENT: process.env.BUDGET_ENFORCEMENT || 'monitor_only',
       OPENROUTER_API_KEY: '',
       OPENROUTER_MODEL: 'glm-5',
       CJ_TOKEN: 'mock-cj-token',
@@ -191,7 +211,7 @@ async function requestServedBid(baseUrl, runtimeHeaders, bidPayload) {
       method: 'POST',
       headers: runtimeHeaders,
       body: bidPayload,
-      timeoutMs: 12000,
+      timeoutMs: REQUEST_TIMEOUT_MS,
     })
     assert.equal(bid.status, 200, `v2 bid failed: ${JSON.stringify(bid.payload)}`)
     lastPayload = bid.payload
@@ -210,7 +230,7 @@ async function requestServedBid(baseUrl, runtimeHeaders, bidPayload) {
   throw new Error(`unable to get served bid after retries: ${JSON.stringify(lastPayload)}`)
 }
 
-test('cpc click settlement: redirect + sdk click both write revenue facts from bid price', async () => {
+test('cpc click settlement: redirect bills CPC and duplicate sdk click keeps revenue idempotent', async () => {
   const suffix = `${Date.now()}_${Math.floor(Math.random() * 1000)}`
   const scopedAccountId = `org_cpc_${suffix}`
   const scopedAppId = `app_cpc_${suffix}`
@@ -254,26 +274,37 @@ test('cpc click settlement: redirect + sdk click both write revenue facts from b
     const winner = served.winner
     const requestId = String(served.response?.requestId || '').trim()
     const winnerPrice = Number(winner.price || 0)
+    const winnerCpcUsd = Number(winner.pricing?.cpcUsd || 0)
     const winnerAdId = String(winner.bidId || '').trim()
     const winnerPlacementId = String(served.response?.diagnostics?.precheck?.placement?.placementId || '').trim()
 
     assert.equal(Boolean(requestId), true)
     assert.equal(Number.isFinite(winnerPrice) && winnerPrice > 0, true)
+    assert.equal(winnerPrice, winnerCpcUsd)
+    assert.equal(String(winner.pricing?.billingUnit || ''), 'cpc')
+    assert.equal(String(winner.pricing?.pricingSemanticsVersion || ''), 'cpc_v1')
     assert.equal(typeof winner.url, 'string')
     assert.equal(winner.url.includes('/api/v1/sdk/click?'), true)
 
-    const redirectClick = await requestRedirect(winner.url, { timeoutMs: 5000 })
+    const redirectClick = await requestRedirect(winner.url, { timeoutMs: REQUEST_TIMEOUT_MS })
     assert.equal(redirectClick.status, 302)
     assert.equal(redirectClick.location.startsWith('http://') || redirectClick.location.startsWith('https://'), true)
 
-    const afterRedirectSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary', {
-      headers: dashboardHeaders,
+    let afterRedirectRevenue = 0
+    let afterRedirectClicks = 0
+    const redirectSettled = await waitForCondition(async () => {
+      const summary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary', {
+        headers: dashboardHeaders,
+      })
+      if (!summary.ok) return false
+      afterRedirectRevenue = Number(summary.payload?.revenueUsd || 0)
+      afterRedirectClicks = Number(summary.payload?.clicks || 0)
+      return (
+        afterRedirectClicks >= beforeClicks + 1
+        && afterRedirectRevenue >= beforeRevenue + Number((winnerPrice - 0.01).toFixed(2))
+      )
     })
-    assert.equal(afterRedirectSummary.ok, true)
-    const afterRedirectRevenue = Number(afterRedirectSummary.payload?.revenueUsd || 0)
-    const afterRedirectClicks = Number(afterRedirectSummary.payload?.clicks || 0)
-    assert.equal(afterRedirectClicks, beforeClicks + 1)
-    assert.equal(afterRedirectRevenue >= beforeRevenue + Number((winnerPrice - 0.01).toFixed(2)), true)
+    assert.equal(redirectSettled, true)
 
     const redirectEventLogs = await requestJson(
       baseUrl,
@@ -305,17 +336,28 @@ test('cpc click settlement: redirect + sdk click both write revenue facts from b
       },
     })
     assert.equal(sdkClick.ok, true, `sdk click event failed: ${JSON.stringify(sdkClick.payload)}`)
-    assert.equal(typeof sdkClick.payload?.factId, 'string')
-    assert.equal(Number(sdkClick.payload?.revenueUsd || 0) > 0, true)
+    const sdkFactId = String(sdkClick.payload?.factId || '').trim()
+    const sdkRevenue = Number(sdkClick.payload?.revenueUsd || 0)
+    assert.equal(Number.isFinite(sdkRevenue), true)
+    if (sdkFactId) {
+      assert.equal(sdkRevenue > 0, true)
+    }
 
-    const afterSdkClickSummary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary', {
-      headers: dashboardHeaders,
+    let afterSdkRevenue = 0
+    let afterSdkClicks = 0
+    const sdkSettled = await waitForCondition(async () => {
+      const summary = await requestJson(baseUrl, '/api/v1/dashboard/metrics/summary', {
+        headers: dashboardHeaders,
+      })
+      if (!summary.ok) return false
+      afterSdkRevenue = Number(summary.payload?.revenueUsd || 0)
+      afterSdkClicks = Number(summary.payload?.clicks || 0)
+      return (
+        afterSdkClicks >= afterRedirectClicks + 1
+        && afterSdkRevenue >= afterRedirectRevenue
+      )
     })
-    assert.equal(afterSdkClickSummary.ok, true)
-    const afterSdkRevenue = Number(afterSdkClickSummary.payload?.revenueUsd || 0)
-    const afterSdkClicks = Number(afterSdkClickSummary.payload?.clicks || 0)
-    assert.equal(afterSdkClicks, afterRedirectClicks + 1)
-    assert.equal(afterSdkRevenue >= afterRedirectRevenue + Number((winnerPrice - 0.01).toFixed(2)), true)
+    assert.equal(sdkSettled, true)
 
     const usageRevenue = await requestJson(baseUrl, '/api/v1/dashboard/usage-revenue', {
       headers: dashboardHeaders,

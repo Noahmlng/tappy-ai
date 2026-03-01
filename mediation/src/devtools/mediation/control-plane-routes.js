@@ -170,6 +170,13 @@ export async function handleControlPlaneRoutes(context, deps) {
     refreshAllowedCorsOriginsFromSupabase,
     normalizeAllowedCorsOriginsPayload,
     getAllowedCorsOrigins,
+    upsertCampaignBudgetConfig,
+    listCampaignBudgetStatuses,
+    getRiskConfigSnapshot,
+    updateRiskConfig,
+    cleanupExpiredBudgetReservations,
+    BUDGET_ENFORCEMENT_MODE,
+    RISK_ENFORCEMENT_MODE,
   } = deps
 
   const isControlPlaneRouteRequest = (
@@ -198,6 +205,10 @@ export async function handleControlPlaneRoutes(context, deps) {
     || (pathname === '/api/v1/dashboard/metrics/by-day' && req.method === 'GET')
     || (pathname === '/api/v1/dashboard/metrics/by-placement' && req.method === 'GET')
     || (pathname === '/api/v1/dashboard/usage-revenue' && req.method === 'GET')
+    || (pathname === '/api/v1/dashboard/campaign-budgets' && req.method === 'GET')
+    || (pathname === '/api/v1/dashboard/campaign-budgets' && req.method === 'POST')
+    || (pathname === '/api/v1/dashboard/risk/config' && req.method === 'GET')
+    || (pathname === '/api/v1/dashboard/risk/config' && req.method === 'PUT')
     || (pathname === '/api/v1/dashboard/decisions' && req.method === 'GET')
     || (pathname === '/api/v1/dashboard/events' && req.method === 'GET')
     || (pathname === '/api/v1/dashboard/audit/logs' && req.method === 'GET')
@@ -1738,6 +1749,117 @@ export async function handleControlPlaneRoutes(context, deps) {
       const snapshot = await getDashboardStatePayload(auth.scope)
       sendJson(res, 200, snapshot.settlementAggregates)
       return
+    }
+
+    if (pathname === '/api/v1/dashboard/campaign-budgets' && req.method === 'GET') {
+      const auth = await authorizeDashboardScope(req, requestUrl.searchParams)
+      if (!auth.ok) {
+        sendJson(res, auth.status, { error: auth.error })
+        return
+      }
+      await cleanupExpiredBudgetReservations()
+      const items = await listCampaignBudgetStatuses(auth.scope, {
+        campaignId: String(requestUrl.searchParams.get('campaignId') || '').trim(),
+      })
+      sendJson(res, 200, {
+        items,
+      })
+      return
+    }
+
+    if (pathname === '/api/v1/dashboard/campaign-budgets' && req.method === 'POST') {
+      try {
+        const auth = await authorizeDashboardScope(req, requestUrl.searchParams)
+        if (!auth.ok) {
+          sendJson(res, auth.status, { error: auth.error })
+          return
+        }
+        const scope = auth.scope
+        const payload = await readJsonBody(req)
+        const snapshot = await upsertCampaignBudgetConfig({
+          ...payload,
+          accountId: payload?.accountId || payload?.account_id || scope.accountId || '',
+          appId: payload?.appId || payload?.app_id || scope.appId || '',
+        })
+        recordControlPlaneAudit({
+          action: 'campaign_budget_upsert',
+          actor: resolveAuditActor(req, 'dashboard'),
+          accountId: snapshot.accountId || scope.accountId || '',
+          appId: snapshot.appId || scope.appId || '',
+          environment: 'prod',
+          resourceType: 'campaign_budget',
+          resourceId: snapshot.campaignId || '',
+          metadata: {
+            dailyBudgetUsd: snapshot.dailyBudgetUsd,
+            lifetimeBudgetUsd: snapshot.lifetimeBudgetUsd,
+            remainingUsd: snapshot.remainingUsd,
+          },
+        })
+        persistState(state)
+        sendJson(res, 200, snapshot)
+        return
+      } catch (error) {
+        const mapped = toControlPlaneRouteError(error, {
+          defaultCode: 'INVALID_REQUEST',
+          route: '/api/v1/dashboard/campaign-budgets',
+        })
+        sendJson(res, mapped.status, { error: mapped.error })
+        return
+      }
+    }
+
+    if (pathname === '/api/v1/dashboard/risk/config' && req.method === 'GET') {
+      const auth = await authorizeDashboardScope(req, requestUrl.searchParams)
+      if (!auth.ok) {
+        sendJson(res, auth.status, { error: auth.error })
+        return
+      }
+      sendJson(res, 200, {
+        mode: {
+          budgetEnforcement: BUDGET_ENFORCEMENT_MODE,
+          riskEnforcement: RISK_ENFORCEMENT_MODE,
+        },
+        rules: getRiskConfigSnapshot(),
+      })
+      return
+    }
+
+    if (pathname === '/api/v1/dashboard/risk/config' && req.method === 'PUT') {
+      try {
+        const auth = await authorizeDashboardScope(req, requestUrl.searchParams)
+        if (!auth.ok) {
+          sendJson(res, auth.status, { error: auth.error })
+          return
+        }
+        const payload = await readJsonBody(req)
+        const rules = updateRiskConfig(payload)
+        recordControlPlaneAudit({
+          action: 'risk_config_update',
+          actor: resolveAuditActor(req, 'dashboard'),
+          accountId: auth.scope?.accountId || '',
+          appId: auth.scope?.appId || '',
+          environment: 'prod',
+          resourceType: 'risk_config',
+          resourceId: 'default',
+          metadata: rules,
+        })
+        persistState(state)
+        sendJson(res, 200, {
+          mode: {
+            budgetEnforcement: BUDGET_ENFORCEMENT_MODE,
+            riskEnforcement: RISK_ENFORCEMENT_MODE,
+          },
+          rules,
+        })
+        return
+      } catch (error) {
+        const mapped = toControlPlaneRouteError(error, {
+          defaultCode: 'INVALID_REQUEST',
+          route: '/api/v1/dashboard/risk/config',
+        })
+        sendJson(res, mapped.status, { error: mapped.error })
+        return
+      }
     }
   
     if (pathname === '/api/v1/dashboard/decisions' && req.method === 'GET') {

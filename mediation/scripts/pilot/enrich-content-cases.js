@@ -65,6 +65,10 @@ function buildRunId() {
   return `pilot_${token}_${random}`
 }
 
+function sleep(ms = 0) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)))
+}
+
 function toHttpUrl(value, base = '') {
   const raw = cleanText(value)
   if (!raw) return ''
@@ -448,7 +452,27 @@ function buildFallbackFetchUrls(targetUrl = '', metadata = {}, primaryFinalUrl =
   return output
 }
 
-async function fetchHtml(url, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS) {
+async function fetchHtml(url, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS, options = {}) {
+  const retries = Math.max(0, toPositiveInteger(options.retries, 0))
+  const backoffMs = Math.max(50, toPositiveInteger(options.backoffMs, 300))
+  let attempt = 0
+  while (attempt <= retries) {
+    const result = await fetchHtmlOnce(url, timeoutMs)
+    if (result.ok) return result
+    if (attempt >= retries) return result
+    await sleep(backoffMs * (attempt + 1))
+    attempt += 1
+  }
+  return {
+    ok: false,
+    status: 0,
+    finalUrl: cleanText(url),
+    html: '',
+    error: 'fetch_failed',
+  }
+}
+
+async function fetchHtmlOnce(url, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -793,12 +817,15 @@ async function enrichCaseOffer(caseSpec, row, options = {}) {
     || isLowQualityDescription(descriptionBefore)
   const needsImage = !imageBefore
   const fetchTimeoutMs = toPositiveInteger(options.fetchTimeoutMs, DEFAULT_FETCH_TIMEOUT_MS)
+  const fetchRetries = Math.max(0, toPositiveInteger(options.fetchRetries, 0))
 
   let crawl = { ok: false, status: 0, finalUrl: targetUrl, html: '' }
   let crawlFallback = { ok: false, status: 0, finalUrl: '', html: '' }
   let extracted = { description: '', imageUrl: '', extractionMeta: {} }
   if ((needsDescription || needsImage) && targetUrl) {
-    crawl = await fetchHtml(targetUrl, fetchTimeoutMs)
+    crawl = await fetchHtml(targetUrl, fetchTimeoutMs, {
+      retries: fetchRetries,
+    })
     if (crawl.ok && crawl.html) {
       extracted = enrichFromHtml(crawl.finalUrl || targetUrl, crawl.html)
     }
@@ -806,7 +833,9 @@ async function enrichCaseOffer(caseSpec, row, options = {}) {
     const shouldTryFallback = !hasDescription(extracted.description) || !cleanText(extracted.imageUrl)
     if (shouldTryFallback) {
       for (const fallbackUrl of fallbackUrls) {
-        crawlFallback = await fetchHtml(fallbackUrl, fetchTimeoutMs)
+        crawlFallback = await fetchHtml(fallbackUrl, fetchTimeoutMs, {
+          retries: fetchRetries,
+        })
         if (!crawlFallback.ok || !crawlFallback.html) continue
         const rootExtracted = enrichFromHtml(crawlFallback.finalUrl || fallbackUrl, crawlFallback.html)
         extracted = {
@@ -836,7 +865,7 @@ async function enrichCaseOffer(caseSpec, row, options = {}) {
   )
 
   let descriptionAfter = descriptionBefore
-  let descriptionSource = ''
+  let descriptionSource = needsDescription ? 'none' : 'keep'
   if (needsDescription) {
     if (hasDescription(extracted.description)
       && !isGenericDescription(extracted.description)
@@ -845,17 +874,29 @@ async function enrichCaseOffer(caseSpec, row, options = {}) {
       descriptionSource = 'crawl'
     } else {
       const llm = options.enableLlm
-        ? await generateDescriptionWithLlm({
-            title: cleanText(row.title),
-            merchant: cleanText(metadataBefore.merchant || metadataBefore.merchantName),
-            brand,
-            category,
-            offer: offerContext,
-            sourceDescription: extracted.description,
-            query: caseSpec.query,
-            network: cleanText(row.network),
-            targetUrl,
-          })
+        ? await (typeof options.llmLimiter === 'function'
+          ? options.llmLimiter(() => generateDescriptionWithLlm({
+              title: cleanText(row.title),
+              merchant: cleanText(metadataBefore.merchant || metadataBefore.merchantName),
+              brand,
+              category,
+              offer: offerContext,
+              sourceDescription: extracted.description,
+              query: caseSpec.query,
+              network: cleanText(row.network),
+              targetUrl,
+            }))
+          : generateDescriptionWithLlm({
+              title: cleanText(row.title),
+              merchant: cleanText(metadataBefore.merchant || metadataBefore.merchantName),
+              brand,
+              category,
+              offer: offerContext,
+              sourceDescription: extracted.description,
+              query: caseSpec.query,
+              network: cleanText(row.network),
+              targetUrl,
+            }))
         : { text: '', source: '' }
       if (hasDescription(llm.text)) {
         descriptionAfter = llm.text
@@ -875,7 +916,7 @@ async function enrichCaseOffer(caseSpec, row, options = {}) {
   }
 
   let imageAfter = imageBefore
-  let imageSource = ''
+  let imageSource = needsImage ? 'none' : 'keep'
   const allowedImageDomains = resolveAllowedImageDomains(targetUrl, metadataBefore, [
     crawl.finalUrl,
     crawlFallback.finalUrl,
@@ -892,6 +933,10 @@ async function enrichCaseOffer(caseSpec, row, options = {}) {
     imageSource = 'pilot_forced_no_image'
   }
 
+  const enrichmentVersion = cleanText(options.enrichmentVersion || 'pilot_v1') || 'pilot_v1'
+  const mode = cleanText(options.mode || 'pilot').toLowerCase() || 'pilot'
+  const enrichedAt = nowIso()
+
   const metadataAfter = {
     ...Object.fromEntries(
       Object.entries(metadataBefore).filter(([key]) => !IMAGE_METADATA_KEYS.includes(key)),
@@ -904,9 +949,15 @@ async function enrichCaseOffer(caseSpec, row, options = {}) {
       : {}),
     description_source: descriptionSource || metadataBefore.description_source || '',
     image_source: imageSource || metadataBefore.image_source || '',
-    pilot_case_id: caseSpec.id,
-    pilot_updated_at: nowIso(),
-    enrichment_version: 'pilot_v1',
+    enrichment_version: enrichmentVersion,
+    enriched_at: enrichedAt,
+    allowed_image_domains: Array.from(allowedImageDomains),
+    ...(mode === 'pilot'
+      ? {
+          pilot_case_id: caseSpec.id,
+          pilot_updated_at: enrichedAt,
+        }
+      : {}),
   }
 
   const changed =
@@ -1018,8 +1069,8 @@ async function writeJson(filePath, payload) {
   await fs.writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2))
+export async function runPilotContentEnrich(rawArgs = {}) {
+  const args = rawArgs && typeof rawArgs === 'object' ? rawArgs : {}
   const runId = buildRunId()
   const runDir = path.join(OUTPUT_ROOT, runId)
   const casesFile = cleanText(args['cases-file']) ? path.resolve(PROJECT_ROOT, args['cases-file']) : DEFAULT_CASES_FILE
@@ -1027,9 +1078,10 @@ async function main() {
   const dryRun = toBoolean(args['dry-run'], false)
   const enableLlm = toBoolean(args['enable-llm'], true)
   const fetchTimeoutMs = toPositiveInteger(args['fetch-timeout-ms'], DEFAULT_FETCH_TIMEOUT_MS)
+  const fetchRetries = Math.max(0, toPositiveInteger(args['fetch-retries'], 0))
   const cases = await loadCases(casesFile)
 
-  await withDbPool(async (pool) => {
+  return withDbPool(async (pool) => {
     const networkRowsCache = new Map()
     const usedOfferIds = new Set()
     const selectedCases = []
@@ -1053,6 +1105,9 @@ async function main() {
       const enrichment = await enrichCaseOffer(caseSpec, choice.picked, {
         enableLlm,
         fetchTimeoutMs,
+        fetchRetries,
+        mode: 'pilot',
+        enrichmentVersion: cleanText(args['enrichment-version'] || 'pilot_v1') || 'pilot_v1',
       })
       if (enrichment.changed) {
         await updateOffer(pool, enrichment.after, { dryRun })
@@ -1115,7 +1170,13 @@ async function main() {
     await writeJson(path.join(OUTPUT_ROOT, 'latest-run.json'), summary)
 
     process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`)
+    return summary
   })
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2))
+  await runPilotContentEnrich(args)
 }
 
 if (isDirectExecution()) {
@@ -1126,6 +1187,19 @@ if (isDirectExecution()) {
 }
 
 export const __pilotContentInternal = Object.freeze({
+  cleanText,
+  toBoolean,
+  toPositiveInteger,
+  nowIso,
+  buildRunId,
+  toHttpUrl,
+  hasDescription,
+  hasPreferredDescriptionLength,
+  fetchNetworkRows,
+  sanitizeMetadata,
+  enrichCaseOffer,
+  updateOffer,
+  evaluateAcceptance,
   resolveAllowedImageDomains,
   isImageAllowedForDomains,
   enrichFromHtml,

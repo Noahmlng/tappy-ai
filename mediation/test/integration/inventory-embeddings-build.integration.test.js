@@ -10,10 +10,14 @@ function createMockPool(rows = []) {
     async query(sql, params = []) {
       const normalizedSql = String(sql || '')
       if (normalizedSql.includes('INSERT INTO offer_inventory_embeddings')) {
-        upserts.push({
-          offerId: params[0],
-          model: params[1],
-        })
+        const count = Math.max(0, Math.floor(params.length / 3))
+        for (let i = 0; i < count; i += 1) {
+          const base = i * 3
+          upserts.push({
+            offerId: params[base],
+            model: params[base + 1],
+          })
+        }
         return { rows: [] }
       }
 

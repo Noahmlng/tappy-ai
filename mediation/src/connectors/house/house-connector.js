@@ -15,10 +15,10 @@ const SOURCE_FILE = 'file'
 const SOURCE_SUPABASE = 'supabase'
 
 const DEFAULT_LIMIT = 120
-const MAX_LIMIT = 500
+const MAX_LIMIT = 50000
 const DEFAULT_DB_CACHE_TTL_MS = 15000
 const DEFAULT_DB_FETCH_LIMIT = 1500
-const MAX_DB_FETCH_LIMIT = 5000
+const MAX_DB_FETCH_LIMIT = 50000
 
 const ACTIVE_STATUSES = new Set(['active', 'available', 'in_stock', 'limited', 'preorder', 'unknown'])
 const KEYWORD_STOPWORDS = new Set([
