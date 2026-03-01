@@ -196,6 +196,14 @@ function normalizeQuality(value) {
 
 function toFallbackCandidate(offer = {}, query = '') {
   const metadata = offer?.metadata && typeof offer.metadata === 'object' ? offer.metadata : {}
+  const normalizedMetadata = { ...metadata }
+  const merchantName = cleanText(offer.merchantName)
+  if (!cleanText(normalizedMetadata.merchant) && merchantName) {
+    normalizedMetadata.merchant = merchantName
+  }
+  if (!cleanText(normalizedMetadata.merchantName) && merchantName) {
+    normalizedMetadata.merchantName = merchantName
+  }
   const tags = Array.isArray(metadata.matchTags)
     ? metadata.matchTags
     : (Array.isArray(metadata.tags) ? metadata.tags : [])
@@ -223,10 +231,10 @@ function toFallbackCandidate(offer = {}, query = '') {
     availability: cleanText(offer.availability || 'active') || 'active',
     quality: toFiniteNumber(offer.qualityScore, 0),
     bidHint,
-    policyWeight: toFiniteNumber(metadata.policyWeight, 0),
+    policyWeight: toFiniteNumber(normalizedMetadata.policyWeight, 0),
     freshnessAt: cleanText(offer.updatedAt),
     tags,
-    metadata,
+    metadata: normalizedMetadata,
     updatedAt: cleanText(offer.updatedAt),
     lexicalScore: toFiniteNumber(lexicalScore, 0),
     vectorScore: toFiniteNumber(vectorScore, 0),

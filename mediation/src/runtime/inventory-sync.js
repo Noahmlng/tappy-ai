@@ -194,7 +194,15 @@ function toRawPayload(offer = {}) {
 }
 
 function toNormalizedInventoryRow(network, offer = {}) {
-  const metadata = offer?.metadata && typeof offer.metadata === 'object' ? offer.metadata : {}
+  const sourceMetadata = offer?.metadata && typeof offer.metadata === 'object' ? offer.metadata : {}
+  const metadata = { ...sourceMetadata }
+  const merchantName = cleanText(offer.merchantName)
+  if (!cleanText(metadata.merchant) && merchantName) {
+    metadata.merchant = merchantName
+  }
+  if (!cleanText(metadata.merchantName) && merchantName) {
+    metadata.merchantName = merchantName
+  }
   const tags = normalizeTags([
     ...(Array.isArray(metadata.matchTags) ? metadata.matchTags : []),
     ...(Array.isArray(metadata.tags) ? metadata.tags : []),

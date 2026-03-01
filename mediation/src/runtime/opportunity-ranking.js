@@ -92,6 +92,27 @@ function resolveCampaignId(candidate = {}) {
   )
 }
 
+function resolveAdvertiserName(candidate = {}) {
+  const metadata = candidate?.metadata && typeof candidate.metadata === 'object' ? candidate.metadata : {}
+  const prioritized = [
+    metadata.merchant,
+    metadata.merchantName,
+    metadata.advertiserName,
+    metadata.partnerName,
+    metadata.brandName,
+    metadata.brand_name,
+    metadata.brandId,
+    metadata.brand_id,
+  ]
+
+  for (const value of prioritized) {
+    const advertiser = cleanText(value)
+    if (advertiser) return advertiser
+  }
+
+  return cleanText(candidate.network || 'inventory') || 'inventory'
+}
+
 function toBid(candidate = {}, context = {}) {
   const title = cleanText(candidate.title)
   const targetUrl = cleanText(candidate.targetUrl)
@@ -104,7 +125,7 @@ function toBid(candidate = {}, context = {}) {
 
   return {
     price,
-    advertiser: cleanText(candidate.metadata?.merchant || candidate.network || 'inventory'),
+    advertiser: resolveAdvertiserName(candidate),
     headline: title,
     description: cleanText(candidate.description) || title,
     cta_text: 'Learn More',

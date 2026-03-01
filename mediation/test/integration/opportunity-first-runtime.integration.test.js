@@ -176,6 +176,52 @@ test('opportunity-first ranking: emits stable reason codes for miss and low-rank
   assert.equal(served.winner.bid.image_url, 'https://cdn.example.com/canva.png')
 })
 
+test('opportunity-first ranking: bid advertiser prefers merchant, then brandId, then network fallback', () => {
+  const buildCandidate = (overrides = {}) => ({
+    offerId: 'house:product:001',
+    network: 'house',
+    title: 'Developer tools deal',
+    description: 'high intent offer',
+    targetUrl: 'https://example.com/developer-tools',
+    availability: 'active',
+    quality: 0.9,
+    bidHint: 3.2,
+    policyWeight: 0.1,
+    lexicalScore: 0.71,
+    vectorScore: 0.78,
+    fusedScore: 0.8,
+    metadata: {},
+    ...overrides,
+  })
+
+  const withMerchant = rankOpportunityCandidates({
+    candidates: [buildCandidate({ metadata: { merchant: 'Verizon' } })],
+    query: 'best developer tools discount',
+    answerText: '',
+    intentScore: 0.83,
+  })
+  assert.equal(withMerchant.reasonCode, 'served')
+  assert.equal(withMerchant.winner?.bid?.advertiser, 'Verizon')
+
+  const withBrandId = rankOpportunityCandidates({
+    candidates: [buildCandidate({ metadata: { brandId: 'brand_verizon' } })],
+    query: 'best developer tools discount',
+    answerText: '',
+    intentScore: 0.83,
+  })
+  assert.equal(withBrandId.reasonCode, 'served')
+  assert.equal(withBrandId.winner?.bid?.advertiser, 'brand_verizon')
+
+  const withNetworkFallback = rankOpportunityCandidates({
+    candidates: [buildCandidate({ network: 'cj', metadata: {} })],
+    query: 'best developer tools discount',
+    answerText: '',
+    intentScore: 0.83,
+  })
+  assert.equal(withNetworkFallback.reasonCode, 'served')
+  assert.equal(withNetworkFallback.winner?.bid?.advertiser, 'cj')
+})
+
 test('opportunity-first ranking: economic score can break close rank ties', () => {
   const ranked = rankOpportunityCandidates({
     candidates: [
