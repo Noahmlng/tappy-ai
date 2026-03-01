@@ -8439,8 +8439,8 @@ async function evaluateV2BidOpportunityFirst(payload) {
     scoring: globalAuction?.scoring && typeof globalAuction.scoring === 'object'
       ? globalAuction.scoring
       : {
-          relevanceWeight: 0.7,
-          bidWeight: 0.3,
+          relevanceWeight: 0.95,
+          bidWeight: 0.05,
           bidNormalization: 'log1p_max',
           maxBidPrice: 0,
         },

@@ -25,8 +25,8 @@ function toPriorityValue(value) {
 }
 
 const GLOBAL_AUCTION_SCORING = Object.freeze({
-  relevanceWeight: 0.7,
-  bidWeight: 0.3,
+  relevanceWeight: 0.95,
+  bidWeight: 0.05,
   bidNormalization: 'log1p_max',
 })
 
