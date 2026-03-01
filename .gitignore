@@ -18,6 +18,7 @@ coverage
 *.local
 /mediation/.local/
 /mediation/.secrets/
+/mediation/output/
 /mediation/tests/reports/meyka-regression/
 
 # Editor directories and files

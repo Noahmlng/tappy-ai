@@ -16,6 +16,9 @@
     "dev:gateway": "npm run dev:gateway --workspace @ai-network/tappy-ai-mediation",
     "dev:local": "npm run dev:gateway",
     "mediation:reset": "bash ./scripts/reset-mediation-integration.sh",
+    "workflow:products:init": "bash ./scripts/git/products-init.sh",
+    "workflow:products:new-task": "bash ./scripts/git/products-new-task-worktree.sh",
+    "workflow:products:merge-task": "bash ./scripts/git/products-merge-task.sh",
     "infra:up": "bash ./scripts/dev-mediation-infra.sh up",
     "infra:down": "bash ./scripts/dev-mediation-infra.sh down",
     "infra:status": "bash ./scripts/dev-mediation-infra.sh status"

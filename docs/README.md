@@ -30,4 +30,5 @@
 - `other/integration/`（外部接入入口与联调说明）
 - `other/integration/local-ads-debug-pipeline.md`（本地广告联调排障 Pipeline，含 no-bid 根因分型）
 - `other/integration/developer-integration-pack/`（对外交付默认文档：11）
+- `other/git-worktree-products-workflow.md`（Products 业务线并行开发 workflow：worktree + 临时分支 + squash）
 - `other/project-structure.md`
