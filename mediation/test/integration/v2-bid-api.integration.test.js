@@ -87,6 +87,9 @@ function startGateway(port) {
       MEDIATION_GATEWAY_HOST: HOST,
       MEDIATION_GATEWAY_PORT: String(port),
       MEDIATION_ENABLED_NETWORKS: process.env.MEDIATION_ENABLED_NETWORKS || 'partnerstack,house',
+      CPC_SEMANTICS: process.env.CPC_SEMANTICS || 'on',
+      BUDGET_ENFORCEMENT: process.env.BUDGET_ENFORCEMENT || 'monitor_only',
+      RISK_ENFORCEMENT: process.env.RISK_ENFORCEMENT || 'off',
       OPENROUTER_API_KEY: '',
       OPENROUTER_MODEL: 'glm-5',
       CJ_TOKEN: 'mock-cj-token',
@@ -196,7 +199,7 @@ test('v2 bid API returns unified response on the single runtime path', async () 
       {
       method: 'GET',
       headers: runtimeHeaders,
-      timeoutMs: 12000,
+      timeoutMs: REQUEST_TIMEOUT_MS,
       },
     )
     assert.equal(configWithoutPlacement.status, 200, JSON.stringify(configWithoutPlacement.payload))
@@ -215,7 +218,7 @@ test('v2 bid API returns unified response on the single runtime path', async () 
           { role: 'user', content: 'camera for vlogging' },
         ],
       },
-      timeoutMs: 12000,
+      timeoutMs: REQUEST_TIMEOUT_MS,
     })
 
     assert.equal(bid.ok, true, `v2 bid failed: ${JSON.stringify(bid.payload)}`)
@@ -295,7 +298,7 @@ test('v2 bid API returns unified response on the single runtime path', async () 
         messages: [{ role: 'USER_INPUT', content: 'find me a running shoe deal' }],
         extraField: 'ignored',
       },
-      timeoutMs: 12000,
+      timeoutMs: REQUEST_TIMEOUT_MS,
     })
     assert.equal(tolerantMissingChat.status, 200, JSON.stringify(tolerantMissingChat.payload))
     assert.equal(tolerantMissingChat.payload?.diagnostics?.inputNormalization?.defaultsApplied?.chatIdDefaultedToUserId, true)
@@ -308,7 +311,7 @@ test('v2 bid API returns unified response on the single runtime path', async () 
         chatId: 'chat_missing_user',
         query: 'suggest a vlogging camera',
       },
-      timeoutMs: 12000,
+      timeoutMs: REQUEST_TIMEOUT_MS,
     })
     assert.equal(tolerantMissingUser.status, 200, JSON.stringify(tolerantMissingUser.payload))
     assert.equal(tolerantMissingUser.payload?.diagnostics?.inputNormalization?.defaultsApplied?.userIdGenerated, true)
@@ -322,7 +325,7 @@ test('v2 bid API returns unified response on the single runtime path', async () 
         messages: [{ role: 'assistant-bot', content: 'placeholder answer' }],
         prompt: 'show me a gift recommendation',
       },
-      timeoutMs: 12000,
+      timeoutMs: REQUEST_TIMEOUT_MS,
     })
     assert.equal(tolerantMissingPlacement.status, 200, JSON.stringify(tolerantMissingPlacement.payload))
     assert.equal(tolerantMissingPlacement.payload?.diagnostics?.inputNormalization?.defaultsApplied?.placementIdDefaulted, true)
@@ -349,7 +352,7 @@ test('v2 bid API returns unified response on the single runtime path', async () 
         placementId: 'chat_from_answer_v1',
         messages: [{ role: 'user', content: 'show me a cashback card deal' }],
       },
-      timeoutMs: 12000,
+      timeoutMs: REQUEST_TIMEOUT_MS,
     })
     assert.equal(placementOverrideRejected.status, 400, JSON.stringify(placementOverrideRejected.payload))
     assert.equal(placementOverrideRejected.payload?.error?.code, 'V2_BID_PLACEMENT_ID_NOT_ALLOWED')
@@ -362,7 +365,7 @@ test('v2 bid API returns unified response on the single runtime path', async () 
         chatId: 'chat_raw_auth',
         messages: [{ role: 'user', content: 'raw auth header should pass' }],
       },
-      timeoutMs: 12000,
+      timeoutMs: REQUEST_TIMEOUT_MS,
     })
     assert.equal(rawAuthBid.status, 200, JSON.stringify(rawAuthBid.payload))
 
@@ -410,7 +413,7 @@ test('v2 bid API: chinese commerce query should pass intent gate and enter retri
           { role: 'assistant', content: '可以先按预算、优惠和功能做比较。' },
         ],
       },
-      timeoutMs: 12000,
+      timeoutMs: REQUEST_TIMEOUT_MS,
     })
 
     assert.equal(bid.status, 200, JSON.stringify(bid.payload))

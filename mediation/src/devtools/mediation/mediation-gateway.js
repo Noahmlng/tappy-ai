@@ -277,9 +277,10 @@ const ATTACH_MVP_PLACEMENT_KEY = 'attach.post_answer_render'
 const ATTACH_MVP_EVENT = 'answer_completed'
 const NEXT_STEP_INTENT_CARD_PLACEMENT_KEY = 'next_step.intent_card'
 const V2_BID_EVENT = 'v2_bid_request'
-const CPC_SEMANTICS_ENABLED = parseFeatureSwitch(process.env.CPC_SEMANTICS, true)
-const BUDGET_ENFORCEMENT_MODE = parseEnforcementMode(process.env.BUDGET_ENFORCEMENT, 'on')
-const RISK_ENFORCEMENT_MODE = parseEnforcementMode(process.env.RISK_ENFORCEMENT, 'on')
+const LEGACY_PRICING_SEMANTICS_VERSION = 'legacy_ecpm_v0'
+const CPC_SEMANTICS_ENABLED = parseFeatureSwitch(process.env.CPC_SEMANTICS, false)
+const BUDGET_ENFORCEMENT_MODE = parseEnforcementMode(process.env.BUDGET_ENFORCEMENT, 'off')
+const RISK_ENFORCEMENT_MODE = parseEnforcementMode(process.env.RISK_ENFORCEMENT, 'off')
 const BUDGET_RESERVATION_TTL_MS = 15 * 60 * 1000
 const V2_BID_BUDGET_MS = Object.freeze({
   intent: 300,
@@ -7582,8 +7583,12 @@ async function selectWinnerWithBudgetAndRisk({
     if (!candidateBid) continue
     diagnostics.eligibleCount += 1
 
-    const campaignId = resolveCampaignIdFromBid(candidateBid) || resolveCampaignIdFromCandidate(candidate)
-    if (!campaignId) {
+    const mappedCampaignId = resolveCampaignIdFromBid(candidateBid) || resolveCampaignIdFromCandidate(candidate)
+    const fallbackCampaignId = `cmp_unmapped_${String(
+      candidateBid.bidId || candidate.offerId || createId('offer'),
+    ).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 36)}`
+    const campaignId = mappedCampaignId || fallbackCampaignId
+    if (!mappedCampaignId && isBudgetEnforced()) {
       diagnostics.budgetUnconfiguredCount += 1
       continue
     }
@@ -7642,10 +7647,15 @@ async function selectWinnerWithBudgetAndRisk({
         appId: request.appId,
         source: 'v2_bid',
       })
+      const wouldBlockForMissingCampaign = !mappedCampaignId && !reservation.allowed
       budgetDecision = {
         mode: BUDGET_ENFORCEMENT_MODE,
-        decision: reservation.allowed ? 'reserved' : (isBudgetMonitorOnly() ? 'monitor_would_block' : 'blocked'),
-        reasonCode: reservation.reasonCode || (reservation.allowed ? 'budget_reserved' : 'budget_exhausted'),
+        decision: reservation.allowed
+          ? 'reserved'
+          : (isBudgetMonitorOnly() || !isBudgetEnforced() ? 'monitor_would_block' : 'blocked'),
+        reasonCode: wouldBlockForMissingCampaign
+          ? 'budget_unconfigured'
+          : (reservation.reasonCode || (reservation.allowed ? 'budget_reserved' : 'budget_exhausted')),
         reservationId: reservation.reservation?.reservationId || '',
         budgetSnapshot: reservation.budgetSnapshot || null,
       }
@@ -7664,8 +7674,8 @@ async function selectWinnerWithBudgetAndRisk({
         pricing: riskAdjustedBid.pricing && typeof riskAdjustedBid.pricing === 'object'
           ? {
               ...riskAdjustedBid.pricing,
-              pricingSemanticsVersion: 'cpc_v1',
-              billingUnit: 'cpc',
+              pricingSemanticsVersion: isCpcSemanticsActive() ? 'cpc_v1' : LEGACY_PRICING_SEMANTICS_VERSION,
+              billingUnit: isCpcSemanticsActive() ? 'cpc' : 'ecpm',
             }
           : riskAdjustedBid.pricing,
       },
@@ -7949,7 +7959,10 @@ async function evaluateSinglePlacementOpportunity({
     ? winnerBid.pricing
     : null
   const pricingVersion = String(pricingSnapshot?.modelVersion || rankingDebug?.pricingModel || 'cpa_mock_v2').trim()
-  const pricingSemanticsVersion = String(pricingSnapshot?.pricingSemanticsVersion || 'cpc_v1').trim() || 'cpc_v1'
+  const pricingSemanticsVersion = String(
+    pricingSnapshot?.pricingSemanticsVersion
+    || (isCpcSemanticsActive() ? 'cpc_v1' : LEGACY_PRICING_SEMANTICS_VERSION),
+  ).trim() || (isCpcSemanticsActive() ? 'cpc_v1' : LEGACY_PRICING_SEMANTICS_VERSION)
   const deliveryStartedAt = Date.now()
 
   await writer.writeDeliveryRecord({
@@ -8192,8 +8205,8 @@ async function evaluateV2BidOpportunityFirst(payload) {
   const pricingSemanticsVersion = String(
     selectedPlacementResult?.pricingSemanticsVersion
     || pricingSnapshot?.pricingSemanticsVersion
-    || 'cpc_v1',
-  ).trim() || 'cpc_v1'
+    || (isCpcSemanticsActive() ? 'cpc_v1' : LEGACY_PRICING_SEMANTICS_VERSION),
+  ).trim() || (isCpcSemanticsActive() ? 'cpc_v1' : LEGACY_PRICING_SEMANTICS_VERSION)
   const intentThreshold = clampNumber(selectedPlacementResult?.intentThreshold, 0, 1, 0.6)
   const budgetDecision = selectedPlacementResult?.budgetDecision && typeof selectedPlacementResult.budgetDecision === 'object'
     ? selectedPlacementResult.budgetDecision
